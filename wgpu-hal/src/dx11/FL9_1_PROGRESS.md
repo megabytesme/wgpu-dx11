@@ -1,5 +1,27 @@
 # FL9_1 progress
 
+## Two-byte indexed vertex extents and padded 3D upload — 2026-11-09 — pending checkpoint
+
+Removed an unjustified four-byte copied-extent requirement from indexed
+rebase, line/strip, point and triangle-strip planner paths. The planners still
+enforce aligned buffer offsets and strides, nonzero extents, extent within
+stride, bounds and checked arithmetic. CPU planner tests cover two-byte
+vertices in native Uint16, Window, Gather, indexed line and indexed strip
+paths. The RTX reports no optional sub-four-byte IA formats at forced FL9_1,
+so this compatibility case has synthetic coverage but no positive GPU run.
+
+Added a strict private HAL execution test for an offset, padded 2×2×2 RGBA8
+upload into a 4×4×4 volume at a nonzero origin. It samples the volume into an
+8×8 target, checking all eight uploaded voxels, 56 zero-initialized untouched
+voxels, row/depth padding and output sentinels. The NVIDIA GeForce RTX 3090
+Ti (`0x10de:0x2203`, driver `32.0.16.2101`) created the requested/actual FL9_1
+device and passed. The full private HAL suite passed 441/441, the strict
+public D3D11 target passed 103/103, formatting and `git diff --check` passed,
+and HAL Clippy completed with the same existing backend warnings (no new
+warning from these changes). The public suite logs optional feature skips;
+they are not counted as GPU executions. Historical FL9_1 drivers remain
+unverified.
+
 ## `vertex_index` on LineStrip — 2026-11-08 — `b93747fb4`
 
 The selected FL9_1 projection and HAL now permit LineStrip in the existing

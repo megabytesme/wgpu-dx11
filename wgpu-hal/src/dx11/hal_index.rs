@@ -241,7 +241,6 @@ impl IndexBinding {
                     || !stride.is_multiple_of(4)
                     || *extent == 0
                     || (*stride != 0 && *extent > *stride)
-                    || !extent.is_multiple_of(4)
             })
             || !self.contains_range(first, count)
             || max_points == 0
@@ -372,7 +371,6 @@ impl IndexBinding {
                 || !stride.is_multiple_of(4)
                 || *extent == 0
                 || (*stride != 0 && *extent > *stride)
-                || !extent.is_multiple_of(4)
         }) || !self.contains_range(first, count)
             || max_indices < 2
             || (count != 0 && first.checked_add(count - 1).is_none())
@@ -713,7 +711,6 @@ impl IndexBinding {
                 || !stride.is_multiple_of(4)
                 || *extent == 0
                 || (*stride != 0 && *extent > *stride)
-                || !extent.is_multiple_of(4)
         }) || !self.contains_range(first, count)
             || max_vertices < 3
             || !max_vertices.is_multiple_of(3)
@@ -824,7 +821,6 @@ impl IndexBinding {
                     || !stride.is_multiple_of(4)
                     || *extent == 0
                     || (*stride != 0 && *extent > *stride)
-                    || !extent.is_multiple_of(4)
             })
             || !self.contains_range(first, count)
             || max_indices < 2
@@ -1134,7 +1130,6 @@ impl IndexBinding {
                     || !stride.is_multiple_of(4)
                     || *extent == 0
                     || (*stride != 0 && *extent > *stride)
-                    || !extent.is_multiple_of(4)
             })
             || !self.contains_range(first, count)
             || max_vertices == 0
@@ -2006,7 +2001,6 @@ fn for_each_indexed_triangle_strip_batch(
             length < u64::from(extent)
                 || !stride.is_multiple_of(4)
                 || extent == 0
-                || !extent.is_multiple_of(4)
                 || (stride != 0 && extent > stride)
         })
     {
@@ -2302,7 +2296,6 @@ fn plan_indexed_lines(
             length < u64::from(extent)
                 || !stride.is_multiple_of(4)
                 || extent == 0
-                || !extent.is_multiple_of(4)
                 || (stride != 0 && extent > stride)
         })
     {
@@ -2390,7 +2383,6 @@ fn plan_indexed_line_strips(
             length < u64::from(extent)
                 || !stride.is_multiple_of(4)
                 || extent == 0
-                || !extent.is_multiple_of(4)
                 || (stride != 0 && extent > stride)
         })
     {
@@ -2694,7 +2686,6 @@ fn plan_u32_windows(
         || !max_vertices.is_multiple_of(3)
         || !stride.is_multiple_of(4)
         || extent == 0
-        || !extent.is_multiple_of(4)
         || (stride != 0 && extent > stride)
     {
         return Err(Error::from_hresult(E_INVALIDARG));
@@ -3514,6 +3505,156 @@ mod tests {
             .unwrap()
             .is_none());
         assert!(plan(&[0, 1, 2], 65535, u32::MAX - 3, layout).is_err());
+    }
+
+    #[test]
+    fn indexed_vertex_plans_accept_two_byte_extents_and_preserve_other_checks() {
+        let native_layout = (12, 4, 2);
+        assert!(matches!(
+            plan_u16_draw(|i| [0u16, 1, 2][i], 3, 0, 65_534, 0, native_layout, 196_605).unwrap(),
+            Some(IndexPlan::NativeU16)
+        ));
+        assert!(
+            plan_u16_draw(|i| [0u16, 1, 2][i], 3, 0, 65_534, 0, (9, 4, 2), 196_605,)
+                .unwrap()
+                .is_none()
+        );
+
+        let vertex_count = 65_538u64;
+        let layout = (vertex_count * 4, 4, 2);
+        let window_indices = [65_535u32, 65_536, 65_537];
+        let window = plan_u32_windows(
+            |i| window_indices[i],
+            window_indices.len(),
+            0,
+            65_534,
+            0,
+            layout,
+            196_605,
+        )
+        .unwrap()
+        .unwrap();
+        let [U32Segment::Window(window)] = window.as_slice() else {
+            panic!("expected one rebased index window")
+        };
+        assert_eq!(window.vertex_offset, 65_535 * 4);
+
+        let gather_indices = [0u32, 1, 65_535];
+        let gather = plan_u32_windows(
+            |i| gather_indices[i],
+            gather_indices.len(),
+            0,
+            65_534,
+            0,
+            layout,
+            196_605,
+        )
+        .unwrap()
+        .unwrap();
+        let [U32Segment::Gather { sources, .. }] = gather.as_slice() else {
+            panic!("expected one gathered triangle")
+        };
+        assert_eq!(
+            sources
+                .iter()
+                .map(|source| (source.left, source.right))
+                .collect::<Vec<_>>(),
+            [(0, 2), (4, 6), (65_535 * 4, 65_535 * 4 + 2)]
+        );
+
+        let strip_indices = [0u32, 1, 2];
+        let mut strip_triangles = Vec::new();
+        assert!(for_each_indexed_triangle_strip_batch(
+            |i| strip_indices[i],
+            strip_indices.len(),
+            0,
+            u32::MAX,
+            3,
+            &[(12, 4, 2)],
+            |triangle| {
+                strip_triangles.push(triangle.to_vec());
+                Ok(())
+            },
+        )
+        .unwrap());
+        assert_eq!(strip_triangles, [vec![0, 1, 2]]);
+
+        assert!(plan_u32_windows(|_| 0, 3, 0, 65_534, 2, (12, 4, 2), 196_605,).is_err());
+        assert!(plan_u32_windows(|_| 0, 3, 0, 65_534, 0, (12, 6, 2), 196_605,).is_err());
+        assert!(plan_u32_windows(|_| 0, 3, 0, 65_534, 0, (12, 4, 5), 196_605,).is_err());
+        assert!(plan_u32_windows(|_| 0, 3, 0, 65_534, 0, (12, 4, 0), 196_605,).is_err());
+    }
+
+    #[test]
+    fn indexed_line_plans_accept_two_byte_extents_for_windows_and_gathers() {
+        let layout = (65_537u64 * 4, 4, 2);
+        let indices = [0u32, 65_535, 65_535, 65_536];
+        let lines =
+            plan_indexed_lines(|i| indices[i], indices.len(), 0, 65_534, 131_070, &[layout])
+                .unwrap()
+                .unwrap();
+        assert!(matches!(
+            &lines[..],
+            [
+                IndexedLineSegment::Gather {
+                    indices: [0, 65_535]
+                },
+                IndexedLineSegment::Window {
+                    minimum: 65_535,
+                    count: 2,
+                    ..
+                }
+            ]
+        ));
+
+        let strip_indices = [0u32, 65_535, 65_536];
+        let strips = plan_indexed_line_strips(
+            |i| strip_indices[i],
+            strip_indices.len(),
+            0,
+            u32::MAX,
+            65_534,
+            65_536,
+            &[layout],
+        )
+        .unwrap()
+        .unwrap();
+        assert!(matches!(
+            &strips[..],
+            [
+                IndexedLineSegment::Gather {
+                    indices: [0, 65_535]
+                },
+                IndexedLineSegment::Window {
+                    minimum: 65_535,
+                    count: 2,
+                    ..
+                }
+            ]
+        ));
+
+        let out_of_bounds = [1u32, 0];
+        assert!(plan_indexed_lines(
+            |i| out_of_bounds[i],
+            out_of_bounds.len(),
+            0,
+            65_534,
+            131_070,
+            &[(5, 4, 2)],
+        )
+        .unwrap()
+        .is_none());
+        assert!(plan_indexed_line_strips(
+            |i| out_of_bounds[i],
+            out_of_bounds.len(),
+            0,
+            u32::MAX,
+            65_534,
+            65_536,
+            &[(5, 4, 2)],
+        )
+        .unwrap()
+        .is_none());
     }
 
     #[test]

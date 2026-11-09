@@ -962,3 +962,498 @@ fn fl91_bgra_render_and_partial_copy() -> windows::core::Result<()> {
     }
     Ok(())
 }
+
+#[test]
+fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Result<()> {
+    use alloc::borrow::Cow;
+    use windows::Win32::Graphics::{
+        Direct3D11::{
+            D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
+            D3D11_FORMAT_SUPPORT_TEXTURE3D,
+        },
+        Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
+    };
+
+    let adapters = enumerate_native_adapters()?;
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+        .unwrap_or_else(|error| panic!("{error}"))
+    else {
+        std::println!("SKIP: no physical D3D11 adapter");
+        return Ok(());
+    };
+    let identity = adapter.identity();
+    let driver = adapter.driver_version();
+    let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+    assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+
+    let support = unsafe {
+        native
+            .raw_device()
+            .CheckFormatSupport(DXGI_FORMAT_R8G8B8A8_UNORM)?
+    };
+    let texture_requirements =
+        (D3D11_FORMAT_SUPPORT_TEXTURE3D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+    if support & texture_requirements != texture_requirements {
+        std::println!(
+            "SKIP: selected physical FL9_1 device lacks RGBA8 3D sampling support ({support:#010x})"
+        );
+        return Ok(());
+    }
+    if support & D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32 == 0 {
+        std::println!(
+            "SKIP: selected physical FL9_1 device lacks RGBA8 render-target support ({support:#010x})"
+        );
+        return Ok(());
+    }
+    std::println!(
+        "Hardware: {:?} ({:#06x}:{:#06x}), driver={driver:?}, software={}; requested/actual FL9_1; RGBA8 format support={support:#010x}",
+        identity.name, identity.vendor_id, identity.device_id, identity.software,
+    );
+
+    let device = Device::new(native.clone());
+    let queue = Queue::new(native.clone());
+    let volume = unsafe {
+        device
+            .create_texture(&TextureDescriptor {
+                label: None,
+                size: wgt::Extent3d {
+                    width: 4,
+                    height: 4,
+                    depth_or_array_layers: 4,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgt::TextureDimension::D3,
+                format: wgt::TextureFormat::Rgba8Unorm,
+                usage: wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                memory_flags: MemoryFlags::empty(),
+                view_formats: vec![],
+            })
+            .unwrap()
+    };
+
+    let source_offset = 16usize;
+    let source_row_pitch = 32usize;
+    let source_rows_per_image = 3usize;
+    let source_image_pitch = source_row_pitch * source_rows_per_image;
+    let upload_region = extent(2, 2);
+    let upload = BufferTextureCopy {
+        buffer_layout: wgt::TexelCopyBufferLayout {
+            offset: source_offset as u64,
+            bytes_per_row: Some(source_row_pitch as u32),
+            rows_per_image: Some(source_rows_per_image as u32),
+        },
+        texture_base: TextureCopyBase {
+            mip_level: 0,
+            array_layer: 0,
+            origin: wgt::Origin3d { x: 1, y: 1, z: 1 },
+            aspect: FormatAspects::COLOR,
+        },
+        size: CopyExtent {
+            width: upload_region.width,
+            height: upload_region.height,
+            depth: 2,
+        },
+    };
+    let mut upload_data = vec![0xa5; source_offset + 2 * source_image_pitch];
+    for z in 0..2usize {
+        for y in 0..2usize {
+            for x in 0..2usize {
+                let offset = source_offset + z * source_image_pitch + y * source_row_pitch + x * 4;
+                upload_data[offset..offset + 4].copy_from_slice(&[
+                    40 + x as u8 * 80,
+                    20 + y as u8 * 90,
+                    30 + z as u8 * 70,
+                    255,
+                ]);
+            }
+        }
+    }
+    let input = unsafe {
+        device
+            .create_buffer(&BufferDescriptor {
+                label: None,
+                size: upload_data.len() as u64,
+                usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                memory_flags: MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&input, 0, &upload_data)?;
+
+    let volume_view = unsafe {
+        device
+            .create_texture_view(
+                &volume,
+                &TextureViewDescriptor {
+                    label: None,
+                    format: wgt::TextureFormat::Rgba8Unorm,
+                    dimension: wgt::TextureViewDimension::D3,
+                    usage: wgt::TextureUses::RESOURCE,
+                    range: wgt::ImageSubresourceRange {
+                        aspect: wgt::TextureAspect::All,
+                        base_mip_level: 0,
+                        mip_level_count: Some(1),
+                        base_array_layer: 0,
+                        array_layer_count: Some(1),
+                    },
+                },
+            )
+            .unwrap()
+    };
+    let sampler = unsafe {
+        device
+            .create_sampler(&crate::SamplerDescriptor {
+                label: None,
+                address_modes: [wgt::AddressMode::ClampToEdge; 3],
+                mag_filter: wgt::FilterMode::Nearest,
+                min_filter: wgt::FilterMode::Nearest,
+                mipmap_filter: wgt::MipmapFilterMode::Nearest,
+                lod_clamp: 0.0..f32::MAX,
+                compare: None,
+                anisotropy_clamp: 1,
+                border_color: None,
+            })
+            .unwrap()
+    };
+    let entries = [
+        wgt::BindGroupLayoutEntry {
+            binding: 7,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Texture {
+                sample_type: wgt::TextureSampleType::Float { filterable: true },
+                view_dimension: wgt::TextureViewDimension::D3,
+                multisampled: false,
+            },
+            count: None,
+        },
+        wgt::BindGroupLayoutEntry {
+            binding: 42,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+            count: None,
+        },
+    ];
+    let group_layout = unsafe {
+        device
+            .create_bind_group_layout(&crate::BindGroupLayoutDescriptor {
+                label: None,
+                flags: crate::BindGroupLayoutFlags::empty(),
+                entries: &entries,
+            })
+            .unwrap()
+    };
+    let texture_bindings = [crate::TextureBinding {
+        view: &volume_view,
+        usage: wgt::TextureUses::RESOURCE,
+    }];
+    let sampler_bindings = [&sampler];
+    let group_entries = [
+        crate::BindGroupEntry {
+            binding: 7,
+            resource_index: 0,
+            count: 1,
+        },
+        crate::BindGroupEntry {
+            binding: 42,
+            resource_index: 0,
+            count: 1,
+        },
+    ];
+    let group = unsafe {
+        device
+            .create_bind_group(&crate::BindGroupDescriptor {
+                label: None,
+                layout: &group_layout,
+                buffers: &[],
+                samplers: &sampler_bindings,
+                textures: &texture_bindings,
+                entries: &group_entries,
+                acceleration_structures: &[],
+                external_textures: &[],
+            })
+            .unwrap()
+    };
+    let pipeline_layout = unsafe {
+        device
+            .create_pipeline_layout(&crate::PipelineLayoutDescriptor {
+                label: None,
+                flags: crate::PipelineLayoutFlags::empty(),
+                bind_group_layouts: &[Some(&group_layout)],
+                immediate_size: 0,
+            })
+            .unwrap()
+    };
+    let module = naga::front::wgsl::parse_str(
+        "struct VertexOut { @builtin(position) position: vec4f, @location(0) uvw: vec3f }; \
+         @group(0) @binding(7) var volume: texture_3d<f32>; \
+         @group(0) @binding(42) var volume_sampler: sampler; \
+         @vertex fn vs(@location(0) position: vec2f, @location(1) uvw: vec3f) -> VertexOut { return VertexOut(vec4f(position, 0.5, 1.0), uvw); } \
+         @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(volume, volume_sampler, input.uvw); }",
+    )
+    .unwrap();
+    let info = naga::valid::Validator::new(
+        naga::valid::ValidationFlags::all(),
+        naga::valid::Capabilities::empty(),
+    )
+    .validate(&module)
+    .unwrap();
+    let shader = unsafe {
+        device
+            .create_shader_module(
+                &crate::ShaderModuleDescriptor {
+                    label: None,
+                    runtime_checks: wgt::ShaderRuntimeChecks::unchecked(),
+                },
+                crate::ShaderInput::Naga(crate::NagaShader {
+                    module: Cow::Owned(module),
+                    info,
+                    debug_source: None,
+                }),
+            )
+            .unwrap()
+    };
+    let attributes = [
+        wgt::VertexAttribute {
+            format: wgt::VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        },
+        wgt::VertexAttribute {
+            format: wgt::VertexFormat::Float32x3,
+            offset: 8,
+            shader_location: 1,
+        },
+    ];
+    let buffers = [Some(crate::VertexBufferLayout {
+        array_stride: 20,
+        step_mode: wgt::VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let constants = naga::back::PipelineConstants::default();
+    let stage = |entry_point| crate::ProgrammableStage {
+        module: &shader,
+        entry_point,
+        constants: &constants,
+        zero_initialize_workgroup_memory: false,
+    };
+    let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
+    let pipeline = unsafe {
+        device
+            .create_render_pipeline(&crate::RenderPipelineDescriptor {
+                label: None,
+                layout: &pipeline_layout,
+                vertex_processor: crate::VertexProcessor::Standard {
+                    vertex_buffers: &buffers,
+                    vertex_stage: stage("vs"),
+                },
+                primitive: wgt::PrimitiveState {
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: wgt::MultisampleState::default(),
+                fragment_stage: Some(stage("fs")),
+                color_targets: &targets,
+                multiview_mask: None,
+                cache: None,
+            })
+            .unwrap()
+    };
+
+    let target = unsafe {
+        device
+            .create_texture(&TextureDescriptor {
+                label: None,
+                size: wgt::Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgt::TextureDimension::D2,
+                format: wgt::TextureFormat::Rgba8Unorm,
+                usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC,
+                memory_flags: MemoryFlags::empty(),
+                view_formats: vec![],
+            })
+            .unwrap()
+    };
+    let target_view = unsafe {
+        device
+            .create_texture_view(
+                &target,
+                &TextureViewDescriptor {
+                    label: None,
+                    format: wgt::TextureFormat::Rgba8Unorm,
+                    dimension: wgt::TextureViewDimension::D2,
+                    usage: wgt::TextureUses::COLOR_TARGET,
+                    range: wgt::ImageSubresourceRange::default(),
+                },
+            )
+            .unwrap()
+    };
+
+    let mut vertices = Vec::with_capacity(24 * 5);
+    for quad in 0..4 {
+        let qx = quad % 2;
+        let qy = quad / 2;
+        let left = -1.0 + qx as f32;
+        let right = left + 1.0;
+        let top = 1.0 - qy as f32;
+        let bottom = top - 1.0;
+        let z = (quad as f32 + 0.5) / 4.0;
+        for [x, y, u, v] in [
+            [left, top, 0.0, 0.0],
+            [left, bottom, 0.0, 1.0],
+            [right, top, 1.0, 0.0],
+            [right, top, 1.0, 0.0],
+            [left, bottom, 0.0, 1.0],
+            [right, bottom, 1.0, 1.0],
+        ] {
+            vertices.extend_from_slice(&[x, y, u, v, z]);
+        }
+    }
+    let vertex_data: Vec<u8> = vertices.into_iter().flat_map(f32::to_ne_bytes).collect();
+    let vertex_buffer = unsafe {
+        device
+            .create_buffer(&BufferDescriptor {
+                label: None,
+                size: vertex_data.len() as u64,
+                usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                memory_flags: MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&vertex_buffer, 0, &vertex_data)?;
+
+    let output_offset = 12usize;
+    let output_row_pitch = 256usize;
+    let output_size = output_offset + output_row_pitch * 8;
+    let output = unsafe {
+        device
+            .create_buffer(&BufferDescriptor {
+                label: None,
+                size: output_size as u64,
+                usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                memory_flags: MemoryFlags::empty(),
+            })
+            .unwrap()
+    };
+    native.write_byte_buffer(&output, 0, &vec![0x5a; output_size])?;
+    let readback = BufferTextureCopy {
+        buffer_layout: wgt::TexelCopyBufferLayout {
+            offset: output_offset as u64,
+            bytes_per_row: Some(output_row_pitch as u32),
+            rows_per_image: Some(8),
+        },
+        texture_base: base(0, 0),
+        size: extent(8, 8),
+    };
+    let colors = [Some(crate::ColorAttachment {
+        target: crate::Attachment {
+            view: &target_view,
+            usage: wgt::TextureUses::COLOR_TARGET,
+        },
+        depth_slice: None,
+        resolve_target: None,
+        ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+        clear_value: wgt::Color::TRANSPARENT,
+    })];
+    let pass = crate::RenderPassDescriptor {
+        label: None,
+        extent: wgt::Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        sample_count: 1,
+        color_attachments: &colors,
+        depth_stencil_attachment: None,
+        multiview_mask: None,
+        timestamp_writes: None,
+        occlusion_query_set: None,
+    };
+    let mut encoder = unsafe {
+        device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: None,
+                queue: &queue,
+            })
+            .unwrap()
+    };
+    let commands = unsafe {
+        encoder.begin_encoding(None).unwrap();
+        encoder.copy_buffer_to_texture(&input, &volume, [upload].into_iter());
+        encoder.begin_render_pass(&pass).unwrap();
+        encoder.set_render_pipeline(&pipeline);
+        encoder.set_bind_group(&pipeline_layout, 0, &group, &[]);
+        encoder.set_vertex_buffer(
+            0,
+            crate::BufferBinding::new_unchecked(&vertex_buffer, 0, None),
+        );
+        encoder.draw(0, 24, 0, 1);
+        encoder.end_render_pass();
+        encoder.copy_texture_to_buffer(
+            &target,
+            wgt::TextureUses::COPY_SRC,
+            &output,
+            [readback].into_iter(),
+        );
+        encoder.end_encoding().unwrap()
+    };
+    let fence = native.create_native_fence();
+    unsafe { queue.submit(&[&commands], &[], (&fence, 1)).unwrap() };
+    assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(10)))?);
+
+    let actual = native.read_byte_buffer(&output, 0, output_size)?;
+    let mut expected = vec![0x5a; output_size];
+    for y in 0..8usize {
+        for x in 0..8usize {
+            let z = (y / 4) * 2 + x / 4;
+            let voxel_x = x % 4;
+            let voxel_y = y % 4;
+            let pixel =
+                if (1..=2).contains(&voxel_x) && (1..=2).contains(&voxel_y) && (1..=2).contains(&z)
+                {
+                    [
+                        40 + (voxel_x - 1) as u8 * 80,
+                        20 + (voxel_y - 1) as u8 * 90,
+                        30 + (z - 1) as u8 * 70,
+                        255,
+                    ]
+                } else {
+                    [0, 0, 0, 0]
+                };
+            let offset = output_offset + y * output_row_pitch + x * 4;
+            expected[offset..offset + 4].copy_from_slice(&pixel);
+        }
+    }
+    assert_eq!(
+        actual, expected,
+        "padded 3D upload sample or untouched voxel differed"
+    );
+    std::println!(
+        "PASS: FL9_1 padded partial 3D upload; 8 uploaded voxels and 56 initialized untouched voxels sampled correctly, with row/depth padding preserved"
+    );
+
+    unsafe {
+        encoder.reset_all([commands].into_iter());
+        device.destroy_buffer(input);
+        device.destroy_buffer(vertex_buffer);
+        device.destroy_buffer(output);
+        device.destroy_bind_group(group);
+        device.destroy_bind_group_layout(group_layout);
+        device.destroy_pipeline_layout(pipeline_layout);
+        device.destroy_sampler(sampler);
+        device.destroy_texture_view(volume_view);
+        device.destroy_texture_view(target_view);
+        device.destroy_texture(volume);
+        device.destroy_texture(target);
+        device.destroy_render_pipeline(pipeline);
+        device.destroy_shader_module(shader);
+    }
+    Ok(())
+}

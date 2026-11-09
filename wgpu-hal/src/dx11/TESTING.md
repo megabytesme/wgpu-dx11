@@ -1924,6 +1924,19 @@ rejects native diagnostic textures bound only as shader resources.
 The layout test is CPU-only. Direct private HAL calls reject empty transfer
 regions; wgpu-core filters validated empty copies before dispatching to HAL.
 
+The strict private `fl91_padded_partial_3d_upload_preserves_other_voxels`
+case uploads a 2×2×2 RGBA8 region into a 4×4×4 volume at origin (1,1,1),
+using a nonzero buffer offset, padded rows and padded image stride. It samples
+each depth slice to a 2D target and checks all 64 pixels, including zeroed
+voxels outside the update and output-buffer padding. It requires a physical
+FL9_1 adapter and the selected device's optional 3D sampling and render-target
+format support; unavailable format bits are logged as SKIP, not GPU PASS.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_padded_partial_3d_upload_preserves_other_voxels -- --nocapture --test-threads=1
+```
+
 The private `private_device_creates_restricted_texture_views` test also passed
 on the RTX FL9_1 device with a metadata-only copy texture view and rejected
 sampling, attachment use and invalid descriptors. The controlled core fixture

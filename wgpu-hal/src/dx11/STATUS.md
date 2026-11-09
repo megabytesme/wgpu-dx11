@@ -97,6 +97,14 @@ slices, a nonzero-offset partial voxel update and zero initialization for
 untouched voxels across 128 pixels. Buffer-to-volume upload currently stages
 through a mapped buffer and `UpdateSubresource`; 3D texture copies, render
 attachments, storage and readback remain unavailable.
+The private HAL transfer regression additionally uploads a padded, nonzero-
+offset 2×2×2 region at volume origin (1,1,1), samples every slice and verifies
+all 64 target pixels, including 56 initialized untouched voxels. It passed on
+the RTX at requested/actual FL9_1. Indexed rebase/gather planners now copy
+byte-sized stream extents without imposing a four-byte extent multiple while
+retaining their separate offset, stride and bounds validation; positive GPU
+execution for optional sub-four-byte IA formats still requires another
+format-positive FL9_1 device.
 
 At FL9_1, mutable format view lists remain disabled. Compatible RGBA8/BGRA8
 UNORM-to-sRGB reinterpretation requires typeless resources, which the 10Level9
