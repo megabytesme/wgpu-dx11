@@ -917,7 +917,15 @@ impl CommandBuffer {
                             0,
                             0,
                         );
-                        context.PSSetShaderResources(0, Some(&[Some(texture.clone())]));
+                        let sampled_resource = if matches!(
+                            kind,
+                            super::hal_shader::Fl9TextureEmulationKind::NumLevels
+                        ) {
+                            None
+                        } else {
+                            Some(texture.clone())
+                        };
+                        context.PSSetShaderResources(0, Some(&[sampled_resource]));
                         if matches!(
                             kind,
                             super::hal_shader::Fl9TextureEmulationKind::Load

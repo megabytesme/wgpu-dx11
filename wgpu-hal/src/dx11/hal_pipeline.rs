@@ -604,6 +604,7 @@ impl crate::DynPipelineLayout for PipelineLayout {}
 pub(super) struct TexelLoadPipeline {
     pub binding: naga::ResourceBinding,
     pub kind: super::hal_shader::Fl9TextureEmulationKind,
+    pub dimension: naga::ImageDimension,
     pub mip_level: u32,
     pub sampler: ID3D11SamplerState,
     pub dimensions: ID3D11Buffer,
@@ -614,6 +615,7 @@ impl TexelLoadPipeline {
         owner: &NativeDevice,
         binding: naga::ResourceBinding,
         kind: super::hal_shader::Fl9TextureEmulationKind,
+        dimension: naga::ImageDimension,
         mip_level: u32,
     ) -> Result<Self, crate::PipelineError> {
         let fail = |error: windows::core::Error| {
@@ -666,6 +668,7 @@ impl TexelLoadPipeline {
         Ok(Self {
             binding,
             kind,
+            dimension,
             mip_level,
             sampler,
             dimensions: dimensions.ok_or_else(|| {
@@ -3157,7 +3160,15 @@ impl RenderPipeline {
             .map_err(depth_only_shader_error)?
         };
         let texel_load = texel_load_binding
-            .map(|proof| TexelLoadPipeline::new(owner, proof.binding, proof.kind, proof.mip_level))
+            .map(|proof| {
+                TexelLoadPipeline::new(
+                    owner,
+                    proof.binding,
+                    proof.kind,
+                    proof.dimension,
+                    proof.mip_level,
+                )
+            })
             .transpose()?;
         let mut input_desc = alloc::vec::Vec::new();
         let mut vertex_layouts = [None; crate::MAX_VERTEX_BUFFERS];

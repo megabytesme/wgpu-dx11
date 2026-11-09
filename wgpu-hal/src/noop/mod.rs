@@ -251,6 +251,8 @@ pub const CAPABILITIES: crate::Capabilities = {
                 texture_dimensions_3d_float_fragment: false,
                 texture_dimensions_cube_float_fragment: false,
                 texture_num_levels_2d_float_fragment: false,
+                texture_num_levels_3d_float_fragment: false,
+                texture_num_levels_cube_float_fragment: false,
                 runtime_integer_shader_operations: true,
                 matrix_inverse: true,
                 matrix_inverse_2x2: false,

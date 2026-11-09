@@ -315,6 +315,8 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
             texture_dimensions_2d_float_fragment,
             texture_dimensions_3d_float_fragment,
             texture_num_levels_2d_float_fragment,
+            texture_num_levels_3d_float_fragment,
+            texture_num_levels_cube_float_fragment,
             texture_sample_base_clamp_to_edge,
             texture_sample_base_clamp_to_edge_2d_float_fragment,
             texture_sample_level,
@@ -423,6 +425,14 @@ fn print_adapter(output: &mut impl io::Write, report: &AdapterReport, idx: usize
     writeln!(
         output,
         "\t\tRestricted fragment 2D float texture mip-level count: {texture_num_levels_2d_float_fragment}"
+    )?;
+    writeln!(
+        output,
+        "\t\tRestricted fragment 3D float texture mip-level count: {texture_num_levels_3d_float_fragment}"
+    )?;
+    writeln!(
+        output,
+        "\t\tRestricted fragment cube float texture mip-level count: {texture_num_levels_cube_float_fragment}"
     )?;
     writeln!(
         output,

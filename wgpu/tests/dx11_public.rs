@@ -29959,6 +29959,419 @@ fn public_dx11_fragment_texture_num_levels_emulation_at_fl91() {
     readback.unmap();
 }
 
+fn verify_fl91_texture_num_levels_views(
+    device: &Device,
+    queue: &Queue,
+    label: &'static str,
+    image_type: &str,
+    first_view: &TextureView,
+    suffix_view: &TextureView,
+    suffix_levels: u32,
+) {
+    let validation_scope = device.push_error_scope(ErrorFilter::Validation);
+    let vertex_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 textureNumLevels vertex shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let fragment_source = format!(
+        "@group(0) @binding(42) var image: {image_type}; \
+         @fragment fn fs() -> @location(0) vec4f {{ \
+             let levels = f32(textureNumLevels(image)); \
+             return vec4f(levels / 3.0, 0.0, 0.0, 1.0); \
+         }}"
+    );
+    let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some(label),
+        source: ShaderSource::Wgsl(fragment_source.into()),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some(label),
+        layout: None,
+        vertex: VertexState {
+            module: &vertex_shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &fragment_shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let layout = pipeline.get_bind_group_layout(0);
+    let bind_group = |view: &TextureView, label| {
+        device.create_bind_group(&BindGroupDescriptor {
+            label: Some(label),
+            layout: &layout,
+            entries: &[BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::TextureView(view),
+            }],
+        })
+    };
+    let first_group = bind_group(first_view, "FL9_1 first mip-count view");
+    let suffix_group = bind_group(suffix_view, "FL9_1 suffix mip-count view");
+    let vertices = [[-1.0_f32, -1.0], [3.0, -1.0], [-1.0, 3.0]];
+    let mut vertex_bytes = Vec::with_capacity(6 * std::mem::size_of::<f32>());
+    for component in vertices.into_iter().flatten() {
+        vertex_bytes.extend_from_slice(&component.to_ne_bytes());
+    }
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some(label),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("map textureNumLevels fullscreen triangle")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some(label),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some(label),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder =
+        device.create_command_encoder(&CommandEncoderDescriptor { label: Some(label) });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some(label),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.set_bind_group(0, &first_group, &[]);
+        pass.set_scissor_rect(0, 0, 4, 8);
+        pass.draw(0..3, 0..1);
+        pass.set_bind_group(0, &suffix_group, &[]);
+        pass.set_scissor_rect(4, 0, 4, 8);
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    if let Some(error) = poll_ready(validation_scope.pop()) {
+        panic!("FL9_1 textureNumLevels command validation failed: {error:?}");
+    }
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for textureNumLevels rendering");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("textureNumLevels readback map callback")
+        .expect("map textureNumLevels output");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped textureNumLevels pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let expected_levels = if x < 4 { 1 } else { suffix_levels };
+                let expected_red = ((expected_levels as f32 / 3.0) * 255.0).round() as u8;
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    &[expected_red, 0, 0, 255],
+                    "{label} pixel ({x}, {y}), mip count {expected_levels}"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: {label} selected view mip counts 1 and {suffix_levels}; all 64 pixels matched");
+}
+
+#[test]
+fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().find(|adapter| {
+        let info = adapter.get_info();
+        info.backend == Backend::Dx11
+            && info.driver_info.contains("FL9_1")
+            && info.driver_info.contains("physical")
+    }) else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical FL9_1 adapter for 3D/cube textureNumLevels");
+        return;
+    };
+    let info = adapter.get_info();
+    let downlevel = adapter.get_downlevel_capabilities();
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; texture_num_levels_3d={} texture_num_levels_cube={} texture_3d_mips={} cube_mips={}",
+        info.name,
+        info.vendor,
+        info.device,
+        info.driver_info,
+        downlevel.limits.texture_num_levels_3d_float_fragment,
+        downlevel.limits.texture_num_levels_cube_float_fragment,
+        downlevel.limits.texture_3d_mipmaps,
+        !adapter
+            .get_texture_format_features(TextureFormat::Rgba8Unorm)
+            .flags
+            .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY),
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 3D/cube textureNumLevels test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    device.on_uncaptured_error(Arc::new(|error| {
+        panic!("uncaptured error in FL9_1 textureNumLevels test: {error:?}")
+    }));
+    let device_lost = Arc::new(std::sync::Mutex::new(None::<String>));
+    device.set_device_lost_callback({
+        let device_lost = Arc::clone(&device_lost);
+        move |reason, message| {
+            *device_lost.lock().unwrap() = Some(format!("{reason:?}: {message}"));
+        }
+    });
+
+    if downlevel.limits.texture_num_levels_3d_float_fragment {
+        let mip_count = if downlevel.limits.texture_3d_mipmaps {
+            4
+        } else {
+            1
+        };
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 3D textureNumLevels source"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 8,
+            },
+            mip_level_count: mip_count,
+            sample_count: 1,
+            dimension: TextureDimension::D3,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        for mip_level in 0..mip_count {
+            let side = 8 >> mip_level;
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                &vec![0; (side * side * side * 4) as usize],
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(side * 4),
+                    rows_per_image: Some(side),
+                },
+                Extent3d {
+                    width: side,
+                    height: side,
+                    depth_or_array_layers: side,
+                },
+            );
+        }
+        let lowest_mip_view = texture.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::D3),
+            base_mip_level: mip_count - 1,
+            mip_level_count: Some(1),
+            ..Default::default()
+        });
+        let full_chain_view = texture.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::D3),
+            base_mip_level: 0,
+            mip_level_count: Some(mip_count),
+            ..Default::default()
+        });
+        verify_fl91_texture_num_levels_views(
+            &device,
+            &queue,
+            "FL9_1 3D textureNumLevels",
+            "texture_3d<f32>",
+            &lowest_mip_view,
+            &full_chain_view,
+            mip_count,
+        );
+        if mip_count == 1 {
+            println!("SKIP: selected FL9_1 device lacks optional 3D mip support; the single-mip query executed");
+        }
+    } else {
+        assert!(
+            !required,
+            "strict mode requires queried FL9_1 3D texture sampling for textureNumLevels"
+        );
+        println!("SKIP: selected FL9_1 device does not support 3D textureNumLevels");
+    }
+
+    if downlevel.limits.texture_num_levels_cube_float_fragment {
+        let cube_mips_supported = !adapter
+            .get_texture_format_features(TextureFormat::Rgba8Unorm)
+            .flags
+            .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY);
+        let mip_count = if cube_mips_supported { 4 } else { 1 };
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 cube textureNumLevels source"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 6,
+            },
+            mip_level_count: mip_count,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        for mip_level in 0..mip_count {
+            let side = 8 >> mip_level;
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                &vec![0; (side * side * 6 * 4) as usize],
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(side * 4),
+                    rows_per_image: Some(side),
+                },
+                Extent3d {
+                    width: side,
+                    height: side,
+                    depth_or_array_layers: 6,
+                },
+            );
+        }
+        let lowest_mip_view = texture.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::Cube),
+            array_layer_count: Some(6),
+            base_mip_level: mip_count - 1,
+            mip_level_count: Some(1),
+            ..Default::default()
+        });
+        let full_chain_view = texture.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::Cube),
+            array_layer_count: Some(6),
+            base_mip_level: 0,
+            mip_level_count: Some(mip_count),
+            ..Default::default()
+        });
+        verify_fl91_texture_num_levels_views(
+            &device,
+            &queue,
+            "FL9_1 cube textureNumLevels",
+            "texture_cube<f32>",
+            &lowest_mip_view,
+            &full_chain_view,
+            mip_count,
+        );
+        if !cube_mips_supported {
+            println!("SKIP: selected FL9_1 device lacks optional cube mip support; the single-mip query executed");
+        }
+    } else {
+        assert!(
+            !required,
+            "strict mode requires queried FL9_1 cube texture sampling for textureNumLevels"
+        );
+        println!("SKIP: selected FL9_1 device does not support cube textureNumLevels");
+    }
+    let lost = device_lost.lock().unwrap().clone();
+    assert!(
+        lost.is_none(),
+        "device lost during textureNumLevels execution: {lost:?}"
+    );
+}
+
 #[test]
 fn public_dx11_fragment_texture_dimensions_3d_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");

@@ -1131,6 +1131,45 @@ mod tests {
     }
 
     #[test]
+    fn fl9_texture_num_levels_accepts_3d_and_cube_images() {
+        for (image_type, dimension) in [
+            ("texture_3d<f32>", naga::ImageDimension::D3),
+            ("texture_cube<f32>", naga::ImageDimension::Cube),
+        ] {
+            let source = format!(
+                "@group(0) @binding(42) var image: {image_type}; \
+                 @fragment fn levels() -> @location(0) vec4f {{ \
+                     return vec4f(f32(textureNumLevels(image)), 0.0, 0.0, 1.0); \
+                 }}"
+            );
+            let module = naga::front::wgsl::parse_str(&source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            let proof = fl9_texture_emulation_binding(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                "levels",
+            )
+            .unwrap()
+            .expect("3D and cube textureNumLevels use the view-mip constant");
+            assert_eq!(
+                proof.binding,
+                naga::ResourceBinding {
+                    group: 0,
+                    binding: 42,
+                }
+            );
+            assert!(matches!(proof.kind, Fl9TextureEmulationKind::NumLevels));
+            assert_eq!(proof.dimension, dimension);
+        }
+    }
+
+    #[test]
     fn fl9_texture_base_clamp_binding_is_direct_and_single_mip() {
         let module = naga::front::wgsl::parse_str(
             r#"
@@ -2708,6 +2747,7 @@ pub(super) enum Fl9TextureEmulationKind {
 pub(super) struct Fl9TextureEmulation {
     pub binding: naga::ResourceBinding,
     pub kind: Fl9TextureEmulationKind,
+    pub dimension: naga::ImageDimension,
     pub mip_level: u32,
 }
 
@@ -3212,7 +3252,10 @@ fn fl9_texture_emulation_binding(
             }
             (Fl9TextureEmulationKind::DimensionsCube, naga::ImageDimension::Cube) => {}
             (Fl9TextureEmulationKind::Dimensions, naga::ImageDimension::D2)
-            | (Fl9TextureEmulationKind::NumLevels, naga::ImageDimension::D2)
+            | (
+                Fl9TextureEmulationKind::NumLevels,
+                naga::ImageDimension::D2 | naga::ImageDimension::D3 | naga::ImageDimension::Cube,
+            )
             | (Fl9TextureEmulationKind::Load, naga::ImageDimension::D2)
             | (Fl9TextureEmulationKind::BaseClamp, naga::ImageDimension::D2) => {}
             _ => {
@@ -3283,11 +3326,28 @@ fn fl9_texture_emulation_binding(
         }
     }
     match binding {
-        Some(binding) => Ok(Some(Fl9TextureEmulation {
-            binding,
-            kind,
-            mip_level,
-        })),
+        Some(binding) => {
+            let image = image_identity.ok_or_else(|| {
+                crate::PipelineError::Linkage(
+                    stages,
+                    "D3D11 FL9 texture emulation cannot resolve its image type".into(),
+                )
+            })?;
+            let naga::TypeInner::Image { dim, .. } =
+                module.types[module.global_variables[image].ty].inner
+            else {
+                return Err(crate::PipelineError::Linkage(
+                    stages,
+                    "D3D11 FL9 texture emulation image has an invalid type".into(),
+                ));
+            };
+            Ok(Some(Fl9TextureEmulation {
+                binding,
+                kind,
+                dimension: dim,
+                mip_level,
+            }))
+        }
         None => Err(crate::PipelineError::Linkage(
             stages,
             "D3D11 FL9 texture emulation cannot be resolved to a direct image binding".into(),

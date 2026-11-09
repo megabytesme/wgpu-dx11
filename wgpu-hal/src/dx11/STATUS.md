@@ -1287,15 +1287,21 @@ General `texture_query` remains unavailable.
 
 ## Narrow FL9_1 fragment `textureNumLevels`
 
-The opt-in projection exposes a separate `texture_num_levels_2d_float_fragment`
-limit for one direct fragment `textureNumLevels` query on a group-0, non-array
-`texture_2d<f32>`, directly converted to `f32`. Core rejects helper calls,
+The opt-in projection exposes separate
+`texture_num_levels_2d_float_fragment`,
+`texture_num_levels_3d_float_fragment` and
+`texture_num_levels_cube_float_fragment` limits for one direct fragment
+`textureNumLevels` query on a matching group-0, non-array float texture,
+directly converted to `f32`. The 3D/cube paths are gated by the selected
+device's sampled RGBA8 volume/cube support; they do not require mip support
+because a single-mip view validly reports one level. Core rejects helper calls,
 control flow, additional resources or image operations, other query forms and
 unrelated integer semantics. Naga's lowering proof is independent of the
 texel-load proof. HAL supplies the selected bound view's mip count through
-`b13`, including for supported multi-mip views; the strict public RTX 3090 Ti
-test verified one- and three-level views at requested/actual FL9_1 across all
-64 output pixels. General `texture_query` remains unavailable.
+`b13`, including supported suffix views. Strict RTX 3090 Ti readback now
+verifies 2D, 3D and cube views with different visible mip counts at requested/
+actual FL9_1 when multi-mip support is reported. General `texture_query`
+remains unavailable.
 
 ## Constant-mip FL9_1 fragment `textureDimensions`
 

@@ -327,6 +327,8 @@ pub(super) struct BackendCapabilities {
     pub fl91_fragment_texture_dimensions_3d_float: bool,
     pub fl91_fragment_texture_dimensions_cube_float: bool,
     pub fl91_fragment_texture_num_levels_2d_float: bool,
+    pub fl91_fragment_texture_num_levels_3d_float: bool,
+    pub fl91_fragment_texture_num_levels_cube_float: bool,
     pub fl91_fragment_texture_base_clamp_2d_float: bool,
     pub texture_array_layers: u32,
     pub cube_texture_sampling: bool,
@@ -462,6 +464,8 @@ impl BackendCapabilities {
         fl91_fragment_texture_dimensions_3d_float: true,
         fl91_fragment_texture_dimensions_cube_float: true,
         fl91_fragment_texture_num_levels_2d_float: true,
+        fl91_fragment_texture_num_levels_3d_float: true,
+        fl91_fragment_texture_num_levels_cube_float: true,
         fl91_fragment_texture_base_clamp_2d_float: true,
         texture_array_layers: 1,
         cube_texture_sampling: true,
@@ -611,6 +615,18 @@ impl Capabilities {
     pub fn private_fl91_fragment_texture_num_levels_2d_float(&self) -> bool {
         self.hardware.level == FeatureLevel::L9_1
             && self.backend.fl91_fragment_texture_num_levels_2d_float
+    }
+
+    pub fn private_fl91_fragment_texture_num_levels_3d_float(&self) -> bool {
+        self.hardware.level == FeatureLevel::L9_1
+            && self.backend.fl91_fragment_texture_num_levels_3d_float
+            && self.texture_3d_format_mask() != 0
+    }
+
+    pub fn private_fl91_fragment_texture_num_levels_cube_float(&self) -> bool {
+        self.hardware.level == FeatureLevel::L9_1
+            && self.backend.fl91_fragment_texture_num_levels_cube_float
+            && self.cube_texture_sampling()
     }
 
     pub fn private_fl91_fragment_texture_base_clamp_2d_float(&self) -> bool {
@@ -845,6 +861,10 @@ impl Capabilities {
                     .private_fl91_fragment_texture_dimensions_cube_float(),
                 texture_num_levels_2d_float_fragment: self
                     .private_fl91_fragment_texture_num_levels_2d_float(),
+                texture_num_levels_3d_float_fragment: self
+                    .private_fl91_fragment_texture_num_levels_3d_float(),
+                texture_num_levels_cube_float_fragment: self
+                    .private_fl91_fragment_texture_num_levels_cube_float(),
                 texture_query: self.hardware.texture_query && self.backend.texture_query,
                 texture_sample_base_clamp_to_edge: false,
                 texture_sample_base_clamp_to_edge_2d_float_fragment: self
@@ -2073,6 +2093,18 @@ mod tests {
             projection
                 .downlevel
                 .limits
+                .texture_num_levels_3d_float_fragment
+        );
+        assert!(
+            projection
+                .downlevel
+                .limits
+                .texture_num_levels_cube_float_fragment
+        );
+        assert!(
+            projection
+                .downlevel
+                .limits
                 .texture_dimensions_2d_float_fragment
         );
         assert!(
@@ -2140,6 +2172,33 @@ mod tests {
                 .texture_dimensions_2d_float_fragment
         );
 
+        let mut disabled_3d_levels = fl91;
+        disabled_3d_levels
+            .backend
+            .fl91_fragment_texture_num_levels_3d_float = false;
+        assert!(
+            !disabled_3d_levels
+                .wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .texture_num_levels_3d_float_fragment
+        );
+        let mut disabled_cube_levels = fl91;
+        disabled_cube_levels
+            .backend
+            .fl91_fragment_texture_num_levels_cube_float = false;
+        assert!(
+            !disabled_cube_levels
+                .wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .texture_num_levels_cube_float_fragment
+        );
+
         let mut disabled_3d = fl91;
         disabled_3d
             .backend
@@ -2178,9 +2237,29 @@ mod tests {
         let mut unavailable_3d_query = fl91;
         unavailable_3d_query.driver.rgba8 = Query::Unavailable(-1);
         assert!(!unavailable_3d_query.private_fl91_fragment_texture_dimensions_3d_float());
+        assert!(!unavailable_3d_query.private_fl91_fragment_texture_num_levels_3d_float());
         let mut missing_3d_support = fl91;
         missing_3d_support.driver.rgba8 = Query::Value(0);
         assert!(!missing_3d_support.private_fl91_fragment_texture_dimensions_3d_float());
+        assert!(!missing_3d_support.private_fl91_fragment_texture_num_levels_3d_float());
+
+        let mut unavailable_cube_query = fl91;
+        unavailable_cube_query.driver.rgba8 = Query::Unavailable(-1);
+        assert!(!unavailable_cube_query.private_fl91_fragment_texture_num_levels_cube_float());
+        let mut missing_cube_support = fl91;
+        missing_cube_support.driver.rgba8 = Query::Value(0);
+        assert!(!missing_cube_support.private_fl91_fragment_texture_num_levels_cube_float());
+
+        let mut sampled_without_mips = fl91;
+        sampled_without_mips.driver.rgba8 = Query::Value(
+            D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32
+                | D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32
+                | D3D11_FORMAT_SUPPORT_TEXTURECUBE.0 as u32
+                | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32
+                | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32,
+        );
+        assert!(sampled_without_mips.private_fl91_fragment_texture_num_levels_3d_float());
+        assert!(sampled_without_mips.private_fl91_fragment_texture_num_levels_cube_float());
 
         for level in [
             FeatureLevel::L9_2,
@@ -2191,6 +2270,8 @@ mod tests {
             FeatureLevel::L11_1,
         ] {
             assert!(!model(level).private_fl91_fragment_texture_num_levels_2d_float());
+            assert!(!model(level).private_fl91_fragment_texture_num_levels_3d_float());
+            assert!(!model(level).private_fl91_fragment_texture_num_levels_cube_float());
             assert!(!model(level).private_fl91_fragment_texture_dimensions_3d_float());
             assert!(!model(level).private_fl91_fragment_texture_dimensions_cube_float());
             assert!(!model(level).private_fl91_fragment_texture_base_clamp_2d_float());

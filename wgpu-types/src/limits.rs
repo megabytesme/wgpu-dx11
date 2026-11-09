@@ -1337,6 +1337,19 @@ pub struct DownlevelLimits {
     /// This restricted form does not imply support for other texture queries.
     #[cfg_attr(feature = "serde", serde(default))]
     pub texture_num_levels_2d_float_fragment: bool,
+    /// Whether a fragment entry point may query the mip-level count of one direct, non-array
+    /// `texture_3d<f32>` using `textureNumLevels` and convert the returned `u32` directly to `f32`.
+    ///
+    /// This restricted form does not imply support for other texture queries.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub texture_num_levels_3d_float_fragment: bool,
+    /// Whether a fragment entry point may query the mip-level count of one direct, non-array
+    /// `texture_cube<f32>` using `textureNumLevels` and convert the returned `u32` directly to
+    /// `f32`.
+    ///
+    /// This restricted form does not imply support for other texture queries.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub texture_num_levels_cube_float_fragment: bool,
     /// Whether shader entry points may use `textureSampleBaseClampToEdge`.
     ///
     /// This operation may lower to texture-dimension queries and explicit level sampling even
@@ -1568,6 +1581,8 @@ impl Default for DownlevelLimits {
             texture_dimensions_3d_float_fragment: false,
             texture_dimensions_cube_float_fragment: false,
             texture_num_levels_2d_float_fragment: false,
+            texture_num_levels_3d_float_fragment: false,
+            texture_num_levels_cube_float_fragment: false,
             texture_sample_base_clamp_to_edge: true,
             texture_sample_base_clamp_to_edge_2d_float_fragment: false,
             texture_sample_level: true,
@@ -1830,6 +1845,12 @@ impl DownlevelLimits {
             && (!required.texture_num_levels_2d_float_fragment
                 || self.texture_query
                 || self.texture_num_levels_2d_float_fragment)
+            && (!required.texture_num_levels_3d_float_fragment
+                || self.texture_query
+                || self.texture_num_levels_3d_float_fragment)
+            && (!required.texture_num_levels_cube_float_fragment
+                || self.texture_query
+                || self.texture_num_levels_cube_float_fragment)
             && (!required.texture_sample_base_clamp_to_edge
                 || self.texture_sample_base_clamp_to_edge)
             && (!required.texture_sample_base_clamp_to_edge_2d_float_fragment
@@ -2538,6 +2559,8 @@ mod tests {
             texture_dimensions_3d_float_fragment: false,
             texture_dimensions_cube_float_fragment: false,
             texture_num_levels_2d_float_fragment: true,
+            texture_num_levels_3d_float_fragment: false,
+            texture_num_levels_cube_float_fragment: false,
             texture_sample_base_clamp_to_edge: false,
             texture_sample_base_clamp_to_edge_2d_float_fragment: false,
             texture_sample_level: false,
@@ -2613,6 +2636,8 @@ mod tests {
             texture_dimensions_3d_float_fragment: false,
             texture_dimensions_cube_float_fragment: false,
             texture_num_levels_2d_float_fragment: true,
+            texture_num_levels_3d_float_fragment: false,
+            texture_num_levels_cube_float_fragment: false,
             texture_sample_base_clamp_to_edge: false,
             texture_sample_base_clamp_to_edge_2d_float_fragment: false,
             texture_sample_level: false,
@@ -2976,6 +3001,56 @@ mod tests {
     }
 
     #[test]
+    fn restricted_3d_and_cube_texture_num_levels_are_independent() {
+        let three_d = DownlevelLimits {
+            texture_query: false,
+            texture_num_levels_3d_float_fragment: true,
+            ..DownlevelLimits::default()
+        };
+        let cube = DownlevelLimits {
+            texture_query: false,
+            texture_num_levels_cube_float_fragment: true,
+            ..DownlevelLimits::default()
+        };
+
+        assert!(three_d.check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_num_levels_3d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!three_d.check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_num_levels_cube_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        let no_texture_queries = DownlevelLimits {
+            texture_query: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(!no_texture_queries.check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_num_levels_3d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+
+        assert!(cube.check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_num_levels_cube_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!cube.check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_num_levels_3d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!no_texture_queries.check_limits(&DownlevelLimits {
+            texture_query: false,
+            texture_num_levels_cube_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+    }
+
+    #[test]
     fn restricted_3d_texture_dimensions_is_independent_of_2d_and_general_queries() {
         let restricted = DownlevelLimits {
             texture_query: false,
@@ -3094,6 +3169,8 @@ mod tests {
             "texture_dimensions_3d_float_fragment",
             "texture_dimensions_cube_float_fragment",
             "texture_num_levels_2d_float_fragment",
+            "texture_num_levels_3d_float_fragment",
+            "texture_num_levels_cube_float_fragment",
             "texture_sample_base_clamp_to_edge",
             "texture_gather",
             "texture_load",
@@ -3147,6 +3224,8 @@ mod tests {
         assert!(!limits.texture_dimensions_3d_float_fragment);
         assert!(!limits.texture_dimensions_cube_float_fragment);
         assert!(!limits.texture_num_levels_2d_float_fragment);
+        assert!(!limits.texture_num_levels_3d_float_fragment);
+        assert!(!limits.texture_num_levels_cube_float_fragment);
         assert!(limits.texture_sample_base_clamp_to_edge);
         assert!(limits.texture_gather);
         assert!(limits.texture_load);

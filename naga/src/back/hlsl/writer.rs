@@ -902,9 +902,19 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 && texture_dimension == Some(crate::ImageDimension::D3);
             let is_cube_dimensions = self.options.fl9_texture_dimensions_proof.is_some()
                 && texture_dimension == Some(crate::ImageDimension::Cube);
+            let is_num_levels_texture = self.options.fl9_texture_num_levels_proof.is_some()
+                && matches!(
+                    texture_dimension,
+                    Some(
+                        crate::ImageDimension::D2
+                            | crate::ImageDimension::D3
+                            | crate::ImageDimension::Cube
+                    )
+                );
             let dimension_supported = texture_dimension == Some(expected_dimension)
                 || is_3d_texel_load
-                || is_cube_dimensions;
+                || is_cube_dimensions
+                || is_num_levels_texture;
             if !dimension_supported {
                 return Err(Error::Custom(
                     "FL9 texture emulation supports only its proven sampled float texture dimension"

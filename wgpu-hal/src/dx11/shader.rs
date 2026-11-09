@@ -3376,6 +3376,57 @@ mod tests {
     }
 
     #[test]
+    fn fl91_texture_num_levels_compiles_for_3d_and_cube_images() {
+        let binding = naga::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let bindings = [ShaderBinding {
+            binding,
+            slot: 7,
+            kind: ShaderBindingKind::TextureFloat,
+        }];
+        for image_type in ["texture_3d<f32>", "texture_cube<f32>"] {
+            let wgsl = format!(
+                "@group(0) @binding(42) var image: {image_type}; \
+                 @fragment fn fs() -> @location(0) vec4f {{ \
+                     let levels = f32(textureNumLevels(image)); \
+                     return vec4f(levels / 3.0, 0.0, 0.0, 1.0); \
+                 }}"
+            );
+            let module = naga::front::wgsl::parse_str(&wgsl).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                "fs",
+                ShaderProfile::PixelLevel9_1,
+                &bindings,
+                Fl9ShaderInputOptions {
+                    texture_num_levels_binding: Some(binding),
+                    ..Default::default()
+                },
+                &[],
+            )
+            .unwrap_or_else(|error| {
+                panic!("translate FL9_1 textureNumLevels for {image_type}: {error:?}")
+            });
+            assert!(source.contains("register(t0)"), "{source}");
+            assert!(source.contains("register(b13)"), "{source}");
+            assert!(source.contains("int(naga_fl9_load_size.x)"), "{source}");
+            compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+                panic!("FL9_1 {image_type} textureNumLevels HLSL failed: {error:?}\n{source}")
+            });
+        }
+    }
+
+    #[test]
     fn level_9_1_rejects_vertex_texture_sampling() {
         use naga::{
             valid::{Capabilities, ValidationFlags, Validator},

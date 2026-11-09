@@ -1,5 +1,70 @@
 # FL9_1 progress
 
+## 3D and cube fragment `textureNumLevels` — 2026-11-09
+
+Extended the existing direct fragment `textureNumLevels` emulation to
+`texture_3d<f32>` and `texture_cube<f32>`. The public downlevel contract has
+separate limits for 2D, 3D and cube. Core validates the selected entry point
+against the matching dimension; Naga's existing proof path accepts only the
+matching image type; the HAL proof retains the image dimension and checks the
+bound view at draw time. Runtime emulation supplies the bound view's mip count
+through the existing reserved constant. The 3D limit requires selected-device
+RGBA8 volume sampling and the cube limit requires selected-device cube
+sampling; neither requires multi-mip support because a single-mip view returns
+one. Helpers, control flow, extra resources and general texture queries remain
+rejected. Public default-backend selection remains unchanged.
+
+Strict execution used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, `software=false`), explicitly
+requested and confirmed FL9_1. The test initialized every mip and switched
+between one-level and four-level 3D/cube views. For each dimension, both
+view-count regions matched all 64 pixels; 256 pixels were checked in total.
+The forced-FL9_1 RTX result does not establish behavior on historical FL9_1
+hardware.
+
+Verification used Rust 1.93.1, Visual Studio 2026 x64, offline Cargo `-j8`:
+
+- Focused strict public GPU test: 1/1, real FL9_1 3D/cube query and readback.
+- Strict private D3D11 HAL library: 450/450.
+- Strict public D3D11 integration target: 113/113. Three optional device-query
+  subcases reported `SKIP` within passing tests; those subcases are not GPU
+  execution evidence.
+- D3D11 Core library: 110/110.
+- DX12 Core regression library: 109/109.
+- Naga library: 152/152.
+- wgpu-types library: 108/108.
+- `cargo check -p wgpu-info`, Naga, wgpu-types, HAL, Core, public-test and
+  wgpu-info Clippy commands passed. Existing warnings include feature-set-
+  dependent unused `vector_size` variables in Core, default-feature serde and
+  qualification warnings in wgpu-types, and existing HAL style/qualification
+  warnings.
+- Formatting and `git diff --check` passed after the final review.
+
+Commands (run from a Visual Studio 2026 x64 Developer PowerShell):
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib -- --test-threads=1
+cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+$env:WGPU_DX11_REQUIRE_HARDWARE = $null
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib -- --test-threads=1
+cargo +1.93 test --offline -j8 -p naga --features hlsl-out,glsl-in,wgsl-in --lib
+cargo +1.93 test --offline -j8 -p wgpu-types --lib
+cargo +1.93 check --offline -j8 -p wgpu-info
+cargo +1.93 clippy --offline -j8 -p naga --features hlsl-out,glsl-in,wgsl-in --lib
+cargo +1.93 clippy --offline -j8 -p wgpu-types --lib --tests
+cargo +1.93 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+cargo +1.93 clippy --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib --tests
+cargo +1.93 clippy --offline -j8 -p wgpu-info
+cargo +1.93 fmt --all -- --check
+git diff --check
+```
+
+Implementation and test changes are pending a focused checkpoint commit.
+
 ## Public slope-scaled depth-bias execution — 2026-11-09
 
 Extended `public_dx11_d16_depth_attachment_at_fl91` with a genuinely sloped

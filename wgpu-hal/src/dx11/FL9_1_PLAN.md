@@ -1,5 +1,23 @@
 # FL9_1 completion plan
 
+## Latest shape-aware texture-query extension — 2026-11-09
+
+The narrow fragment `textureNumLevels` emulation now has independent 2D, 3D
+and cube downlevel limits. Core proves the selected entry-point shape for the
+matching image dimension; Naga lowers only those proved cases; HAL retains and
+checks the sampled view dimension and supplies its mip count. The 3D and cube
+limits require selected-device sampled-format support but do not require mip
+support, since a single-mip view reports one level. General texture queries,
+helpers, control flow and additional resources remain unavailable.
+
+Strict public execution on the physical RTX 3090 Ti at requested/actual FL9_1
+verified 3D and cube views with visible mip counts 1 and 4, checking all 256
+pixels. Full strict private HAL passed 450/450; strict public D3D11 passed
+113/113; Core DX11 passed 110/110; DX12 Core passed 109/109; Naga passed
+152/152; wgpu-types passed 108/108. Historical FL9_1 behavior remains
+unverified. Continue the independent Core/HAL, rendering/resource and shader
+audits before selecting another bounded implementation slice.
+
 ## Latest public raster coverage — slope-scaled depth bias — 2026-11-09
 
 The public D16 depth-attachment test now verifies slope-scaled depth bias with

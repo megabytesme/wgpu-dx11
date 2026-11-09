@@ -1321,17 +1321,22 @@ explicit LOD, extra resources and other image operations remain rejected. 3D
 texture copies, attachments, readback and general texture queries remain
 unavailable.
 
-The opt-in FL9_1 projection also exposes a separate
-`texture_num_levels_2d_float_fragment` limit. It permits one direct
-`textureNumLevels` query on one group-0, non-array `texture_2d<f32>` in a
-simple fragment entry point, directly converted from `u32` to `f32`. The HAL
-supplies the bound view's mip count through the same `b13` emulation resource;
-unlike dimensions and texel-load emulation, this operation accepts a supported
-multi-mip view. The selected entry point cannot use helpers, control flow,
-other bound resources, image operations or unrelated integer values. General
+The opt-in FL9_1 projection exposes separate
+`texture_num_levels_2d_float_fragment`,
+`texture_num_levels_3d_float_fragment` and
+`texture_num_levels_cube_float_fragment` limits. Each permits one direct
+`textureNumLevels` query on one group-0, non-array float image of the matching
+dimension in a simple fragment entry point, directly converted from `u32` to
+`f32`. The 3D and cube limits are enabled only when the selected device reports
+the corresponding RGBA8 sampled-texture support; mipmap support is not required
+to query a single-mip view. The HAL supplies the currently bound view's mip
+count through the same `b13` emulation resource, including the view's suffix
+mip range. The selected entry point cannot use helpers, control flow, other
+bound resources, image operations or unrelated integer values. General
 `texture_query` remains false. This capability is compiler emulation based and
 does not imply native FL9_1 image-query instructions or historical-driver
-coverage.
+coverage. Strict forced-FL9_1 readback now verifies 3D and cube views with
+different visible mip counts when the selected device supports mip chains.
 
 The general `texture_sample_base_clamp_to_edge` limit remains false. The
 FL9_1 projection exposes only the separate

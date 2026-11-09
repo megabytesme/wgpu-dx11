@@ -3398,6 +3398,26 @@ readback expects red 85 on the left and 255 on the right, with the other
 channels fixed. General `texture_query` stays disabled. This is a narrow host
 metadata emulation and does not establish historical FL9_1 driver behavior.
 
+The `public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91` test also
+queries sampled RGBA8 3D and cube views through the independent
+`texture_num_levels_3d_float_fragment` and
+`texture_num_levels_cube_float_fragment` limits. It switches between a
+one-level view at the resource's lowest mip and a full-chain view, checking the
+full 8x8 readback for each dimension. Both views include the lowest LOD as
+required by FL9_1 shader-resource views. If the selected device lacks optional
+mip support, the test still executes the single-mip query and reports that the
+differing-count subcase was unavailable. The shader remains direct
+fragment-only; helpers, extra resources and unrelated queries remain rejected.
+
+```powershell
+cargo +1.93 test --offline -j8 -p wgpu-types restricted_3d_and_cube_texture_num_levels_are_independent
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_num_levels_3d_and_cube_limits_are_independent
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels_accepts_3d_and_cube_images
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_num_levels_compiles_for_3d_and_cube_images
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91 -- --nocapture --test-threads=1
+```
+
 ### Constant-mip FL9_1 fragment `textureDimensions`
 
 ```powershell
