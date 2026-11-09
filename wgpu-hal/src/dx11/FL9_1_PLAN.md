@@ -1,5 +1,18 @@
 # FL9_1 completion plan
 
+## Latest verified coverage increment — indexed LineStrip restart bundles — 2026-11-09
+
+Added a strict public regression that executes consecutive indexed LineStrip
+render bundles at forced FL9_1. The first bundle uses Uint16 indices and draws
+green restart-separated segments; the second uses Uint32 indices and draws red
+segments in a separate viewport half. Readback confirms all four segments,
+their restart gaps, no unexpected pixels, and retained vertex-buffer lifetime
+after the caller drops its handle. The targeted case passed on the physical
+RTX 3090 Ti, and the full strict public D3D11 suite passed 109/109. This closes
+a render-bundle coverage gap; it does not add a new rendering capability.
+The broad Core/HAL contract audit, historical-device compatibility and Lumia/
+CoreWindow runtime verification remain open.
+
 ## Latest verified increment — depth-only MSAA and public-contract audits — 2026-11-09 — `dbfb26b41`
 
 The HAL now accepts query-supported multisample pipelines with depth-only

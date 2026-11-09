@@ -1,5 +1,18 @@
 # FL9_1 handoff
 
+## Latest verified test coverage — indexed LineStrip restart render bundles — 2026-11-09
+
+The public strict test `public_dx11_indexed_line_strip_restart_render_bundle_at_fl91`
+now checks two consecutive restart-separated indexed LineStrip bundles (Uint16
+green and Uint32 red), full-target readback, restart gaps, unexpected pixels,
+and vertex-buffer retention after the caller drops its handle. It passed on the
+RTX 3090 Ti at requested/actual FL9_1; per-segment pixel counts were
+`[2, 2, 2, 2]`. The complete strict public suite passed 109/109. This is test
+coverage for existing behavior, not new capability. Formatting, `git diff
+--check` and public-test Clippy passed; only existing `too_many_arguments`
+warnings were emitted. The full command and result are recorded in
+`FL9_1_PROGRESS.md`.
+
 ## Latest verified checkpoint — depth-only MSAA, viewport remap, and shader gates — 2026-11-09 — `dbfb26b41`
 
 The HAL permits a multisample pipeline without a color target when it has a

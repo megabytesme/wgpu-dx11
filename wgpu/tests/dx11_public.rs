@@ -20699,6 +20699,285 @@ fn public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91() {
 }
 
 #[test]
+fn public_dx11_indexed_line_strip_restart_render_bundle_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 indexed line-strip restart bundle test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 indexed line-strip restart bundle shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+            @vertex fn vs_left(@location(0) position: vec2f) -> @builtin(position) vec4f {
+                return vec4f(position.x * 0.4 - 0.5, position.y, 0.5, 1.0);
+            }
+            @vertex fn vs_right(@location(0) position: vec2f) -> @builtin(position) vec4f {
+                return vec4f(position.x * 0.4 + 0.5, position.y, 0.5, 1.0);
+            }
+            @fragment fn fs_green() -> @location(0) vec4f {
+                return vec4f(0.0, 1.0, 0.0, 1.0);
+            }
+            @fragment fn fs_red() -> @location(0) vec4f {
+                return vec4f(1.0, 0.0, 0.0, 1.0);
+            }
+            "#
+            .into(),
+        ),
+    });
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layouts = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let create_pipeline = |index_format, vertex_entry_point, fragment_entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 indexed line-strip restart bundle pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some(vertex_entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layouts,
+            },
+            primitive: PrimitiveState {
+                topology: PrimitiveTopology::LineStrip,
+                strip_index_format: Some(index_format),
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+
+    let vertices = [
+        -0.78125f32,
+        -0.1875,
+        -0.15625,
+        -0.1875,
+        0.46875,
+        -0.1875,
+        1.09375,
+        -0.1875,
+    ];
+    let indices_u16 = [0u16, 1, u16::MAX, 2, 3, 0];
+    let indices_u32 = [0u32, 1, u32::MAX, 2, 3, 0];
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 indexed line-strip restart bundle vertices"),
+        size: std::mem::size_of_val(&vertices) as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex_buffer, 0, bytemuck::cast_slice(&vertices));
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 indexed line-strip restart bundle output"),
+        size: Extent3d {
+            width: 16,
+            height: 16,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 indexed line-strip restart bundle readback"),
+        size: 4096,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 indexed line-strip restart bundle submission"),
+    });
+    let mut bundles = Vec::new();
+    for (index_format, vertex_entry_point, fragment_entry_point, index_data, index_count) in [
+        (
+            IndexFormat::Uint16,
+            "vs_left",
+            "fs_green",
+            bytemuck::cast_slice::<u16, u8>(&indices_u16),
+            5,
+        ),
+        (
+            IndexFormat::Uint32,
+            "vs_right",
+            "fs_red",
+            bytemuck::cast_slice::<u32, u8>(&indices_u32),
+            5,
+        ),
+    ] {
+        let pipeline = create_pipeline(index_format, vertex_entry_point, fragment_entry_point);
+        let index_buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("FL9_1 indexed line-strip restart bundle indices"),
+            size: index_data.len() as u64,
+            usage: BufferUsages::INDEX | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&index_buffer, 0, index_data);
+        let mut bundle_encoder =
+            device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
+                label: Some("FL9_1 indexed line-strip restart bundle encoder"),
+                color_formats: &[Some(TextureFormat::Rgba8Unorm)],
+                depth_stencil: None,
+                sample_count: 1,
+                multiview: None,
+            });
+        bundle_encoder.set_pipeline(&pipeline);
+        bundle_encoder.set_vertex_buffer(0, vertex_buffer.slice(..));
+        bundle_encoder.set_index_buffer(index_buffer.slice(..), index_format);
+        bundle_encoder.draw_indexed(0..index_count as u32, 0, 0..1);
+        bundles.push(bundle_encoder.finish(&RenderBundleDescriptor {
+            label: Some("FL9_1 indexed line-strip restart render bundle"),
+        }));
+    }
+    drop(vertex_buffer);
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 indexed line-strip restart bundle pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.execute_bundles(bundles.iter());
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(16),
+            },
+        },
+        Extent3d {
+            width: 16,
+            height: 16,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for indexed line-strip restart render bundles");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("indexed line-strip restart readback callback")
+        .expect("map indexed line-strip restart readback");
+    let mut segment_pixels = [0; 4];
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped indexed line-strip restart pixels");
+        for y in 0..16 {
+            for x in 0..16 {
+                let offset = y * 256 + x * 4;
+                let pixel = &data[offset..offset + 4];
+                if pixel == [0, 255, 0, 255] {
+                    assert_eq!(y, 9, "green strip pixel row");
+                    assert!((1..=3).contains(&x) || (5..=7).contains(&x));
+                    segment_pixels[usize::from(x >= 5)] += 1;
+                } else if pixel == [255, 0, 0, 255] {
+                    assert_eq!(y, 9, "red strip pixel row");
+                    assert!((9..=11).contains(&x) || (13..=15).contains(&x));
+                    segment_pixels[2 + usize::from(x >= 13)] += 1;
+                } else {
+                    assert_eq!(
+                        pixel,
+                        [0, 0, 0, 255],
+                        "unexpected line-strip pixel ({x}, {y})"
+                    );
+                }
+            }
+        }
+        for x in [4, 12] {
+            let offset = 9 * 256 + x * 4;
+            assert_eq!(
+                &data[offset..offset + 4],
+                [0, 0, 0, 255],
+                "restart gap at x={x}"
+            );
+        }
+    }
+    readback.unmap();
+    assert!(
+        segment_pixels.into_iter().all(|pixels| pixels > 0),
+        "both restart-separated segments from each bundle must render: {segment_pixels:?}"
+    );
+    println!(
+        "PASS: consecutive Uint16 green and Uint32 red LineStrip bundles preserved primitive restart, buffer lifetime and the gap between segments; per-segment pixels={segment_pixels:?}"
+    );
+}
+
+#[test]
 fn public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

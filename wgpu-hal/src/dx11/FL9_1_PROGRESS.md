@@ -1,5 +1,37 @@
 # FL9_1 progress
 
+## Indexed LineStrip restart in public render bundles — 2026-11-09
+
+Added `public_dx11_indexed_line_strip_restart_render_bundle_at_fl91`. It
+submits consecutive render bundles using Uint16 and Uint32 indexed LineStrip
+pipelines, each with two segments separated by the primitive-restart index.
+The test drops the original vertex-buffer handle after bundle recording, then
+reads the full 16×16 RGBA8 target and checks each expected colored segment,
+both restart gaps, row placement, and absence of unexpected pixels. This
+verifies render-bundle replay, both index widths, restart handling, and resource
+retention together; it adds coverage rather than a new capability.
+
+The focused strict test passed on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false, requested/actual
+FL9_1), with per-segment readback counts `[2, 2, 2, 2]`. The complete strict
+public D3D11 target passed 109/109 with no skipped test cases. HAL/test Clippy,
+workspace formatting and `git diff --check` passed. Clippy emitted only the
+existing `too_many_arguments` warnings in `hal_index.rs`, `hal_shader.rs` and
+`texture.rs`.
+
+Commands:
+
+```powershell
+& cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && set "WGPU_DX11_REQUIRE_HARDWARE=1" && set "CARGO_INCREMENTAL=0" && set "CARGO_PROFILE_DEV_DEBUG=0" && set "CARGO_PROFILE_TEST_DEBUG=0" && cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1'
+& cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 >nul && set "CARGO_INCREMENTAL=0" && set "CARGO_PROFILE_DEV_DEBUG=0" && cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public'
+cargo +1.93 fmt --all -- --check
+git diff --check
+```
+
+This is a targeted lifecycle/command coverage increment. The broader
+operation-by-operation Core/HAL audit, historical FL9_1 drivers, Lumia ARM32/
+CoreWindow execution and physical device-removal recovery remain unverified.
+
 ## Depth-only multisample pipelines — 2026-11-09 — `dbfb26b41`
 
 The HAL no longer rejects a multisample pipeline solely because it has no
