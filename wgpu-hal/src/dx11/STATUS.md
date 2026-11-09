@@ -539,9 +539,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
   but no storage-buffer shader binding is implemented. Core requires the
   relevant stage downlevel flags and the controlled fixture confirms unsupported
   vertex, fragment and compute storage layouts are rejected before HAL.
-- Texture resources and views remain 2D-only. The internal projection retains
-  inherited numeric 1D/3D limits of 2048/256 but marks both dimension
-  capabilities unavailable; core rejects those texture dimensions before HAL.
+- Texture resources and views include queried, sampled-only RGBA8 3D textures,
+  but 1D textures remain unavailable. The internal projection retains
+  inherited numeric 1D/3D limits of 2048/256; core rejects 1D dimensions and
+  gates the narrow 3D subset before HAL.
   The 1D gate is an FL9_1 API limitation, not an unfinished view path:
   Microsoft's [10Level9 `CreateTexture1D` reference](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device) says the method is not
   supported at any 9.x feature level. The generic 2048-wide limit is not

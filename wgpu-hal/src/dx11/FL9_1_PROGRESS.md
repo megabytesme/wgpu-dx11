@@ -1,6 +1,6 @@
 # FL9_1 progress
 
-## `vertex_index` on LineStrip — 2026-11-08 — pending checkpoint
+## `vertex_index` on LineStrip — 2026-11-08 — `b93747fb4`
 
 The selected FL9_1 projection and HAL now permit LineStrip in the existing
 emulated `vertex_index` subset. Direct draw replay preserves `first_vertex`

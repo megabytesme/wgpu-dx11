@@ -1,6 +1,6 @@
 # FL9_1 completion plan
 
-## Latest implementation — `vertex_index` with LineStrip — 2026-11-08
+## Latest verified implementation — `vertex_index` with LineStrip — 2026-11-08 — `b93747fb4`
 
 The working tree adds LineStrip to the existing emulated `vertex_index`
 subset. Direct draws preserve `first_vertex` through native strip batching;
