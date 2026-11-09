@@ -13818,3 +13818,36 @@ FL9_1 adapter when explicitly requested. The Visual Studio developer prompt
 continues to display its `vError: Unknown error` banner, but initializes and
 runs the MSVC toolchain successfully. A DX12 regression was not rerun for this
 D3D11-only gate and Core fixture.
+
+## Optional FL9_1 viewport-remap pipeline variant — 2026-11-09
+
+Render-pipeline creation now preserves the ordinary vertex shader when the
+separately compiled viewport-remap variant alone fails with an FXC/linkage
+error. Device, entry-point and pipeline-constant failures remain fatal. A
+strict hardware test builds a vertex shader whose base form compiles under
+`vs_4_0_level_9_1` while its remapped form exceeds the profile's instruction
+budget; the pipeline was created with `vertex_viewport == None` on the RTX 3090
+Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false), requested and
+actual FL9_1. The focused test passed 1/1.
+
+The first full-suite run exposed that eagerly rejecting the viewport setter
+made the command encoder unrecoverable even when the caller changed back to an
+in-target viewport before drawing. That eager rejection was removed. The
+existing strict viewport regression then passed 1/1: drawing with the missing
+remap variant fails before replay, while switching to a contained viewport
+renders and reads back correctly. The complete strict HAL suite passed
+465/465, with four pre-existing `hal_queue.rs` qualification warnings. HAL
+Clippy and workspace formatting passed with existing warnings; `git diff
+--check` passed. The opt-in Core projection still rejects out-of-target
+viewports and no public capability changed.
+
+Exact commands:
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib base_pipeline_survives_unavailable_viewport_remap_variant -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib fl91_viewport_missing_remap_shader_fails_only_when_drawing -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+cargo +1.93 fmt --all -- --check
+cargo +1.93 clippy --offline -j2 -p wgpu-hal --tests --no-default-features --features dx11
+git diff --check
+```

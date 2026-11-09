@@ -814,8 +814,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
   ordered but waits for `GetData` before writing the result buffer. Timestamp
   writes inside render/compute passes remain unavailable.
 - Negative and out-of-target viewports use a separately compiled vertex shader
-  and a reserved constant buffer. If FXC cannot compile that variant, draws
-  needing remapping are rejected; the original shader remains usable.
+  and a reserved constant buffer. Pipeline creation keeps the base pipeline if
+  only this optional variant exceeds the FL9_1 compiler profile. Draws still
+  needing the absent variant are rejected before replay; the original shader
+  remains usable. A strict hardware pipeline test covers the compiler boundary.
 - Up to eight groups with thirteen static or dynamic uniform slots, eight sampled
   textures and sixteen samplers in total. The internal wgpu capability
   projection exposes six uniforms per shader stage, ensuring disjoint vertex

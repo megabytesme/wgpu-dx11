@@ -1,5 +1,19 @@
 # FL9_1 completion plan
 
+## Latest pipeline robustness proof — optional viewport remap — 2026-11-09
+
+Pipeline creation now treats the viewport-remapped vertex shader as optional
+when only that variant fails with a shader-linkage/FXC error. Device, entry
+point and pipeline-constant failures still propagate. The base FL9_1 pipeline
+remains usable; a draw that requires the missing variant is rejected before
+command replay. A strict RTX 3090 Ti test used the 254-constant shader whose
+base form compiles and whose remapped form exceeds FXC's FL9_1 budget. The
+focused test passed 1/1, the existing recovery/readback test passed 1/1, and
+the complete strict private HAL suite passed 465/465. `cargo +1.93 fmt --all
+-- --check`, HAL Clippy and `git diff --check` passed; existing HAL warnings
+remain. See `FL9_1_PROGRESS.md` for exact commands. This does not change the
+Core rule rejecting out-of-target viewports and adds no advertised capability.
+
 ## Latest shader execution proof — fragment `discard` — 2026-11-09
 
 The public FL9_1 shader path now has an end-to-end conditional fragment

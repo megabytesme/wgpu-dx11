@@ -860,6 +860,20 @@ The first is CPU-only. The second uses a physical adapter forced to FL9_1 for
 the fixture's rendering/readback cases; its out-of-target viewport case is a
 validation-only negative case and does not issue a GPU draw.
 
+`base_pipeline_survives_unavailable_viewport_remap_variant` uses a vertex
+shader whose base form compiles at FL9_1 while its viewport-remapped variant
+exceeds FXC's instruction budget. Strict mode creates a physical FL9_1 device,
+asserts that pipeline creation succeeds and that the optional variant is
+absent. `fl91_viewport_missing_remap_shader_fails_only_when_drawing` verifies
+that a remapped draw is rejected while switching back to a contained viewport
+restores a valid draw and readback.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib base_pipeline_survives_unavailable_viewport_remap_variant -- --nocapture --test-threads=1
+cargo test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib fl91_viewport_missing_remap_shader_fails_only_when_drawing -- --nocapture --test-threads=1
+```
+
 Single-mip-only format metadata is checked through the strict controlled core
 fixture. Queried sampled-upload formats can create one-mip textures; a POT
 8×8, two-mip descriptor for each reported single-mip format must fail in core

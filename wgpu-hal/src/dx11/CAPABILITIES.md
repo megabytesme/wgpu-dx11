@@ -254,12 +254,14 @@ restriction as `DownlevelLimits::viewport_rectangles_outside_target`; when it
 is false, rectangles extending past any attachment edge are rejected during
 render-command validation before the HAL is called. Rectangles contained by
 the target continue through the normal shader path. The HAL's private clipped
-viewport path remains available when its adjusted shader exists, but the
-controlled FL9_1 core fixture reports the conservative false capability and
-tests the rejection. The strict public wgpu test also verifies a 4×6 scissor
-inside an 8×8 target (24 green and 40 unchanged blue pixels) and confirms an
-out-of-target viewport is rejected before HAL. Other backends retain the
-default true capability.
+viewport path remains available when its adjusted shader exists. Pipeline
+creation keeps the base shader if only this optional adjusted variant exceeds
+the FL9_1 compiler profile; a draw that still requires the absent variant is
+rejected before native replay. The controlled FL9_1 core fixture reports the
+conservative false capability and tests the public rejection. The strict
+public wgpu test also verifies a 4×6 scissor inside an 8×8 target (24 green
+and 40 unchanged blue pixels) and confirms an out-of-target viewport is
+rejected before HAL. Other backends retain the default true capability.
 
 ## Recorded forced-FL9_1 observation
 
