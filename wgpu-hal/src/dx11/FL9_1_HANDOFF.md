@@ -1,6 +1,13 @@
 # FL9_1 handoff
 
-## Current coordinator checkpoint — 3D load helpers and `mat2` inverse — 2026-11-09
+## Current coordinator checkpoint — slope bias, 3D load helpers and `mat2` inverse — 2026-11-09
+
+The public D16 depth test now verifies positive and negative slope-scaled bias
+on a genuinely sloped triangle. Strict forced-FL9_1 execution passed on the
+RTX 3090 Ti and checked 64/64 red pixels for positive bias and 64/64 green for
+negative bias. The full strict public suite passed 112/112; three optional
+format/mip subcases were explicitly skipped because the selected device did
+not report them. See `FL9_1_PROGRESS.md`; checkpoint `e53561240`.
 
 The table-driven public format-projection test is committed as `5e82974e9`.
 On the physical RTX 3090 Ti forced to FL9_1, it checked 21 projected formats,

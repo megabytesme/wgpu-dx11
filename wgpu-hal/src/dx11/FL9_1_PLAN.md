@@ -1,5 +1,22 @@
 # FL9_1 completion plan
 
+## Latest public raster coverage — slope-scaled depth bias — 2026-11-09
+
+The public D16 depth-attachment test now verifies slope-scaled depth bias with
+a genuinely sloped triangle. Through public wgpu pipeline creation and GPU
+readback, positive slope bias preserves red for all 64 pixels and negative
+slope bias lets green pass for all 64. Existing constant-bias and nonzero
+clamp-rejection coverage remains in the same test. The focused strict test
+passed 1/1, and the complete strict public D3D11 suite passed 112/112 on the
+physical RTX 3090 Ti at requested/actual FL9_1. The suite reported three
+optional selected-device skips for unsupported vertex-input or mip features;
+none were counted as test failures or hardware passes. Clippy, formatting and
+`git diff --check` passed. This closes a public test gap for existing HAL
+behavior, rather than adding a new capability. Checkpoint: `e53561240`.
+
+Next, continue the shader/resource contract audit and implement only a narrow
+gap whose Core, Naga and HAL proofs can be kept in agreement.
+
 ## Latest bounded shader increment — 3D fragment `textureLoad` helpers — 2026-11-09
 
 The existing query-gated fragment 3D `textureLoad` emulation now supports
@@ -21,9 +38,9 @@ unverified.
 
 The Core/HAL audit found no new mismatch in the inspected array, cube-view,
 copy, and query routes; their unsupported shapes are already gated and tested.
-The remaining mission is still broad. Next, add public slope-scaled depth-bias
-coverage for the already implemented operation, then continue the selected
-shader/resource contract audit. Do not treat this helper increment as general
+The remaining mission is still broad. Public slope-scaled depth-bias coverage
+is recorded above; continue the selected shader/resource contract audit. Do
+not treat this helper increment as general
 3D texture-load support. Checkpoint: `ffafa8b2d`.
 
 ## Latest bounded capability increment — f32 `mat2x2` inverse — 2026-11-09

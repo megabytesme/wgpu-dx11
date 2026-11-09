@@ -1,5 +1,24 @@
 # FL9_1 progress
 
+## Public slope-scaled depth-bias execution — 2026-11-09
+
+Extended `public_dx11_d16_depth_attachment_at_fl91` with a genuinely sloped
+fullscreen triangle and public pipelines using positive and negative
+`DepthBiasState::slope_scale`. The positive-bias draw failed the less-depth
+test and preserved red across all 64 pixels; the negative-bias draw passed and
+produced green across all 64 pixels. Existing constant-bias and Core rejection
+of nonzero bias clamp remain covered.
+
+The focused strict hardware test passed 1/1. The full strict public D3D11
+target passed 112/112 on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) with requested/actual FL9_1 and
+`software=false`. Three optional subcases reported device-specific skips:
+sub-four-byte vertex input, Float16x2 vertex input, and Rg8Unorm mip support.
+They are not counted as hardware execution results. Target Clippy passed with
+four existing `too_many_arguments` warnings in `hal_index.rs`, `hal_shader.rs`
+and `texture.rs`; `cargo +1.93 fmt --all -- --check` and `git diff --check`
+passed. Test checkpoint: `e53561240`.
+
 ## 3D fragment `textureLoad` helpers — 2026-11-09
 
 Extended the existing query-gated single-mip 3D float fragment `textureLoad`
