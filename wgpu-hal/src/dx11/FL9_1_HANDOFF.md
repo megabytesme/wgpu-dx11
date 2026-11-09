@@ -12,6 +12,7 @@ D3D11 116/116, Naga 155/155, Core 124/124 and DX12 Core 115/115. The exact
 commands and limitations are recorded in `FL9_1_PROGRESS.md` and
 `TESTING.md`. The selected query limit remains narrow; general `texture_query`
 is disabled.
+Checkpoint: `f8cd666aa` (`dx11: sample through selected textureDimensions helper`).
 
 The backend is useful for controlled opt-in prototypes but is not a general
 drop-in wgpu backend. Remaining work includes a systematic review/test matrix

@@ -21,6 +21,7 @@ exact commands. The next bounded shader candidate is the analogous selected
 2D `textureNumLevels` helper plus same-image sample; continue auditing broader
 public contract and resource/format coverage in parallel. Historical FL9_1
 drivers and Lumia/CoreWindow execution remain unverified.
+Checkpoint: `f8cd666aa` (`dx11: sample through selected textureDimensions helper`).
 
 ## Latest verified shader-query helper increment — 2026-11-09
 

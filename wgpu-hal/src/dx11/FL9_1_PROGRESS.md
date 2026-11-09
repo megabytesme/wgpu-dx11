@@ -40,6 +40,8 @@ the next narrow, evidence-backed shader or rendering gap. Historical FL9_1
 hardware, Lumia/CoreWindow runtime and physical device-removal recovery remain
 unverified.
 
+Checkpoint: `f8cd666aa` (`dx11: sample through selected textureDimensions helper`).
+
 ## Constant-mip cube query and RGBA8_SNORM copy — 2026-11-09
 
 Checkpoint: `1e8407af6` (`dx11: extend FL9_1 cube queries and SNORM copies`).
