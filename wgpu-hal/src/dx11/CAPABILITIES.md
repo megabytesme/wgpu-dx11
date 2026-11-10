@@ -26,6 +26,12 @@ A separate strict public regression verifies that `@invariant
 all 64 pixels on the RTX 3090 Ti at forced FL9_1. This is execution evidence
 for that shader/pipeline shape only, not a new capability claim.
 
+The strict public render-state matrix also combines query-supported RGBA8
+multisampling, alpha blending and a partial color write mask. On the RTX 3090
+Ti at forced FL9_1, 2x/4x/8x rendering and resolve each matched all 64 expected
+pixels. This verifies the combined state path on this driver; it does not
+extend the selected-device capability flags.
+
 The opt-in `dx11` feature now enumerates physical DXGI adapters that can create
 the explicitly requested FL9_1 device and exposes the selected-device
 capability projection for public wgpu rendering. Its constrained Win32 HWND

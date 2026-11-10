@@ -25152,6 +25152,269 @@ fn public_dx11_resolves_optional_fl91_sample_counts() {
 }
 
 #[test]
+fn public_dx11_multisample_blend_write_mask_resolve_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().find(|adapter| {
+        let info = adapter.get_info();
+        info.backend == Backend::Dx11
+            && info.driver_info.contains("FL9_1")
+            && info.driver_info.contains("physical")
+    }) else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical FL9_1 D3D11 adapter for multisample blend test");
+        return;
+    };
+    let info = adapter.get_info();
+    let format_features = adapter.get_texture_format_features(TextureFormat::Rgba8Unorm);
+    let sample_counts: Vec<_> = [
+        (2, TextureFormatFeatureFlags::MULTISAMPLE_X2),
+        (4, TextureFormatFeatureFlags::MULTISAMPLE_X4),
+        (8, TextureFormatFeatureFlags::MULTISAMPLE_X8),
+        (16, TextureFormatFeatureFlags::MULTISAMPLE_X16),
+    ]
+    .into_iter()
+    .filter_map(|(count, flag)| {
+        format_features
+            .flags
+            .contains(flag | TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE)
+            .then_some(count)
+    })
+    .collect();
+    let blendable = format_features
+        .flags
+        .contains(TextureFormatFeatureFlags::BLENDABLE);
+    if !blendable || sample_counts.is_empty() {
+        assert!(
+            !required,
+            "strict mode requires blendable FL9_1 RGBA8 with a query-supported multisample resolve count: {format_features:?}"
+        );
+        println!(
+            "SKIP: FL9_1 RGBA8 blend/MSAA requirements unavailable; blendable={blendable} sample_counts={sample_counts:?}"
+        );
+        return;
+    }
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; blendable={blendable} tested_sample_counts={sample_counts:?}",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public D3D11 FL9_1 multisample blend test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected physical FL9_1 device");
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 multisample blend test shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(0.75, 0.25, 0.5, 0.5); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let component = BlendComponent {
+        src_factor: BlendFactor::SrcAlpha,
+        dst_factor: BlendFactor::OneMinusSrcAlpha,
+        operation: BlendOperation::Add,
+    };
+    let target = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: Some(BlendState {
+            color: component,
+            alpha: component,
+        }),
+        write_mask: ColorWrites::RED | ColorWrites::BLUE,
+    })];
+    let vertex_bytes: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertices = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 multisample blend full-screen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertices
+        .get_mapped_range_mut(..)
+        .expect("map multisample blend vertices")
+        .copy_from_slice(&vertex_bytes);
+    vertices.unmap();
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 multisample blend readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    for sample_count in sample_counts {
+        let multisampled = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 multisample blend source"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT,
+            view_formats: &[],
+        });
+        let resolved = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 multisample blend resolve target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let multisampled_view = multisampled.create_view(&TextureViewDescriptor::default());
+        let resolved_view = resolved.create_view(&TextureViewDescriptor::default());
+        let pipeline_scope = device.push_error_scope(ErrorFilter::Validation);
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 multisample blend write-mask pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState {
+                count: sample_count,
+                ..Default::default()
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &target,
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        if let Some(error) = poll_ready(pipeline_scope.pop()) {
+            panic!("FL9_1 {sample_count}x blend pipeline failed validation: {error:?}");
+        }
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("FL9_1 multisample blend commands"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 multisample blend and resolve pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &multisampled_view,
+                    depth_slice: None,
+                    resolve_target: Some(&resolved_view),
+                    ops: Operations {
+                        load: LoadOp::Clear(Color {
+                            r: 0.125,
+                            g: 0.375,
+                            b: 0.625,
+                            a: 0.25,
+                        }),
+                        store: StoreOp::Discard,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_vertex_buffer(0, vertices.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &resolved,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for FL9_1 multisample blend resolve");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("multisample blend readback callback")
+            .expect("map multisample blend readback");
+        {
+            let data = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped multisample blend pixels");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    let pixel = &data[offset..offset + 4];
+                    for (channel, expected) in [112u8, 96, 143, 64].into_iter().enumerate() {
+                        assert!(
+                            pixel[channel].abs_diff(expected) <= 1,
+                            "FL9_1 {sample_count}x blend/write-mask pixel ({x}, {y}) channel {channel}: expected {expected}, got {}",
+                            pixel[channel]
+                        );
+                    }
+                }
+            }
+        }
+        readback.unmap();
+        println!(
+            "PASS: FL9_1 {sample_count}x blend plus red/blue write mask resolved 64 pixels to [112, 96, 143, 64]"
+        );
+    }
+}
+
+#[test]
 fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();

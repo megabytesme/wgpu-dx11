@@ -14064,3 +14064,33 @@ on this development adapter.
 
 Checkpoint: `359d508228fe1dfa6f5754b8d278fb3e20719967`
 (`dx11: project color format usages independently`).
+
+## Multisample blend/write-mask interaction — 2026-11-10
+
+Added a strict public GPU test for the combination of query-supported RGBA8
+multisampling, alpha blending, partial red/blue write mask, resolve and CPU
+readback. The disabled green and alpha channels retain their clear values;
+red and blue distinguish the expected blend from replacement or an incorrect
+write mask. The test loops over every advertised 2x/4x/8x/16x resolve count.
+
+On the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested and actual FL9_1, the adapter
+reported blendable RGBA8 with 2x, 4x and 8x resolve. Each count produced
+`[112, 96, 143, 64]` in all 64 pixels. No capability flag changed.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_multisample_blend_write_mask_resolve_at_fl91 -- --exact --nocapture --test-threads=1
+# 1 test passed; the test executed three real GPU sample counts (2x, 4x, 8x).
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 116 passed, 0 failed, 0 ignored; includes default-enumeration isolation.
+
+cargo +1.93 clippy --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+# passed; Clippy reported only existing D3D11 HAL warnings.
+```
+
+The broader matrix still has useful untested combinations and the selected
+modern driver does not substitute for historical FL9_1 hardware. See the
+platform and Core/HAL audit notes in this plan.

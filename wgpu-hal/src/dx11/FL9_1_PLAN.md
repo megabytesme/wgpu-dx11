@@ -23,6 +23,14 @@ The strict RTX projection and public suite remain unchanged. This closes a
 conservative reporting gap, not a driver capability expansion. See
 `FL9_1_PROGRESS.md` for regression results.
 
+## Latest rendering coverage — multisample blend/write mask
+
+A strict public readback test now covers the interaction of query-supported
+RGBA8 multisampling, alpha blending and partial channel writes. The RTX 3090
+Ti at forced FL9_1 passed 2x, 4x and 8x resolve with all 64 pixels matching
+the deterministic blend result. No capabilities changed. Continue the public
+contract and query-gated interaction audit; see `TESTING.md` for the command.
+
 ## Latest execution evidence — 2026-11-09
 
 The strict public test matrix now includes BC1/BC2/BC3 partial initialization

@@ -48,6 +48,10 @@ depth-only prepass followed by an Equal-depth color draw; all 64 readback
 pixels matched. This verifies the tested shader and pipeline shape on the
 development GPU without changing the capability projection.
 
+Public GPU coverage now combines query-supported 2x/4x/8x RGBA8 multisampling,
+alpha blending and red/blue-only writes. All 64 resolved pixels matched on
+the RTX 3090 Ti at requested/actual FL9_1; no capability flags changed.
+
 The opt-in `dx11` backend now enumerates physical adapters that can create an
 explicit FL9_1 device and exposes the selected-device capability projection
 for offscreen rendering and a constrained Win32 HWND surface through the public

@@ -79,6 +79,23 @@ does not reproduce this negative-query case; the complete strict public suite
 passed with its existing selected-device formats and reported no change to
 the RTX projection.
 
+## Multisample blending with a partial write mask
+
+The strict public GPU test queries RGBA8 blendability and each supported
+multisample resolve count, then renders a constant full-screen triangle with
+alpha blending and only red/blue writes enabled. Green and alpha therefore
+check that the write mask preserved clear values, while red and blue check the
+blend result. Every pixel is read back after resolve.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_multisample_blend_write_mask_resolve_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti at requested/actual FL9_1, query-supported 2x, 4x and 8x
+resolve each matched `[112, 96, 143, 64]` for all 64 pixels. This is
+execution coverage of already-reported support, not a capability expansion.
+
 The `dx11` feature enumerates only physical adapters that create the explicitly
 requested FL9_1 device and pass the selected-device capability projection.
 Only selected-device-gated features are exposed: the implemented 16-bit
