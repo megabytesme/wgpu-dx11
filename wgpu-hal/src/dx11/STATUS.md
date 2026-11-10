@@ -394,13 +394,14 @@ X3548 in both tested 9_1 and 9_3 pixel profiles. The selected-entry
 unused query entries do not block safe siblings. The FL9_1 public projection
 reports this limit unavailable, and `wgpu-info` displays it.
 
-The projection now has separate narrow limits for direct fragment
-`textureDimensions` and `textureNumLevels` on one group-0
-`texture_2d<f32>`. The latter uses the bound view's host-known mip count in
-the private `b13` constant, including supported multi-mip views. Neither limit
-enables general image queries; the proof rejects helpers, control flow,
-additional bound resources and unrelated image operations. Strict public
-readback and compiler validation are recorded in `TESTING.md`.
+The projection now has separate narrow limits for fragment `textureDimensions`
+and `textureNumLevels` on one non-array `texture_2d<f32>`. A direct dimensions
+query may use any valid bind group; its one-helper form remains group-0-only.
+The `textureNumLevels` proof remains group-0-only and uses the bound view's
+host-known mip count in private constant `b13`, including supported multi-mip
+views. Neither limit enables general image queries; the proofs retain their
+selected-entry and resource-shape restrictions. Strict public readback and
+compiler validation are recorded in `TESTING.md`.
 
 `textureSampleBaseClampToEdge` is implemented only through the narrow
 `texture_sample_base_clamp_to_edge_2d_float_fragment` limit; the general
@@ -1383,12 +1384,14 @@ branches. No physical execution is claimed for the mip path.
 The opt-in public projection exposes a separate
 `texture_dimensions_2d_float_fragment` limit while keeping general
 `texture_query` unavailable. Core proves one selected fragment query on a
-group-0, non-array `texture_2d<f32>`, directly converted to `vec2f`. The query
-may be direct or returned by exactly one reachable, argument-free, straight-
-line helper called once. The helper cannot query a mip, use other resources or
-image operations, or call another function. Unreachable sibling helpers and
-resources are pruned from emitted HLSL. Direct query behavior, including its
-existing optional constant-mip and query-plus-one-sample forms, is unchanged.
+non-array `texture_2d<f32>`, directly converted to `vec2f`. The direct form may
+bind the image in any valid group. The query may alternatively be returned by
+exactly one reachable, argument-free, straight-line helper called once; that
+helper form remains group-0-only. The helper cannot query a mip, use other
+resources or image operations, or call another function. Unreachable sibling
+helpers and resources are pruned from emitted HLSL. Direct query behavior,
+including its existing optional constant-mip and query-plus-one-sample forms,
+retains the one-image restriction; an accompanying sampler remains group-0-only.
 The helper may now coexist with exactly one level-less implicit sample of the
 same 2D float texture in the selected entry point, using one group-0
 non-comparison sampler and a `vec2f` coordinate. The helper itself remains

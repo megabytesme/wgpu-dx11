@@ -1428,15 +1428,16 @@ before HAL. The model treats queries as a feature-level shader guarantee from
 level. This gate is profile/compiler-driven; it is not a driver format query.
 
 The D3D11 projection separately enables the narrow
-`texture_dimensions_2d_float_fragment` downlevel limit. It permits one selected
-fragment entry point to query a group-0, non-array `texture_2d<f32>` and
-directly convert the `vec2u` result to `vec2f`. The query may appear directly
-in the entry point, or in exactly one reachable helper with no arguments that
-returns the query result. That helper must be straight-line, contain no other
-resource or image operation, and be called once. Unreachable sibling helpers
-and their resources are pruned for HLSL emission. The optional direct-query mip
-level must be a non-negative literal or direct module `const`; the helper form
-is level-less only. Dimensions are relative to the bound view. A direct
+`texture_dimensions_2d_float_fragment` downlevel limit. Its direct form permits
+one selected fragment entry point to query a non-array `texture_2d<f32>` in
+any bind group and directly convert the `vec2u` result to `vec2f`. The query
+may also appear in exactly one reachable helper with no arguments that returns
+the query result; this helper form remains group-0-only. The helper must be
+straight-line, contain no other resource or image operation, and be called
+once. Unreachable sibling helpers and their resources are pruned for HLSL
+emission. The optional direct-query mip level must be a non-negative literal
+or direct module `const`; the helper form is level-less only. Dimensions are
+relative to the bound view. A direct
 level-less query may share the entry point with exactly one implicit
 `textureSample` of that same texture and one group-0 non-comparison sampler.
 The helper itself remains query-only, but it may coexist with exactly one

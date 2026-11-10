@@ -1,5 +1,29 @@
 # FL9_1 completion plan
 
+## Current state and next queue — 2026-11-10
+
+Verified checkpoint `3577e23e1` includes the selected-entry 2D/3D textureLoad
+view guard, dynamic-coordinate 2D load, ordered CPU-shadow 3D readback, and
+WebGPU-correct per-pass blend-constant defaults. The following nonzero-group
+direct 2D textureDimensions slice is now implemented and verified: strict
+public tests 124/124, Core fixtures 134/134, private HAL baseline 473/473 and
+DX12 Core regression 123/123. The backend is opt-in through explicit DX11
+selection; it is not a general or Core-WebGPU-compliant FL9_1 implementation.
+
+Next bounded software slice: extend the existing bounded fragment
+uniform-array-index proof to nonzero groups, retaining all current structure,
+index and entry-point restrictions and proving the full public binding path.
+After that, investigate the statically indexed local matrix-component store
+subset; do not relax the broad matrix-store gate until FXC and FL9_1 readback
+prove the direct member assignments correct. Continue the Core/HAL and curated
+CTS audits from public-API-valid operations.
+
+Known external verification gaps are historical FL9_1 hardware, Lumia/CoreWindow
+runtime and physical device-removal/recovery behavior. Native compute/UAV,
+geometry shaders, ordinary texture arrays, 1D textures and other unsupported
+profile/resource features remain rejected; do not treat these as software
+milestones unless a correct FL9_1 emulation is demonstrated.
+
 ## Strict CTS buffer/texture-copy slice — 2026-11-10
 
 The curated strict DX11 CTS run now has additional public evidence for

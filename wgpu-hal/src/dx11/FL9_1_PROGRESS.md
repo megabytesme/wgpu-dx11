@@ -15641,3 +15641,51 @@ git diff --check
 An independent read-only review confirmed bundle execution preserves the
 current render-pass blend value; bundles have no blend-constant setter and do
 not reset this pass-level state.
+
+## Direct 2D `textureDimensions` from a nonzero bind group — 2026-11-10
+
+Started from the clean checkpoint `3577e23e1` (`dx11: verify FL9_1 texture
+paths and pass defaults`). The selected-entry Core proof now accepts a direct
+fragment `textureDimensions` query on one non-array `texture_2d<f32>` from any
+valid bind group. It retains the same direct `vec2u`-to-`vec2f` conversion,
+optional literal/constant mip level, no unrelated used resources, and sampled
+float type checks. The helper form, 3D/cube query proofs, `textureLoad`, and
+`textureNumLevels` retain their existing group restrictions. No capability
+limit was broadened.
+
+The HAL already retained the selected `ResourceBinding` in its FL9 shader
+emulation metadata and resolves the texture through `binding.group` when
+preparing the draw. Its selected-entry proof and register mapping required no
+changes. The strict public test used group 7/binding 42, transitioned from a
+16x8 view to an 8x4 view within one pass, and checked all 64 readback pixels.
+The physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) requested and selected FL9_1; software/WARP was false. The
+selected helper regression at group 0 also passed. A Core proof negative
+continues to reject an unsigned-integer image, and added group-7 cases reject
+runtime mip selection and the wrong sampled scalar kind.
+
+```text
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_dimensions_accepts_only_direct_fragment_conversion -- --nocapture
+# 1 passed.
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_dimensions_binding_is_selected_entry_specific -- --nocapture
+# 1 passed; the existing HAL proof returns the selected nonzero-group binding.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_nonzero_group_at_fl91 -- --exact --nocapture --test-threads=1
+# 1 passed, 0 failed, 0 skipped on physical FL9_1 hardware; 64/64 pixels matched.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_emulation_at_fl91 -- --exact --nocapture --test-threads=1
+# 1 passed, 0 failed, 0 skipped; existing group-0 selected-helper view transition retained.
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+# Both checks passed. Initial fmt check identified only the new Core line-wrap;
+# targeted rustfmt on the two changed Rust files resolved it.
+```
+
+The commands ran from the Visual Studio 2026 x64 developer environment because
+`link.exe` is not on the ordinary shell PATH. After the focused checks, the
+coordinator reran the full strict public target: 124/124 passed, with one
+optional selected-device vertex-format path reporting `SKIP` (not a hardware
+pass). The Core DX11 fixture suite passed 134/134 and the DX12 Core regression
+passed 123/123. Core and public-target Clippy passed with only existing HAL
+`too_many_arguments` warnings; formatting and `git diff --check` passed. The
+private HAL suite was not rerun because no HAL implementation changed in this
+slice. The result verifies the modern RTX forced to FL9_1, not historical
+FL9_1 drivers.

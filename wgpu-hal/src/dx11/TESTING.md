@@ -3819,6 +3819,17 @@ readback test:
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_emulation_at_fl91 -- --nocapture --test-threads=1
 ```
 
+The direct 2D query also supports a texture binding in any valid bind group.
+The strict nonzero-group test uses group 7/binding 42, switches between 16x8
+and 8x4 views, and checks every output pixel. The selected-helper and 3D/cube
+query proofs retain their group-0 restriction. Run the focused checks with:
+
+```powershell
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_dimensions_accepts_only_direct_fragment_conversion
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_nonzero_group_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
 ### Narrow FL9_1 fragment `textureNumLevels`
 
 Run the selected-entry proof, type-limit and HLSL compilation checks, then the

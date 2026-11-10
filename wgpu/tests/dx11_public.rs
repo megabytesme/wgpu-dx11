@@ -32146,6 +32146,19 @@ fn public_dx11_matrix_outer_product_renders_at_fl91() {
 
 #[test]
 fn public_dx11_fragment_texture_dimensions_emulation_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_emulation_at_fl91(0, 0, true);
+}
+
+#[test]
+fn public_dx11_fragment_texture_dimensions_nonzero_group_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_emulation_at_fl91(7, 42, false);
+}
+
+fn run_public_dx11_fragment_texture_dimensions_emulation_at_fl91(
+    group: u32,
+    binding: u32,
+    use_helper: bool,
+) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -32173,8 +32186,12 @@ fn public_dx11_fragment_texture_dimensions_emulation_at_fl91() {
         "general texture queries must remain unavailable"
     );
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureDimensions through one selected helper",
-        info.name, info.vendor, info.device, info.driver_info
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation={} textureDimensions at group {group}, binding {binding}",
+        info.name,
+        info.vendor,
+        info.device,
+        info.driver_info,
+        if use_helper { "helper" } else { "direct" }
     );
 
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -32191,12 +32208,22 @@ fn public_dx11_fragment_texture_dimensions_emulation_at_fl91() {
                 .into(),
         ),
     });
+    let helper = if use_helper {
+        "fn query_dimensions() -> vec2u { return textureDimensions(image); }"
+    } else {
+        ""
+    };
+    let query = if use_helper {
+        "query_dimensions()"
+    } else {
+        "textureDimensions(image)"
+    };
+    let fragment_source = format!(
+        "@group({group}) @binding({binding}) var image: texture_2d<f32>; {helper} @fragment fn fs() -> @location(0) vec4f {{ let dimensions = vec2f({query}); return vec4f(dimensions / vec2f(16.0, 8.0), 0.0, 1.0); }}"
+    );
     let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 textureDimensions helper fragment shader"),
-        source: ShaderSource::Wgsl(
-            "@group(0) @binding(0) var image: texture_2d<f32>; fn query_dimensions() -> vec2u { return textureDimensions(image); } @fragment fn fs() -> @location(0) vec4f { let dimensions = vec2f(query_dimensions()); return vec4f(dimensions / vec2f(16.0, 8.0), 0.0, 1.0); }"
-                .into(),
-        ),
+        label: Some("FL9_1 textureDimensions fragment shader"),
+        source: ShaderSource::Wgsl(fragment_source.into()),
     });
     let input = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 dimensions source texture"),
@@ -32281,17 +32308,17 @@ fn public_dx11_fragment_texture_dimensions_emulation_at_fl91() {
     });
     let bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("FL9_1 textureDimensions input"),
-        layout: &pipeline.get_bind_group_layout(0),
+        layout: &pipeline.get_bind_group_layout(group),
         entries: &[BindGroupEntry {
-            binding: 0,
+            binding,
             resource: BindingResource::TextureView(&input_view),
         }],
     });
     let bind_group_small = device.create_bind_group(&BindGroupDescriptor {
         label: Some("FL9_1 small textureDimensions input"),
-        layout: &pipeline.get_bind_group_layout(0),
+        layout: &pipeline.get_bind_group_layout(group),
         entries: &[BindGroupEntry {
-            binding: 0,
+            binding,
             resource: BindingResource::TextureView(&input_small_view),
         }],
     });
@@ -32334,11 +32361,11 @@ fn public_dx11_fragment_texture_dimensions_emulation_at_fl91() {
             multiview_mask: None,
         });
         pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_bind_group(group, &bind_group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.set_scissor_rect(0, 0, 4, 8);
         pass.draw(0..3, 0..1);
-        pass.set_bind_group(0, &bind_group_small, &[]);
+        pass.set_bind_group(group, &bind_group_small, &[]);
         pass.set_scissor_rect(4, 0, 4, 8);
         pass.draw(0..3, 0..1);
     }
@@ -32402,7 +32429,8 @@ fn public_dx11_fragment_texture_dimensions_emulation_at_fl91() {
             }
         }
         println!(
-            "PASS: forced FL9_1 textureDimensions followed a bind-group transition from 16x8 to 8x4; all 64 pixels matched"
+            "PASS: forced FL9_1 {}textureDimensions at group {group}, binding {binding} followed a view transition from 16x8 to 8x4; all 64 pixels matched",
+            if use_helper { "helper " } else { "" }
         );
     }
     readback.unmap();

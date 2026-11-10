@@ -3901,7 +3901,9 @@ fn entry_point_supports_fl9_texture_dimensions(
     }
     let image = &module.global_variables[image_binding];
     image.space == naga::AddressSpace::Handle
-        && matches!(image.binding, Some(naga::ResourceBinding { group: 0, .. }))
+        && image
+            .binding
+            .is_some_and(|binding| dimension == naga::ImageDimension::D2 || binding.group == 0)
         && matches!(
             module.types[image.ty].inner,
             naga::TypeInner::Image {
@@ -9066,9 +9068,13 @@ mod tests {
             r#"
             @group(0) @binding(7) var image: texture_2d<f32>;
             @group(1) @binding(0) var sibling_image: texture_2d<f32>;
+            @group(7) @binding(42) var nonzero_group_image: texture_2d<f32>;
             fn unused_helper() -> vec2u { return textureDimensions(sibling_image); }
             @fragment fn dimensions() -> @location(0) vec4f {
                 return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0);
+            }
+            @fragment fn nonzero_group_dimensions() -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(nonzero_group_image)), 0.0, 1.0);
             }
             @fragment fn mip_dimensions() -> @location(0) vec4f {
                 return vec4f(vec2f(textureDimensions(image, 2u)), 0.0, 1.0);
@@ -9085,6 +9091,13 @@ mod tests {
             .entry_point_uses_unsupported_texture_query(
                 naga::ShaderStage::Fragment,
                 "dimensions",
+                &narrow,
+            )
+            .unwrap());
+        assert!(!supported
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "nonzero_group_dimensions",
                 &narrow,
             )
             .unwrap());
@@ -9141,6 +9154,18 @@ mod tests {
             .unwrap());
 
         for source in [
+            r#"
+            @group(7) @binding(42) var image: texture_2d<f32>;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(image, u32(uv.x))), 0.0, 1.0);
+            }
+            "#,
+            r#"
+            @group(7) @binding(42) var image: texture_2d<u32>;
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0);
+            }
+            "#,
             r#"
             @group(0) @binding(0) var image: texture_2d<f32>;
             fn query() -> vec2u { return textureDimensions(image); }
@@ -9355,16 +9380,6 @@ mod tests {
                 @group(0) @binding(1) var<uniform> extra: vec4f;
                 @fragment fn main() -> @location(0) vec4f {
                     return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0) + extra;
-                }
-                "#,
-                naga::ShaderStage::Fragment,
-            ),
-            (
-                "other bind group",
-                r#"
-                @group(1) @binding(0) var image: texture_2d<f32>;
-                @fragment fn main() -> @location(0) vec4f {
-                    return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0);
                 }
                 "#,
                 naga::ShaderStage::Fragment,

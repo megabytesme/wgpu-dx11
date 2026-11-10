@@ -54,6 +54,7 @@ Bottom level categories:
 - Permit selected-entry straight-line helpers to directly reference the same texture in the restricted FL9_1 fragment `textureLoad` emulation.
 - Permit selected-entry straight-line helpers to load the same 3D float texture in the restricted FL9_1 fragment `textureLoad` emulation.
 - Expose a narrowly validated fragment `textureDimensions` subset for one bound 2D float texture, including constant mip levels relative to a view, in the opt-in FL9_1 D3D11 backend.
+- Permit the direct fragment 2D `textureDimensions` subset to query a texture in any valid bind group in the opt-in FL9_1 D3D11 backend.
 - Expose a separate, narrowly validated fragment `textureDimensions` subset for one bound 3D float texture in the opt-in FL9_1 D3D11 backend.
 - Expose a separately gated, narrowly validated fragment `textureDimensions` subset for one bound cube float texture in the opt-in FL9_1 D3D11 backend.
 - Expose a narrowly validated fragment `textureNumLevels` subset for one bound 2D float view in the opt-in FL9_1 D3D11 backend.
