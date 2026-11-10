@@ -2688,6 +2688,46 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     );
     global.bind_group_layout_drop(shared_layout);
     std::println!("PASS: fragment-visible sampled layouts retain shared-stage visibility");
+    let device_downlevel = global.device_downlevel_properties(device);
+    let depth_comparison_supported = device_downlevel.limits.sampled_depth_textures
+        && device_downlevel
+            .flags
+            .contains(wgt::DownlevelFlags::COMPARISON_SAMPLERS);
+    if depth_comparison_supported {
+        let (layout, error) = global.device_create_bind_group_layout(
+            device,
+            &binding_model::BindGroupLayoutDescriptor {
+                label: None,
+                entries: Cow::Owned(vec![
+                    wgt::BindGroupLayoutEntry {
+                        binding: 7,
+                        visibility: shared_visibility,
+                        ty: wgt::BindingType::Texture {
+                            sample_type: wgt::TextureSampleType::Depth,
+                            view_dimension: wgt::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    wgt::BindGroupLayoutEntry {
+                        binding: 42,
+                        visibility: shared_visibility,
+                        ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Comparison),
+                        count: None,
+                    },
+                ]),
+            },
+            None,
+        );
+        assert!(
+            error.is_none(),
+            "query-supported depth/comparison layout with combined stage visibility must pass Core and HAL layout creation: {error:?}"
+        );
+        global.bind_group_layout_drop(layout);
+        std::println!("PASS: combined-visibility depth/comparison layout accepted");
+    } else {
+        std::println!("SKIP: combined-visibility depth/comparison layout requires depth sampling and comparison sampler capabilities");
+    }
     for (view_dimension, required_flag) in [
         (
             wgt::TextureViewDimension::D2Array,
@@ -6187,6 +6227,97 @@ fn render_triangle(
         std::println!("PASS: vertex texture sampling rejected by core downlevel limit");
         global.render_pipeline_drop(invalid_pipeline);
         global.shader_module_drop(vertex_texture_shader);
+
+        let shared_visibility = wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT;
+        let downlevel = global.device_downlevel_properties(device);
+        let depth_comparison_supported = downlevel.limits.sampled_depth_textures
+            && downlevel
+                .flags
+                .contains(wgt::DownlevelFlags::COMPARISON_SAMPLERS);
+        if depth_comparison_supported {
+            let (depth_comparison_layout, layout_error) = global.device_create_bind_group_layout(
+                device,
+                &binding_model::BindGroupLayoutDescriptor {
+                    label: None,
+                    entries: Cow::Owned(vec![
+                        wgt::BindGroupLayoutEntry {
+                            binding: 7,
+                            visibility: shared_visibility,
+                            ty: wgt::BindingType::Texture {
+                                sample_type: wgt::TextureSampleType::Depth,
+                                view_dimension: wgt::TextureViewDimension::D2,
+                                multisampled: false,
+                            },
+                            count: None,
+                        },
+                        wgt::BindGroupLayoutEntry {
+                            binding: 42,
+                            visibility: shared_visibility,
+                            ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Comparison),
+                            count: None,
+                        },
+                    ]),
+                },
+                None,
+            );
+            assert!(
+                layout_error.is_none(),
+                "combined-visibility depth/comparison layout must reach vertex-stage validation: {layout_error:?}"
+            );
+            let (depth_comparison_pipeline_layout, pipeline_layout_error) = global
+                .device_create_pipeline_layout(
+                    device,
+                    &binding_model::PipelineLayoutDescriptor {
+                        label: None,
+                        bind_group_layouts: Cow::Owned(vec![Some(depth_comparison_layout)]),
+                        immediate_size: 0,
+                    },
+                    None,
+                );
+            assert!(
+                pipeline_layout_error.is_none(),
+                "combined-visibility depth/comparison pipeline layout: {pipeline_layout_error:?}"
+            );
+            let (depth_comparison_shader, shader_error) = global.device_create_shader_module(
+                device,
+                &pipeline::ShaderModuleDescriptor {
+                    label: None,
+                    runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+                },
+                pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(
+                    "@group(0) @binding(7) var depth_image: texture_depth_2d; @group(0) @binding(42) var cmp: sampler_comparison; @vertex fn vs() -> @builtin(position) vec4f { let depth = textureSampleCompareLevel(depth_image, cmp, vec2f(0.5), 0.5); return vec4f(depth, 0.0, 0.0, 1.0); }",
+                )),
+                None,
+            );
+            assert!(
+                shader_error.is_none(),
+                "vertex comparison-sampling shader: {shader_error:?}"
+            );
+            let mut depth_comparison_descriptor = pipeline_descriptor.clone();
+            depth_comparison_descriptor.layout = Some(depth_comparison_pipeline_layout);
+            depth_comparison_descriptor.vertex.stage.module = depth_comparison_shader;
+            depth_comparison_descriptor.vertex.stage.entry_point = Some(Cow::Borrowed("vs"));
+            depth_comparison_descriptor.fragment = None;
+            let (invalid_pipeline, pipeline_error) =
+                global.device_create_render_pipeline(device, &depth_comparison_descriptor, None);
+            assert!(
+                matches!(
+                    pipeline_error.as_ref(),
+                    Some(
+                        pipeline::CreateRenderPipelineError::TooManySampledTexturesInVertexStage {
+                            given: 1,
+                            limit: 0,
+                        }
+                    )
+                ),
+                "Core must reject actual vertex-stage depth sampling before HAL: {pipeline_error:?}"
+            );
+            global.render_pipeline_drop(invalid_pipeline);
+            global.shader_module_drop(depth_comparison_shader);
+            global.pipeline_layout_drop(depth_comparison_pipeline_layout);
+            global.bind_group_layout_drop(depth_comparison_layout);
+            std::println!("PASS: combined-visibility comparison layout accepted while vertex depth sampling remains rejected");
+        }
 
         let (texture_load_shader, shader_error) = global.device_create_shader_module(
             device,

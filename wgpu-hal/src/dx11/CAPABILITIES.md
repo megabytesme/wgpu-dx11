@@ -1609,8 +1609,12 @@ stencil. Core validates the comparison function, filter equality and
 anisotropy limit. Signed- and unsigned-integer sampling and multisampled shader
 bindings remain unavailable. A vertex-only texture or sampler layout is
 rejected when the separate vertex sampled-texture limit is zero;
-fragment-visible layouts remain valid, and actual vertex shader sampling
-remains rejected at pipeline validation.
+fragment-visible layouts remain valid. Depth-texture and comparison-sampler
+entries may also declare combined vertex/fragment visibility; HAL maps those
+resources only to the fragment stage. Core still rejects a vertex shader that
+actually samples them because the vertex sampled-texture limit is zero. A
+strict Core fixture verifies both layout acceptance and pre-HAL pipeline
+rejection.
 
 The projection withholds `Features::TEXTURE_COMPRESSION_BC`: that feature
 covers BC1 through BC7, while this backend implements only BC1, BC2 and BC3

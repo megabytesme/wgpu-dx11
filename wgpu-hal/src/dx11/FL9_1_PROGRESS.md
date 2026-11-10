@@ -1,5 +1,48 @@
 # FL9_1 progress
 
+## Combined visibility for depth/comparison resources — 2026-11-10
+
+The audit found a Core/HAL mismatch: Core permits fragment-visible sampled
+resources to declare extra vertex visibility, but the HAL rejected combined
+visibility specifically for depth textures and comparison samplers. The HAL
+now accepts those layouts while retaining fragment-only native bindings.
+Core still rejects a vertex shader that actually samples the resource at
+pipeline creation because the selected projection reports zero vertex sampled
+textures. No capability or normal adapter enumeration changed.
+
+Strict execution used the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), requested and actual FL9_1. The Core fixture accepted the
+combined-visibility layout and rejected vertex-stage sampling before HAL; the
+focused HAL mapping test verified fragment-only native slots.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j2 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+# 1 passed, 129 filtered; physical FL9_1 fixture executed, with one selected
+# optional RG8 mip capability subcase skipped.
+
+cargo +1.93.1 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib depth_comparison_layout_uses_matching_texture_and_sampler_namespaces -- --nocapture
+# 1 passed; four pre-existing hal_queue unnecessary-qualification warnings.
+
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j2 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --nocapture --test-threads=1
+# 130 passed, 0 failed; the hardware fixture ran on the physical RTX 3090 Ti.
+
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 467 passed, 0 failed; strict mode, including actual D3D11 HAL rendering tests.
+
+cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public experimental_dx11_is_not_enabled_by_default -- --exact --nocapture --test-threads=1
+# 1 passed; ordinary public D3D11 enumeration remains isolated.
+
+cargo +1.93.1 clippy --offline -j2 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --tests
+cargo +1.93.1 clippy --offline -j2 -p wgpu-hal --no-default-features --features dx11 --tests
+# passed; pre-existing Core fixture warnings and 18 existing HAL warnings remain.
+
+rustfmt +1.93.1 --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs wgpu-hal/src/dx11/hal_bind_group.rs
+git diff --check
+# passed.
+```
+
 ## Strict CTS routing and defaults — 2026-11-10
 
 The xtask runner now has an explicit `--require-dx11-hardware` mode. It

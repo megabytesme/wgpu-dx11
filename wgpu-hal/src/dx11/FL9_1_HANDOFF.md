@@ -1,5 +1,15 @@
 # FL9_1 handoff
 
+## Core/HAL layout visibility fix — 2026-11-10
+
+The Core/HAL audit found one safe layout case that Core allowed but HAL
+rejected: depth textures and comparison samplers with both vertex and fragment
+visibility. HAL now maps these to fragment-only native slots. Core continues
+to reject a vertex entry point that actually samples the depth texture. The
+strict RTX 3090 Ti fixture verified both cases at requested/actual FL9_1; no
+capability changed. Continue the wider Core/HAL audit. See `FL9_1_PROGRESS.md`
+for exact commands and output.
+
 ## Strict CTS route — 2026-11-10
 
 The xtask route now supports `--require-dx11-hardware` with mandatory

@@ -353,26 +353,20 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
                 sample_type: wgt::TextureSampleType::Depth,
                 view_dimension: wgt::TextureViewDimension::D2,
                 multisampled: false,
-            } if entry.visibility == wgt::ShaderStages::FRAGMENT => {
+            } if sampled_visibility(entry.visibility) => {
                 textures.push((entry.binding, false, true, false))
             }
             wgt::BindingType::Sampler(
                 sampler_type @ (wgt::SamplerBindingType::Filtering
                 | wgt::SamplerBindingType::NonFiltering
                 | wgt::SamplerBindingType::Comparison),
-            ) if if sampler_type == wgt::SamplerBindingType::Comparison {
-                entry.visibility == wgt::ShaderStages::FRAGMENT
-            } else {
-                sampled_visibility(entry.visibility)
-            } =>
-            {
-                samplers.push((
-                    entry.binding,
-                    sampler_type == wgt::SamplerBindingType::NonFiltering,
-                    sampler_type == wgt::SamplerBindingType::Comparison,
-                    entry.visibility.contains(wgt::ShaderStages::VERTEX),
-                ))
-            }
+            ) if sampled_visibility(entry.visibility) => samplers.push((
+                entry.binding,
+                sampler_type == wgt::SamplerBindingType::NonFiltering,
+                sampler_type == wgt::SamplerBindingType::Comparison,
+                sampler_type != wgt::SamplerBindingType::Comparison
+                    && entry.visibility.contains(wgt::ShaderStages::VERTEX),
+            )),
             wgt::BindingType::Buffer {
                 ty: wgt::BufferBindingType::Uniform,
                 has_dynamic_offset,
@@ -728,10 +722,11 @@ mod tests {
 
     #[test]
     fn depth_comparison_layout_uses_matching_texture_and_sampler_namespaces() {
+        let shared_visibility = wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT;
         let entries = [
             wgt::BindGroupLayoutEntry {
                 binding: 7,
-                visibility: wgt::ShaderStages::FRAGMENT,
+                visibility: shared_visibility,
                 ty: wgt::BindingType::Texture {
                     sample_type: wgt::TextureSampleType::Depth,
                     view_dimension: wgt::TextureViewDimension::D2,
@@ -741,7 +736,7 @@ mod tests {
             },
             wgt::BindGroupLayoutEntry {
                 binding: 42,
-                visibility: wgt::ShaderStages::FRAGMENT,
+                visibility: shared_visibility,
                 ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Comparison),
                 count: None,
             },
@@ -749,11 +744,14 @@ mod tests {
         let group = group_kind(&entries).unwrap();
         assert_eq!(group.texture_depth_mask, 1);
         assert_eq!(group.sampler_comparison_mask, 1);
+        assert_eq!(group.texture_vertex_visibility_mask, 0);
+        assert_eq!(group.sampler_vertex_visibility_mask, 0);
         let bindings = group.stage_bindings(wgt::ShaderStages::FRAGMENT);
         assert_eq!(bindings[0].kind, ShaderBindingKind::TextureDepth);
         assert_eq!(bindings[0].slot, 0);
         assert_eq!(bindings[1].kind, ShaderBindingKind::SamplerComparison);
         assert_eq!(bindings[1].slot, 0);
+        assert!(group.stage_bindings(wgt::ShaderStages::VERTEX).is_empty());
         let plan = BindingPlan::new(&[Some(group)]).unwrap();
         let pair = super::super::sampling::SamplingPair {
             texture: naga::ResourceBinding {
@@ -788,6 +786,9 @@ mod tests {
         );
         let mut vertex_visible = entries;
         vertex_visible[1].visibility = wgt::ShaderStages::VERTEX;
+        assert!(group_kind(&vertex_visible).is_err());
+        vertex_visible = entries;
+        vertex_visible[0].visibility = wgt::ShaderStages::VERTEX;
         assert!(group_kind(&vertex_visible).is_err());
     }
 

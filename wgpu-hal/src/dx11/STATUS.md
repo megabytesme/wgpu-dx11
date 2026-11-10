@@ -1,4 +1,13 @@
 
+## Combined visibility for depth/comparison bindings — 2026-11-10
+
+Depth-texture and comparison-sampler bind-group entries can declare both
+vertex and fragment visibility while remaining pixel-stage resources in the
+HAL mapping. Core's zero vertex-sampled-texture limit still rejects a vertex
+entry point that actually samples the depth texture. The strict RTX 3090 Ti
+fixture verified successful layout creation and this pre-HAL pipeline
+rejection at requested/actual FL9_1; no capability changed.
+
 Latest shader-input status: `instance_index` and a restricted `vertex_index`
 subset now execute on the opt-in FL9_1 path. `vertex_index` uses a custom float
 IA semantic with direct identity IDs up to 65,534 and temporary remapped streams

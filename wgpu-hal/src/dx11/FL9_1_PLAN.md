@@ -1,5 +1,15 @@
 # FL9_1 completion plan
 
+## Current Core/HAL contract fix — comparison-resource visibility — 2026-11-10
+
+An independent audit found and closed one Core-to-HAL layout mismatch.
+Depth-texture and comparison-sampler entries may declare combined
+vertex/fragment visibility when their query-gated capabilities are available;
+the HAL maps them only to the pixel stage. A strict Core fixture confirms
+layout creation succeeds while actual vertex-stage depth sampling is rejected
+before HAL. No capability changed. Continue the audit across remaining public
+Core-accepted operations and retain the strict hardware/validation boundary.
+
 ## Current continuation — strict CTS execution path — 2026-11-10
 
 `xtask cts --backend dx11 --require-dx11-hardware` now explicitly selects and

@@ -169,6 +169,25 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rejects_unimplemented_hal_features_at_fl91 -- --nocapture --test-threads=1
 ```
 
+### Combined visibility for depth and comparison resources
+
+The strict Core fixture verifies that depth-texture and comparison-sampler
+layout entries with both vertex and fragment visibility pass layout creation
+when the selected device reports the required capabilities. HAL maps these
+entries only to the pixel stage. A vertex entry point that actually samples
+the depth texture still fails Core pipeline validation because FL9_1 reports
+no vertex sampled-texture capacity.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j2 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+
+cargo +1.93.1 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib depth_comparison_layout_uses_matching_texture_and_sampler_namespaces -- --nocapture
+```
+
+The RTX 3090 Ti fixture requested and confirmed FL9_1. It logged both layout
+acceptance and vertex-sampling rejection. This changes no reported capability.
+
 ### Public buffer-clear transfer test
 
 `public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91` uploads a
