@@ -57,8 +57,9 @@ the selected driver does not report that optional support; the combined-load
 hardware test itself ran. Clippy and formatting passed after fixing a new
 Core `collapsible_if` warning. Clippy still reports existing D3D11 HAL
 warnings, and the DX12-only Core test build reports existing unused-variable
-warnings in FL9 helper analysis. No commit has yet been created for this
-increment.
+warnings in FL9 helper analysis.
+
+Checkpoint: `8164843a9` (`dx11: combine FL9_1 texture load and dimensions`).
 
 ## Selected-entry texture-sample-bias sampler validation — 2026-11-10
 
