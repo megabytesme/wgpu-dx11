@@ -10,12 +10,13 @@ unverified. Core/HAL audits have not found a confirmed valid-public-request to
 unsupported-HAL mismatch in their reviewed paths. The latest capability
 projection correction explicitly zeros unused compute and storage limits; its
 HAL projection test and strict public readback/integration test passed on the
-RTX 3090 Ti forced to FL9_1. Public CoreWindow surface capabilities remain
-withheld even though the HAL has a CoreWindow swapchain path. Next, audit
-CoreWindow's public dispatcher-thread and lifecycle contract before deciding
-whether it can be enabled safely; continue the broader operation audit in
-parallel. Historical FL9_1 hardware, Lumia/CoreWindow runtime and physical
-device-removal recovery are external verification gaps.
+RTX 3090 Ti forced to FL9_1. A source audit confirmed that the existing
+CoreWindow dispatcher-thread and lifecycle contract is safe to expose; the
+public capability gate has been removed and the strict desktop HWND path still
+passes. Lumia/UWP CoreWindow runtime verification remains open. Continue
+auditing valid public operations and shader/resource boundary cases.
+Historical FL9_1 hardware and physical device-removal recovery are external
+verification gaps.
 
 ## Earlier current-state checkpoint — 2026-11-10
 

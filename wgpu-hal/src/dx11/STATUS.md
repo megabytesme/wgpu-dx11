@@ -79,11 +79,13 @@ the RTX 3090 Ti at requested/actual FL9_1; no capability flags changed.
 
 The opt-in `dx11` backend now enumerates physical adapters that can create an
 explicit FL9_1 device and exposes the selected-device capability projection
-for offscreen rendering and a constrained Win32 HWND surface through the public
-wgpu API. The HWND path reports BGRA8 sRGB FIFO, opaque composition,
-render-attachment usage and one frame of latency; configure, acquire and
-present are restricted to the creating thread. It exposes the native-only
-`TEXTURE_FORMAT_16BIT_NORM` feature only when a selected-device query reports
+for offscreen rendering and constrained Win32 HWND or WinRT CoreWindow surfaces
+through the public wgpu API. Both surface paths report BGRA8 sRGB FIFO, opaque
+composition, render-attachment usage and one frame of latency; CoreWindow
+creation verifies dispatcher access, and surface operations are restricted to
+the creating thread. CoreWindow runtime behavior remains unverified. The
+backend exposes the native-only `TEXTURE_FORMAT_16BIT_NORM` feature only when
+a selected-device query reports
 the required 2D format support. The native-only `TEXTURE_FORMAT_16BIT_PACKED`
 feature covers query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled
 uploads. RGB565 additionally has queried render-target and copy/readback
@@ -1103,9 +1105,10 @@ texture/sampler and stage-visible dynamic uniform bindings, indexed textured
 depth-tested rendering, transform updates, concurrent device submissions and
 pixel readback. The public test is still a bounded diagnostic scene, not a
 representative application or a complete contract audit.
-- The narrow public HWND surface path reports BGRA8 sRGB FIFO, opaque
-  composition, render-attachment usage and one frame of latency. Configure,
-  acquire and present are restricted to the HWND's creating thread. A queue
+- The public HWND and validated CoreWindow surface paths report BGRA8 sRGB
+  FIFO, opaque composition, render-attachment usage and one frame of latency.
+  CoreWindow construction verifies dispatcher access; configure, acquire and
+  present are restricted to the creating thread. A queue
   gate serializes submission, writes, mapping flushes, polling and
   context-backed resource creation against Present; same-thread reentrant work
   is rejected before queue or mapping state changes. The strict public test
@@ -1113,7 +1116,7 @@ representative application or a complete contract audit.
   wrong-thread and duplicate acquisitions return validation errors without
   losing the surface or consuming the first outstanding frame. It uses a
   hidden window; the separate visible example exercises the message pump and
-  desktop presentation.
+  desktop presentation. Lumia/UWP CoreWindow presentation has not been run.
 - `wgpu/examples/dx11_fl91_windowed.rs` is a visible public-API example. It
   pumps Win32 messages, handles resize, and presents an animated indexed,
   textured, depth-tested cube. A 60-frame run passed on the RTX 3090 Ti at

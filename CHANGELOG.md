@@ -92,6 +92,7 @@ Bottom level categories:
 - Support direct fragment indexing of `array<vec4f, N>` uniform fields for `2 <= N <= 24` in the narrowly validated opt-in FL9_1 D3D11 subset.
 - Expose same-format RGBA8_SNORM GPU texture copies when the selected FL9_1 D3D11 device query supports them, without enabling CPU readback.
 - Permit direct, statically indexed column and scalar component stores to a local `matCx2<f32>` struct member in the opt-in FL9_1 D3D11 backend.
+- Expose the constrained BGRA8 FIFO surface contract for validated WinRT CoreWindow surfaces on the opt-in FL9_1 D3D11 backend; UWP/Lumia runtime behavior remains unverified.
 
 ### Changes
 
@@ -166,6 +167,7 @@ Bottom level categories:
 - The experimental opt-in `dx11` feature exposes physical FL9_1 adapters
   through public wgpu for restricted offscreen rendering and a constrained
   owner-thread HWND surface.
+- Report zero compute and storage limits for the opt-in FL9_1 D3D11 backend when those operations are disabled by its downlevel contract.
 - `Device::invalidate_mapped_ranges` now returns a `Result` so invalidation failures can be handled without exposing stale mapped data.
 - `Device::flush_mapped_ranges` now returns a `Result` so flush failures can be handled before using mapped writes on the GPU.
 - HAL adapters with occlusion query support must report the new `DownlevelFlags::OCCLUSION_QUERY` flag. Custom adapters and stored flag sets may need updating.

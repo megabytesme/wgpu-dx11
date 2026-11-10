@@ -14,6 +14,22 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --exact --nocapture --test-threads=1
 ```
 
+## Public CoreWindow capability gate
+
+Successfully constructed WinRT CoreWindow surfaces now receive the same
+restricted BGRA8 sRGB FIFO capability record as HWND surfaces. CoreWindow
+creation verifies dispatcher access, and the existing HAL/Core paths enforce
+the captured thread for configure, acquire and present. Desktop validation can
+exercise the unchanged public HWND path and compile the CoreWindow branch, but
+cannot instantiate a real CoreWindow; UWP/Lumia runtime presentation remains
+unverified.
+
+```powershell
+cargo +1.93.1 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib hwnd_present_thread_check_is_owner_thread_only
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_hwnd_surface_presents_on_its_window_thread -- --exact --nocapture --test-threads=1
+```
+
 ## Strict BC partial-initialization and matrix determinant checks
 
 Run from a Visual Studio developer shell with the DX11 strict hardware gate
@@ -115,18 +131,21 @@ requested FL9_1 device and pass the selected-device capability projection.
 Only selected-device-gated features are exposed: the implemented 16-bit
 normalized/packed texture paths and comparison-sampler border addressing when
 the required query succeeds. The downlevel contract is not WebGPU-compliant.
-A narrow public HWND surface is available with BGRA8 sRGB FIFO,
-opaque composition, render-attachment usage and one frame of latency. Configure,
-acquire and present are owner-thread-only. The strict public test uses a hidden
-window. The bounded visible example pumps events, presents an animated cube
+A narrow public HWND and validated WinRT CoreWindow surface contract is
+available with BGRA8 sRGB FIFO, opaque composition, render-attachment usage
+and one frame of latency. CoreWindow creation requires dispatcher access, and
+configure, acquire and present are owner-thread-only. The strict public test
+uses a hidden HWND; CoreWindow still requires UWP/Lumia runtime verification.
+The bounded visible example pumps events, presents an animated cube
 for 1,800 frames, and has a client-area capture showing distinct red and green
 textured faces over the clear background. This remains experimental; the
 HAL/core tests do not establish complete wgpu or CTS conformance.
 
 Later sections include historical test checkpoints. Statements there that
 public surface capabilities were unavailable or the adapter was offscreen-only
-describe the state at those earlier checkpoints; the current HWND contract is
-summarized above and in `CAPABILITIES.md`.
+describe the state at those earlier checkpoints; current HWND and CoreWindow
+contracts are summarized above and in `CAPABILITIES.md`. CoreWindow runtime
+behavior remains unverified.
 
 ### Strict DX11 CTS selection
 
@@ -1990,15 +2009,15 @@ is unavailable; it does not substitute WARP. These tests cover a substantial
 subset but do not establish that every operation allowed by the projection is
 safe or that the backend is WebGPU-compliant.
 
-The public adapter now exposes a constrained HWND surface path. Queue work and
-selected context-backed resource operations serialize against `Present`;
-same-thread reentrant mutations are rejected, and configure/acquire/present
-require the window's owner thread. A hidden-window lifecycle test and bounded
+The public adapter exposes constrained HWND and validated CoreWindow surface
+paths. Queue work and selected context-backed resource operations serialize
+against `Present`; same-thread reentrant mutations are rejected, and
+configure/acquire/present require the window's owner thread. A hidden-HWND lifecycle test and bounded
 visible example have run at forced FL9_1. The visible example's client-area
 capture has been inspected; deterministic pixel validation continues through
 offscreen readback tests. Continue testing resize, error and reentrancy edges;
-historical FL9_1 surface behavior remains outstanding. This does not make the
-adapter WebGPU-compliant.
+CoreWindow/Lumia runtime and historical FL9_1 surface behavior remain
+unverified. This does not make the adapter WebGPU-compliant.
 
 ## 3. Upstream wgpu GPU tests
 

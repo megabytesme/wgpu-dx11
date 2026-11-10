@@ -177,9 +177,15 @@ impl Surface {
         }
     }
     pub(super) fn supports_public_presentation(&self) -> bool {
-        self.hwnd().is_some_and(|hwnd| unsafe {
-            windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(hwnd, None) != 0
-        })
+        match &self.window {
+            Window::Core { .. } => true,
+            Window::Hwnd(hwnd) => unsafe {
+                windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(
+                    windows::Win32::Foundation::HWND(hwnd.get() as *mut _),
+                    None,
+                ) != 0
+            },
+        }
     }
     fn is_window_thread(&self) -> bool {
         match self.hwnd() {
@@ -1021,6 +1027,7 @@ mod tests {
             NonZeroIsize::new(hwnd.0 as isize).expect("non-null HWND"),
         ));
         assert!(surface.is_present_on_current_thread());
+        assert!(surface.supports_public_presentation());
         let worker_surface = surface.clone();
         assert!(
             !std::thread::spawn(move || worker_surface.is_present_on_current_thread())

@@ -21,15 +21,20 @@ RTX 3090 Ti forced to FL9_1, and a constrained desktop HWND presentation path
 is tested. The latest strict runs recorded in `FL9_1_PROGRESS.md` passed
 132/132 Core fixtures, 468/468 private HAL tests and 121/121 public DX11 tests;
 they do not establish historical-driver compatibility or complete API
-coverage.
+coverage. A source audit found that the HAL CoreWindow path's thread/lifecycle
+contract matches the public surface contract; public capability reporting now
+includes validated WinRT CoreWindow surfaces. Lumia/UWP runtime behavior is
+still unverified, and surface calls must remain on the captured dispatcher
+thread.
 
 Recent independent audits found no new Core-valid-to-HAL failure in the
-reviewed queue/query, graphics/resource, shader and HAL trait paths, but the
-exhaustive contract audit remains open. Public CoreWindow is still withheld
-even though HAL plumbing exists; the current HAL, public `wgpu` libraries and
-offscreen/windowed examples cross-check for ARM32 UWP, but Lumia runtime
-testing is required before enabling CoreWindow. The Device Portal timed out on
-the latest probe.
+reviewed queue/query, graphics/resource, shader, surface/fence and HAL trait
+paths, but the exhaustive contract audit remains open. The public adapter now
+reports the already implemented CoreWindow surface capabilities; its strict
+HWND path remains the only public presentation path executed on the desktop.
+The current HAL, public `wgpu` libraries and offscreen/windowed examples
+cross-check for ARM32 UWP, but Lumia runtime testing remains required. The
+Device Portal timed out on the latest probe.
 Ordinary texture arrays, compute/UAV, FL9_1 derivatives/gradients, occlusion
 queries and other documented profile/resource restrictions are not gaps to
 paper over. FXC probe results place basic derivatives and `SampleGrad` at

@@ -6,14 +6,17 @@ device explicitly requested at FL9_1 and pass the implemented capability
 projection. Software adapters are excluded. D3D11 remains opt-in and does not
 change default backend selection.
 
-The adapter can be used for offscreen rendering and a constrained native HWND
-surface through the public wgpu API. It exposes the native-only
+The adapter can be used for offscreen rendering and constrained native HWND
+or validated WinRT CoreWindow surfaces through the public wgpu API. CoreWindow
+creation requires its dispatcher thread; configure, acquire and present must
+remain on the captured owner thread. CoreWindow runtime behavior on UWP/Lumia
+is not yet verified. It exposes the native-only
 `TEXTURE_FORMAT_16BIT_NORM` and `TEXTURE_FORMAT_16BIT_PACKED` features only
 when the selected device reports the format support required by their
-implemented paths. It is not WebGPU-compliant. HWND surfaces currently expose
-only BGRA8 sRGB FIFO presentation, opaque composition, one frame of latency and
-render-attachment usage. Configure, acquire and present must run on the HWND's
-creating thread.
+implemented paths. It is not WebGPU-compliant. HWND and CoreWindow surfaces
+expose BGRA8 sRGB FIFO presentation, opaque composition, one frame of latency
+and render-attachment usage. Configure, acquire and present must run on the
+surface's creating thread.
 Queue submissions, writes, mapped-buffer updates and context-backed resource
 creation are serialized against Present; same-thread reentrant work that would
 touch queue/context state is rejected. Drop views of the previous backbuffer
@@ -76,8 +79,8 @@ is a native diagnostic. It tries a descending feature-level list and separately
 requests FL9_1; it reports DXGI identity and device-creation failures without
 claiming wgpu compatibility.
 
-The HAL retains private CoreWindow and borrowed HWND swapchain paths. Hidden
-window tests cover clear, readback, present, resize and recreation; a strict
-public test covers HWND configure, render, present, resize and owner-thread
-acquisition rejection. These tests do not establish visible desktop
-presentation or ARM32 CoreWindow runtime behavior.
+The HAL supports WinRT CoreWindow and borrowed HWND swapchain paths, and the
+public capability model now exposes both. Hidden-HWND tests cover clear,
+readback, present, resize and recreation; a strict public test covers HWND
+configure, render, present, resize and owner-thread rejection. No CoreWindow
+UWP/Lumia runtime test has been run.

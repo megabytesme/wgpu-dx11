@@ -15905,3 +15905,28 @@ Core thread/lifecycle audit and Lumia/UWP runtime verification, not as
 currently supported public presentation. The uniform audit found no software
 gap; historical FL9_1 portability and executing all thirteen user constant
 buffer slots together remain verification gaps.
+
+## Public CoreWindow capability exposure — 2026-11-10
+
+The surface/fence review found no confirmed lifecycle, frame-retention or
+fence-ordering issue in the inspected paths. A focused public-capability audit
+confirmed that `Surface::from_core_window` already validates
+`Dispatcher.HasThreadAccess`, retains the CoreWindow and records its owner
+thread; Core and HAL enforce that thread for configure, acquire and present.
+The existing CoreWindow swapchain uses the same BGRA8, FIFO, opaque,
+render-attachment-only, one-frame-latency contract as the public HWND path.
+The capability predicate now accepts a successfully constructed CoreWindow,
+so public adapter selection can return its surface capabilities. No Core/HAL
+operation behavior or HWND behavior changed.
+
+The HAL owner-thread test passed 1/1, including the existing HWND public
+presentation predicate check. The strict public hidden-HWND lifecycle test
+passed 1/1 on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), requested/actual FL9_1, `software=false`; it configured,
+presented, resized, and exercised wrong-thread, duplicate-acquisition and
+stale-frame handling. This test compiles the CoreWindow branch but cannot
+instantiate an `ICoreWindow`. UWP/Lumia runtime presentation therefore remains
+unverified. Clippy passed for the HAL library and public test target with only
+existing `too_many_arguments` warnings; formatting and `git diff --check`
+passed. The preceding truthful-limit projection is committed as
+`6f2b8f01958b2ed2eb231bfd380263a38841aec0`.
