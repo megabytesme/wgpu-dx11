@@ -15121,9 +15121,9 @@ and failed to locate `link.exe`; rerunning from `VsDevCmd.bat` passed. The
 public test's default-enumeration isolation check also passed in the full
 suite. Historical FL9_1 drivers and Lumia runtime remain unverified.
 
-The code checkpoint is intended to be committed separately, then its hash
-recorded here. Next work should come from a concrete application workload or
-a reproduced API/compiler boundary. Keep feature/profile limits, deliberately
-unsupported backend operations and missing historical-device verification as
-separate categories; do not treat the remaining FL9_1 task list as a batch of
-independent agent patches.
+Code checkpoint: `425cad23846aaac0e88db2a64d00e5dc562b1711` (`dx11: extend
+FL9_1 texture level helpers to 3D and cube`). Next work should come from a
+concrete application workload or a reproduced API/compiler boundary. Keep
+feature/profile limits, deliberately unsupported backend operations and
+missing historical-device verification as separate categories; do not treat
+the remaining FL9_1 task list as a batch of independent agent patches.
