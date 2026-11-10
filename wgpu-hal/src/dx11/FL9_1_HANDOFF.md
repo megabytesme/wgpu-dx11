@@ -1,5 +1,17 @@
 # FL9_1 handoff
 
+## Current continuation — sample-bias compatibility validation — 2026-11-10
+
+The DX11 Core contract now carries selected-fragment-entry
+`textureSampleBias` use into draw validation and rejects only used samplers
+whose min/mag filters differ or whose effective anisotropy is not one. The
+restriction defaults off for other backends. Strict RTX FL9_1 tests passed for
+the existing biased-mip rendering and the new pre-HAL Core rejection cases;
+full strict public/Core/HAL suites also passed. Public render-bundle testing
+cannot capture `RenderBundleEncoder::finish` validation errors because the
+Rust wrapper uses a fatal handler; the Core bundle guard remains implemented.
+See `FL9_1_PROGRESS.md` for exact counts and `TESTING.md` for commands.
+
 ## Latest execution evidence — 2026-11-09
 
 Strict public GPU tests now cover BC1/BC2/BC3 partial initialization and

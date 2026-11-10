@@ -2390,6 +2390,8 @@ pub struct Sampler {
     pub(crate) comparison: bool,
     /// `true` if this is a filtering sampler
     pub(crate) filtering: bool,
+    /// `true` if the sampler can be used with the backend's restricted sample-bias path
+    pub(crate) texture_sample_bias_compatible: bool,
     pub(crate) address_modes: [wgt::AddressMode; 3],
 }
 

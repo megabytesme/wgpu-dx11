@@ -1446,6 +1446,9 @@ pub struct DownlevelLimits {
     /// Whether `textureSampleBias` may specify a constant texel offset.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_sample_bias_offset: bool,
+    /// Whether `textureSampleBias` requires equal minification/magnification filters and anisotropy 1.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub texture_sample_bias_requires_compatible_sampler: bool,
     /// Whether fragment shaders may use derivatives or explicit texture gradients.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub fragment_derivatives: bool,
@@ -1609,6 +1612,7 @@ impl Default for DownlevelLimits {
             max_texture_sample_bias: u32::MAX,
             texture_sample_bias_dynamic: true,
             texture_sample_bias_offset: true,
+            texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: true,
             vertex_format_mask: Self::webgpu_vertex_format_mask(),
         }
@@ -1885,6 +1889,8 @@ impl DownlevelLimits {
             && self.max_texture_sample_bias >= required.max_texture_sample_bias
             && (!required.texture_sample_bias_dynamic || self.texture_sample_bias_dynamic)
             && (!required.texture_sample_bias_offset || self.texture_sample_bias_offset)
+            && (!self.texture_sample_bias_requires_compatible_sampler
+                || required.texture_sample_bias_requires_compatible_sampler)
             && (!required.fragment_derivatives || self.fragment_derivatives)
             && self.vertex_format_mask & required.vertex_format_mask == required.vertex_format_mask
     }
@@ -1996,6 +2002,7 @@ impl DownlevelCapabilities {
                 >= DownlevelLimits::default().max_texture_sample_bias
             && self.limits.texture_sample_bias_dynamic
             && self.limits.texture_sample_bias_offset
+            && !self.limits.texture_sample_bias_requires_compatible_sampler
             && self.limits.fragment_derivatives
             && self.limits.vertex_format_mask & DownlevelLimits::webgpu_vertex_format_mask()
                 == DownlevelLimits::webgpu_vertex_format_mask()
@@ -2587,6 +2594,7 @@ mod tests {
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
             texture_sample_bias_offset: false,
+            texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
@@ -2664,6 +2672,7 @@ mod tests {
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
             texture_sample_bias_offset: false,
+            texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
         };
@@ -3625,6 +3634,18 @@ mod tests {
             ..DownlevelLimits::default()
         }));
         assert!(!available.check_limits(&DownlevelLimits::default()));
+        let sampler_restricted = DownlevelLimits {
+            texture_sample_bias_requires_compatible_sampler: true,
+            ..available.clone()
+        };
+        assert!(available.check_limits(&sampler_restricted));
+        assert!(!sampler_restricted.check_limits(&available));
+        assert!(sampler_restricted.check_limits(&sampler_restricted));
+        assert!(!DownlevelCapabilities {
+            limits: sampler_restricted,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
         assert!(!available.check_limits(&DownlevelLimits {
             max_texture_sample_bias: 4,
             ..DownlevelLimits::default()

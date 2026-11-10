@@ -8,6 +8,19 @@ execution evidence for paths already present in the restricted projection;
 it does not imply support on every historical FL9_1 driver or change the
 capability contract. See `TESTING.md` and `FL9_1_PROGRESS.md`.
 
+Core now tracks whether the selected fragment entry point uses
+`textureSampleBias` and validates only that entry point's sampled sampler
+bindings against the FL9_1 D3D11 requirement of equal min/mag filters and
+effective anisotropy 1. The default-false downlevel limit is enabled only in
+the DX11 projection; GLES, noop and other defaults retain their previous
+behavior. Validation runs before direct draws and render-bundle recording can
+reach the HAL. Strict RTX execution confirms the supported equal-filter path
+still samples biased mip levels, while a public negative test confirms mixed
+filters and anisotropy 2 are rejected as Core validation errors. The Rust
+`RenderBundleEncoder::finish` wrapper treats Core finish errors as fatal, so the
+bundle guard is not exercised through a public error scope. This is a narrow
+validation contract, not broader bias or shader-profile support.
+
 The opt-in `dx11` feature now enumerates physical DXGI adapters that can create
 the explicitly requested FL9_1 device and exposes the selected-device
 capability projection for public wgpu rendering. Its constrained Win32 HWND

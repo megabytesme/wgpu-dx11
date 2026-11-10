@@ -1,5 +1,27 @@
 # FL9_1 progress
 
+## Selected-entry texture-sample-bias sampler validation — 2026-11-10
+
+The public FL9_1 adapter previously let `textureSampleBias` reach HAL with
+mixed min/mag filters or anisotropy 2; HAL rejected those combinations during
+command preparation. Core now carries Naga's selected-fragment-entry bias use
+and sampled-pair metadata into render-pipeline state, retains each sampler's
+compatibility after effective downlevel anisotropy adjustment, and rejects
+incompatible used pairs at direct draw and render-bundle readiness. The new
+`DownlevelLimits` field defaults false and is set only by DX11, leaving other
+backends unchanged. A strict public negative test rejected mixed filters and
+anisotropy 2 before HAL; the existing positive biased-mip test still matched
+all 384 pixels at requested/actual FL9_1 on the RTX 3090 Ti. The full strict
+public suite passed 115/115, the Core suite passed 125/125, and the strict
+private HAL suite passed 464/464. HAL and Core Clippy completed with existing
+warnings; new public test Clippy was clean. Render-bundle validation is wired
+to the same check, but the Rust `RenderBundleEncoder::finish` wrapper uses a
+fatal error path, so the public integration test covers direct draws only.
+
+The verified change is ready for a focused checkpoint. It does not alter
+normal adapter enumeration, selected shader support, or historical-device
+verification.
+
 ## BC partial-initialization and matrix determinant execution — 2026-11-09
 
 Two public strict-hardware regression targets now verify additional existing

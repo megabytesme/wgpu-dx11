@@ -5731,6 +5731,18 @@ impl Interface {
         Ok(pairs)
     }
 
+    pub(crate) fn entry_point_uses_texture_sample_bias(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(!entry_point.texture_sample_biases.is_empty())
+    }
+
     pub(crate) fn entry_point_writes_frag_depth(
         &self,
         stage: naga::ShaderStage,
@@ -7616,6 +7628,13 @@ mod tests {
                     .unwrap(),
                 "{entry} should be allowed"
             );
+            assert_eq!(
+                interface
+                    .entry_point_uses_texture_sample_bias(naga::ShaderStage::Fragment, entry)
+                    .unwrap(),
+                entry != "safe",
+                "sample-bias detection should follow selected entry {entry}"
+            );
         }
         for entry in [
             "too_large",
@@ -7635,6 +7654,12 @@ mod tests {
                     )
                     .unwrap(),
                 "{entry} should be rejected"
+            );
+            assert!(
+                interface
+                    .entry_point_uses_texture_sample_bias(naga::ShaderStage::Fragment, entry)
+                    .unwrap(),
+                "{entry} reaches textureSampleBias"
             );
         }
 
@@ -7662,6 +7687,9 @@ mod tests {
                 "missing",
                 &fl91,
             )
+            .is_err());
+        assert!(interface
+            .entry_point_uses_texture_sample_bias(naga::ShaderStage::Fragment, "missing")
             .is_err());
     }
 

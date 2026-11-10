@@ -695,6 +695,9 @@ impl<'scope, 'snatch_guard, 'cmd_enc> State<'scope, 'snatch_guard, 'cmd_enc> {
         if let Some(pipeline) = self.pipeline.as_ref() {
             self.pass.binder.check_compatibility(pipeline.as_ref())?;
             self.pass.binder.check_npot_sampling(pipeline.as_ref())?;
+            self.pass
+                .binder
+                .check_texture_sample_bias_samplers(pipeline.as_ref())?;
             self.pass.binder.check_late_buffer_bindings()?;
 
             if self.blend_constant == OptionalState::Required {

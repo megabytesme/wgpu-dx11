@@ -22,6 +22,31 @@ uniform between draws, and checked 12 complete 8x8 readbacks (768 pixels).
 Clippy passed with the five existing D3D11 HAL warnings and no warning from
 the new tests. These results are not evidence for historical FL9_1 devices.
 
+## Selected-entry `textureSampleBias` sampler validation
+
+The DX11 downlevel projection marks the FL9_1 sample-bias sampler restriction.
+Core follows Naga's selected fragment entry analysis and validates the
+effective sampler state for the exact texture/sampler pairs used by that
+entry: min and mag filters must match, and effective anisotropy must be one.
+This check runs before direct draw encoding; render-bundle readiness uses the
+same rule. The public negative test checks the mixed-filter and anisotropy-2
+cases return the specific Core validation diagnostic before HAL draw
+execution. It selects a physical FL9_1 adapter and fails on missing hardware
+in strict mode.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_sample_bias_validation -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_sampled_mip_chain_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested and
+actual FL9_1, the negative test rejected both unsupported samplers before the
+HAL and the positive mip-bias test matched all 384 output pixels. The public
+render-bundle wrapper routes `finish` validation errors to a fatal handler, so
+the bundle check is present in Core but cannot be asserted through a public
+error scope. Other backends keep the default-false restriction field.
+
 The `dx11` feature enumerates only physical adapters that create the explicitly
 requested FL9_1 device and pass the selected-device capability projection.
 Only selected-device-gated features are exposed: the implemented 16-bit

@@ -336,6 +336,10 @@ fn npot_sampler_pair_compatible(texture_npot: &[bool], sampler_uses_repeat: &[bo
     !texture_npot.iter().any(|&npot| npot) || !sampler_uses_repeat.iter().any(|&repeat| repeat)
 }
 
+fn sample_bias_sampler_compatible(sampler_compatibility: &[bool]) -> bool {
+    !sampler_compatibility.is_empty() && sampler_compatibility.iter().all(|&compatible| compatible)
+}
+
 #[derive(Debug)]
 pub(super) struct Binder {
     pub(super) pipeline_layout: Option<Arc<PipelineLayout>>,
@@ -556,6 +560,43 @@ impl Binder {
         Ok(())
     }
 
+    pub(super) fn check_texture_sample_bias_samplers(
+        &self,
+        pipeline: &RenderPipeline,
+    ) -> Result<(), DrawError> {
+        if !pipeline.requires_texture_sample_bias_compatible_samplers {
+            return Ok(());
+        }
+
+        for pair in &pipeline.sampling_pairs {
+            let sampler_group = self
+                .list_valid()
+                .find_map(|(index, group, _)| {
+                    (index == pair.sampler_group as usize).then_some(group)
+                })
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.sampler_group,
+                    binding: pair.sampler_binding,
+                })?;
+            let sampler_compatibility = sampler_group
+                .sampler_texture_sample_bias_compatible
+                .get(&pair.sampler_binding)
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.sampler_group,
+                    binding: pair.sampler_binding,
+                })?;
+
+            if !sample_bias_sampler_compatible(sampler_compatibility) {
+                return Err(DrawError::IncompatibleTextureSampleBiasSampler {
+                    group: pair.sampler_group,
+                    binding: pair.sampler_binding,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
     /// Scan active buffer bindings corresponding to layouts without `min_binding_size` specified.
     pub(super) fn check_late_buffer_bindings(
         &self,
@@ -613,7 +654,7 @@ impl Binder {
 
 #[cfg(test)]
 mod tests {
-    use super::npot_sampler_pair_compatible;
+    use super::{npot_sampler_pair_compatible, sample_bias_sampler_compatible};
 
     #[test]
     fn npot_repeat_validation_uses_the_bound_relationship() {
@@ -624,5 +665,14 @@ mod tests {
             &[false, true],
             &[false, true]
         ));
+    }
+
+    #[test]
+    fn texture_sample_bias_checks_only_the_selected_sampler_pairs() {
+        assert!(sample_bias_sampler_compatible(&[true]));
+        assert!(sample_bias_sampler_compatible(&[true, true]));
+        assert!(!sample_bias_sampler_compatible(&[]));
+        assert!(!sample_bias_sampler_compatible(&[false]));
+        assert!(!sample_bias_sampler_compatible(&[true, false]));
     }
 }

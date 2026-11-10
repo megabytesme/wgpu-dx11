@@ -1361,6 +1361,7 @@ pub struct BindGroup {
     pub(crate) late_buffer_binding_infos: Vec<BindGroupLateBufferBindingInfo>,
     pub(crate) sampled_texture_npot: FastHashMap<u32, Vec<bool>>,
     pub(crate) sampler_uses_repeat: FastHashMap<u32, Vec<bool>>,
+    pub(crate) sampler_texture_sample_bias_compatible: FastHashMap<u32, Vec<bool>>,
 }
 
 pub(crate) fn sampled_view_is_npot_2d(view: &TextureView) -> bool {

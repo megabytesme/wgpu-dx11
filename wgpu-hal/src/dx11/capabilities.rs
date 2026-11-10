@@ -876,6 +876,7 @@ impl Capabilities {
                 max_texture_sample_bias: 3,
                 texture_sample_bias_dynamic: false,
                 texture_sample_bias_offset: false,
+                texture_sample_bias_requires_compatible_sampler: true,
                 fragment_derivatives: self.hardware.fragment_derivatives
                     && self.backend.fragment_derivatives,
                 texture_sample_level: self.hardware.texture_sample_level

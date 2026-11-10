@@ -29,6 +29,15 @@ seven tests passed on the RTX 3090 Ti at explicitly requested/actual FL9_1.
 These checks add execution evidence for the current restricted projection;
 they do not broaden it. See `TESTING.md`.
 
+The selected-entry `textureSampleBias` path now validates sampler compatibility
+in Core before direct draw encoding. Only the DX11 projection requires matching
+min/mag filters and effective anisotropy 1; other backends default to no such
+restriction. Strict FL9_1 readback still passes the supported bias shader, and
+a strict public negative test verifies mixed-filter and anisotropy-2 samplers
+produce the expected Core validation error. The render-bundle Core guard is
+present, but `RenderBundleEncoder::finish` reports failures through the Rust
+wrapper's fatal path rather than an error scope.
+
 The opt-in `dx11` backend now enumerates physical adapters that can create an
 explicit FL9_1 device and exposes the selected-device capability projection
 for offscreen rendering and a constrained Win32 HWND surface through the public

@@ -1,5 +1,17 @@
 # FL9_1 completion plan
 
+## Current continuation — sample-bias compatibility validation — 2026-11-10
+
+Core now rejects DX11 FL9_1 `textureSampleBias` sampler combinations that the
+HAL cannot execute: used samplers must have equal min/mag filters and effective
+anisotropy one. The restriction is represented by a new default-false
+downlevel limit and enabled only by the DX11 projection. Strict RTX tests cover
+the positive biased-mip path and public Core rejection of mixed filters and
+anisotropy two. The full public, Core and private HAL regression sets passed.
+See `FL9_1_PROGRESS.md` and `TESTING.md` for results. Broader Core/HAL contract
+auditing, shader/API coverage, historical hardware and Lumia runtime
+verification remain open.
+
 ## Latest execution evidence — 2026-11-09
 
 The strict public test matrix now includes BC1/BC2/BC3 partial initialization

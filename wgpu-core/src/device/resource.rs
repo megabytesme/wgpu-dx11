@@ -725,6 +725,14 @@ fn limit_sampler_anisotropy(requested: u16, downlevel: &wgt::DownlevelCapabiliti
     }
 }
 
+fn sampler_texture_sample_bias_compatible(
+    min_filter: wgt::FilterMode,
+    mag_filter: wgt::FilterMode,
+    effective_anisotropy: u16,
+) -> bool {
+    min_filter == mag_filter && effective_anisotropy == 1
+}
+
 #[cfg(test)]
 mod sampler_repeat_limit_tests {
     use super::validate_texture_repeat_limit;
@@ -780,6 +788,20 @@ mod sampler_border_addressing_tests {
             &DownlevelLimits::default()
         )
         .is_ok());
+    }
+}
+
+#[cfg(test)]
+mod sampler_texture_sample_bias_tests {
+    use super::sampler_texture_sample_bias_compatible;
+    use wgt::FilterMode::{Linear, Nearest};
+
+    #[test]
+    fn sample_bias_sampler_compatibility_uses_effective_anisotropy() {
+        assert!(sampler_texture_sample_bias_compatible(Nearest, Nearest, 1));
+        assert!(sampler_texture_sample_bias_compatible(Linear, Linear, 1));
+        assert!(!sampler_texture_sample_bias_compatible(Nearest, Linear, 1));
+        assert!(!sampler_texture_sample_bias_compatible(Linear, Linear, 2));
     }
 }
 
@@ -3122,6 +3144,11 @@ impl Device {
             filtering: desc.min_filter == wgt::FilterMode::Linear
                 || desc.mag_filter == wgt::FilterMode::Linear
                 || desc.mipmap_filter == wgt::MipmapFilterMode::Linear,
+            texture_sample_bias_compatible: sampler_texture_sample_bias_compatible(
+                desc.min_filter,
+                desc.mag_filter,
+                anisotropy_clamp,
+            ),
             address_modes: desc.address_modes,
         };
 
@@ -4223,6 +4250,7 @@ impl Device {
         let mut dynamic_binding_info = Vec::new();
         let mut sampled_texture_npot = FastHashMap::default();
         let mut sampler_uses_repeat = FastHashMap::default();
+        let mut sampler_texture_sample_bias_compatible = FastHashMap::default();
         // Map of binding -> shader reflected size
         //Note: we can't collect into a vector right away because
         // it needs to be in BGL iteration order, not BG entry order.
@@ -4285,8 +4313,10 @@ impl Device {
                 }
                 Br::Sampler(ref sampler) => {
                     let uses_repeat = sampler.address_modes.contains(&wgt::AddressMode::Repeat);
+                    let bias_compatible = sampler.texture_sample_bias_compatible;
                     let sampler = self.create_sampler_binding(&mut used, binding, decl, sampler)?;
                     sampler_uses_repeat.insert(binding, vec![uses_repeat]);
+                    sampler_texture_sample_bias_compatible.insert(binding, vec![bias_compatible]);
 
                     let res_index = hal_samplers.len();
                     hal_samplers.push(sampler);
@@ -4303,6 +4333,13 @@ impl Device {
                             .map(|sampler| {
                                 sampler.address_modes.contains(&wgt::AddressMode::Repeat)
                             })
+                            .collect(),
+                    );
+                    sampler_texture_sample_bias_compatible.insert(
+                        binding,
+                        samplers
+                            .iter()
+                            .map(|sampler| sampler.texture_sample_bias_compatible)
                             .collect(),
                     );
 
@@ -4477,6 +4514,7 @@ impl Device {
             late_buffer_binding_infos,
             sampled_texture_npot,
             sampler_uses_repeat,
+            sampler_texture_sample_bias_compatible,
         };
 
         let bind_group = Arc::new(bind_group);
@@ -5595,6 +5633,7 @@ impl Device {
         let mut _mesh_entry_point_name = String::new();
         let mut immediate_slots_required = naga::valid::ImmediateSlots::default();
         let mut sampling_pairs = Vec::new();
+        let mut requires_texture_sample_bias_compatible_samplers = false;
         match desc.vertex {
             pipeline::RenderPipelineVertexProcessor::Vertex(ref vertex) => {
                 vertex_stage = {
@@ -6567,6 +6606,16 @@ impl Device {
                         );
                     }
                     sampling_pairs.extend(stage_sampling_pairs);
+                    requires_texture_sample_bias_compatible_samplers = interface
+                        .entry_point_uses_texture_sample_bias(
+                            stage.to_naga(),
+                            &fragment_entry_point_name,
+                        )
+                        .map_err(stage_err)?
+                        && self
+                            .downlevel
+                            .limits
+                            .texture_sample_bias_requires_compatible_sampler;
                     immediate_slots_required |= interface
                         .immediate_slots_required(stage.to_naga(), &fragment_entry_point_name);
                     io = interface
@@ -6836,6 +6885,7 @@ impl Device {
             late_sized_buffer_groups,
             immediate_slots_required,
             sampling_pairs,
+            requires_texture_sample_bias_compatible_samplers,
             label: desc.label.to_string(),
             tracking_data: TrackingData::new(self.tracker_indices.render_pipelines.clone()),
             is_mesh,

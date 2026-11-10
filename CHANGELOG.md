@@ -91,6 +91,7 @@ Bottom level categories:
 #### Validation
 
 - Add a downlevel limit for the restricted fragment-stage 2D float `textureLoad` subset without implying general texture-load support.
+- Add `DownlevelLimits::texture_sample_bias_requires_compatible_sampler` for backends that require matching min/mag filters and anisotropy one when `textureSampleBias` is used.
 - Add `DownlevelLimits::matrix_inverse` so backends can reject selected shaders when their translator cannot lower matrix inverse.
 - Add `DownlevelLimits::matrix_inverse_2x2` for translators that lower only 2x2 matrix inverse operations.
 - Lower f32 `mat2x2` matrix inverse in the HLSL backend behind the narrow downlevel limit.
