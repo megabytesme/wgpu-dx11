@@ -45,9 +45,6 @@ struct RenderState {
     end_timestamp: Option<windows::Win32::Graphics::Direct3D11::ID3D11Asynchronous>,
     target_mip: Option<u32>,
     pipeline: bool,
-    // Draw elision requires inert stencil, read-only shader resources, and no queries.
-    depth_never: bool,
-    depth_never_elision_safe: bool,
     active_plan: Option<Arc<super::hal_bind_group::BindingPlan>>,
     last_layout: Option<Arc<super::hal_bind_group::BindingPlan>>,
     bound_groups: Vec<Option<BoundGroup>>,
@@ -861,9 +858,6 @@ impl crate::CommandEncoder for CommandEncoder {
     unsafe fn end_debug_marker(&mut self) {}
 
     unsafe fn begin_query(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
-        if let Some(render) = self.render.as_mut() {
-            render.depth_never_elision_safe = false;
-        }
         self.reject()
     }
 
@@ -1175,9 +1169,6 @@ impl crate::CommandEncoder for CommandEncoder {
             end_timestamp,
             target_mip: color.map(|color| color.target.view.mip_base()),
             pipeline: false,
-            depth_never: false,
-            depth_never_elision_safe: desc.timestamp_writes.is_none()
-                && desc.occlusion_query_set.is_none(),
             active_plan: None,
             last_layout: None,
             bound_groups: (0..MAX_BIND_GROUPS).map(|_| None).collect(),
@@ -1250,7 +1241,6 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         }
         render.pipeline = true;
-        render.depth_never = pipeline.depth_never;
         render.active_plan = Some(pipeline.bindings.clone());
         render.sampling_pairs = pipeline.sampling_pairs.clone();
         render.texel_load = pipeline.texel_load.clone();
@@ -1513,7 +1503,6 @@ impl crate::CommandEncoder for CommandEncoder {
                     .as_ref()
                     .is_none_or(|(_, adjusted)| adjusted.is_none()))
             || !render.resources_compatible(self.device.feature_level())
-            || (vertex_count != 0 && first_vertex.checked_add(vertex_count - 1).is_none())
         {
             self.reject();
             return;
@@ -1553,12 +1542,6 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            if render.depth_never {
-                if !render.depth_never_elision_safe {
-                    self.reject();
-                }
-                return;
-            }
             for command in binding_commands {
                 self.record(command);
             }
@@ -1606,12 +1589,6 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            if render.depth_never {
-                if !render.depth_never_elision_safe {
-                    self.reject();
-                }
-                return;
-            }
             for command in binding_commands {
                 self.record(command);
             }
@@ -1657,12 +1634,6 @@ impl crate::CommandEncoder for CommandEncoder {
                 };
                 *offset = start;
             }
-            if render.depth_never {
-                if !render.depth_never_elision_safe {
-                    self.reject();
-                }
-                return;
-            }
             for command in binding_commands {
                 self.record(command);
             }
@@ -1700,12 +1671,6 @@ impl crate::CommandEncoder for CommandEncoder {
                     return;
                 };
             }
-            if render.depth_never {
-                if !render.depth_never_elision_safe {
-                    self.reject();
-                }
-                return;
-            }
             for command in binding_commands {
                 self.record(command);
             }
@@ -1723,12 +1688,6 @@ impl crate::CommandEncoder for CommandEncoder {
                 instances: instance_count,
                 instance_bindings,
             });
-            return;
-        }
-        if render.depth_never {
-            if !render.depth_never_elision_safe {
-                self.reject();
-            }
             return;
         }
         for command in binding_commands {
@@ -1825,12 +1784,6 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            if render.depth_never {
-                if !render.depth_never_elision_safe {
-                    self.reject();
-                }
-                return;
-            }
             let index = index.clone();
             for command in binding_commands {
                 self.record(command);
@@ -1930,12 +1883,6 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            if render.depth_never {
-                if !render.depth_never_elision_safe {
-                    self.reject();
-                }
-                return;
-            }
             let index = index.clone();
             for command in binding_commands {
                 self.record(command);
@@ -2013,12 +1960,6 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            if render.depth_never {
-                if !render.depth_never_elision_safe {
-                    self.reject();
-                }
-                return;
-            }
             let index = index.clone();
             for command in binding_commands {
                 self.record(command);
@@ -2094,12 +2035,6 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            if render.depth_never {
-                if !render.depth_never_elision_safe {
-                    self.reject();
-                }
-                return;
-            }
             let constant_ranges =
                 constant_point_vertex_ranges(vertices.iter().map(|v| (v.3, v.4, v.5)));
             if constant_ranges == Some(false) {
@@ -2215,12 +2150,6 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            if render.depth_never {
-                if !render.depth_never_elision_safe {
-                    self.reject();
-                }
-                return;
-            }
             let index = index.clone();
             for command in binding_commands {
                 self.record(command);
@@ -2312,12 +2241,6 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        if render.depth_never {
-            if !render.depth_never_elision_safe {
-                self.reject();
-            }
-            return;
-        }
         for command in binding_commands {
             self.record(command);
         }

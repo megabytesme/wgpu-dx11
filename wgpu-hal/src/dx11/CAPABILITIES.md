@@ -718,11 +718,10 @@ profile rejects a pixel shader that writes no target. Historical-driver
 behavior of this fallback is unverified. The private pipeline translates Less,
 Equal, LessEqual, Greater, NotEqual, GreaterEqual and Always to native D3D11
 depth comparisons, with optional writes. Strict readback covers each native
-function. Never is emulated by suppressing validated draws when stencil is inert; when
-active stencil must observe the depth-fail branch, a separate Always-based
-state remapping is used below. Draw suppression remains restricted to the
-current side-effect-free, read-only-resource and no-query subset. Future shader
-side effects or query support require revisiting it.
+function. Never is emulated with an Always depth comparison and disabled color
+and depth writes when stencil is inert; the draw still executes so timestamp
+queries retain command ordering. When active stencil must observe the
+depth-fail branch, a separate Always-based state remapping is used below.
 Stencil state maps all eight WGSL operations and comparison functions to the
 native D3D11 depth-stencil descriptor, with the low eight bits of the masks.
 The strict forced-FL9_1 hardware test executes every operation in each native
@@ -738,10 +737,11 @@ Equal comparison, including a wrong-reference rejection and state transitions.
 These tests do not claim direct inspection of stencil storage. Always-passing,
 non-writing stencil states continue to canonicalize to disabled stencil.
 
-Depth comparison Never remains draw suppression only when stencil is inert. If
-active stencil must observe the depth-fail branch, the backend uses Always,
-remaps StencilPassOp to the requested StencilDepthFailOp, and disables color
-and depth writes. The 10Level9 [`CreateSamplerState` restriction](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
+Depth comparison Never uses an Always depth comparison with color and depth
+writes disabled when stencil is inert; draws are still issued, including in
+timestamped passes. If active stencil must observe the depth-fail branch, the
+backend remaps StencilPassOp to the requested StencilDepthFailOp and disables
+color and depth writes. The 10Level9 [`CreateSamplerState` restriction](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
 and [comparison-sampler example](https://learn.microsoft.com/en-us/windows/uwp/gaming/create-depth-buffer-resource--view--and-sampler-state)
 refer to comparison filtering;
 `D3D11_DEPTH_STENCIL_DESC::DepthFunc` uses the full
@@ -773,8 +773,8 @@ prove general stencil operations or historical-driver compatibility. The
 samplers, not raster depth-stencil state. The D3D11 depth-state descriptor uses
 the complete comparison-function enum. All seven non-Never raster comparisons
 now map natively and passed forced-FL9_1 RTX readback; historical device
-behavior remains unverified. Never uses the restricted draw-suppression and
-stencil-remapping emulation.
+behavior remains unverified. Never uses the restricted no-write and
+stencil-remapping emulation; timestamped draws retain their command ordering.
 
 Triangle pipelines support signed constant and finite slope-scaled D24S8 depth
 bias with zero clamp. Nonzero bias is rejected for point lists and lines, which
@@ -1723,3 +1723,15 @@ query value and load dimensions reuse the existing `b13` host constant and
 64 pixels. This is an intersection of two existing narrow emulations, not a
 new general texture-query capability, and historical FL9_1 driver behavior is
 unverified.
+
+## Zero-input draw ranges
+
+Core may accept an API draw whose `first_vertex + vertex_count - 1` exceeds
+`u32` when the pipeline has no per-vertex inputs and the selected shader does
+not consume `vertex_index`. In this case the start vertex is not observable
+through vertex fetch or shader input. HAL normalizes its internal batch range
+and native `StartVertexLocation` to zero only for this path. Real vertex-fetch
+bounds and the separate `vertex_index` emulation range remain checked. A
+strict Core/HAL FL9_1 fixture verified a count-2 TriangleList with
+`first_vertex = u32::MAX` completed and left all 64 readback pixels clear; this
+does not change the capability projection.

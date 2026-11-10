@@ -1,5 +1,33 @@
 # FL9_1 handoff
 
+## Zero-input draw range boundary — 2026-11-10
+
+The HAL now normalizes its batch-planning range to zero for a draw with no
+per-vertex inputs and no `vertex_index` use when `first_vertex + count`
+overflows. Native replay already used start vertex zero for this unobservable
+case. A strict Core/HAL FL9_1 fixture passed a count-2 TriangleList at
+`u32::MAX` and verified all 64 pixels remained clear. Vertex-fetch and
+`vertex_index` checks remain intact. See `FL9_1_PROGRESS.md` for the exact
+command.
+
+## Timestamped depth-Never draws — 2026-11-10
+
+Raster depth `Never` now executes draws with color and depth writes disabled,
+so valid timestamped render passes no longer fail command encoding. A strict
+public test verified unchanged color, preserved depth with a farther probe,
+and ordered in-pass timestamps at forced FL9_1; the private HAL test also
+passed. The zero-input draw-range overflow remains under review. See
+`FL9_1_PROGRESS.md` and `TESTING.md` for exact commands.
+
+## Strict CTS operation slices — 2026-11-10
+
+The strict DX11 CTS route passed one RGBA8 clear-and-readback case and one
+ordered buffer-copy/readback case on the RTX 3090 Ti at requested/actual
+FL9_1, with zero failures or skips. `basic:*` remains 1/2 because its two
+failures require unsupported RGBA8Uint copy usages. These focused CTS cases
+are operation evidence, not conformance; commands and details are in
+`TESTING.md` and `FL9_1_PROGRESS.md`.
+
 ## Core/HAL layout visibility fix — 2026-11-10
 
 The Core/HAL audit found one safe layout case that Core allowed but HAL

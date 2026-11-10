@@ -143,6 +143,36 @@ contract to make this CTS slice pass. The strict preflight reports failures
 rather than hardware skips, and ordinary Deno backend selection still excludes
 DX11.
 
+Two narrow strict CTS operation slices also pass with actual GPU work:
+
+```powershell
+cargo +1.93.1 xtask cts --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,basic:clear:*'
+cargo +1.93.1 xtask cts --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyBufferToBuffer:state_transitions:*'
+```
+
+Run them from a Visual Studio developer shell. Each selected one CTS case and
+passed with zero failures or skips on the physical RTX 3090 Ti at requested
+and actual FL9_1. The first clears an RGBA8 target and validates copied
+readback; the second validates ordered buffer copies and readback. These are
+focused operation checks, not a claim of CTS suite conformance.
+
+### Zero-input draw at an overflowing start vertex
+
+The strict Core fixture verifies that a count-2 TriangleList with
+`first_vertex = u32::MAX` succeeds when the selected pipeline has no
+per-vertex inputs and does not consume `vertex_index`. It completes submission
+and readback, checking all 64 pixels remain clear. The HAL normalizes only its
+internal range for this unobservable case; real vertex fetch and
+`vertex_index` emulation remain range-checked.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j2 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_zero_input_incomplete_triangle_accepts_wrapping_vertex_range -- --nocapture --test-threads=1
+```
+
+The physical RTX 3090 Ti ran the request at forced FL9_1; all 64 readback
+pixels retained the clear color.
+
 ### Public fragment-discard color and depth test
 
 `public_dx11_fragment_discard_preserves_color_and_depth_at_fl91` compiles an
@@ -2846,14 +2876,26 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 The strict RTX FL9_1 comparison test passed all eight wgpu depth functions.
 Seven use native D3D11 depth comparisons, each checked with passing and failing
 depths; all 128 pixels matched (64 green, 64 blue). Never retains its two
-existing depth-write variants, each checking 32 green and 32 blue pixels; two
-controlled core variants each checked 64 depth-dependent pixels. Inert-stencil
-Never draws are suppressed after validation within the current side-effect-free,
-read-only-resource and no-query subset. Active stencil uses the separate
-Always-based depth-fail remapping documented above. The documented FL9_1
-LessEqual restriction applies to comparison samplers, not raster depth state.
-Future shader side effects or query support require reviewing draw suppression.
-Historical hardware remains unverified.
+depth-write variants, each checking 32 green and 32 blue pixels; two controlled
+core variants each checked 64 depth-dependent pixels. Inert-stencil Never
+executes draws with color and depth writes disabled. Active stencil uses the
+separate Always-based depth-fail remapping documented above. The documented
+FL9_1 LessEqual restriction applies to comparison samplers, not raster depth
+state. Historical hardware remains unverified.
+
+The public timestamp test now includes a timestamped Never-depth draw. It
+checks the unchanged clear-color image, then uses a farther LessEqual draw to
+verify the Never draw did not update depth. Pass-boundary and explicit
+in-pass timestamps resolve in nondecreasing command order.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_timestamp_queries_resolve_on_fl91 -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti at requested/actual FL9_1, all 16 color pixels matched the
+clear color and then the expected blue depth-probe output. Timestamp values
+were nonzero and nondecreasing in command order.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

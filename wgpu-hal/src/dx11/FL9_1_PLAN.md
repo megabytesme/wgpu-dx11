@@ -1,5 +1,31 @@
 # FL9_1 completion plan
 
+## Current Core/HAL fix — zero-input draw range — 2026-11-10
+
+Zero-input, no-`vertex_index` draws now normalize the internal native batching
+range when the API start/count arithmetic exceeds `u32`; the effective start
+is unobservable for that pipeline. A strict Core/HAL FL9_1 test verifies
+submission and clear-color readback. Real fetch and `vertex_index` checks are
+unchanged. Continue the broader contract audit; do not change shared Core
+semantics for this backend-local case.
+
+## Current Core/HAL fix — timestamped depth-Never draws — 2026-11-10
+
+Valid depth-Never draws now execute with color and depth writes disabled, so
+pass-boundary and explicit in-pass timestamps do not turn the draw into an
+encoding error. Strict public readback verifies color, depth and timestamp
+ordering at forced FL9_1. Continue the command/API contract sweep; the
+zero-input draw-range overflow is a separate narrow boundary case.
+
+## Current strict CTS operation evidence — 2026-11-10
+
+The strict CTS harness passes an RGBA8 clear/readback case and an ordered
+buffer-copy/readback case on physical FL9_1 hardware. Keep expanding the
+selected operation matrix only where the reported contract supports the
+request. `basic:*` still has two expected RGBA8Uint copy-usage failures; do
+not broaden format support to make the generic selector pass. Continue the
+Core/HAL audit and keep broad CTS and historical-device checks outstanding.
+
 ## Current Core/HAL contract fix — comparison-resource visibility — 2026-11-10
 
 An independent audit found and closed one Core-to-HAL layout mismatch.

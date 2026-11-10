@@ -273,32 +273,6 @@ fn native_depth_bias(
     Some((bias.constant, bias.slope_scale))
 }
 
-fn depth_never_read_only_bindings(plan: &super::hal_bind_group::BindingPlan) {
-    use super::{hal_bind_group::GroupKind, shader::ShaderBindingKind};
-    for group in plan.groups().iter().flatten() {
-        let GroupKind {
-            uniforms: _,
-            textures: _,
-            texture_unfilterable_mask: _,
-            texture_depth_mask: _,
-            texture_vertex_visibility_mask: _,
-            samplers: _,
-            sampler_non_filtering_mask: _,
-            sampler_comparison_mask: _,
-            sampler_vertex_visibility_mask: _,
-        } = group;
-        for binding in group.shader_bindings() {
-            match binding.kind {
-                ShaderBindingKind::Uniform
-                | ShaderBindingKind::TextureFloat
-                | ShaderBindingKind::TextureDepth
-                | ShaderBindingKind::Sampler
-                | ShaderBindingKind::SamplerComparison => {}
-            }
-        }
-    }
-}
-
 fn native_sample_mask(mask: u64, level: FeatureLevel, sample_count: u32) -> u32 {
     let native_mask = mask as u32;
     if level == FeatureLevel::L9_1 && native_mask == 0 {
@@ -698,7 +672,6 @@ pub struct RenderPipeline {
     pub(super) depth_format: Option<wgt::TextureFormat>,
     pub(super) depth_write: bool,
     pub(super) stencil_write: bool,
-    pub(super) depth_never: bool,
     pub(super) sample_mask: u32,
     pub(super) sample_count: u32,
     pub(super) target_format: Option<wgt::TextureFormat>,
@@ -2953,7 +2926,6 @@ impl RenderPipeline {
                 }
             }
         }
-        let mut depth_never = false;
         let mut depth_bias = (0, 0.0);
         let mut stencil_write = false;
         let depth_desc = if let Some(state) = &desc.depth_stencil {
@@ -2980,13 +2952,15 @@ impl RenderPipeline {
                 }
             }
             let (comparison, suppress_draws) = depth_comparison(state.depth_compare);
-            depth_never = suppress_draws && !stencil_enable;
+            let depth_never = suppress_draws && !stencil_enable;
             let emulate_never_with_stencil = suppress_draws && stencil_enable;
-            let comparison = if emulate_never_with_stencil {
-                face.StencilPassOp = face.StencilDepthFailOp;
+            if suppress_draws {
                 if let Some(blend_desc) = blend_desc.as_mut() {
                     blend_desc.RenderTargetWriteMask = 0;
                 }
+            }
+            let comparison = if emulate_never_with_stencil {
+                face.StencilPassOp = face.StencilDepthFailOp;
                 D3D11_COMPARISON_ALWAYS
             } else {
                 comparison
@@ -2996,9 +2970,6 @@ impl RenderPipeline {
                 && (face.StencilFailOp != D3D11_STENCIL_OP_KEEP
                     || face.StencilDepthFailOp != D3D11_STENCIL_OP_KEEP
                     || face.StencilPassOp != D3D11_STENCIL_OP_KEEP);
-            if suppress_draws && !stencil_enable {
-                depth_never_read_only_bindings(&desc.layout.bindings);
-            }
             Some(D3D11_DEPTH_STENCIL_DESC {
                 DepthEnable: true.into(),
                 DepthWriteMask: if state.depth_write_enabled.unwrap_or(false)
@@ -3414,7 +3385,6 @@ impl RenderPipeline {
                 .as_ref()
                 .is_some_and(|state| state.depth_write_enabled.unwrap_or(false)),
             stencil_write,
-            depth_never,
             sample_mask: native_sample_mask(
                 desc.multisample.mask,
                 owner.feature_level(),

@@ -29554,8 +29554,8 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
         mapped_at_creation: false,
     });
     let readback = device.create_buffer(&BufferDescriptor {
-        label: Some("timestamp query readback"),
-        size: 256,
+        label: Some("timestamp and color readback"),
+        size: 2304,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -29570,15 +29570,32 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
         sample_count: 1,
         dimension: TextureDimension::D2,
         format: TextureFormat::Rgba8Unorm,
-        usage: TextureUsages::RENDER_ATTACHMENT,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
         view_formats: &[],
     });
     let pass_target_view = pass_target.create_view(&TextureViewDescriptor::default());
+    let pass_depth = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 timestamp depth-Never attachment"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Depth24PlusStencil8,
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let pass_depth_view = pass_depth.create_view(&TextureViewDescriptor::default());
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 timestamp render-pass work shader"),
         source: ShaderSource::Wgsl(
             "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.0, 1.0); }\n\
-             @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }"
+             @vertex fn vs_probe(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }\n\
+             @fragment fn fs_blue() -> @location(0) vec4f { return vec4f(0.0, 0.0, 1.0, 1.0); }"
                 .into(),
         ),
     });
@@ -29597,27 +29614,47 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
         blend: None,
         write_mask: ColorWrites::ALL,
     })];
-    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 timestamp render-pass work pipeline"),
-        layout: None,
-        vertex: VertexState {
-            module: &shader,
-            entry_point: Some("vs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            buffers: &vertex_buffers,
-        },
-        primitive: PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: MultisampleState::default(),
-        fragment: Some(FragmentState {
-            module: &shader,
-            entry_point: Some("fs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            targets: &targets,
-        }),
-        multiview_mask: None,
-        cache: None,
-    });
+    let make_pipeline = |label, vertex, fragment, depth_compare| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(label),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some(vertex),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_buffers,
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth24PlusStencil8,
+                depth_write_enabled: Some(true),
+                depth_compare,
+                stencil: StencilState::default(),
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let never_pipeline = make_pipeline(
+        "FL9_1 timestamp Never-depth pipeline",
+        "vs",
+        "fs",
+        Some(CompareFunction::Never),
+    );
+    let depth_probe_pipeline = make_pipeline(
+        "FL9_1 timestamp depth-preservation probe pipeline",
+        "vs_probe",
+        "fs_blue",
+        Some(CompareFunction::LessEqual),
+    );
     let vertices = [[-1.0f32, -1.0f32], [3.0, -1.0], [-1.0, 3.0]];
     let mut vertex_bytes = [0u8; 24];
     for (index, component) in vertices.into_iter().flatten().enumerate() {
@@ -29661,7 +29698,17 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
                     store: StoreOp::Store,
                 },
             })],
-            depth_stencil_attachment: None,
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &pass_depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Clear(0),
+                    store: StoreOp::Store,
+                }),
+            }),
             timestamp_writes: Some(RenderPassTimestampWrites {
                 query_set: &query_set,
                 beginning_of_pass_write_index: Some(2),
@@ -29671,11 +29718,84 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
             multiview_mask: None,
         });
         pass.write_timestamp(&query_set, 6);
-        pass.set_pipeline(&pipeline);
+        pass.set_pipeline(&never_pipeline);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.draw(0..3, 0..1);
         pass.write_timestamp(&query_set, 7);
     }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &pass_target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 256,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(4),
+            },
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+    );
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 depth-Never preservation probe"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &pass_target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &pass_depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Load,
+                    store: StoreOp::Store,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&depth_probe_pipeline);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &pass_target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 1280,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(4),
+            },
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+    );
     {
         let mut pass = encoder.begin_compute_pass(&ComputePassDescriptor {
             label: Some("FL9_1 empty compute pass timestamp writes"),
@@ -29693,7 +29813,7 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
-        .slice(..80)
+        .slice(..2304)
         .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
     device
         .poll(PollType::Wait {
@@ -29703,17 +29823,46 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
         .expect("wait for timestamp query resolve");
     receiver
         .recv_timeout(Duration::from_secs(10))
-        .expect("timestamp readback map callback")
-        .expect("map timestamp query readback");
+        .expect("timestamp and color readback map callback")
+        .expect("map timestamp and color readback");
     let values = {
         let mapped = readback
-            .slice(..80)
+            .slice(..2304)
             .get_mapped_range()
-            .expect("mapped timestamp data");
+            .expect("mapped timestamp and color data");
         let mut values = [0u64; 10];
         for (index, value) in values.iter_mut().enumerate() {
             let start = index * 8;
             *value = u64::from_le_bytes(mapped[start..start + 8].try_into().unwrap());
+        }
+        let expected = [
+            (
+                [64u8, 128, 191, 255],
+                256usize,
+                "Never draw color preservation",
+            ),
+            (
+                [0u8, 0, 255, 255],
+                1280usize,
+                "Never draw depth preservation",
+            ),
+        ];
+        for (color, base, label) in expected {
+            for y in 0..4 {
+                for x in 0..4 {
+                    let offset = base + y * 256 + x * 4;
+                    for channel in 0..4 {
+                        let actual = mapped[offset + channel];
+                        let tolerance = if channel == 3 { 0 } else { 1 };
+                        assert!(
+                            actual.abs_diff(color[channel]) <= tolerance,
+                            "{label} pixel ({x}, {y}) channel {channel}: expected {:?}, got {:?}",
+                            color,
+                            &mapped[offset..offset + 4]
+                        );
+                    }
+                }
+            }
         }
         values
     };
@@ -29728,7 +29877,7 @@ fn public_dx11_timestamp_queries_resolve_on_fl91() {
         "timestamps must be nondecreasing in command execution order {execution_order:?}; query-index values: {values:?}"
     );
     println!(
-        "PASS: forced FL9_1 encoder and pass-boundary timestamps plus explicit render/empty-compute-pass timestamps around GPU work resolved and read back {values:?}; period={period} ns/tick; occlusion and pipeline-statistics query sets were rejected"
+        "PASS: forced FL9_1 Never-depth draw preserved all 16 clear-color pixels, preserved depth for the subsequent probe draw, and encoder/pass-boundary timestamps resolved in order {values:?}; period={period} ns/tick; occlusion and pipeline-statistics query sets were rejected"
     );
 }
 

@@ -1,5 +1,71 @@
 # FL9_1 progress
 
+## Timestamped depth-Never draws — 2026-11-10
+
+The Core/HAL audit found that a valid draw using raster depth comparison
+`Never` failed command encoding when the pass contained timestamp writes. HAL
+previously elided Never draws only when no query could observe command
+ordering, and otherwise recorded `DeviceError::Unexpected`. The backend now
+executes those draws with color and depth writes disabled. Active-stencil
+Never continues using its Always/depth-fail remapping.
+
+The strict public timestamp test now brackets a Never-depth draw with pass and
+explicit in-pass timestamps, verifies all 16 color pixels retain the clear
+color, and follows with a farther LessEqual draw that proves depth remained
+clear. Timestamp values were nonzero and nondecreasing on the physical RTX
+3090 Ti at requested/actual FL9_1. The existing private HAL test also passed.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_timestamp_queries_resolve_on_fl91 -- --nocapture --test-threads=1
+# 1 passed on RTX 3090 Ti (0x10de:0x2203), driver 32.0.16.2101, physical, requested/actual FL9_1.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib fl91_depth_never_preserves_color_depth_and_validation -- --nocapture --test-threads=1
+# 1 passed; both depth-Never variants preserved expected readback and invalid draws remained rejected.
+
+rustfmt +1.93.1 --edition 2021 --check wgpu-hal/src/dx11/hal_pipeline.rs wgpu-hal/src/dx11/hal_encoder.rs wgpu/tests/dx11_public.rs
+git diff --check
+# passed.
+```
+
+This does not widen reported capabilities. The depth-Never draw-range overflow
+for a zero-input pipeline remains a separate small Core/HAL boundary issue
+closed below.
+
+## Zero-input draw range boundary — 2026-11-10
+
+Core permits a nonindexed draw whose `first_vertex + vertex_count - 1` exceeds
+`u32` when the pipeline has no per-vertex inputs and the selected shader does
+not consume `vertex_index`; there is no vertex-buffer range or shader-visible
+index to wrap. HAL already replays zero-input draws with native start vertex
+zero, but `draw_batches` still performed its preflight using the unobservable
+large start and failed command submission. It now normalizes the internal
+batch range to zero only for the existing zero-input path. Real vertex fetch
+and `vertex_index` emulation checks are unchanged.
+
+The strict Core/HAL fixture submitted a two-vertex incomplete TriangleList at
+`first_vertex = u32::MAX`; all 64 RGBA8 readback pixels remained clear on the
+physical RTX 3090 Ti at requested/actual FL9_1. This does not change shared
+Core validation.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j2 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_zero_input_incomplete_triangle_accepts_wrapping_vertex_range -- --nocapture --test-threads=1
+# 1 passed; strict physical FL9_1 device, all 64 pixels clear.
+```
+
+The matching WebGPU `draw` validation is defined in the [current specification](https://www.w3.org/TR/webgpu/#dom-gpurendercommandsmixin-draw); no per-vertex buffer means its vertex-buffer range checks do not apply.
+
+## Strict CTS operation slices — 2026-11-10
+
+The strict DX11 CTS path now has two small operation-level passes in addition
+to the empty-command-buffer setup smoke test. `basic:clear:*` clears an RGBA8
+target, copies it to a buffer and validates readback. The
+`copyBufferToBuffer:state_transitions:*` case verifies ordered partial buffer
+copies and readback. Both selected one test and passed with zero failures or
+skips on the physical RTX 3090 Ti at requested/actual FL9_1. The broader
+`basic:*` selector remains 1 pass and 2 failures because its failures request
+unsupported RGBA8Uint copy usages; that truthful capability boundary remains
+unchanged. Exact commands are recorded in `TESTING.md`.
+
 ## Combined visibility for depth/comparison resources — 2026-11-10
 
 The audit found a Core/HAL mismatch: Core permits fragment-visible sampled

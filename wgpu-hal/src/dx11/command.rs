@@ -1081,12 +1081,19 @@ impl CommandBuffer {
                                 Some(&0),
                             );
                         } else {
-                            draw_batches(*first, *count, 0, *max_vertices, |_, _| {})?;
+                            let draw_first = if *zero_input { 0 } else { *first };
+                            draw_batches(draw_first, *count, 0, *max_vertices, |_, _| {})?;
                             for instance in 0..*instances {
                                 instance_bindings.bind(context, instance)?;
-                                draw_batches(*first, *count, 1, *max_vertices, |first, count| {
-                                    context.Draw(count, draw_start_vertex(first, *zero_input));
-                                })?;
+                                draw_batches(
+                                    draw_first,
+                                    *count,
+                                    1,
+                                    *max_vertices,
+                                    |first, count| {
+                                        context.Draw(count, draw_start_vertex(first, *zero_input));
+                                    },
+                                )?;
                             }
                         }
                     }

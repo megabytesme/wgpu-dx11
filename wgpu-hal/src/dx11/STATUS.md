@@ -1,4 +1,19 @@
 
+## Zero-input draw range
+
+For the no-per-vertex-input, no-`vertex_index` draw case, HAL normalizes its
+internal range to zero when `first_vertex + vertex_count` exceeds `u32`. Strict
+Core/HAL readback verifies the draw completes and leaves the target unchanged;
+real fetch and `vertex_index` checks remain intact.
+
+## Timestamped depth-Never draws
+
+Depth comparison `Never` draws execute with color and depth writes disabled,
+including when the render pass contains pass-boundary or explicit timestamp
+writes. Strict RTX FL9_1 readback verified unchanged color, unchanged depth
+through a farther probe draw, and nondecreasing timestamps. This closes a
+Core-valid command-recording failure without changing capability reporting.
+
 ## Combined visibility for depth/comparison bindings — 2026-11-10
 
 Depth-texture and comparison-sampler bind-group entries can declare both

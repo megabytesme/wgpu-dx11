@@ -3716,6 +3716,275 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert!(hub.adapters.is_empty());
 }
 
+#[test]
+fn fl91_core_zero_input_incomplete_triangle_accepts_wrapping_vertex_range() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
+    let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        assert!(!required, "strict mode requires a physical D3D11 adapter");
+        std::println!("SKIP: no physical D3D11 adapter");
+        return;
+    };
+    let identity = adapter.identity();
+    let native = Arc::new(
+        adapter
+            .open_device(&[hal::dx11::FeatureLevel::L9_1])
+            .expect("forced FL9_1 device"),
+    );
+    assert_eq!(native.feature_level(), hal::dx11::FeatureLevel::L9_1);
+    std::println!("Hardware: {identity:?}; requested and actual FL9_1");
+
+    let global = unsafe {
+        Global::from_hal_instance::<hal::dx11::Api>(
+            "dx11 zero-input draw range fixture",
+            hal::dx11::Instance,
+        )
+    };
+    let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
+    let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let (features, capabilities) = fixture
+        .test_fixture_wgpu_capabilities()
+        .expect("selected FL9_1 device capability projection");
+    let limits = capabilities.limits.clone();
+    let open = unsafe { fixture.open_test_fixture() };
+    let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+    info.name = identity.name.clone();
+    info.vendor = identity.vendor_id;
+    info.device = identity.device_id;
+    let adapter_id = unsafe {
+        global.create_adapter_from_hal(
+            hal::ExposedAdapter::<hal::dx11::Api> {
+                adapter: fixture,
+                info,
+                features,
+                capabilities,
+            }
+            .into(),
+            None,
+        )
+    };
+    let descriptor = crate::device::DeviceDescriptor {
+        required_features: features,
+        required_limits: limits,
+        ..Default::default()
+    };
+    let (device, queue) =
+        unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
+            .expect("FL9_1 Core device");
+
+    let extent = wgt::Extent3d {
+        width: 8,
+        height: 8,
+        depth_or_array_layers: 1,
+    };
+    let (target, error) = global.device_create_texture(
+        device,
+        &wgt::TextureDescriptor {
+            label: None,
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            usage: wgt::TextureUsages::RENDER_ATTACHMENT | wgt::TextureUsages::COPY_SRC,
+            view_formats: vec![],
+        },
+        None,
+    );
+    assert!(error.is_none(), "offscreen target creation: {error:?}");
+    let (view, error) = global.texture_create_view(
+        target,
+        &crate::resource::TextureViewDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "offscreen target view creation: {error:?}");
+    let (readback, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: None,
+            size: 256 * 8,
+            usage: wgt::BufferUsages::COPY_DST | wgt::BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(error.is_none(), "readback buffer creation: {error:?}");
+
+    let (shader, error) = global.device_create_shader_module(
+        device,
+        &crate::pipeline::ShaderModuleDescriptor {
+            label: None,
+            runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+        },
+        crate::pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(
+            "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }",
+        )),
+        None,
+    );
+    assert!(error.is_none(), "no-input shader creation: {error:?}");
+    let (layout, error) = global.device_create_pipeline_layout(
+        device,
+        &binding_model::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: Cow::Borrowed(&[]),
+            immediate_size: 0,
+        },
+        None,
+    );
+    assert!(error.is_none(), "empty pipeline layout creation: {error:?}");
+    let stage = |entry: &'static str| crate::pipeline::ProgrammableStageDescriptor {
+        module: shader,
+        entry_point: Some(Cow::Borrowed(entry)),
+        constants: Default::default(),
+        zero_initialize_workgroup_memory: false,
+    };
+    let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
+    let (pipeline, error) = global.device_create_render_pipeline(
+        device,
+        &crate::pipeline::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(layout),
+            vertex: crate::pipeline::VertexState {
+                stage: stage("vs"),
+                buffers: Cow::Borrowed(&[]),
+            },
+            primitive: wgt::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgt::MultisampleState::default(),
+            fragment: Some(crate::pipeline::FragmentState {
+                stage: stage("fs"),
+                targets: Cow::Borrowed(&targets),
+            }),
+            multiview_mask: None,
+            cache: None,
+        },
+        None,
+    );
+    assert!(
+        error.is_none(),
+        "no-input render pipeline creation: {error:?}"
+    );
+
+    let (encoder, error) = global.device_create_command_encoder(
+        device,
+        &wgt::CommandEncoderDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "draw encoder creation: {error:?}");
+    let attachments = [Some(crate::command::RenderPassColorAttachment {
+        view,
+        depth_slice: None,
+        resolve_target: None,
+        load_op: wgt::LoadOp::Clear(wgt::Color::BLACK),
+        store_op: wgt::StoreOp::Store,
+    })];
+    let (mut pass, error) = global.command_encoder_begin_render_pass(
+        encoder,
+        &crate::command::RenderPassDescriptor {
+            label: None,
+            color_attachments: Cow::Borrowed(&attachments),
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        },
+    );
+    assert!(error.is_none(), "render pass creation: {error:?}");
+    global
+        .render_pass_set_pipeline(&mut pass, pipeline)
+        .unwrap();
+    global
+        .render_pass_draw(&mut pass, 2, 1, u32::MAX, 0)
+        .expect("record zero-input incomplete TriangleList draw");
+    global.render_pass_end(&mut pass).unwrap();
+    drop(pass);
+    global
+        .command_encoder_copy_texture_to_buffer(
+            encoder,
+            &wgt::TexelCopyTextureInfo {
+                texture: target,
+                mip_level: 0,
+                origin: wgt::Origin3d::ZERO,
+                aspect: wgt::TextureAspect::All,
+            },
+            &wgt::TexelCopyBufferInfo {
+                buffer: readback,
+                layout: wgt::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            &extent,
+        )
+        .expect("record target readback");
+    let (command, error) =
+        global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
+    assert!(
+        error.is_none(),
+        "zero-input draw command encoding: {error:?}"
+    );
+    global
+        .queue_submit(queue, &[command])
+        .expect("zero-input draw submission");
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    global
+        .buffer_map_async(
+            readback,
+            0,
+            Some(256 * 8),
+            BufferMapOperation {
+                host: HostMap::Read,
+                callback: Some(Box::new(move |result| sender.send(result).unwrap())),
+            },
+        )
+        .expect("readback map request");
+    global
+        .device_poll(
+            device,
+            wgt::PollType::Wait {
+                submission_index: None,
+                timeout: Some(Duration::from_secs(10)),
+            },
+        )
+        .expect("submission completion and readback mapping");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("readback map callback")
+        .expect("readback map result");
+    let (pointer, length) = global
+        .buffer_get_mapped_range(readback, 0, Some(256 * 8))
+        .unwrap();
+    let pixels = unsafe { core::slice::from_raw_parts(pointer.as_ptr(), length as usize) };
+    for y in 0..8 {
+        for x in 0..8 {
+            let offset = y * 256 + x * 4;
+            assert_eq!(
+                &pixels[offset..offset + 4],
+                &[0, 0, 0, 255],
+                "incomplete zero-input triangle must leave ({x}, {y}) clear"
+            );
+        }
+    }
+
+    global.buffer_unmap(readback).unwrap();
+    global.render_pipeline_drop(pipeline);
+    global.pipeline_layout_drop(layout);
+    global.shader_module_drop(shader);
+    global.buffer_drop(readback);
+    global.texture_view_drop(view);
+    global.texture_drop(target);
+    global.command_buffer_drop(command);
+    global.command_encoder_drop(encoder);
+    global.queue_drop(queue);
+    global.device_drop(device);
+    global.adapter_drop(adapter_id);
+    std::println!(
+        "PASS: FL9_1 zero-input count-2 draw at first_vertex=u32::MAX encoded, submitted, completed and preserved all 64 clear pixels"
+    );
+}
+
 fn render_mip_chain(
     global: &Global,
     device: crate::id::DeviceId,
