@@ -20,6 +20,35 @@ valid public operations and shader/resource boundary cases.
 Historical FL9_1 hardware and physical device-removal recovery are external
 verification gaps.
 
+The latest verified commit is `6b1cff301`, which withholds sRGB blending
+through FL9_3 while preserving sRGB attachments and query-backed linear
+blending. A read-only RGBA8_SNORM audit confirmed the existing direct
+GPU-to-staging readback rejection is required by the FL9_x SRV-only copy
+restriction. A separate shader audit confirmed arbitrary dynamic
+`textureSampleBias` must remain rejected because WGSL's legal bias range
+exceeds the defined FL9_1 `texldb` range; any future support requires a
+bounded-expression proof in both Core and HAL. These audits did not broaden
+the capability projection.
+
+The latest implementation slice extends the measured fragment uniform-array
+proof to two independent reads from distinct uniform bindings. It retains the
+existing array/structure shape, rejects a third or unsafe read, and verifies
+FXC compilation plus three strict public FL9_1 readbacks. The full strict
+private HAL suite passed 478/478 and the strict public D3D11 suite passed
+126/126, with two recognizable optional capability skips. The full Core unit
+suite passed 123/123, the DX12 HAL check passed, and affected Clippy and
+formatting checks passed. Exact commands and device output are in
+`FL9_1_PROGRESS.md`.
+
+Next work remains a practical-completion audit, not a claim that the backend is
+finished. Use agents for separate read-only contract/compiler audits, then
+select one concrete vertical feature gap for the coordinator to implement and
+test. Keep dynamic texture bias and SNORM readback gated: the current audits
+found that a clamp-only bias proof does not preserve WGSL NaN semantics and
+that FL9_x forbids the current SRV-to-staging SNORM copy path. Public adapter
+support and ordinary wgpu use are present but still opt-in and experimental;
+historical FL9_1 and Lumia runtime verification remain external.
+
 ## Earlier current-state checkpoint — 2026-11-10
 
 Checkpoint `816b85fa1` permits direct, statically indexed column or scalar

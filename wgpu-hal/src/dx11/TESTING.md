@@ -2330,6 +2330,12 @@ format query returned `0x000213a0` and all 64 pixels matched
 `[255, 0, 255, 0]`. This confirms the selected-device path only; it does not
 verify historical FL9_1 drivers.
 
+The positive `CPU_LOCKABLE` bit does not legalize the current readback path:
+the FL9_1 texture is bound only as a shader resource, and Microsoft's 10Level9
+context restrictions prohibit copying that GPU resource directly to
+CPU-visible staging memory. Readback remains disabled unless a verified
+GPU-to-GPU conversion path is added.
+
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib rgba8_snorm_texture_copy_source_requires_implementation_and_positive_query -- --nocapture --test-threads=1
@@ -3673,13 +3679,14 @@ unsupported shapes in core and HAL.
 
 ### Direct fragment uniform-array indexing
 
-Core and HAL permit a separate fragment-only subset: one direct lookup of an
-`array<vec4f, N>` for `2 <= N <= 24`, using the scalar `u32` member of the
-same uniform structure, including a uniform in a nonzero bind group. Its
-required layout is `16 + 16*N` bytes,
-with the index at byte zero and the array at byte 16. The selected fragment
-entry must use that index only for the lookup; computed indices, helper calls,
-additional integer uses, and other array shapes remain rejected. FXC accepts
+Core and HAL permit a separate fragment-only subset: up to two direct lookups
+from separate `array<vec4f, N>` uniform bindings for `2 <= N <= 24`. Each
+uses the scalar `u32` index and array in the same uniform structure, with a
+required layout of `16 + 16*N` bytes, the index at byte zero and array at byte
+16. The uniforms may use different groups. The selected fragment entry must
+use each index only for its lookup; computed and cross-binding indices, helper
+calls, additional integer uses, a third read, and other array shapes remain
+rejected. FXC accepts
 the generated level-9 shaders for lengths 2 and 24 (40 pixel instruction
 slots at length 24) and rejects length 25 with X5589 for constant register 32
 (the profile limit is 31).
@@ -3694,12 +3701,13 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_fragment_uniform_array public_dx11_fragment_uniform_array_indexing_at_fl91 -- --nocapture --test-threads=1
 ```
 
-The public test uses `@group(1) @binding(17)` and a pipeline-layout hole at
-group zero. It renders with indices zero, one and 23, checks all 64 pixels for
-each distinct RGBA8 result, and requires a physical adapter in strict mode.
-This verifies nonzero-group binding for the upper tested array length. This is
-a narrow compiler/backend subset, not general fragment runtime integer support
-or a historical-driver guarantee.
+The public test preserves the `@group(1) @binding(17)` 24-element single-read
+case and adds two small arrays at sparse bindings 19 and 23. The latter
+pipeline combines two independent uniform indices and checks all 64 pixels
+for three index pairs. Both paths require a physical adapter in strict mode.
+This verifies selected nonzero-group bindings and two-read execution on the
+tested driver. This is a narrow compiler/backend subset, not general fragment
+runtime integer support or a historical-driver guarantee.
 
 The hidden input also consumes one of the sixteen physical D3D input slots.
 Core mirrors HAL's FL9_1 overlap-allocation rules and rejects an exhausted

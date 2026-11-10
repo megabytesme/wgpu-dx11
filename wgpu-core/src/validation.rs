@@ -891,8 +891,8 @@ fn is_u32_scalar(module: &naga::Module, ty: naga::Handle<naga::Type>) -> bool {
 
 #[derive(Clone, Debug)]
 struct FragmentUniformArrayIndexingProof {
-    uniform: naga::Handle<naga::GlobalVariable>,
-    access: naga::Handle<naga::Expression>,
+    uniforms: FastHashSet<naga::Handle<naga::GlobalVariable>>,
+    accesses: FastHashSet<naga::Handle<naga::Expression>>,
     integer_expressions: FastHashSet<naga::Handle<naga::Expression>>,
 }
 
@@ -957,17 +957,9 @@ fn is_fragment_uniform_array_of_vec4(
     if members.len() != 2 || members[0].offset != 0 || members[1].offset != 16 {
         return false;
     }
-    if !matches!(
-        module.types[members[0].ty].inner,
-        naga::TypeInner::Scalar(naga::Scalar {
-            kind: naga::ScalarKind::Uint,
-            width: 4,
-        })
-    ) {
-        return false;
-    }
-    fragment_uniform_vec4_array_length(module, members[1].ty)
-        .is_some_and(|length| span == 16 + length * 16)
+    is_u32_scalar(module, members[0].ty)
+        && fragment_uniform_vec4_array_length(module, members[1].ty)
+            .is_some_and(|length| span == 16 + length * 16)
 }
 
 fn fragment_uniform_array_indexing_proof(
@@ -995,81 +987,87 @@ fn fragment_uniform_array_indexing_proof(
             _ => None,
         })
         .collect();
-    let [access] = dynamic_accesses.as_slice() else {
-        return None;
-    };
-    let naga::Expression::Access { base, index } = function.expressions[*access] else {
-        return None;
-    };
-    let (array_uniform, array_member, array_global_expression) =
-        direct_uniform_member_pointer(function, base)?;
-    let (index_uniform, index_member, index_global_expression) = match function.expressions[index] {
-        naga::Expression::Load { pointer } => direct_uniform_member_pointer(function, pointer)?,
-        _ => return None,
-    };
-    let naga::Expression::Load {
-        pointer: index_pointer,
-    } = function.expressions[index]
-    else {
-        return None;
-    };
-    if array_uniform != index_uniform
-        || array_member != 1
-        || index_member != 0
-        || function_info[index].ref_count != 1
-        || function_info[index_pointer].ref_count != 1
-        || function_info[array_global_expression].ref_count != 1
-        || function_info[index_global_expression].ref_count != 1
-        || !matches!(
-            function_info[index].ty.inner_with(&module.types),
-            naga::TypeInner::Scalar(naga::Scalar {
-                kind: naga::ScalarKind::Uint,
-                width: 4,
-            })
-        )
-        || !matches!(
-            function_info[base].ty.inner_with(&module.types),
-            naga::TypeInner::Pointer {
-                base: array_ty,
-                space: naga::AddressSpace::Uniform,
-            } if fragment_uniform_vec4_array_length(module, *array_ty).is_some()
-        )
-        || !is_fragment_uniform_array_of_vec4(module, array_uniform)
-        || module.global_variables[array_uniform].binding.is_none()
-        || block_uses_dynamic_access_as_pointer(
-            module,
-            function,
-            function_info,
-            &function.body,
-            *access,
-        )
-    {
+    if !(1..=2).contains(&dynamic_accesses.len()) {
         return None;
     }
 
-    let load_count = function
-        .expressions
-        .iter()
-        .filter(|(_, expression)| {
-            matches!(
-                expression,
-                naga::Expression::Load { pointer }
-                    if pointer_path_contains(function, *pointer, *access)
-            )
-        })
-        .count();
-    if load_count != 1 {
-        return None;
-    }
-
+    let mut uniforms = FastHashSet::default();
+    let mut accesses = FastHashSet::default();
     let mut integer_expressions = FastHashSet::default();
-    integer_expressions.insert(array_global_expression);
-    integer_expressions.insert(index_global_expression);
-    integer_expressions.insert(index_pointer);
-    integer_expressions.insert(index);
+    for access in dynamic_accesses {
+        let naga::Expression::Access { base, index } = function.expressions[access] else {
+            return None;
+        };
+        let (array_uniform, array_member, array_global_expression) =
+            direct_uniform_member_pointer(function, base)?;
+        let naga::Expression::Load {
+            pointer: index_pointer,
+        } = function.expressions[index]
+        else {
+            return None;
+        };
+        let (index_uniform, index_member, index_global_expression) =
+            direct_uniform_member_pointer(function, index_pointer)?;
+        if array_uniform != index_uniform
+            || array_member != 1
+            || index_member != 0
+            || !uniforms.insert(array_uniform)
+            || function_info[index].ref_count != 1
+            || function_info[index_pointer].ref_count != 1
+            || function_info[array_global_expression].ref_count != 1
+            || function_info[index_global_expression].ref_count != 1
+            || !matches!(
+                function_info[index].ty.inner_with(&module.types),
+                naga::TypeInner::Scalar(naga::Scalar {
+                    kind: naga::ScalarKind::Uint,
+                    width: 4,
+                })
+            )
+            || !matches!(
+                function_info[base].ty.inner_with(&module.types),
+                naga::TypeInner::Pointer {
+                    base: array_ty,
+                    space: naga::AddressSpace::Uniform,
+                } if fragment_uniform_vec4_array_length(module, *array_ty).is_some()
+            )
+            || !is_fragment_uniform_array_of_vec4(module, array_uniform)
+            || module.global_variables[array_uniform].binding.is_none()
+            || block_uses_dynamic_access_as_pointer(
+                module,
+                function,
+                function_info,
+                &function.body,
+                access,
+            )
+        {
+            return None;
+        }
+
+        let load_count = function
+            .expressions
+            .iter()
+            .filter(|(_, expression)| {
+                matches!(
+                    expression,
+                    naga::Expression::Load { pointer }
+                        if pointer_path_contains(function, *pointer, access)
+                )
+            })
+            .count();
+        if load_count != 1 {
+            return None;
+        }
+
+        accesses.insert(access);
+        integer_expressions.insert(array_global_expression);
+        integer_expressions.insert(index_global_expression);
+        integer_expressions.insert(index_pointer);
+        integer_expressions.insert(index);
+    }
+
     Some(FragmentUniformArrayIndexingProof {
-        uniform: array_uniform,
-        access: *access,
+        uniforms,
+        accesses,
         integer_expressions,
     })
 }
@@ -1135,7 +1133,7 @@ fn dynamic_access_is_supported_builtin_read(
     if stage == naga::ShaderStage::Fragment {
         return is_entry_point
             && fragment_uniform_array_indexing_proof(module, function_info, stage, function)
-                .is_some_and(|proof| proof.access == access);
+                .is_some_and(|proof| proof.accesses.contains(&access));
     }
     if stage != naga::ShaderStage::Vertex
         || !is_fixed_float_uniform_array_pointer(module, function_info, base)
@@ -2517,7 +2515,7 @@ fn entry_point_uses_unsupported_integer_semantics(
             && type_may_contain_integer(module, &module.types[global.ty].inner, &mut budget)
             && fragment_index_proof
                 .as_ref()
-                .is_none_or(|proof| proof.uniform != handle)
+                .is_none_or(|proof| !proof.uniforms.contains(&handle))
     }) || function_uses_unsupported_integer_semantics(
         module,
         &entry_point.function,
@@ -12963,6 +12961,7 @@ mod tests {
             @group(1) @binding(17) var<uniform> grouped_uniform: Params;
             struct SmallParams { index: u32, values: array<vec4f, 2> }
             @group(0) @binding(1) var<uniform> small_uniform: SmallParams;
+            @group(1) @binding(18) var<uniform> second_small_uniform: SmallParams;
             struct MiddleParams { index: u32, values: array<vec4f, 3> }
             @group(0) @binding(2) var<uniform> middle_uniform: MiddleParams;
             struct OneParams { index: u32, values: array<vec4f, 1> }
@@ -12973,6 +12972,10 @@ mod tests {
             @group(0) @binding(5) var<uniform> too_large_uniform: TooLargeParams;
 
             fn read_helper() -> vec4f { return params.values[params.index]; }
+            fn read_multiple_helper() -> vec4f {
+                return small_uniform.values[small_uniform.index]
+                    + second_small_uniform.values[second_small_uniform.index];
+            }
 
             @fragment fn direct() -> @location(0) vec4f {
                 return params.values[params.index];
@@ -12985,6 +12988,31 @@ mod tests {
             }
             @fragment fn small() -> @location(0) vec4f {
                 return small_uniform.values[small_uniform.index];
+            }
+            @fragment fn multiple_direct() -> @location(0) vec4f {
+                return small_uniform.values[small_uniform.index]
+                    + second_small_uniform.values[second_small_uniform.index];
+            }
+            @fragment fn multiple_computed() -> @location(0) vec4f {
+                return small_uniform.values[small_uniform.index]
+                    + second_small_uniform.values[second_small_uniform.index + 1u];
+            }
+            @fragment fn multiple_side_use() -> @location(0) vec4f {
+                return small_uniform.values[small_uniform.index]
+                    + second_small_uniform.values[second_small_uniform.index]
+                    + vec4f(f32(small_uniform.index));
+            }
+            @fragment fn multiple_cross_binding() -> @location(0) vec4f {
+                return small_uniform.values[second_small_uniform.index]
+                    + second_small_uniform.values[second_small_uniform.index];
+            }
+            @fragment fn multiple_three() -> @location(0) vec4f {
+                return small_uniform.values[small_uniform.index]
+                    + second_small_uniform.values[second_small_uniform.index]
+                    + params.values[params.index];
+            }
+            @fragment fn multiple_helper() -> @location(0) vec4f {
+                return read_multiple_helper();
             }
             @fragment fn middle() -> @location(0) vec4f {
                 return middle_uniform.values[middle_uniform.index];
@@ -13086,6 +13114,28 @@ mod tests {
         assert!(!interface
             .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
                 naga::ShaderStage::Fragment,
+                "multiple_direct",
+                &enabled,
+                true,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "multiple_direct",
+                &enabled,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "multiple_side_use",
+                &enabled,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Fragment,
                 "middle",
                 &enabled,
                 true,
@@ -13095,6 +13145,10 @@ mod tests {
         for entry in [
             "computed",
             "helper",
+            "multiple_computed",
+            "multiple_cross_binding",
+            "multiple_three",
+            "multiple_helper",
             "too_small",
             "wrong_array_type",
             "too_large",

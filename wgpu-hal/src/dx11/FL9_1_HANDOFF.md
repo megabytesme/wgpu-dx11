@@ -3330,3 +3330,27 @@ two writes inside one valid disjoint interval. Strict public, Core and HAL
 suites passed 121/121, 132/132 and 468/468 respectively. See
 `FL9_1_PROGRESS.md` for exact commands. This closes a capability-reporting
 overclaim, not an FL9_1 implementation gap.
+
+## Current mission state — two direct fragment uniform-array reads
+
+Core and HAL now permit at most two selected-entry direct fragment reads from
+distinct uniform bindings, preserving the existing `u32` index plus
+`array<vec4f, N>` structure proof and `2 <= N <= 24` bound. FXC accepted the
+two-access `ps_4_0_level_9_1` shader. Strict GPU readback verified the original
+single-array case and three two-binding index pairs on the RTX 3090 Ti at
+requested/actual FL9_1. Core passed 123/123, the strict private HAL suite
+478/478, the strict public D3D11 suite 126/126, and the focused integration
+1/1. DX12 HAL compilation, affected Clippy, formatting and `git diff --check`
+passed; two optional public-suite subcases were capability skips. Exact
+commands and outputs are in `FL9_1_PROGRESS.md`.
+
+This does not close the mission. Remaining software work is broad and
+application-facing: the selected WGSL subset is still constrained, several
+valid WebGPU/downlevel operations remain unavailable or need further contract
+audit, and a useful public example must exercise adapter/device selection,
+textured indexed 3D rendering and presentation. Compute/UAV, geometry shaders,
+MRT, 1D textures and ordinary texture arrays are not FL9_1 capabilities and
+must remain rejected. Historical FL9_1 hardware, Lumia ARM32/CoreWindow runtime
+and physical device-removal recovery require external verification. Use
+agents for independent audits and compiler probes; keep each Core/Naga/HAL
+implementation slice under the coordinator so it can be verified end to end.

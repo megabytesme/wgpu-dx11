@@ -1309,12 +1309,13 @@ space and is not a supported workaround.
 
 ## Direct fragment uniform-array indexing
 
-Core and HAL permit one direct fragment-stage read from `array<vec4f, N>` for
-`2 <= N <= 24`, in the same uniform structure as its scalar `u32` index. The
-uniform may be in a nonzero bind group. The structure span is `16 + 16*N`,
-with the index at offset zero and the array at offset 16. The selected entry
-must use the index only for this access; helper calls, computed indices, other
-integer uses or accesses, and different array shapes remain rejected. The
+Core and HAL permit up to two direct fragment-stage reads from separate
+`array<vec4f, N>` uniform bindings for `2 <= N <= 24`. Each uniform uses the
+same structure layout with its scalar `u32` index at offset zero and array at
+offset 16; the bindings may be in different groups. The selected entry must
+use each index only for its corresponding read. Helper calls, computed or
+cross-binding indices, other integer uses/accesses, a third read, and
+different array shapes remain rejected. The
 selected FL9_1 projection reports
 the dedicated `DownlevelLimits::fragment_uniform_array_indexing` gate rather
 than reusing a vertex-only capability. Naga-generated HLSL compiles under FXC
@@ -1322,8 +1323,10 @@ for lengths 2 and 24; FXC rejects length 25 with X5589 at constant register
 32 (maximum 31). The 24-element Level9 shader uses 40 pixel-shader instruction
 slots. The strict public RTX 3090 Ti test at
 requested/actual FL9_1 rendered indices zero, one and 23 and verified all 64
-pixels per value. This does not enable general fragment integer operations or
-establish historical-driver behavior.
+pixels per value. A second strict pipeline performs two direct lookups from
+separate sparse bindings and verifies 64 pixels for each of three index
+pairs. This does not enable general fragment integer operations or establish
+historical-driver behavior.
 
 ## Hidden `vertex_index` input-slot validation
 

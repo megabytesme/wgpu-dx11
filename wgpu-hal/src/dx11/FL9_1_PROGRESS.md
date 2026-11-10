@@ -15953,3 +15953,88 @@ test functions on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
 requested/actual FL9_1. Default D3D11 enumeration remained empty. The public
 suite printed one expected optional skip for R8G8 IA vertex-format support.
 Both Clippy targets and formatting passed; only existing HAL warnings remain.
+
+## RGBA8_SNORM readback feasibility check — 2026-11-10
+
+A read-only transfer audit confirmed that RGBA8_SNORM's `CPU_LOCKABLE` query
+bit is not sufficient to permit the current direct staging copy at FL9_1. The
+backend binds this resource as `D3D11_BIND_SHADER_RESOURCE` only, and
+Microsoft's 10Level9 context contract forbids that GPU-to-CPU copy. The
+existing rejection and clear Core readback mask are correct. A future
+readback experiment would need a proven GPU-to-GPU conversion into a
+CPU-readable-compatible resource, with strict byte-for-byte hardware tests;
+no readback capability was enabled here.
+
+## Dynamic texture-sample bias boundary — 2026-11-10
+
+A read-only WGSL/Naga/FXC audit confirmed that arbitrary dynamic
+`textureSampleBias` must remain rejected. WGSL clamps the supplied bias to
+`[-16.0, 15.99]`, while the FL9_1 legacy `texldb` instruction has undefined
+results outside `[-3.0, 3.0]`; the current Naga HLSL writer passes the bias
+expression through unchanged. Core and HAL therefore continue to accept only
+selected-entry finite literal biases in `[-3, 3]` and reject dynamic values.
+Setting the dynamic-bias limit or clamping arbitrary expressions in HLSL would
+change legal WGSL semantics. A clamp expression alone is also insufficient:
+WGSL permits clamp behavior that preserves NaN, while HLSL leaves NaN clamp
+results undefined. A future subset needs a proof of both range and finiteness
+that preserves WGSL behavior; it is not enabled by this audit.
+
+The sampler and shader implementation was not changed and no tests were run
+for this read-only feasibility check. See the WGSL
+[`textureSampleBias` builtin](https://gpuweb.github.io/gpuweb/wgsl/#textureSampleBias-builtin)
+and Microsoft's [`texldb - ps` instruction reference](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/texldb---ps).
+
+## Two direct fragment uniform-array reads — 2026-11-10
+
+Core and the private HAL now allow up to two direct fragment reads from
+distinct uniform bindings, each using the already tested `u32` index plus
+`array<vec4f, N>` structure (`2 <= N <= 24`). The per-entry proof retains the
+existing no-helper, direct-index, selected-entry and integer-side-use checks;
+cross-binding indices, computed indices and a third read are rejected. Naga's
+existing signed dynamic-index clamp is reused; no shared Naga lowering or
+feature-level limit changed.
+
+Core's synthetic selected-entry test passed 1/1. The HAL test passed 1/1 and
+FXC accepted the two-access shader at `ps_4_0_level_9_1`; existing negative
+shapes remained rejected. The strict public test passed on NVIDIA GeForce RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1,
+`software=false`. Its original 24-element single-read case verified 64 pixels
+for each of three indices. The new two-binding pipeline verified all 64 pixels
+for index pairs `(0,0)`, `(1,1)`, and `(0,1)`, with outputs `[64,96,0,64]`,
+`[32,64,191,96]`, and `[96,64,0,96]` respectively. An initial test pattern
+used a half-byte UNORM tie and observed green 127 rather than 128; the final
+pattern avoids tie values and checks exact output.
+
+The first Core test invocation omitted the crate's `wgsl` feature and failed
+at compilation; rerunning with `--features wgsl` passed. An initial Clippy
+invocation outside the Visual Studio environment failed because `link.exe`
+was not on `PATH`; rerunning through `vcvars64.bat` passed. HAL and public
+tests used the Visual Studio x64 environment and bounded Cargo parallelism.
+
+Full verification for this slice completed:
+
+```powershell
+cargo +1.93.1 test --offline -j16 -p wgpu-core --features wgsl --lib
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_fragment_uniform_array -- --nocapture --test-threads=1
+cargo +1.93.1 check --offline -j16 -p wgpu-hal --no-default-features --features dx12
+cargo +1.93.1 clippy --offline -j16 -p wgpu-core --features wgsl --lib --tests
+cargo +1.93.1 clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+cargo +1.93.1 clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_fragment_uniform_array
+rustfmt +1.93.1 --check --edition 2021 wgpu-core/src/validation.rs wgpu-hal/src/dx11/hal_shader.rs wgpu/tests/dx11_fl91_fragment_uniform_array.rs
+git diff --check
+```
+
+Results: Core 123/123; strict private HAL 478/478; strict public D3D11 126/126;
+the focused uniform-array integration 1/1; DX12 HAL check passed; Core, HAL
+and public-test Clippy passed. Two optional cases in the public suite reported
+recognizable capability skips (R8G8 vertex-input support and RG8 mip support);
+they are not counted as hardware passes. All other hardware tests selected the
+physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+requested and actual FL9_1, `software=false`. Formatting and `git diff --check`
+passed. Clippy reported existing HAL warnings in unrelated code; no warning
+was introduced in the new validation or test code.

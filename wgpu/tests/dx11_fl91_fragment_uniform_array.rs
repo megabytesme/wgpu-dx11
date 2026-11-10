@@ -68,16 +68,38 @@ fn public_dx11_fragment_uniform_array_indexing_at_fl91() {
 
     let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 fragment uniform array layout"),
-        entries: &[BindGroupLayoutEntry {
-            binding: 17,
-            visibility: ShaderStages::FRAGMENT,
-            ty: BindingType::Buffer {
-                ty: BufferBindingType::Uniform,
-                has_dynamic_offset: false,
-                min_binding_size: NonZeroU64::new(400),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 17,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(400),
+                },
+                count: None,
             },
-            count: None,
-        }],
+            BindGroupLayoutEntry {
+                binding: 19,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(48),
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 23,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(48),
+                },
+                count: None,
+            },
+        ],
     });
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("FL9_1 fragment uniform array pipeline layout"),
@@ -93,6 +115,12 @@ struct Params {
     values: array<vec4f, 24>,
 }
 @group(1) @binding(17) var<uniform> params: Params;
+struct SmallParams {
+    index: u32,
+    values: array<vec4f, 2>,
+}
+@group(1) @binding(19) var<uniform> first_small: SmallParams;
+@group(1) @binding(23) var<uniform> second_small: SmallParams;
 
 @vertex
 fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f {
@@ -102,6 +130,12 @@ fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f {
 @fragment
 fn fs() -> @location(0) vec4f {
     return params.values[params.index];
+}
+
+@fragment
+fn fs_multiple() -> @location(0) vec4f {
+    return first_small.values[first_small.index]
+        + second_small.values[second_small.index];
 }
 "#
             .into(),
@@ -137,6 +171,27 @@ fn fs() -> @location(0) vec4f {
         fragment: Some(FragmentState {
             module: &shader,
             entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let pipeline_multiple = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 multiple fragment uniform array pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs_multiple"),
             compilation_options: PipelineCompilationOptions::default(),
             targets: &targets,
         }),
@@ -185,13 +240,35 @@ fn fs() -> @location(0) vec4f {
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
+    let first_small_uniform_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 first fragment uniform array"),
+        size: 48,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let second_small_uniform_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 second fragment uniform array"),
+        size: 48,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
     let bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("FL9_1 fragment uniform array group"),
         layout: &bind_group_layout,
-        entries: &[BindGroupEntry {
-            binding: 17,
-            resource: uniform_buffer.as_entire_binding(),
-        }],
+        entries: &[
+            BindGroupEntry {
+                binding: 17,
+                resource: uniform_buffer.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 19,
+                resource: first_small_uniform_buffer.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 23,
+                resource: second_small_uniform_buffer.as_entire_binding(),
+            },
+        ],
     });
 
     for (index, expected_pixel) in [
@@ -293,5 +370,116 @@ fn fs() -> @location(0) vec4f {
         }
         readback.unmap();
         println!("PASS: fragment uniform array index={index}, all 64 pixels={expected_pixel:?}");
+    }
+
+    let make_small_uniform = |index: u32, values: [[f32; 4]; 2]| {
+        let mut bytes = vec![0u8; 48];
+        bytes[0..4].copy_from_slice(&index.to_ne_bytes());
+        for (array_index, value) in values.into_iter().enumerate() {
+            let offset = 16 + array_index * 16;
+            for (component, byte) in value.into_iter().flat_map(f32::to_ne_bytes).enumerate() {
+                bytes[offset + component] = byte;
+            }
+        }
+        bytes
+    };
+    let first_values = [[0.25, 0.0, 0.0, 0.125], [0.0, 0.0, 0.75, 0.125]];
+    let second_values = [[0.0, 0.375, 0.0, 0.125], [0.125, 0.25, 0.0, 0.25]];
+    for (first_index, second_index, expected_pixel) in [
+        (0, 0, [64, 96, 0, 64]),
+        (1, 1, [32, 64, 191, 96]),
+        (0, 1, [96, 64, 0, 96]),
+    ] {
+        queue.write_buffer(
+            &first_small_uniform_buffer,
+            0,
+            &make_small_uniform(first_index, first_values),
+        );
+        queue.write_buffer(
+            &second_small_uniform_buffer,
+            0,
+            &make_small_uniform(second_index, second_values),
+        );
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("FL9_1 multiple fragment uniform array draw"),
+        });
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 multiple fragment uniform array pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline_multiple);
+            pass.set_bind_group(1, &bind_group, &[]);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for multiple FL9_1 uniform array draw");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("multiple uniform array readback callback")
+            .expect("map multiple uniform array readback");
+        {
+            let pixels = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped multiple uniform array readback");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &pixels[offset..offset + 4],
+                        expected_pixel,
+                        "multiple uniform indices ({first_index}, {second_index}) pixel ({x}, {y})"
+                    );
+                }
+            }
+        }
+        readback.unmap();
+        println!(
+            "PASS: two independent fragment uniform array indices=({first_index}, {second_index}), all 64 pixels={expected_pixel:?}"
+        );
     }
 }
