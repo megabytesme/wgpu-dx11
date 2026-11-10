@@ -24,6 +24,24 @@ entry point that actually samples the depth texture. The strict RTX 3090 Ti
 fixture verified successful layout creation and this pre-HAL pipeline
 rejection at requested/actual FL9_1; no capability changed.
 
+## FL9_1 sRGB blend semantics — 2026-11-10
+
+The native format query's `BLENDABLE` bit only confirms that blending is
+available. Microsoft's D3D11 contract requires FL9_1–FL9_3 hardware blending
+for RGBA8/BGRA8 sRGB render targets to occur in sRGB space, while wgpu exposes
+sRGB storage as encoded values with linear shader values. The FL9_1 public
+projection therefore keeps sRGB attachment support but withholds
+`COLOR_ATTACHMENT_BLEND`, even when the driver query reports `BLENDABLE`.
+Linear RGBA8/BGRA8 blending remains selected-device-query gated. A synthetic
+capability test checks all seven feature-level identities and both sRGB
+formats; the strict public FL9_1 test checks the actual adapter projection and
+Core rejection before HAL. The focused public test passed on the RTX 3090 Ti
+at requested/actual FL9_1 and retained the linear RGBA8 64-pixel blend result.
+The complete strict public target passed 126/126 test functions, and the
+complete strict private HAL library suite passed 478/478. This corrects an
+overclaim in capability reporting; it does not change native private-HAL
+blend-state creation.
+
 Latest shader-input status: `instance_index` and a restricted `vertex_index`
 subset now execute on the opt-in FL9_1 path. `vertex_index` uses a custom float
 IA semantic with direct identity IDs up to 65,534 and temporary remapped streams

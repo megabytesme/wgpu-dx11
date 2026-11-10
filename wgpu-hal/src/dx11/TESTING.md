@@ -4323,9 +4323,28 @@ The single selected case passed with zero skips on the same forced-FL9_1 RTX
 3090 Ti. The CTS comparator passed; this run did not capture raw readback
 bytes. Microsoft's D3D11 blend-state documentation warns that feature levels
 9_1–9_3 blend sRGB render targets in sRGB space, while WebGPU expects linear
-blend semantics. Treat this result as evidence for this modern NVIDIA driver
-only, not as proof for historical FL9_x hardware or a reason to broaden the
-public capability projection.
+blend semantics. The backend now retains sRGB attachment support but removes
+`BLENDABLE` from the FL9_1 public format projection; a strict public test
+asserts this projection and verifies Core rejects an sRGB-blended pipeline
+before HAL. The prior CTS pass remains evidence of comparator behavior on this
+modern NVIDIA driver, not proof of historical FL9_x behavior or linear-space
+blend conformance.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_blending_and_downlevel_rejections_at_fl91 -- --exact --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib srgb_blending_projection_respects_feature_level_color_space -- --nocapture
+```
+
+The capability unit test passed 1/1. The public test passed on NVIDIA GeForce
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) with requested/actual
+FL9_1 and `software=false`; it verified the sRGB format projection, Core's
+pre-HAL rejection, and 64/64 correct pixels for the still-supported linear
+RGBA8 premultiplied blend. The complete strict public target passed 126/126
+test functions, including default-adapter isolation. An optional R8G8 IA
+format subcase reported its expected capability skip. The complete strict
+private HAL library suite passed 478/478 tests. HAL Clippy passed with only
+existing warnings; public-test Clippy and formatting passed.
 
 ### Public D24S8 stencil-operation matrix at FL9_1
 

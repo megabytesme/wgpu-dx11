@@ -15930,3 +15930,26 @@ unverified. Clippy passed for the HAL library and public test target with only
 existing `too_many_arguments` warnings; formatting and `git diff --check`
 passed. The preceding truthful-limit projection is committed as
 `6f2b8f01958b2ed2eb231bfd380263a38841aec0`.
+
+## FL9_1 sRGB blend projection correction — 2026-11-10
+
+The capability audit found that the selected-device `BLENDABLE` query was
+projected directly for RGBA8/BGRA8 sRGB attachments. Microsoft's D3D11
+contract specifies sRGB-space blending through FL9_3. Since wgpu sRGB formats
+store encoded values while shaders observe linear intensity values, this
+native behavior cannot be exposed as ordinary wgpu blending. The hardware
+model now records the feature-level color-space guarantee, and public
+projection retains sRGB attachment use while removing its blendable flag
+through FL9_3. Linear RGBA8/BGRA8 blending remains query gated.
+
+Added a synthetic all-level capability test and a strict public test that
+checks the selected FL9_1 adapter projection and Core rejection. Existing
+strict linear RGBA8 blending remains intact. The earlier sRGB CTS comparator
+pass did not capture raw pixels and is not treated as proof of blend
+semantics; the documented feature-level guarantee is sufficient to withhold
+public exposure. The new unit test passed 1/1, the complete strict HAL library
+suite passed 478/478, and the complete strict public target passed 126/126
+test functions on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+requested/actual FL9_1. Default D3D11 enumeration remained empty. The public
+suite printed one expected optional skip for R8G8 IA vertex-format support.
+Both Clippy targets and formatting passed; only existing HAL warnings remain.

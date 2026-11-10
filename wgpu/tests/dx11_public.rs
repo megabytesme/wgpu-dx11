@@ -7256,6 +7256,13 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
     assert_eq!(info.backend, Backend::Dx11);
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
+    let srgb_features = adapter.get_texture_format_features(TextureFormat::Rgba8UnormSrgb);
+    assert!(
+        !srgb_features
+            .flags
+            .contains(TextureFormatFeatureFlags::BLENDABLE),
+        "FL9_1 sRGB blending does not match wgpu linear-space semantics: {srgb_features:?}"
+    );
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
         info.name, info.vendor, info.device, info.driver, info.driver_info
@@ -7313,7 +7320,7 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let render_pipeline = |entry_point, blend| {
+    let render_pipeline = |entry_point, blend, format| {
         device.create_render_pipeline(&RenderPipelineDescriptor {
             label: Some("FL9_1 blend pipeline"),
             layout: None,
@@ -7342,7 +7349,7 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
                 entry_point: Some(entry_point),
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState {
-                    format: TextureFormat::Rgba8Unorm,
+                    format,
                     blend,
                     write_mask: ColorWrites::ALL,
                 })],
@@ -7372,6 +7379,7 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
                 color: saturated_component,
                 alpha: saturated_component,
             }),
+            TextureFormat::Rgba8Unorm,
         ));
     });
     println!("PASS: public core rejected source-alpha-saturated blending before HAL");
@@ -7386,11 +7394,24 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
                     operation: BlendOperation::Add,
                 },
             }),
+            TextureFormat::Rgba8Unorm,
         ));
     });
     println!("PASS: public core rejected separate alpha equations before HAL");
-    let base = render_pipeline("blue", None);
-    let overlay = render_pipeline("overlay", Some(premultiplied_over));
+    expect_validation_error(&device, "FL9_1 sRGB target blending", || {
+        drop(render_pipeline(
+            "overlay",
+            Some(premultiplied_over),
+            TextureFormat::Rgba8UnormSrgb,
+        ));
+    });
+    println!("PASS: public core rejected FL9_1 sRGB blending before HAL");
+    let base = render_pipeline("blue", None, TextureFormat::Rgba8Unorm);
+    let overlay = render_pipeline(
+        "overlay",
+        Some(premultiplied_over),
+        TextureFormat::Rgba8Unorm,
+    );
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 public blend commands"),
     });

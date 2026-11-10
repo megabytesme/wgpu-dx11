@@ -202,6 +202,7 @@ Bottom level categories:
 #### Hal
 
 - Keep D3D11 FL9_1 timestamp query features unadvertised until cross-submission timestamp validity and interval-specific frequency can be represented reliably.
+- Hide sRGB render-target blending on D3D11 feature levels 9_1–9_3, where native blending uses sRGB-space values instead of wgpu's linear shader values.
 - Allow opt-in D3D11 GPU copies between matching RGBA8/BGRA8 linear and sRGB formats while preserving the stored texel bits.
 - Allow allocation of storage-only D3D11 buffers while keeping FL9_1 shader storage bindings unavailable.
 - Stage and copy only the requested byte range during D3D11 buffer readback instead of allocating a staging buffer the size of the source.

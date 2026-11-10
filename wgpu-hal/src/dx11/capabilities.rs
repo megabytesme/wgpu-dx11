@@ -37,6 +37,7 @@ pub(super) struct HardwareGuarantees {
     pub legacy_vertex_shader_constant_vectors: Option<u32>,
     pub legacy_fragment_shader_constant_vectors: Option<u32>,
     pub src_alpha_saturated_blend: bool,
+    pub srgb_blending_linear: bool,
     pub vertex_input_formats: u64,
     pub conditional_npot: bool,
     pub separate_alpha_blend: bool,
@@ -132,6 +133,7 @@ impl HardwareGuarantees {
             legacy_vertex_shader_constant_vectors,
             legacy_fragment_shader_constant_vectors,
             src_alpha_saturated_blend: level.as_raw() >= L10_0.as_raw(),
+            srgb_blending_linear: level.as_raw() > L9_3.as_raw(),
             vertex_input_formats,
             conditional_npot: level.as_raw() < L10_0.as_raw(),
             separate_alpha_blend: level != L9_1,
@@ -586,6 +588,13 @@ pub(super) struct WgpuCapabilityProjection {
 }
 
 impl Capabilities {
+    fn blend_semantics_match_wgpu(&self, format: wgt::TextureFormat) -> bool {
+        !matches!(
+            format,
+            wgt::TextureFormat::Rgba8UnormSrgb | wgt::TextureFormat::Bgra8UnormSrgb
+        ) || self.hardware.srgb_blending_linear
+    }
+
     pub fn wireframe_rasterizer_supported(&self) -> bool {
         self.backend.wireframe_rasterizer && self.driver.wireframe_rasterizer == Query::Value(true)
     }
@@ -1779,6 +1788,7 @@ impl Capabilities {
                     result |= Caps::COLOR_ATTACHMENT;
                 }
                 if result.contains(Caps::COLOR_ATTACHMENT)
+                    && self.blend_semantics_match_wgpu(format)
                     && matches!(format_query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0)
                 {
                     result |= Caps::COLOR_ATTACHMENT_BLEND;
@@ -1858,6 +1868,7 @@ impl Capabilities {
             result |= Caps::SINGLE_MIP_ONLY;
         }
         if result.contains(Caps::COLOR_ATTACHMENT)
+            && self.blend_semantics_match_wgpu(format)
             && matches!(format_query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0)
         {
             result |= Caps::COLOR_ATTACHMENT_BLEND;
@@ -2419,6 +2430,34 @@ mod tests {
             .downlevel
             .flags
             .contains(wgt::DownlevelFlags::SEPARATE_ALPHA_BLEND));
+    }
+
+    #[test]
+    fn srgb_blending_projection_respects_feature_level_color_space() {
+        for level in [FeatureLevel::L9_1, FeatureLevel::L9_2, FeatureLevel::L9_3] {
+            assert!(!HardwareGuarantees::for_level(level).srgb_blending_linear);
+        }
+        for level in [
+            FeatureLevel::L10_0,
+            FeatureLevel::L10_1,
+            FeatureLevel::L11_0,
+            FeatureLevel::L11_1,
+        ] {
+            assert!(HardwareGuarantees::for_level(level).srgb_blending_linear);
+        }
+
+        let caps = model(FeatureLevel::L9_1);
+        for format in [
+            wgt::TextureFormat::Rgba8UnormSrgb,
+            wgt::TextureFormat::Bgra8UnormSrgb,
+        ] {
+            let format_caps = caps.texture_format_capabilities(format);
+            assert!(format_caps.contains(crate::TextureFormatCapabilities::COLOR_ATTACHMENT));
+            assert!(!format_caps.contains(crate::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND));
+        }
+        assert!(model(FeatureLevel::L9_1)
+            .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
+            .contains(crate::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND));
     }
 
     #[test]
@@ -4115,7 +4154,7 @@ mod tests {
                 | FormatCaps::SAMPLED_LINEAR
         ));
         assert!(!srgb.contains(FormatCaps::SINGLE_MIP_ONLY));
-        assert!(srgb.contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
+        assert!(!srgb.contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
 
         caps.driver.rgba8 = Query::Value(
             (D3D11_FORMAT_SUPPORT_TEXTURE2D.0

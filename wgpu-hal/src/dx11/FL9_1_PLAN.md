@@ -13,8 +13,10 @@ HAL projection test and strict public readback/integration test passed on the
 RTX 3090 Ti forced to FL9_1. A source audit confirmed that the existing
 CoreWindow dispatcher-thread and lifecycle contract is safe to expose; the
 public capability gate has been removed and the strict desktop HWND path still
-passes. Lumia/UWP CoreWindow runtime verification remains open. Continue
-auditing valid public operations and shader/resource boundary cases.
+passes. Lumia/UWP CoreWindow runtime verification remains open. The graphics-
+state audit identified sRGB blending as a capability-reporting mismatch:
+FL9_1–FL9_3 hardware blends sRGB targets in sRGB space. Continue auditing
+valid public operations and shader/resource boundary cases.
 Historical FL9_1 hardware and physical device-removal recovery are external
 verification gaps.
 
