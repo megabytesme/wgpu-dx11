@@ -1,5 +1,84 @@
 # FL9_1 progress
 
+## Strict CTS routing and defaults — 2026-11-10
+
+The xtask runner now has an explicit `--require-dx11-hardware` mode. It
+requires `--backend dx11`, forwards the strict hardware variable to both CTS
+runner paths, and also preserves an explicitly inherited strict variable.
+Within this test mode only, Deno defaults omitted required limits to the
+selected adapter's reported limits; explicit limit requests remain unchanged.
+Normal Deno defaults and backend enumeration are unchanged.
+
+The focused `basic:empty:*` selector passed 1/1 without skips and logged the
+physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and
+actual FL9_1. It validates runner/device setup but performs no render. The
+broader `basic:*` run selected the same device and produced 1 pass, 2 failures,
+0 skips. The failures request `Rgba8Uint` `COPY_SRC | COPY_DST`, which is
+outside the current downlevel format contract, and then observe zero readback;
+they are honest unsupported-path failures. They are not fixed by claiming
+broader format support.
+
+```text
+cargo +1.93.1 test --offline -j4 -p deno_webgpu --features dx11 --lib required_limit_tests -- --nocapture
+# 4 passed.
+
+cargo +1.93.1 test --offline -j4 -p wgpu-xtask --bin wgpu-xtask cts::backend_feature_tests::strict_dx11_hardware_mode -- --nocapture
+# 2 passed.
+
+cargo +1.93.1 xtask cts --backend dx11 --require-dx11-hardware "webgpu:api,operation,command_buffer,basic:empty:*"
+# 1 passed, 0 failed, 0 skipped; strict physical FL9_1 identity logged.
+
+cargo +1.93.1 xtask cts --backend dx11 --require-dx11-hardware "webgpu:api,operation,command_buffer,basic:*"
+# 1 passed, 2 failed, 0 skipped; failures are unsupported Rgba8Uint copy usages.
+
+cargo +1.93.1 clippy --offline -j2 -p deno_webgpu --features dx11 --lib --tests
+cargo +1.93.1 clippy --offline -j2 -p wgpu-xtask --bin wgpu-xtask
+cargo +1.93.1 clippy --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_offscreen --example dx11_fl91_windowed
+# passed; the wgpu example build emitted five pre-existing D3D11 HAL warnings.
+
+rustfmt +1.93.1 --edition 2021 --check deno_webgpu/adapter.rs xtask/src/cts.rs wgpu/examples/dx11_fl91_offscreen.rs wgpu/examples/dx11_fl91_windowed.rs
+git diff --check
+# passed (Git reports existing LF-to-CRLF working-copy notices).
+```
+
+The focused CTS selector is not a rendering test. The existing strict public
+wgpu suite remains the evidence for actual rendering. The next work remains a
+Core/HAL operation audit and targeted shader/resource additions only where the
+FL9_1 contract allows them. Historical hardware and Lumia runtime remain
+external verification gaps.
+
+An initial Deno Clippy attempt at `-j12` exhausted the Windows paging file
+(OS error 1455) while rebuilding proc-macro dependencies; rerunning at `-j2`
+completed successfully. This was a resource failure, not a Rust or Clippy
+diagnostic.
+
+## Public example capability diagnostics — 2026-11-10
+
+The offscreen and visible HWND examples now print selected-adapter wgpu
+features and limits. They still request only `Features::empty()` and use the
+reported limits, so this adds diagnostics without opting into optional device
+features. Both examples were rebuilt and executed with strict hardware mode.
+The RTX 3090 Ti reported 2D/3D limits of 2048/256, six array layers, eight bind
+groups, 8 sampled textures and 16 samplers per shader stage, six uniform
+buffers per shader stage, one color attachment and 22 combined shader buffers
+per stage. Its reported features include the query-gated 16-bit formats,
+BC1–BC3 subsets, timestamp queries, comparison border addressing and line
+polygon mode.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 run --offline -j12 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_offscreen
+# Physical RTX 3090 Ti, requested/actual FL9_1; all 1,024 pixels validated:
+# 112 red, 277 green, 635 blue background.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 run --offline -j12 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_windowed -- --frames=60
+# Physical RTX 3090 Ti, requested/actual FL9_1; 60 textured indexed
+# depth-tested frames presented through HWND.
+```
+
+These runs verify this modern NVIDIA driver forced to FL9_1, not historical
+FL9_1 devices. The offscreen run is the pixel-validation proof; the windowed
+run verifies bounded presentation but does not read back the surface.
+
 ## Direct 2D `textureLoad` plus `textureDimensions` — 2026-11-10
 
 The private/public FL9_1 path now accepts a deliberately narrow composition of

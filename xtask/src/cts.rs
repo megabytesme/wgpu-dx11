@@ -12,6 +12,13 @@
 //! cargo xtask cts 'webgpu:api,operation,command_buffer,basic:*'
 //! ```
 //!
+//! Strict physical DX11 testing requires an explicit backend and hardware
+//! preflight:
+//!
+//! ```sh
+//! cargo xtask cts --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,basic:*'
+//! ```
+//!
 //! You can also supply your own test list in a file:
 //!
 //! ```sh
@@ -63,6 +70,34 @@ fn append_backend_features(cargo_opts: &mut Vec<OsString>, backend: Option<&str>
     }
 }
 
+fn backend_is_dx11_only(backend: Option<&str>) -> bool {
+    let Some(backend) = backend else {
+        return false;
+    };
+    let mut backends = backend.split(',');
+    let is_dx11 = backends.next().is_some_and(|name| {
+        let name = name.trim();
+        name.eq_ignore_ascii_case("dx11") || name.eq_ignore_ascii_case("d3d11")
+    });
+    is_dx11 && backends.next().is_none()
+}
+
+fn configure_strict_dx11_hardware(
+    shell: &Shell,
+    backend: Option<&str>,
+    require_flag: bool,
+    hardware_env: Option<&str>,
+) -> anyhow::Result<bool> {
+    let required = require_flag || hardware_env == Some("1");
+    if required && !backend_is_dx11_only(backend) {
+        bail!("strict DX11 hardware CTS mode requires `--backend dx11`");
+    }
+    if required {
+        shell.set_var("WGPU_DX11_REQUIRE_HARDWARE", "1");
+    }
+    Ok(required)
+}
+
 #[derive(Default)]
 struct TestLine {
     pub selector: OsString,
@@ -83,6 +118,7 @@ pub fn run_cts(
     let skip_checkout = args.contains("--skip-checkout");
     let llvm_cov = args.contains("--llvm-cov");
     let release = args.contains("--release");
+    let require_dx11_hardware = args.contains("--require-dx11-hardware");
 
     let output_filter = args
         .opt_value_from_str::<_, String>("--print-output-when")?
@@ -109,6 +145,13 @@ pub fn run_cts(
         .transpose()?;
 
     let running_on_backend = args.opt_value_from_str::<_, String>("--backend")?;
+    let hardware_env = shell.var("WGPU_DX11_REQUIRE_HARDWARE").ok();
+    let require_dx11_hardware = configure_strict_dx11_hardware(
+        &shell,
+        running_on_backend.as_deref(),
+        require_dx11_hardware,
+        hardware_env.as_deref(),
+    )?;
     let enable_external_texture = args.contains("--enable-external-texture")
         || (!args.contains("--disable-external-texture")
             && running_on_backend
@@ -416,9 +459,11 @@ pub fn run_cts(
     let cts_bin = &["./tools/run_deno", "--verbose"];
 
     if let Some(passthrough_args) = passthrough_args {
-        return Ok(shell
-            .cmd(bin)
-            .envs(env_vars)
+        let mut cmd = shell.cmd(bin).envs(env_vars);
+        if require_dx11_hardware {
+            cmd = cmd.env("WGPU_DX11_REQUIRE_HARDWARE", "1");
+        }
+        return Ok(cmd
             .args(cts_bin)
             .args(enable_external_texture.then_some("--enable-external-texture"))
             .args(&passthrough_args)
@@ -442,9 +487,11 @@ pub fn run_cts(
             log::info!("Running {}", test.selector.to_string_lossy());
         }
 
-        let cmd = shell
-            .cmd(&bin)
-            .envs(env_vars.clone())
+        let mut cmd = shell.cmd(&bin).envs(env_vars.clone());
+        if require_dx11_hardware {
+            cmd = cmd.env("WGPU_DX11_REQUIRE_HARDWARE", "1");
+        }
+        let cmd = cmd
             .args(enable_external_texture.then_some("--enable-external-texture"))
             .args(cts_bin)
             .args([&test.selector]);
@@ -486,8 +533,9 @@ pub fn run_cts(
 
 #[cfg(test)]
 mod backend_feature_tests {
-    use super::append_backend_features;
+    use super::{append_backend_features, configure_strict_dx11_hardware};
     use std::ffi::OsString;
+    use xshell::Shell;
 
     #[test]
     fn cts_runner_enables_dx11_only_when_requested() {
@@ -511,5 +559,31 @@ mod backend_feature_tests {
             append_backend_features(&mut args, backend);
             assert_eq!(args.len(), expected_len);
         }
+    }
+
+    #[test]
+    fn strict_dx11_hardware_mode_is_explicit_and_forwarded_to_runner() {
+        let shell = Shell::new().unwrap();
+        assert!(!configure_strict_dx11_hardware(&shell, Some("dx11"), false, None).unwrap());
+
+        let shell = Shell::new().unwrap();
+        assert!(configure_strict_dx11_hardware(&shell, Some("dx11"), true, None).unwrap());
+        assert_eq!(shell.var("WGPU_DX11_REQUIRE_HARDWARE").unwrap(), "1");
+
+        let shell = Shell::new().unwrap();
+        assert!(configure_strict_dx11_hardware(&shell, Some("d3d11"), false, Some("1")).unwrap());
+        assert_eq!(shell.var("WGPU_DX11_REQUIRE_HARDWARE").unwrap(), "1");
+    }
+
+    #[test]
+    fn strict_dx11_hardware_mode_rejects_other_backend_selections() {
+        for backend in [None, Some("dx12"), Some("dx11,dx12")] {
+            let shell = Shell::new().unwrap();
+            assert!(configure_strict_dx11_hardware(&shell, backend, true, None).is_err());
+            assert!(shell.var("WGPU_DX11_REQUIRE_HARDWARE").is_err());
+        }
+
+        let shell = Shell::new().unwrap();
+        assert!(!configure_strict_dx11_hardware(&shell, Some("dx11"), false, Some("0")).unwrap());
     }
 }

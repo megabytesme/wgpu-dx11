@@ -117,26 +117,31 @@ summarized above and in `CAPABILITIES.md`.
 ### Strict DX11 CTS selection
 
 The xtask runner enables the experimental Deno DX11 feature only for an
-explicit DX11 backend request. For a hardware-required run, set
-`WGPU_DX11_REQUIRE_HARDWARE=1`; Deno then requires the backend mask to contain
-only DX11 and rejects an absent or unverified physical FL9_1 adapter instead
-of resolving `null`. The verified adapter identity is logged. Example:
+explicit DX11 backend request. Add `--require-dx11-hardware` for a strict run;
+the flag is accepted only with `--backend dx11`, and is forwarded to Deno as
+`WGPU_DX11_REQUIRE_HARDWARE=1`. An inherited `WGPU_DX11_REQUIRE_HARDWARE=1`
+is also supported. Deno then requires the backend mask to contain only DX11,
+rejects an absent or unverified physical FL9_1 adapter instead of resolving
+`null`, and logs the selected adapter identity. In this strict test mode only,
+omitted Deno required limits default to the selected adapter's reported limits;
+explicit requests are preserved and Core rejects any that exceed the adapter.
+Ordinary Deno defaults and backend selection are unchanged. Example:
 
 ```powershell
-$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
-cargo xtask cts --backend dx11 'webgpu:api,operation,command_buffer,basic:*'
+cargo +1.93.1 xtask cts --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,basic:empty:*'
 ```
 
-The `basic:*` command was run in strict mode after obtaining the pinned CTS
-checkout. All three cases failed during device creation (0 passed, 0 skipped,
-3 failed): Deno supplies Core WebGPU default limits, including 28 combined
-buffers per shader stage, while this experimental FL9_1 adapter reports 22. No
-command-buffer operation ran, so this is not GPU execution evidence. The
-rejection is expected for a deliberately non-Core-WebGPU adapter; other Core
-defaults also exceed the FL9_1 projection. Do not raise projected limits or
-lower Deno defaults to mask this contract mismatch. The strict preflight did
-surface the request as failure rather than skip. The regular Deno backend mask
-still excludes DX11 by default.
+The focused `basic:empty:*` selector passed 1/1 with no skips and logged the
+physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) verified at
+requested/actual FL9_1. This selector validates strict runner/device setup; it
+does not perform a rendering operation. The broader `basic:*` selector
+selected the same strict hardware and reported 1 pass, 2 failures, 0 skips.
+The two failures request `Rgba8Uint` textures with `COPY_SRC | COPY_DST`,
+which the current downlevel format contract correctly rejects; their zero
+readback values are not a successful transfer. Do not broaden that format
+contract to make this CTS slice pass. The strict preflight reports failures
+rather than hardware skips, and ordinary Deno backend selection still excludes
+DX11.
 
 ### Public fragment-discard color and depth test
 
@@ -447,16 +452,20 @@ cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx1
 public `dx11` adapter and surface APIs, pumps Windows messages, and renders a
 rotating indexed textured cube with depth testing. It handles client-area
 changes by reconfiguring the swapchain and recreating its depth target. Close
-the window to stop it. For a bounded run, pass `--frames=N`:
+the window to stop it. It reports the physical adapter, feature set and limits
+but requests no optional features for its own device. For a bounded run, pass
+`--frames=N`:
 
 ```powershell
-cargo +1.93 run --offline -j32 -p wgpu --example dx11_fl91_windowed --no-default-features --features dx11,wgsl,std -- --frames=120
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 run --offline -j12 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_windowed -- --frames=60
 ```
 
-A 60-frame run passed on the physical RTX 3090 Ti at requested/actual FL9_1.
-The example checks that the HWND is visible and reports presented frame count.
-It is not a pixel-readback test; use the offscreen example and strict
-integration suite for deterministic pixel validation.
+A 60-frame run passed on the physical RTX 3090 Ti at requested/actual FL9_1,
+driver `32.0.16.2101`; the example printed the selected adapter's wgpu feature
+and limit snapshot and reported 60 presented frames. It is not a
+pixel-readback test; use the offscreen example and strict integration suite
+for deterministic pixel validation.
 
 The public test also draws fully overlapping near and far textured surfaces
 with the same depth-tested pipeline, in both far-then-near and near-then-far
@@ -473,8 +482,9 @@ mapped contents before vertex use.
 
 `wgpu/examples/dx11_fl91_offscreen.rs` is a standalone public-API diagnostic.
 It selects an enumerated physical D3D11 adapter only after explicit FL9_1
-device creation, reports the adapter identifiers and driver, then renders an
-indexed, textured, depth-tested cube into an offscreen target. The example
+device creation, reports adapter identifiers, driver, wgpu features and limits,
+then renders an indexed, textured, depth-tested cube into an offscreen target.
+It requests no optional features for its own device. The example
 maps vertex and index data at creation, uploads a texture and transform,
 submits through a public queue, waits for completion and checks all 1,024
 pixels against the texture colors and clear color. Pass an optional output path
@@ -485,7 +495,8 @@ physical FL9_1 adapter and exits with an error when one is unavailable; it
 does not substitute WARP.
 
 ```powershell
-cargo +1.93 run --offline -j16 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 run --offline -j12 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_offscreen
 ```
 
 On the RTX 3090 Ti the run reported vendor `0x10de`, device `0x2203`, driver

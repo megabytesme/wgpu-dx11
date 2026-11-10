@@ -1,5 +1,17 @@
 # FL9_1 handoff
 
+## Strict CTS route — 2026-11-10
+
+The xtask route now supports `--require-dx11-hardware` with mandatory
+`--backend dx11`, forwards strict selection to the CTS runner, and enables
+adapter-reported defaults for omitted Deno required limits only in this test
+mode. The focused `basic:empty:*` selector passed 1/1 without skips after
+logging the RTX 3090 Ti at requested/actual FL9_1; it is setup validation, not
+rendering evidence. `basic:*` ran 3 cases: one pass and two failures due to
+unsupported `Rgba8Uint` copy usages. No capability was broadened. Existing
+strict public readback tests remain the GPU rendering proof. See
+`FL9_1_PROGRESS.md` for commands and exact output.
+
 ## Current continuation — sample-bias compatibility validation — 2026-11-10
 
 The DX11 Core contract now carries selected-fragment-entry

@@ -48,6 +48,41 @@ struct GPUDeviceDescriptor {
   required_limits: indexmap::IndexMap<String, Option<u64>>,
 }
 
+fn strict_dx11_downlevel_defaulting_enabled(
+  require_hardware: bool,
+  backend: Option<&str>,
+) -> bool {
+  require_hardware
+    && crate::strict_dx11_configuration_issue(true, backend).is_none()
+}
+
+fn required_limits_with_default(
+  required_limits: &indexmap::IndexMap<String, Option<u64>>,
+  defaults: &wgpu_types::Limits,
+) -> Result<wgpu_types::Limits, serde_json::Error> {
+  let mut values = serde_json::to_value(defaults)?;
+  let requested = serde_json::to_value(required_limits)?;
+  let values = values
+    .as_object_mut()
+    .expect("wgpu Limits serializes as an object");
+
+  for (name, value) in requested
+    .as_object()
+    .expect("requiredLimits serializes as an object")
+  {
+    if !value.is_null() {
+      values.insert(name.clone(), value.clone());
+    }
+  }
+
+  Ok(
+    serde_json::from_value::<wgpu_types::Limits>(serde_json::Value::Object(
+      values.clone(),
+    ))?
+    .or_better_values_from(defaults),
+  )
+}
+
 pub struct GPUAdapter {
   pub instance: Instance,
   pub id: wgpu_core::id::AdapterId,
@@ -143,10 +178,21 @@ impl GPUAdapter {
     //
     // Support for compatibility mode is tracked in
     // https://github.com/gfx-rs/wgpu/issues/8124.
-    let required_limits = serde_json::from_value::<wgpu_types::Limits>(
-      serde_json::to_value(descriptor.required_limits)?,
-    )?
-    .or_better_values_from(&wgpu_types::Limits::default());
+    let require_hardware = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE")
+      .is_some_and(|value| value == "1");
+    let backend = std::env::var("DENO_WEBGPU_BACKEND").ok();
+    let default_limits = if strict_dx11_downlevel_defaulting_enabled(
+      require_hardware,
+      backend.as_deref(),
+    ) {
+      self.instance.adapter_limits(self.id)
+    } else {
+      wgpu_types::Limits::default()
+    };
+    let required_limits = required_limits_with_default(
+      &descriptor.required_limits,
+      &default_limits,
+    )?;
 
     let trace = std::env::var_os("DENO_WEBGPU_TRACE")
       .map(|path| wgpu_types::Trace::Directory(std::path::PathBuf::from(path)))
@@ -558,5 +604,77 @@ impl GPUAdapterInfo {
   #[getter]
   fn is_fallback_adapter(&self) -> bool {
     self.info.device_type == wgpu_types::DeviceType::Cpu
+  }
+}
+
+#[cfg(test)]
+mod required_limit_tests {
+  use super::{
+    required_limits_with_default, strict_dx11_downlevel_defaulting_enabled,
+  };
+  use wgpu_types::{Backends, Limits};
+
+  #[test]
+  fn normal_request_device_keeps_core_default_limits() {
+    let required = indexmap::IndexMap::new();
+    let limits =
+      required_limits_with_default(&required, &Limits::default()).unwrap();
+
+    assert_eq!(limits, Limits::default());
+  }
+
+  #[test]
+  fn strict_downlevel_request_defaults_to_adapter_limits() {
+    let required = indexmap::IndexMap::new();
+    let adapter_limits = Limits {
+      max_texture_dimension_2d: 2048,
+      max_bind_groups: 1,
+      ..Limits::default()
+    };
+    let limits =
+      required_limits_with_default(&required, &adapter_limits).unwrap();
+
+    assert_eq!(limits, adapter_limits);
+  }
+
+  #[test]
+  fn explicit_required_limits_are_not_clamped_to_adapter_limits() {
+    let mut required = indexmap::IndexMap::new();
+    required.insert(String::from("maxTextureDimension2D"), Some(1024));
+    required.insert(String::from("maxBindGroups"), Some(3));
+    let adapter_limits = Limits {
+      max_texture_dimension_2d: 2048,
+      max_bind_groups: 1,
+      ..Limits::default()
+    };
+    let limits =
+      required_limits_with_default(&required, &adapter_limits).unwrap();
+
+    assert_eq!(limits.max_texture_dimension_2d, 2048);
+    assert_eq!(limits.max_bind_groups, 3);
+    assert!(limits.max_bind_groups > adapter_limits.max_bind_groups);
+  }
+
+  #[test]
+  fn strict_downlevel_defaulting_requires_strict_dx11_selection() {
+    assert!(strict_dx11_downlevel_defaulting_enabled(true, Some("dx11")));
+    assert!(strict_dx11_downlevel_defaulting_enabled(
+      true,
+      Some("D3D11")
+    ));
+    assert!(!strict_dx11_downlevel_defaulting_enabled(
+      false,
+      Some("dx11")
+    ));
+    assert!(!strict_dx11_downlevel_defaulting_enabled(true, None));
+    assert!(!strict_dx11_downlevel_defaulting_enabled(
+      true,
+      Some("dx12")
+    ));
+    assert!(!strict_dx11_downlevel_defaulting_enabled(
+      true,
+      Some("dx11,dx12")
+    ));
+    assert_eq!(crate::backends_from_env(Some("dx11")), Backends::DX11);
   }
 }

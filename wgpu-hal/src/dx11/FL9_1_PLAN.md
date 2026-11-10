@@ -1,5 +1,21 @@
 # FL9_1 completion plan
 
+## Current continuation — strict CTS execution path — 2026-11-10
+
+`xtask cts --backend dx11 --require-dx11-hardware` now explicitly selects and
+requires the physical FL9_1 adapter, and the Deno runner uses reported adapter
+limits for omitted required limits only in this strict mode. The focused
+`basic:empty:*` CTS selector passed 1/1 on the RTX 3090 Ti at requested/actual
+FL9_1 (no GPU rendering operation). `basic:*` now reaches real strict adapter
+selection and records 1 pass, 2 failures, 0 skips; both failures request
+Rgba8Uint copy usages unavailable under the truthful projection. Keep these
+operations rejected unless a separately justified capability change is
+proven. Next, continue the Core/HAL acceptance audit and implement only
+isolated FL9_1-compatible gaps. The shader review found many nearby operations
+are profile or stage limitations and should not be delegated as speculative
+features. Historical FL9_1 hardware and Lumia ARM32/CoreWindow runtime remain
+external verification gaps.
+
 ## Current continuation — direct 2D load plus dimensions query — 2026-11-10
 
 The existing fragment `textureLoad` and `textureDimensions` emulations can now

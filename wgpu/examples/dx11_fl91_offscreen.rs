@@ -177,10 +177,14 @@ fn main() -> Result<(), Box<dyn Error>> {
         "Adapter: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
         info.name, info.vendor, info.device, info.driver, info.driver_info
     );
+    let features = adapter.features();
+    let limits = adapter.limits();
+    println!("Reported wgpu features: {features:?}");
+    println!("Reported wgpu limits: {limits:?}");
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public D3D11 FL9_1 offscreen example"),
         required_features: Features::empty(),
-        required_limits: adapter.limits(),
+        required_limits: limits,
         ..Default::default()
     }))?;
 
