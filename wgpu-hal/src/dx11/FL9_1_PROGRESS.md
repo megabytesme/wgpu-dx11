@@ -15848,3 +15848,30 @@ Clippy passed for both public test targets with existing HAL
 `git diff --check` passed. The D24S8 CTS helper remains unable to test these
 operations because it requests unsupported `COPY_DST`; no capability was
 broadened.
+
+## Narrow fragment `frexp` fraction — 2026-11-10
+
+FXC accepted Naga's HLSL for direct scalar fragment `frexp(value).fract` at
+`ps_4_0_level_9_1`. Disassembly shows the Level9 `ps_2_0` section uses float
+instructions for the fraction path and contains no integer opcodes. Core and
+HAL now whitelist only this exact direct projection when its result and
+fraction access are emitted together in the selected fragment entry. A local
+whole-result alias, exponent read, helper call, vertex use or any other runtime
+integer operation remains rejected. The new downlevel limit is false by
+default and is set only by the selected FL9_1 DX11 projection.
+
+The strict public RTX 3090 Ti test ran at requested/actual FL9_1 and verified
+64 pixels each for positive six, negative six and zero. Expected red values
+were 191, 32 and 128, with the other RGBA channels checked too. The full result
+including exponent remains an expected Core validation failure. Microsoft's
+[HLSL reference](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-frexp)
+lists `frexp` as shader-model-3 functionality; this support is based on the
+installed FXC's checked Level9 lowering, not the intrinsic's general profile
+requirement. Other compiler versions and historical FL9_1 drivers remain
+unverified.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_math -- --nocapture --test-threads=1
+# 1 test passed on RTX 3090 Ti, requested/actual FL9_1; 7 positive GPU cases
+# (448/448 output pixels) and one expected full-result rejection.
+```

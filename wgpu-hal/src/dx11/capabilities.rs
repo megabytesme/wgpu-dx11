@@ -334,6 +334,7 @@ pub(super) struct BackendCapabilities {
     pub fl91_fragment_texture_num_levels_3d_float: bool,
     pub fl91_fragment_texture_num_levels_cube_float: bool,
     pub fl91_fragment_texture_base_clamp_2d_float: bool,
+    pub fl91_fragment_frexp_fraction_only: bool,
     pub texture_array_layers: u32,
     pub cube_texture_sampling: bool,
     pub cube_texture_mipmaps: bool,
@@ -475,6 +476,7 @@ impl BackendCapabilities {
         fl91_fragment_texture_num_levels_3d_float: true,
         fl91_fragment_texture_num_levels_cube_float: true,
         fl91_fragment_texture_base_clamp_2d_float: true,
+        fl91_fragment_frexp_fraction_only: true,
         texture_array_layers: 1,
         cube_texture_sampling: true,
         cube_texture_mipmaps: true,
@@ -597,6 +599,10 @@ impl Capabilities {
     pub fn private_fl91_fragment_texture_load_2d_float(&self) -> bool {
         self.hardware.level == FeatureLevel::L9_1
             && self.backend.fl91_fragment_texture_load_2d_float
+    }
+
+    pub fn private_fl91_fragment_frexp_fraction_only(&self) -> bool {
+        self.hardware.level == FeatureLevel::L9_1 && self.backend.fl91_fragment_frexp_fraction_only
     }
 
     pub fn private_fl91_fragment_texture_load_3d_float(&self) -> bool {
@@ -895,6 +901,7 @@ impl Capabilities {
                     && self.backend.texture_sample_level,
                 texture_gather: self.hardware.texture_gather && self.backend.texture_gather,
                 runtime_integer_shader_operations: self.backend.runtime_integer_shader_operations,
+                frexp_fraction_only_fragment: self.private_fl91_fragment_frexp_fraction_only(),
                 matrix_inverse: self.backend.matrix_inverse,
                 matrix_inverse_2x2: self.backend.matrix_inverse_2x2,
                 matrix_outer_product: self.backend.matrix_outer_product,
@@ -2054,6 +2061,44 @@ mod tests {
         ] {
             assert!(!model(level).private_fl91_fragment_texture_load_2d_float());
             assert!(model(level).wgpu_projection().is_none());
+        }
+    }
+
+    #[test]
+    fn frexp_fraction_only_projection_is_fl91_fragment_only() {
+        let fl91 = model(FeatureLevel::L9_1);
+        assert!(fl91.private_fl91_fragment_frexp_fraction_only());
+        assert!(
+            fl91.wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .frexp_fraction_only_fragment
+        );
+
+        let mut disabled = fl91;
+        disabled.backend.fl91_fragment_frexp_fraction_only = false;
+        assert!(!disabled.private_fl91_fragment_frexp_fraction_only());
+        assert!(
+            !disabled
+                .wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .frexp_fraction_only_fragment
+        );
+
+        for level in [
+            FeatureLevel::L9_2,
+            FeatureLevel::L9_3,
+            FeatureLevel::L10_0,
+            FeatureLevel::L10_1,
+            FeatureLevel::L11_0,
+            FeatureLevel::L11_1,
+        ] {
+            assert!(!model(level).private_fl91_fragment_frexp_fraction_only());
         }
     }
 

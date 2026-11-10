@@ -63,8 +63,14 @@ fn public_dx11_fl91_runtime_float_math_executes_and_reads_back() {
         info.driver_info.contains("physical"),
         "the FL9_1 math test requires a physical adapter: {info:?}"
     );
+    assert!(
+        adapter
+            .get_downlevel_capabilities()
+            .limits
+            .frexp_fraction_only_fragment
+    );
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=runtime-uniform modf/asinh/acosh/atanh readback plus frexp validation boundary",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=runtime-uniform modf/asinh/acosh/atanh and fraction-only frexp readback plus full-result rejection",
         info.name, info.vendor, info.device, info.driver_info
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -153,6 +159,25 @@ struct VertexInput { @location(0) position: vec2f, }
             input: 0.5,
             expression: "return vec4f(atanh(x), 0.25, 0.5, 1.0);",
             expected: Some([140, 64, 128, 255]),
+        },
+        MathCase {
+            name: "frexp_fraction_positive",
+            input: 6.0,
+            expression: "return vec4f(frexp(x).fract, 0.25, 0.5, 1.0);",
+            expected: Some([191, 64, 128, 255]),
+        },
+        MathCase {
+            name: "frexp_fraction_negative",
+            input: -6.0,
+            expression:
+                "let fraction = frexp(x).fract; return vec4f(fraction * 0.5 + 0.5, 0.25, 0.5, 1.0);",
+            expected: Some([32, 64, 128, 255]),
+        },
+        MathCase {
+            name: "frexp_fraction_zero",
+            input: 0.0,
+            expression: "return vec4f(frexp(x).fract + 0.5, 0.25, 0.5, 1.0);",
+            expected: Some([128, 64, 128, 255]),
         },
         MathCase {
             name: "frexp",

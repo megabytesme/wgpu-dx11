@@ -707,6 +707,66 @@ mod tests {
     use alloc::string::ToString;
 
     #[test]
+    fn fl91_frexp_fraction_only_compiles_with_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @fragment fn fraction_only(@location(0) value: f32) -> @location(0) vec4f {
+                return vec4f(frexp(value).fract, 0.0, 0.0, 1.0);
+            }
+            "#,
+        )
+        .expect("parse frexp fraction-only shader");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate frexp fraction-only shader");
+        let (source, entry) = translate_naga_with_viewport_and_fl9_inputs(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "fraction_only",
+            ShaderProfile::PixelLevel9_1,
+            &[],
+            Fl9ShaderInputOptions::default(),
+        )
+        .expect("Naga should lower fraction-only frexp");
+        let bytecode =
+            compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+                panic!("FXC rejected FL9_1 fraction-only frexp: {}", error.message)
+            });
+        let disassembly = unsafe {
+            windows::Win32::Graphics::Direct3D::Fxc::D3DDisassemble(
+                bytecode.as_ptr().cast(),
+                bytecode.len(),
+                0,
+                PCSTR::null(),
+            )
+        }
+        .expect("disassemble FL9_1 frexp DXBC");
+        let disassembly = String::from_utf8_lossy(blob_bytes(&disassembly));
+        let level9 = disassembly
+            .split("// Level9 shader bytecode:")
+            .nth(1)
+            .expect("FXC emits a level-9 shader section")
+            .split("ps_4_0")
+            .next()
+            .expect("level-9 disassembly precedes the standard shader section");
+        assert!(level9.contains("ps_2_0"), "{level9}");
+        assert!(
+            level9.contains("frc"),
+            "fraction extraction must use the level-9 float instruction set: {level9}"
+        );
+        for integer_opcode in ["iadd", "itof", "and"] {
+            assert!(
+                !level9.contains(integer_opcode),
+                "unexpected integer opcode {integer_opcode} in level-9 section: {level9}"
+            );
+        }
+    }
+
+    #[test]
     fn fl91_static_loops_compile_and_dynamic_loops_are_rejected_by_fxc() {
         let module = naga::front::wgsl::parse_str(
             r#"

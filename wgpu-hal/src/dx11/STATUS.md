@@ -1602,3 +1602,24 @@ uniform indexing remain rejected. A strict public fullscreen-triangle test
 verified all 64 pixels on the RTX 3090 Ti at requested/actual FL9_1. This is a
 compiler/backend subset, not general runtime integer support, and historical
 FL9_1 hardware remains unverified.
+
+## Direct FL9_1 fragment `frexp` fraction
+
+The selected FL9_1 fragment profile permits a direct scalar `frexp(value).fract`
+projection only. Core and HAL prove the math-result and fraction-access
+expressions are emitted together in the selected entry point; they reject a
+whole-result local, exponent access, helper call, vector result, vertex-stage
+use and any additional runtime integer semantics. The new downlevel limit is
+false by default and enabled only in the selected FL9_1 D3D11 capability
+projection.
+
+Microsoft's [HLSL `frexp` reference](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-frexp)
+documents the source intrinsic as shader-model-3 functionality, but the
+installed compiler accepts the restricted HLSL at
+`ps_4_0_level_9_1` and emits the fraction path in the Level9 `ps_2_0` section
+with float instructions only. The strict public FL9_1 math test verified all
+64 pixels for positive six, negative six (sign-sensitive encoding) and zero;
+the complete runtime `frexp` result remains an expected Core validation error.
+This proves the installed compiler and modern NVIDIA driver path, not every
+FXC release or historical FL9_1 driver. Other WGSL `frexp` forms remain
+unavailable.

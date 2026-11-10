@@ -1431,6 +1431,13 @@ pub struct DownlevelLimits {
     /// semantics of runtime integer arithmetic, conversion, comparison or indexing.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub runtime_integer_shader_operations: bool,
+    /// Whether fragment shaders support the narrow scalar `frexp(...).fract` use with no other
+    /// runtime integer operations.
+    ///
+    /// This does not permit reading the exponent, using the complete result, helper forwarding,
+    /// or vector `frexp` results.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub frexp_fraction_only_fragment: bool,
     /// Whether shader entry points may use floating-point matrix inverse operations.
     ///
     /// This can be unavailable when the selected shader translator has no implementation for
@@ -1630,6 +1637,7 @@ impl Default for DownlevelLimits {
             texture_load_2d_float_fragment: false,
             texture_load_3d_float_fragment: false,
             runtime_integer_shader_operations: true,
+            frexp_fraction_only_fragment: false,
             matrix_inverse: true,
             matrix_inverse_2x2: false,
             matrix_outer_product: true,
@@ -1911,6 +1919,7 @@ impl DownlevelLimits {
                 || self.texture_load_3d_float_fragment)
             && (!required.runtime_integer_shader_operations
                 || self.runtime_integer_shader_operations)
+            && (!required.frexp_fraction_only_fragment || self.frexp_fraction_only_fragment)
             && (!required.matrix_inverse || self.matrix_inverse)
             && (!required.matrix_inverse_2x2 || self.matrix_inverse || self.matrix_inverse_2x2)
             && (!required.matrix_outer_product || self.matrix_outer_product)
@@ -2638,6 +2647,7 @@ mod tests {
             texture_load_2d_float_fragment: true,
             texture_load_3d_float_fragment: false,
             runtime_integer_shader_operations: false,
+            frexp_fraction_only_fragment: false,
             matrix_inverse: false,
             matrix_inverse_2x2: false,
             matrix_outer_product: false,
@@ -2719,6 +2729,7 @@ mod tests {
             texture_load_2d_float_fragment: true,
             texture_load_3d_float_fragment: false,
             runtime_integer_shader_operations: false,
+            frexp_fraction_only_fragment: false,
             matrix_inverse: false,
             matrix_inverse_2x2: false,
             matrix_outer_product: false,
@@ -3251,6 +3262,7 @@ mod tests {
             "texture_load_2d_float_fragment",
             "texture_load_3d_float_fragment",
             "runtime_integer_shader_operations",
+            "frexp_fraction_only_fragment",
             "matrix_inverse",
             "matrix_inverse_2x2",
             "matrix_outer_product",
@@ -3306,6 +3318,7 @@ mod tests {
         assert!(!limits.texture_load_2d_float_fragment);
         assert!(!limits.texture_load_3d_float_fragment);
         assert!(limits.runtime_integer_shader_operations);
+        assert!(!limits.frexp_fraction_only_fragment);
         assert!(limits.matrix_inverse);
         assert!(!limits.matrix_inverse_2x2);
         assert!(limits.matrix_outer_product);
@@ -3776,6 +3789,21 @@ mod tests {
         }
         .is_webgpu_compliant());
         assert!(!DownlevelLimits::default().fragment_uniform_array_indexing);
+    }
+
+    #[test]
+    fn frexp_fraction_only_fragment_is_a_subset_capability() {
+        let available = DownlevelLimits {
+            frexp_fraction_only_fragment: true,
+            ..DownlevelLimits::default()
+        };
+        let required = DownlevelLimits {
+            frexp_fraction_only_fragment: true,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&required));
+        assert!(!DownlevelLimits::default().check_limits(&required));
+        assert!(!DownlevelLimits::default().frexp_fraction_only_fragment);
     }
 
     #[test]

@@ -301,6 +301,7 @@ struct EntryPoint {
     fl9_texture_load_3d_supported: bool,
     fl9_texture_load_dimensions_supported: bool,
     unsupported_runtime_integer_semantics: bool,
+    frexp_fraction_only_runtime_integer_semantics: bool,
     unsupported_runtime_integer_indexing: bool,
     vertex_index_local_array_indexing_used: bool,
     matrix_inverse_used: bool,
@@ -2133,6 +2134,95 @@ fn expression_may_contain_integer(
     )
 }
 
+fn fl9_fragment_frexp_fraction_only_result(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    stage: naga::ShaderStage,
+) -> Option<naga::Handle<naga::Expression>> {
+    if stage != naga::ShaderStage::Fragment {
+        return None;
+    }
+
+    let is_f32 = |ty: &naga::TypeInner| {
+        matches!(
+            ty,
+            naga::TypeInner::Scalar(naga::Scalar {
+                kind: naga::ScalarKind::Float,
+                width: 4,
+            })
+        )
+    };
+    let mut result = None;
+    for (handle, expression) in function.expressions.iter() {
+        let naga::Expression::Math {
+            fun: naga::MathFunction::Frexp,
+            arg,
+            ..
+        } = *expression
+        else {
+            continue;
+        };
+        if result.is_some()
+            || !is_f32(function_info[arg].ty.inner_with(&module.types))
+            || function_info[handle].ref_count != 1
+        {
+            return None;
+        }
+        let naga::TypeInner::Struct { members, .. } =
+            function_info[handle].ty.inner_with(&module.types)
+        else {
+            return None;
+        };
+        if members.len() != 2
+            || members[0].name.as_deref() != Some("fract")
+            || members[1].name.as_deref() != Some("exp")
+            || !is_f32(&module.types[members[0].ty].inner)
+            || !matches!(
+                module.types[members[1].ty].inner,
+                naga::TypeInner::Scalar(naga::Scalar {
+                    kind: naga::ScalarKind::Sint,
+                    width: 4,
+                })
+            )
+        {
+            return None;
+        }
+
+        let mut fraction_access = None;
+        for (access_handle, access) in function.expressions.iter() {
+            match *access {
+                naga::Expression::Access { base, .. } if base == handle => return None,
+                naga::Expression::AccessIndex { base, index } if base == handle => {
+                    if index != 0
+                        || fraction_access.is_some()
+                        || function_info[access_handle].ref_count == 0
+                        || !is_f32(function_info[access_handle].ty.inner_with(&module.types))
+                    {
+                        return None;
+                    }
+                    fraction_access = Some(access_handle);
+                }
+                _ => {}
+            }
+        }
+        let fraction_access = fraction_access?;
+        let direct_projection = function.body.iter().any(|statement| {
+            let naga::Statement::Emit(range) = statement else {
+                return false;
+            };
+            let range = range.index_range();
+            range.contains(&(handle.index() as u32))
+                && range.contains(&(fraction_access.index() as u32))
+        });
+        if !direct_projection {
+            return None;
+        }
+        result = Some(handle);
+    }
+    result
+}
+
 fn function_parameter_is_supported_uniform_index_only(
     module: &naga::Module,
     module_info: &naga::valid::ModuleInfo,
@@ -2259,6 +2349,7 @@ fn function_uses_unsupported_integer_semantics(
     vertex_entry: bool,
     supported_index_parameters: &[bool],
     supported_fragment_index_expressions: Option<&FastHashSet<naga::Handle<naga::Expression>>>,
+    supported_fragment_frexp_result: Option<naga::Handle<naga::Expression>>,
     budget: &mut usize,
 ) -> bool {
     if function.arguments.len() > *budget {
@@ -2315,6 +2406,9 @@ fn function_uses_unsupported_integer_semantics(
                     && (expression_may_contain_integer(module, function_info, expr, budget)
                         || expression_may_contain_integer(module, function_info, handle, budget))
             }
+            naga::Expression::Math { .. } if supported_fragment_frexp_result == Some(handle) => {
+                false
+            }
             naga::Expression::Math {
                 arg,
                 arg1,
@@ -2369,7 +2463,8 @@ fn function_uses_unsupported_integer_semantics(
                             module, function, handle,
                         )))
                 && !supported_fragment_index_expressions
-                    .is_some_and(|expressions| expressions.contains(&handle)))
+                    .is_some_and(|expressions| expressions.contains(&handle))
+                && supported_fragment_frexp_result != Some(handle))
     })
 }
 
@@ -2406,6 +2501,7 @@ fn entry_point_uses_unsupported_integer_semantics(
     module_info: &naga::valid::ModuleInfo,
     entry_point: &naga::EntryPoint,
     entry_point_info: &naga::valid::FunctionInfo,
+    supported_fragment_frexp_result: Option<naga::Handle<naga::Expression>>,
 ) -> bool {
     let vertex_entry = entry_point.stage == naga::ShaderStage::Vertex;
     let fragment_index_proof = fragment_uniform_array_indexing_proof(
@@ -2431,6 +2527,7 @@ fn entry_point_uses_unsupported_integer_semantics(
         fragment_index_proof
             .as_ref()
             .map(|proof| &proof.integer_expressions),
+        supported_fragment_frexp_result,
         &mut budget,
     ) || block_has_switch(&entry_point.function.body, &mut budget)
         || module.global_variables.iter().any(|(handle, global)| {
@@ -2500,6 +2597,7 @@ fn entry_point_uses_unsupported_integer_semantics(
                 info,
                 false,
                 &parameter_origins,
+                None,
                 None,
                 &mut budget,
             )
@@ -6349,6 +6447,31 @@ impl Interface {
                 );
             let fl9_texture_load_dimensions_supported =
                 entry_point_supports_fl9_texture_load_dimensions(module, entry_point, info);
+            let fl9_frexp_fraction_result = fl9_fragment_frexp_fraction_only_result(
+                module,
+                &entry_point.function,
+                info,
+                entry_point.stage,
+            );
+            let unsupported_runtime_integer_semantics = !fl9_texture_load_dimensions_supported
+                && entry_point_uses_unsupported_integer_semantics(
+                    module,
+                    module_info,
+                    entry_point,
+                    info,
+                    None,
+                );
+            let frexp_fraction_only_runtime_integer_semantics =
+                unsupported_runtime_integer_semantics
+                    && fl9_frexp_fraction_result.is_some_and(|result| {
+                        !entry_point_uses_unsupported_integer_semantics(
+                            module,
+                            module_info,
+                            entry_point,
+                            info,
+                            Some(result),
+                        )
+                    });
             let mut ep = EntryPoint {
                 fragment_position_used: entry_point_uses_fragment_position(
                     module,
@@ -6381,13 +6504,8 @@ impl Interface {
                 fl9_texture_load_dynamic_coordinate_supported,
                 fl9_texture_load_3d_supported,
                 fl9_texture_load_dimensions_supported,
-                unsupported_runtime_integer_semantics: !fl9_texture_load_dimensions_supported
-                    && entry_point_uses_unsupported_integer_semantics(
-                        module,
-                        module_info,
-                        entry_point,
-                        info,
-                    ),
+                unsupported_runtime_integer_semantics,
+                frexp_fraction_only_runtime_integer_semantics,
                 unsupported_runtime_integer_indexing,
                 vertex_index_local_array_indexing_used,
                 matrix_inverse_used: entry_point_uses_matrix_inverse(module, entry_point),
@@ -6962,7 +7080,9 @@ impl Interface {
                         || entry_point.fl9_texture_num_levels_3d_supported
                         || entry_point.fl9_texture_num_levels_cube_supported
                         || (limits.texture_load_2d_float_fragment
-                            && entry_point.fl9_texture_load_dynamic_coordinate_supported)))
+                            && entry_point.fl9_texture_load_dynamic_coordinate_supported)
+                        || (limits.frexp_fraction_only_fragment
+                            && entry_point.frexp_fraction_only_runtime_integer_semantics)))
                 || (entry_point.dynamic_uniform_array_indexing_used
                     && !match stage {
                         naga::ShaderStage::Vertex => limits.vertex_uniform_array_indexing,
@@ -12172,6 +12292,28 @@ mod tests {
             @fragment fn float_override() -> @location(0) vec4f {
                 return vec4f(tint, 0.0, 0.0, 1.0);
             }
+            fn frexp_fraction_helper(value: f32) -> f32 {
+                return frexp(value).fract;
+            }
+            @fragment fn frexp_fraction_only(@location(0) value: f32) -> @location(0) vec4f {
+                return vec4f(frexp(value).fract, 0.0, 0.0, 1.0);
+            }
+            @fragment fn frexp_fraction_local(@location(0) value: f32) -> @location(0) vec4f {
+                let result = frexp(value);
+                return vec4f(result.fract, 0.0, 0.0, 1.0);
+            }
+            @fragment fn frexp_exponent(@location(0) value: f32) -> @location(0) vec4f {
+                return vec4f(f32(frexp(value).exp), 0.0, 0.0, 1.0);
+            }
+            @fragment fn frexp_fraction_helper_call(@location(0) value: f32) -> @location(0) vec4f {
+                return vec4f(frexp_fraction_helper(value), 0.0, 0.0, 1.0);
+            }
+            @fragment fn frexp_fraction_and_integer_math(@location(0) value: f32) -> @location(0) vec4f {
+                return vec4f(frexp(value).fract + f32(u32(value)), 0.0, 0.0, 1.0);
+            }
+            @vertex fn frexp_vertex_fraction(@location(0) value: f32) -> @builtin(position) vec4f {
+                return vec4f(frexp(value).fract, 0.0, 0.0, 1.0);
+            }
             "#,
         )
         .unwrap();
@@ -12184,6 +12326,11 @@ mod tests {
         let interface = Interface::new(&module, &info, wgt::Limits::defaults());
         let fl91 = wgt::DownlevelLimits {
             runtime_integer_shader_operations: false,
+            ..Default::default()
+        };
+        let frexp_fraction_limit = wgt::DownlevelLimits {
+            runtime_integer_shader_operations: false,
+            frexp_fraction_only_fragment: true,
             ..Default::default()
         };
         assert!(interface
@@ -12293,6 +12440,44 @@ mod tests {
                 naga::ShaderStage::Fragment,
                 "float_override",
                 &fl91,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "frexp_fraction_only",
+                &fl91,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "frexp_fraction_only",
+                &frexp_fraction_limit,
+            )
+            .unwrap());
+        for entry in [
+            "frexp_fraction_local",
+            "frexp_exponent",
+            "frexp_fraction_helper_call",
+            "frexp_fraction_and_integer_math",
+        ] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_runtime_integer_semantics(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                        &frexp_fraction_limit,
+                    )
+                    .unwrap(),
+                "{entry}"
+            );
+        }
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Vertex,
+                "frexp_vertex_fraction",
+                &frexp_fraction_limit,
             )
             .unwrap());
         assert!(!interface

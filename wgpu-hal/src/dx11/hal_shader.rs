@@ -233,6 +233,74 @@ mod tests {
     }
 
     #[test]
+    fn fl91_frexp_fraction_guard_accepts_only_direct_fragment_projection() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            fn fraction_helper(value: f32) -> f32 { return frexp(value).fract; }
+            @fragment fn fraction_only(@location(0) value: f32) -> @location(0) vec4f {
+                return vec4f(frexp(value).fract, 0.0, 0.0, 1.0);
+            }
+            @fragment fn fraction_local(@location(0) value: f32) -> @location(0) vec4f {
+                let result = frexp(value);
+                return vec4f(result.fract, 0.0, 0.0, 1.0);
+            }
+            @fragment fn exponent(@location(0) value: f32) -> @location(0) vec4f {
+                return vec4f(f32(frexp(value).exp), 0.0, 0.0, 1.0);
+            }
+            @fragment fn helper_call(@location(0) value: f32) -> @location(0) vec4f {
+                return vec4f(fraction_helper(value), 0.0, 0.0, 1.0);
+            }
+            @fragment fn additional_integer(@location(0) value: f32) -> @location(0) vec4f {
+                return vec4f(frexp(value).fract + f32(u32(value)), 0.0, 0.0, 1.0);
+            }
+            @vertex fn vertex_fraction(@location(0) value: f32) -> @builtin(position) vec4f {
+                return vec4f(frexp(value).fract, 0.0, 0.0, 1.0);
+            }
+            "#,
+        )
+        .expect("parse FL9_1 frexp forms");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate FL9_1 frexp forms");
+
+        for (index, entry) in module.entry_points.iter().enumerate() {
+            let profile = selected_shader_profile(entry.stage).unwrap();
+            let has_direct_projection =
+                matches!(entry.name.as_str(), "fraction_only" | "additional_integer");
+            let entry_is_supported = entry.name == "fraction_only";
+            assert_eq!(
+                supported_fragment_frexp_fraction_only_result(
+                    &module,
+                    &entry.function,
+                    info.get_entry_point(index),
+                    entry.stage,
+                )
+                .is_some(),
+                has_direct_projection,
+                "{} proof",
+                entry.name
+            );
+            assert_eq!(
+                has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+                    &module,
+                    &info,
+                    &entry.function,
+                    info.get_entry_point(index),
+                    profile,
+                    Fl9ShaderInputOptions::default(),
+                    &[],
+                ),
+                !entry_is_supported,
+                "{} integer-semantics gate",
+                entry.name
+            );
+        }
+    }
+
+    #[test]
     fn integer_guard_rejects_unfolded_global_initializers_only_when_selected() {
         let mut module = naga::front::wgsl::parse_str(
             r#"
@@ -6064,6 +6132,94 @@ fn has_unsafe_integer_semantics_with_budget(
     )
 }
 
+fn supported_fragment_frexp_fraction_only_result(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    stage: naga::ShaderStage,
+) -> Option<naga::Handle<naga::Expression>> {
+    if stage != naga::ShaderStage::Fragment {
+        return None;
+    }
+    let is_f32 = |ty: &naga::TypeInner| {
+        matches!(
+            ty,
+            naga::TypeInner::Scalar(naga::Scalar {
+                kind: naga::ScalarKind::Float,
+                width: 4,
+            })
+        )
+    };
+    let mut result = None;
+    for (handle, expression) in function.expressions.iter() {
+        let naga::Expression::Math {
+            fun: naga::MathFunction::Frexp,
+            arg,
+            ..
+        } = *expression
+        else {
+            continue;
+        };
+        if result.is_some()
+            || !is_f32(function_info[arg].ty.inner_with(&module.types))
+            || function_info[handle].ref_count != 1
+        {
+            return None;
+        }
+        let naga::TypeInner::Struct { members, .. } =
+            function_info[handle].ty.inner_with(&module.types)
+        else {
+            return None;
+        };
+        if members.len() != 2
+            || members[0].name.as_deref() != Some("fract")
+            || members[1].name.as_deref() != Some("exp")
+            || !is_f32(&module.types[members[0].ty].inner)
+            || !matches!(
+                &module.types[members[1].ty].inner,
+                naga::TypeInner::Scalar(naga::Scalar {
+                    kind: naga::ScalarKind::Sint,
+                    width: 4,
+                })
+            )
+        {
+            return None;
+        }
+
+        let mut fraction_access = None;
+        for (access_handle, access) in function.expressions.iter() {
+            match *access {
+                naga::Expression::Access { base, .. } if base == handle => return None,
+                naga::Expression::AccessIndex { base, index } if base == handle => {
+                    if index != 0
+                        || fraction_access.is_some()
+                        || function_info[access_handle].ref_count == 0
+                        || !is_f32(function_info[access_handle].ty.inner_with(&module.types))
+                    {
+                        return None;
+                    }
+                    fraction_access = Some(access_handle);
+                }
+                _ => {}
+            }
+        }
+        let fraction_access = fraction_access?;
+        let direct_projection = function.body.iter().any(|statement| {
+            let naga::Statement::Emit(range) = statement else {
+                return false;
+            };
+            let range = range.index_range();
+            range.contains(&(handle.index() as u32))
+                && range.contains(&(fraction_access.index() as u32))
+        });
+        if !direct_projection {
+            return None;
+        }
+        result = Some(handle);
+    }
+    result
+}
+
 fn has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,
@@ -6078,6 +6234,16 @@ fn has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
     } else {
         None
     };
+    let frexp_fraction_only_result = if matches!(profile, ShaderProfile::PixelLevel9_1) {
+        supported_fragment_frexp_fraction_only_result(
+            module,
+            function,
+            function_info,
+            naga::ShaderStage::Fragment,
+        )
+    } else {
+        None
+    };
     has_unsafe_integer_semantics_with_options_and_uniform_indices(
         module,
         info,
@@ -6088,6 +6254,7 @@ fn has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
         input_options,
         uniform_index_arguments,
         fragment_index_proof.as_ref(),
+        frexp_fraction_only_result,
     )
 }
 
@@ -6111,6 +6278,7 @@ fn has_unsafe_integer_semantics_with_options(
         input_options,
         &[],
         None,
+        None,
     )
 }
 
@@ -6125,6 +6293,7 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
     input_options: Fl9ShaderInputOptions,
     uniform_index_arguments: &[(u32, u32)],
     fragment_index_proof: Option<&Fl9FragmentUniformArrayIndexingProof>,
+    frexp_fraction_only_result: Option<naga::Handle<naga::Expression>>,
 ) -> bool {
     if !matches!(
         profile,
@@ -6536,6 +6705,17 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                         arg2,
                         arg3,
                         ..
+                    } if function_handle.is_none()
+                        && frexp_fraction_only_result == Some(handle) =>
+                    {
+                        false
+                    }
+                    naga::Expression::Math {
+                        arg,
+                        arg1,
+                        arg2,
+                        arg3,
+                        ..
                     } => {
                         integer(handle)
                             || integer(arg)
@@ -6584,7 +6764,9 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                         && !supported_texture_dimensions_query
                         && !supported_texture_num_levels_query
                         && !fragment_index_proof
-                            .is_some_and(|proof| proof.integer_expressions.contains(&handle)))
+                            .is_some_and(|proof| proof.integer_expressions.contains(&handle))
+                        && !(function_handle.is_none()
+                            && frexp_fraction_only_result == Some(handle)))
             })
         },
     )

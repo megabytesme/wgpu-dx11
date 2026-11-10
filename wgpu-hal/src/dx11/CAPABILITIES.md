@@ -178,12 +178,24 @@ change the feature-level guarantees or enable additional shader operations.
 The public forced-FL9_1 shader path has strict readback coverage for WGSL
 `modf`, `asinh`, `acosh`, and `atanh`, each driven by a runtime uniform and
 checked over a complete 8x8 RGBA8 target. This records support for those tested
-forms; it does not claim general WGSL builtin coverage. `frexp` remains
-rejected by the backend's runtime-integer validation because its result
-contains an `i32` exponent, even when a shader observes only the float
-fraction field. A narrower lowering would require a proof that the exponent
-cannot escape or affect observable behavior, followed by separate FXC and GPU
-validation. No capability flag changed.
+forms; it does not claim general WGSL builtin coverage. The backend also
+permits only a direct scalar-f32 fragment expression `frexp(value).fract`.
+Core and HAL prove that the `frexp` result is projected to its fraction in the
+same Naga emission range; the exponent, whole result, local whole-result alias,
+helper forwarding, vector form, vertex-stage use and other runtime integer
+operations remain rejected. `DownlevelLimits::frexp_fraction_only_fragment`
+defaults false and is set only in the selected FL9_1 D3D11 projection.
+
+Microsoft's [HLSL `frexp` reference](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-frexp)
+lists shader model 3 as its minimum, so the source intrinsic alone is not
+treated as an FL9_1 guarantee. The installed FXC,
+targeting `ps_4_0_level_9_1`, removes the unused exponent and emits the fraction
+path in its `ps_2_0` Level9 section using floating-point instructions. A strict
+public readback passed for positive, negative and zero runtime inputs (64
+pixels each). Other FXC versions and historical drivers have not been tested;
+shader compilation still fails the pipeline if their lowering cannot produce
+the selected profile. This is a narrow compiler/backend subset, not general
+runtime integer support.
 
 ## Feature-level and driver facts
 

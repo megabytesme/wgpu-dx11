@@ -154,6 +154,7 @@ Bottom level categories:
 - Add `DownlevelLimits::texture_sample_level` so backends can reject unsupported explicit `textureSampleLevel` operations in selected shader entry points.
 - Add `DownlevelLimits::texture_query` so backends can reject texture dimension and mip-count queries unsupported by their shader profile.
 - Add `DownlevelLimits::texture_sample_base_clamp_to_edge` so backends can reject base-clamp sampling when its generated shader operations are unsupported.
+- Add `DownlevelLimits::frexp_fraction_only_fragment` for the narrowly validated direct scalar fragment `frexp(value).fract` subset in the opt-in FL9_1 D3D11 backend.
 - Add stage-specific downlevel uniform-vector budgets and validate aggregate selected-entry-point uniform layouts before pipeline creation.
 - Add `DownlevelLimits::max_sampler_anisotropy` so core can clamp sampler anisotropy to the selected adapter's supported maximum.
 - Add downlevel texture-dimension capabilities so adapters can reject unsupported 1D and 3D texture shapes even when their hardware limits are non-zero.

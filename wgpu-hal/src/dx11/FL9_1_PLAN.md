@@ -2511,3 +2511,10 @@ do not assign agents to “finish” a broad hardware-limited feature family.
 Continue with a concrete public-valid mismatch or a reproducible shader/API
 workload, and report the unsupported surface separately from hardware
 portability evidence.
+
+The subsequent compiler-boundary check now enables only direct scalar fragment
+`frexp(value).fract`, backed by validated Core/HAL proofs, FXC Level9 bytecode
+inspection and positive/negative/zero GPU readbacks. Full results and other
+integer semantics remain gated. Continue the Core/HAL contract audit and
+select the next implementation from a reproduced workload or profile boundary;
+do not broaden this narrow capability based on modern hardware alone.

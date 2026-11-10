@@ -215,6 +215,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 alpha_to_coverage: true,
                 shader_loops: true,
                 shader_dynamic_loops: true,
+                frexp_fraction_only_fragment: false,
                 vertex_index_input: true,
                 vertex_base_vertex_input: true,
                 vertex_base_instance_input: true,

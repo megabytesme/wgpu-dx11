@@ -4174,10 +4174,14 @@ cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,w
 
 This strict public test requests and confirms the physical RTX 3090 Ti at
 FL9_1, then drives `modf`, `asinh`, `acosh`, and `atanh` from runtime uniforms
-and validates all 64 RGBA8 output pixels for each operation. `frexp` is a
-negative case: Core rejects its integer-bearing result with
-`UnsupportedRuntimeIntegerShaderOperations` before HAL or FXC. This is
-implementation-boundary evidence, not a feature-level capability claim.
+and validates all 64 RGBA8 output pixels for each operation. It also checks
+`frexp(value).fract` for positive, negative and zero values; all 192 pixels
+match their expected RGBA8 results. A full `frexp` result that reads the
+integer exponent remains a negative case rejected by Core before HAL or FXC.
+The companion HAL compiler test checks that FXC emits a `ps_2_0` Level9
+instruction section for the accepted projection without integer opcodes.
+This is evidence for the narrow tested shader/compiler subset, not general
+runtime integer support or historical-driver behavior.
 
 ### Strict public CTS copy subset
 
