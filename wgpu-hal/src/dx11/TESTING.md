@@ -2472,6 +2472,22 @@ the original maximum to reach the last mip and anisotropy 1. NPOT mip chains
 require positive full-NPOT and per-format MIP support;
 historical FL9 GPU behavior is unverified.
 
+### FL9_1 sampler LOD Core validation
+
+The Core fixture checks that fractional minimum LOD with mixed filters and a
+sub-one maximum LOD with mixed filters return a validation error before HAL.
+It then creates a default-range mixed-filter sampler on the same device,
+confirming the rejected descriptors did not mark the device lost. CPU-only
+Core tests cover the capability predicate, same-filter normalization boundary,
+effective anisotropy, non-finite values and ordinary cross-backend defaults.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,std --lib sampler_lod_clamp_tests -- --nocapture
+cargo +1.93 test --offline -j8 -p wgpu-types sampler_lod_clamp_limit_is_checked_and_affects_compliance
+```
+
 The same strict test samples zero-initialized POT chains with `RESOURCE` alone
 and `RESOURCE | COPY_SRC` into 64 transparent pixels for each format. It also
 reads back all 256 zero bytes from mip 0 of a `COPY_SRC`-only chain for RGBA8

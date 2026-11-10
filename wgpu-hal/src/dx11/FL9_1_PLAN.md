@@ -2067,20 +2067,28 @@ change the capability report. The full Core/HAL contract audit,
 unsupported-operation closure and historical-device/runtime checks remain
 incomplete; see `FL9_1_PROGRESS.md` for the exact command and hardware record.
 
-## Next contract-audit target — sampler LOD compatibility
+## Completed contract-audit slice — sampler LOD compatibility — 2026-11-10
 
-A read-only Core/HAL audit found a narrow mismatch worth evaluating before
-public adapter exposure: Core accepts some legal wgpu sampler descriptors
-that the FL9_1 HAL cannot translate faithfully. In particular, fractional
-`lod_min_clamp` with different minification and magnification filters reaches
-HAL and returns a device error. Multi-mip view compatibility for normalized
-LOD descriptors is also checked during draw preparation rather than represented
-in Core validation. The failure is safe, but Core has no downlevel capability
-to describe this restriction and the public DX11 suite has no boundary test.
+Added `DownlevelLimits::sampler_lod_clamp`, set false for FL9_1/9_2 and true
+for other backend defaults. Core now rejects non-default LOD ranges combined
+with distinct min/mag filters or anisotropy before calling HAL, and rejects
+non-finite LOD values as validation errors. For same-filter isotropic
+single-mip cases the existing HAL normalization remains available. This avoids
+turning an unsupported sampler descriptor into an unexpected HAL device error
+and device loss. The HAL's selected-view mip compatibility check remains as a
+second line of defense; moving that relationship-dependent rule into Core
+requires retaining sampler metadata and validating it against the chosen view.
 
-The next slice should add a focused public/Core test matrix for fractional and
-integral minimum LOD, equal and mixed filters, and single- versus multi-mip
-views. First determine whether descriptor normalization can preserve wgpu
-sampling semantics; otherwise document or add the narrowest downlevel
-validation hook. Do not broadly change sampler support. The audit found other
-reviewed unsupported operations gated by existing errors or downlevel flags.
+CPU tests cover the capability comparison/compliance bit, capability
+projection at all seven feature-level identities, predicate boundaries and
+finite LOD validation. The Core fixture exercised two invalid requests and a
+valid mixed-filter sampler on the same forced-FL9_1 RTX 3090 Ti device. The
+full strict public D3D11 target passed 117/117 and the ordinary public
+enumeration isolation test passed. Exact results are recorded in
+`FL9_1_PROGRESS.md`.
+
+Next, continue the Core-valid-to-HAL contract audit and select a focused public
+workload that expands useful FL9_1 rendering coverage. Do not enable ordinary
+adapter enumeration by default. Historical FL9_1 drivers, Lumia/CoreWindow
+runtime, physical device-removal recovery, broad API/CTS coverage and remaining
+unimplemented operations remain open.

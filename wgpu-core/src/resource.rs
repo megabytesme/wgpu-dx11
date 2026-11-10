@@ -2434,13 +2434,15 @@ impl fmt::Debug for SamplerFilterErrorType {
 pub enum CreateSamplerError {
     #[error(transparent)]
     Device(#[from] DeviceError),
-    #[error("Invalid lodMinClamp: {0}. Must be greater or equal to 0.0")]
+    #[error("Invalid lodMinClamp: {0}. Must be finite and greater or equal to 0.0")]
     InvalidLodMinClamp(f32),
-    #[error("Invalid lodMaxClamp: {lod_max_clamp}. Must be greater or equal to lodMinClamp (which is {lod_min_clamp}).")]
+    #[error("Invalid lodMaxClamp: {lod_max_clamp}. Must be finite and greater or equal to lodMinClamp (which is {lod_min_clamp}).")]
     InvalidLodMaxClamp {
         lod_min_clamp: f32,
         lod_max_clamp: f32,
     },
+    #[error("This adapter cannot combine non-default sampler LOD clamps with distinct minification and magnification filters or anisotropy")]
+    UnsupportedLodClampFilterInteraction,
     #[error("Invalid anisotropic clamp: {0}. Must be at least 1.")]
     InvalidAnisotropy(u16),
     #[error("Invalid filter mode for {filter_type:?}: {filter_mode:?}. When anistropic clamp is not 1 (it is {anisotropic_clamp}), all filter modes must be linear.")]
@@ -2493,6 +2495,7 @@ impl WebGpuError for CreateSamplerError {
 
             Self::InvalidLodMinClamp(_)
             | Self::InvalidLodMaxClamp { .. }
+            | Self::UnsupportedLodClampFilterInteraction
             | Self::InvalidAnisotropy(_)
             | Self::InvalidFilterModeWithAnisotropy { .. }
             | Self::InvalidMipmapFilterModeWithAnisotropy { .. }

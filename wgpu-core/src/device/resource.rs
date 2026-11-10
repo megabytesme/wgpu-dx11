@@ -714,6 +714,37 @@ fn validate_sampler_border_addressing(
     }
 }
 
+fn validate_sampler_lod_values(
+    lod_min_clamp: f32,
+    lod_max_clamp: f32,
+) -> Result<(), resource::CreateSamplerError> {
+    if !lod_min_clamp.is_finite() || lod_min_clamp < 0.0 {
+        return Err(resource::CreateSamplerError::InvalidLodMinClamp(
+            lod_min_clamp,
+        ));
+    }
+    if !lod_max_clamp.is_finite() || lod_max_clamp < lod_min_clamp {
+        return Err(resource::CreateSamplerError::InvalidLodMaxClamp {
+            lod_min_clamp,
+            lod_max_clamp,
+        });
+    }
+    Ok(())
+}
+
+fn sampler_lod_clamp_is_unrepresentable(
+    lod_min_clamp: f32,
+    lod_max_clamp: f32,
+    min_filter: wgt::FilterMode,
+    mag_filter: wgt::FilterMode,
+    anisotropy_clamp: u16,
+    sampler_lod_clamp: bool,
+) -> bool {
+    !sampler_lod_clamp
+        && (lod_min_clamp > 0.0 || lod_max_clamp < 1.0)
+        && (min_filter != mag_filter || anisotropy_clamp > 1)
+}
+
 fn limit_sampler_anisotropy(requested: u16, downlevel: &wgt::DownlevelCapabilities) -> u16 {
     if downlevel
         .flags
@@ -788,6 +819,52 @@ mod sampler_border_addressing_tests {
             &DownlevelLimits::default()
         )
         .is_ok());
+    }
+}
+
+#[cfg(test)]
+mod sampler_lod_clamp_tests {
+    use super::{sampler_lod_clamp_is_unrepresentable, validate_sampler_lod_values};
+    use crate::resource::CreateSamplerError;
+    use wgt::FilterMode::{Linear, Nearest};
+
+    #[test]
+    fn limited_lod_clamps_reject_only_unrepresentable_filter_combinations() {
+        assert!(sampler_lod_clamp_is_unrepresentable(
+            0.5, 32.0, Nearest, Linear, 1, false
+        ));
+        assert!(sampler_lod_clamp_is_unrepresentable(
+            0.0, 0.5, Nearest, Linear, 1, false
+        ));
+        assert!(sampler_lod_clamp_is_unrepresentable(
+            1.0, 32.0, Linear, Linear, 2, false
+        ));
+        assert!(!sampler_lod_clamp_is_unrepresentable(
+            0.5, 32.0, Nearest, Nearest, 1, false
+        ));
+        assert!(!sampler_lod_clamp_is_unrepresentable(
+            0.5, 32.0, Nearest, Linear, 1, true
+        ));
+        assert!(!sampler_lod_clamp_is_unrepresentable(
+            0.0, 32.0, Nearest, Linear, 1, false
+        ));
+    }
+
+    #[test]
+    fn non_finite_lod_clamps_are_validation_errors() {
+        assert!(matches!(
+            validate_sampler_lod_values(f32::NAN, 32.0),
+            Err(CreateSamplerError::InvalidLodMinClamp(value)) if value.is_nan()
+        ));
+        assert!(matches!(
+            validate_sampler_lod_values(0.0, f32::INFINITY),
+            Err(CreateSamplerError::InvalidLodMaxClamp { lod_max_clamp, .. }) if lod_max_clamp.is_infinite()
+        ));
+        assert!(matches!(
+            validate_sampler_lod_values(0.5, 0.0),
+            Err(CreateSamplerError::InvalidLodMaxClamp { .. })
+        ));
+        assert!(validate_sampler_lod_values(0.0, 32.0).is_ok());
     }
 }
 
@@ -3043,17 +3120,7 @@ impl Device {
             self.require_features(wgt::Features::ADDRESS_MODE_CLAMP_TO_ZERO)?;
         }
 
-        if desc.lod_min_clamp < 0.0 {
-            return Err(resource::CreateSamplerError::InvalidLodMinClamp(
-                desc.lod_min_clamp,
-            ));
-        }
-        if desc.lod_max_clamp < desc.lod_min_clamp {
-            return Err(resource::CreateSamplerError::InvalidLodMaxClamp {
-                lod_min_clamp: desc.lod_min_clamp,
-                lod_max_clamp: desc.lod_max_clamp,
-            });
-        }
+        validate_sampler_lod_values(desc.lod_min_clamp, desc.lod_max_clamp)?;
 
         if desc.anisotropy_clamp < 1 {
             return Err(resource::CreateSamplerError::InvalidAnisotropy(
@@ -3092,6 +3159,16 @@ impl Device {
         }
 
         let anisotropy_clamp = limit_sampler_anisotropy(desc.anisotropy_clamp, &self.downlevel);
+        if sampler_lod_clamp_is_unrepresentable(
+            desc.lod_min_clamp,
+            desc.lod_max_clamp,
+            desc.min_filter,
+            desc.mag_filter,
+            anisotropy_clamp,
+            self.downlevel.limits.sampler_lod_clamp,
+        ) {
+            return Err(resource::CreateSamplerError::UnsupportedLodClampFilterInteraction);
+        }
 
         if let Some(function) = desc.compare {
             self.require_downlevel_flags(wgt::DownlevelFlags::COMPARISON_SAMPLERS)?;

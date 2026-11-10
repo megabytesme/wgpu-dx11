@@ -120,6 +120,7 @@ Bottom level categories:
 - Model source-alpha-saturated blending as a downlevel capability and reject it before HAL on unsupported devices.
 - Require `DownlevelFlags::COMPARISON_SAMPLERS` before creating comparison samplers.
 - Add downlevel comparison-sampler limits for supported compare functions, independent min/mag filters and anisotropy.
+- Add `DownlevelLimits::sampler_lod_clamp` for backends that cannot preserve non-default LOD clamps with distinct min/mag filters or anisotropy.
 - Add a downlevel sampler limit for hardware where clamp-to-border is available only with comparison sampling.
 - Add `DownlevelFlags::SEPARATE_ALPHA_BLEND` and validate differing RGB/alpha equations when both channels are written.
 - Require stage-specific downlevel support before creating storage-buffer layouts.

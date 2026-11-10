@@ -14189,10 +14189,51 @@ rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
 git diff --check
 ```
 
-The next Core/HAL audit target is the FL9_1 sampler LOD contract: Core accepts
-some fractional-min-LOD descriptors that HAL cannot represent when min/mag
-filters differ, and multi-mip view compatibility is deferred to draw time.
-This currently fails safely but has no Core-visible capability or public
-regression test. See `FL9_1_PLAN.md` before deciding whether the narrow remedy
-belongs in Core or in a documented downlevel contract. Historical hardware,
-Lumia runtime and physical device-removal recovery remain open.
+## Core sampler LOD validation — 2026-11-10
+
+The Core/HAL sampler LOD mismatch is now described by the additive
+`DownlevelLimits::sampler_lod_clamp` capability. The DX11 capability projection
+sets it false for FL9_1 and FL9_2 and true for FL9_3 and above; other backend
+defaults preserve their existing support. Core rejects non-default LOD ranges
+combined with distinct min/mag filters or anisotropy before HAL, and treats
+non-finite LOD values as validation errors. Same-filter isotropic cases retain
+the existing single-mip normalization path. HAL still validates selected-view
+mip compatibility at draw preparation.
+
+The strict Core fixture ran on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`, software=false), explicitly requested and selected
+FL9_1. Two unrepresentable mixed-filter LOD descriptors returned Core
+validation errors; creating a default-range mixed-filter sampler afterward
+succeeded on the same device. The fixture completed its real buffer, texture,
+render, synchronization and readback workload: 1 passed, 0 failed. The strict
+public D3D11 integration target passed 117/117; optional hardware format
+subcases remained explicit skips. The public zero-DX11-adapter isolation test
+passed 1/1. CPU-only capability/predicate tests passed (1 wgpu-types, 2 Core,
+1 HAL).
+
+Commands included:
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib sampler_lod_clamp_tests -- --nocapture
+cargo +1.93 test --offline -j8 -p wgpu-types sampler_lod_clamp_limit_is_checked_and_affects_compliance
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib feature_level_guarantees_are_specific_and_do_not_promote_backend -- --nocapture
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+The first attempt to compile the Core adapter-scaffold test omitted the `std`
+and `wgsl` test features; it failed at test compilation. Re-running with the
+required features passed and enumerated one selected physical FL9_1 adapter.
+The ordinary public API test still enumerated zero D3D11 adapters by default.
+An initial `wgpu-test` package check also exposed an exhaustive lowest-
+downlevel fixture that omitted a previously added sampler-bias limit; that
+fixture was corrected to explicitly keep the limit disabled, and the package
+check then passed.
+
+Additional verification passed: private HAL strict tests 467/467; DX12 HAL and
+Core `cargo check`; `wgpu-test` and `wgpu-info` checks; GLES HAL check; changed
+Rust-file rustfmt checks; `git diff --check`; and Clippy for wgpu-types, Core
+fixture and HAL. Clippy emitted existing warnings in serde-disabled wgpu-types,
+Core fixture code and unrelated D3D11 HAL code; no new warning points to the
+sampler LOD changes. Historical hardware, Lumia/CoreWindow runtime, physical
+removal/recreation, full CTS and public adapter enablement remain open.

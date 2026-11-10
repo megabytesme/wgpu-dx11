@@ -1135,6 +1135,14 @@ pub struct DownlevelLimits {
     /// magnification filters.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub comparison_sampler_independent_filters: bool,
+    /// Whether LOD clamps may interact with distinct minification and magnification
+    /// filters or anisotropic filtering.
+    ///
+    /// When false, Core rejects non-default LOD ranges in those combinations before
+    /// they reach a backend that cannot preserve filter selection. Same-filter,
+    /// non-anisotropic samplers may still use the backend's single-mip normalization.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub sampler_lod_clamp: bool,
     /// Maximum anisotropy accepted for comparison samplers.
     #[cfg_attr(
         feature = "serde",
@@ -1557,6 +1565,7 @@ impl Default for DownlevelLimits {
             sampled_depth_textures: true,
             comparison_sampler_function_mask: 0x00ff,
             comparison_sampler_independent_filters: true,
+            sampler_lod_clamp: true,
             max_comparison_sampler_anisotropy: 16,
             border_addressing_requires_comparison_sampler: false,
             sampled_sint_textures: true,
@@ -1803,6 +1812,7 @@ impl DownlevelLimits {
                 == required.comparison_sampler_function_mask
             && (!required.comparison_sampler_independent_filters
                 || self.comparison_sampler_independent_filters)
+            && (!required.sampler_lod_clamp || self.sampler_lod_clamp)
             && self.max_comparison_sampler_anisotropy >= required.max_comparison_sampler_anisotropy
             && (!self.border_addressing_requires_comparison_sampler
                 || required.border_addressing_requires_comparison_sampler)
@@ -1949,6 +1959,7 @@ impl DownlevelCapabilities {
                 & DownlevelLimits::default().comparison_sampler_function_mask
                 == DownlevelLimits::default().comparison_sampler_function_mask
             && self.limits.comparison_sampler_independent_filters
+            && self.limits.sampler_lod_clamp
             && self.limits.max_comparison_sampler_anisotropy
                 >= DownlevelLimits::default().max_comparison_sampler_anisotropy
             && !self.limits.border_addressing_requires_comparison_sampler
@@ -2312,6 +2323,24 @@ mod tests {
     }
 
     #[test]
+    fn sampler_lod_clamp_limit_is_checked_and_affects_compliance() {
+        let limited = DownlevelLimits {
+            sampler_lod_clamp: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(limited.check_limits(&DownlevelLimits {
+            sampler_lod_clamp: false,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!limited.check_limits(&DownlevelLimits::default()));
+        assert!(!DownlevelCapabilities {
+            limits: limited,
+            ..DownlevelCapabilities::default()
+        }
+        .is_webgpu_compliant());
+    }
+
+    #[test]
     fn comparison_only_border_addressing_is_a_downlevel_restriction() {
         let unrestricted = DownlevelLimits::default();
         let comparison_only = DownlevelLimits {
@@ -2536,6 +2565,7 @@ mod tests {
             sampled_depth_textures: true,
             comparison_sampler_function_mask: 0x00ff,
             comparison_sampler_independent_filters: true,
+            sampler_lod_clamp: true,
             max_comparison_sampler_anisotropy: 16,
             border_addressing_requires_comparison_sampler: false,
             sampled_sint_textures: true,
@@ -2614,6 +2644,7 @@ mod tests {
             sampled_depth_textures: true,
             comparison_sampler_function_mask: 0x00ff,
             comparison_sampler_independent_filters: true,
+            sampler_lod_clamp: true,
             max_comparison_sampler_anisotropy: 16,
             border_addressing_requires_comparison_sampler: false,
             sampled_sint_textures: true,

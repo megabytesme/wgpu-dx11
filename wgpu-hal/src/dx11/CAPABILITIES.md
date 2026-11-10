@@ -1045,6 +1045,14 @@ surface contract remains limited to the operations described above.
 | Comparison / border | General comparison filtering is not guaranteed at 9_1; optional 9_x shadow support is separately queried. The supported native subset is `LessEqual` comparison with equal point or linear min/mag, one mip, no anisotropy and the FL9_1-required sampler LOD values. The shadow contract permits border addressing only for this depth comparison path, with border components 0 or 1. | The public and private D3D11 paths enable depth comparison only when `D3D11_FEATURE_D3D9_SHADOW_SUPPORT` positively reports support and the selected level is FL9_1. The public projection reports only the `LessEqual` function bit, disallows independent min/mag filters and limits comparison anisotropy to one. D16 and D24S8 use typeless depth resources with typed DSV/SRV views; private and public tests rendered 32 failing and 32 passing pixels for each format. Typed SRV `CheckFormatSupport` queries returned `E_FAIL`, but resource/view creation and sampled output succeeded. Strict public black/white border tests checked that all 64 out-of-range D16 comparisons failed/passed respectively. Core uses a downlevel limit to reject non-comparison border samplers; clamp-to-zero remains unavailable. Comparison on other levels and other functions/combinations remain unavailable. |
 | NPOT | FL9_x permits a single-mip 2D NPOT texture only when `AddressU/V/W` are not `D3D11_TEXTURE_ADDRESS_WRAP`; full NPOT is an optional driver query. `MIRROR` is distinct from `WRAP`. | The private HAL checks only used NPOT/repeat pairs unless full NPOT is positively reported. Core also has selected-entry pair validation, but its FL9_1 fixture reports the finite per-primitive repeat limit of 128 and consequently rejects Repeat and MirrorRepeat sampler creation before pair validation is reachable. Clamp and mirrored-repeat do not trigger the conditional-NPOT `WRAP` rule; MirrorRepeat remains subject to the separate finite repeat limit. Synthetic core tests exercise selected-entry pair validation under a repeat-permitting limit, while the strict physical fixture verifies the 128 limit and renders POT/NPOT clamp sampling. |
 
+Core reports `DownlevelLimits::sampler_lod_clamp = false` for FL9_1/9_2.
+Before HAL sampler creation, it returns a validation error for a non-default
+LOD range combined with distinct min/mag filters or anisotropy. This prevents
+an unsupported descriptor from being translated to `DeviceError::Unexpected`
+and incorrectly marking the device lost. Same-filter isotropic normalization
+remains available with the existing one-mip view restriction. Non-finite LOD
+values are rejected by Core.
+
 For normalized LOD ranges, patterned single-mip GPU tests cover both nearest
 and linear mipmap filters on the RTX 3090 Ti at FL9_1. Explicit-LOD sampling
 and historical FL9_1 driver behavior remain unverified. The current compiler

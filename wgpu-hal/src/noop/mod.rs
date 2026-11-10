@@ -206,6 +206,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 sampled_depth_textures: true,
                 comparison_sampler_function_mask: 0x00ff,
                 comparison_sampler_independent_filters: true,
+                sampler_lod_clamp: true,
                 max_comparison_sampler_anisotropy: 16,
                 border_addressing_requires_comparison_sampler: false,
                 sampled_sint_textures: true,

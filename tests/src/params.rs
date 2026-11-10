@@ -50,6 +50,8 @@ const LOWEST_DOWNLEVEL_PROPERTIES: wgpu::DownlevelCapabilities = DownlevelCapabi
         unrestricted_npot_texture_sampling: false,
         max_texture_repeat_per_primitive: 0,
         max_sampler_anisotropy: 0,
+        sampler_lod_clamp: false,
+        texture_sample_bias_requires_compatible_sampler: false,
         src_alpha_saturated_blend: false,
         viewport_rectangles_outside_target: false,
         depth_bias_with_fragment_depth: false,

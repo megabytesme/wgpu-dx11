@@ -51,6 +51,7 @@ pub(super) struct HardwareGuarantees {
     pub fragment_static_flow_control: bool,
     pub fragment_dynamic_flow_control: bool,
     pub fragment_derivatives: bool,
+    pub sampler_lod_clamp: bool,
     pub texture_query: bool,
     pub texture_sample_level: bool,
     pub texture_gather: bool,
@@ -145,6 +146,7 @@ impl HardwareGuarantees {
             fragment_static_flow_control,
             fragment_dynamic_flow_control,
             fragment_derivatives: level.as_raw() >= L9_3.as_raw(),
+            sampler_lod_clamp: level.as_raw() >= L9_3.as_raw(),
             texture_query: level.as_raw() >= L10_0.as_raw(),
             texture_sample_level: level.as_raw() >= L10_0.as_raw(),
             texture_gather: level.as_raw() >= L11_0.as_raw(),
@@ -801,6 +803,7 @@ impl Capabilities {
                     0
                 },
                 comparison_sampler_independent_filters: false,
+                sampler_lod_clamp: self.hardware.sampler_lod_clamp,
                 max_comparison_sampler_anisotropy: if comparison_sampling { 1 } else { 0 },
                 border_addressing_requires_comparison_sampler: comparison_sampling,
                 sampled_sint_textures: false,
@@ -3763,6 +3766,10 @@ mod tests {
         {
             let caps = model(level);
             assert_eq!(caps.hardware.level, level);
+            assert_eq!(
+                caps.hardware.sampler_lod_clamp,
+                level.as_raw() >= FeatureLevel::L9_3.as_raw()
+            );
             assert!(caps.hardware.packed_16bit_sampled_texture);
             assert!(caps.backend.packed_16bit_sampled_upload);
             assert!(caps.hardware.d16_unorm_depth_attachment);

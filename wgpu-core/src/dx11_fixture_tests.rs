@@ -274,6 +274,7 @@ fn fl91_core_empty_unmap_and_mapped_write_flush_failure_cleans_up() {
                     sampled_depth_textures: false,
                     comparison_sampler_function_mask: 0,
                     comparison_sampler_independent_filters: false,
+                    sampler_lod_clamp: false,
                     max_comparison_sampler_anisotropy: 0,
                     border_addressing_requires_comparison_sampler: false,
                     sampled_sint_textures: false,
@@ -2326,6 +2327,51 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     }
     std::println!(
         "PASS: core sampler requests 2, 3 and 16 clamp to the selected FL9_1 maximum of 2"
+    );
+    for (lod_min_clamp, lod_max_clamp) in [(0.5, 32.0), (0.0, 0.5)] {
+        let sampler_desc = crate::resource::SamplerDescriptor {
+            label: None,
+            address_modes: [wgt::AddressMode::ClampToEdge; 3],
+            mag_filter: wgt::FilterMode::Linear,
+            min_filter: wgt::FilterMode::Nearest,
+            mipmap_filter: wgt::MipmapFilterMode::Nearest,
+            lod_min_clamp,
+            lod_max_clamp,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        };
+        let (sampler, error) = global.device_create_sampler(device, &sampler_desc, None);
+        assert!(
+            matches!(
+                error,
+                Some(crate::resource::CreateSamplerError::UnsupportedLodClampFilterInteraction)
+            ),
+            "Core must reject FL9_1 LOD/filter combinations before HAL: {error:?}"
+        );
+        global.sampler_drop(sampler);
+    }
+    let supported_mixed_filter_sampler = crate::resource::SamplerDescriptor {
+        label: None,
+        address_modes: [wgt::AddressMode::ClampToEdge; 3],
+        mag_filter: wgt::FilterMode::Linear,
+        min_filter: wgt::FilterMode::Nearest,
+        mipmap_filter: wgt::MipmapFilterMode::Nearest,
+        lod_min_clamp: 0.0,
+        lod_max_clamp: 32.0,
+        compare: None,
+        anisotropy_clamp: 1,
+        border_color: None,
+    };
+    let (sampler, error) =
+        global.device_create_sampler(device, &supported_mixed_filter_sampler, None);
+    assert!(
+        error.is_none(),
+        "default-range mixed filtering remains supported after validation errors: {error:?}"
+    );
+    global.sampler_drop(sampler);
+    std::println!(
+        "PASS: Core rejects two unrepresentable FL9_1 LOD/filter combinations as validation errors and creates a default-range mixed-filter sampler afterward"
     );
     for address_mode in [wgt::AddressMode::Repeat, wgt::AddressMode::MirrorRepeat] {
         let sampler_desc = crate::resource::SamplerDescriptor {

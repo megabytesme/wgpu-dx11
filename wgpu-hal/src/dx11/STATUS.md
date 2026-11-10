@@ -1509,3 +1509,12 @@ linear `[59, 57, 59, 255]`. This differs decisively from raw unorm values near
 The existing unorm workload still produced 64 white pixels; BC4 and BC3 3D
 texture creation were rejected. This modern-driver result does not establish
 behavior on historical FL9_1 hardware.
+
+Core now exposes the `sampler_lod_clamp` downlevel limit. The opt-in FL9_1/9_2
+projection sets it false so Core rejects mixed min/mag or anisotropic samplers
+with non-default LOD clamps before the HAL can classify them as unexpected
+device errors. Same-filter isotropic single-mip normalization remains
+available. Strict Core fixture validation and rendering passed on the RTX
+3090 Ti forced to FL9_1; the full strict public suite passed 117/117 and the
+private HAL suite passed 467/467. Multi-mip view compatibility remains checked
+at selected draw preparation. Public D3D11 enumeration remains disabled.
