@@ -15127,3 +15127,74 @@ concrete application workload or a reproduced API/compiler boundary. Keep
 feature/profile limits, deliberately unsupported backend operations and
 missing historical-device verification as separate categories; do not treat
 the remaining FL9_1 task list as a batch of independent agent patches.
+
+## Selected FL9_1 3D `textureDimensions` helper — 2026-11-10
+
+Core, Naga and HAL now accept one parameterless, straight-line helper that
+directly returns the selected fragment entry point's level-less
+`textureDimensions` query for the same 3D float texture. The entry point must
+directly convert the `vec3u` result to `vec3f`; helper mip arguments, nested
+calls, extra operations, unrelated resources and other query forms remain
+rejected. The existing same-volume implicit-sample composition remains valid.
+
+FXC rejects the helper's unsigned vector conversion for
+`ps_4_0_level_9_1` (X3548). Naga therefore emits `int3` only for the exact
+helper proven by the selected-entry analysis, and declares the corresponding
+entry call-result temporary as `int3`. An independent Naga regression verifies
+an unrelated `vec3u` helper remains `uint3`. The host supplies queried volume
+dimensions; FL9_1's 256-per-axis backend limit keeps these values within the
+signed range. No general texture-query capability changed.
+
+The focused strict public test rendered and read back both volume bindings
+(4x2x8 and 2x4x1) on the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), with requested and actual FL9_1 and software/WARP
+false. All 64 output pixels matched the two expected colors. The full strict
+public suite passed 122/122, strict Core fixture passed 133/133, private HAL
+suite passed 469/469, Naga passed 161/161 and DX12 Core regression passed
+122/122. The focused final HAL/FXC test passed 1/1 after the helper-scope
+lint cleanup; Naga's complete 161-test suite and the strict 1-test GPU helper
+filter were rerun after that cleanup.
+
+Commands and outcomes:
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_3d -- --nocapture --test-threads=1
+# 3/3 direct, constant-mip and helper cases passed on the physical FL9_1 GPU.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 122/122 passed. Optional device-format subcases logged SKIP; strict hardware
+# selection succeeded and those skips are not GPU execution passes.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --nocapture --test-threads=1
+# 133/133 passed; physical FL9_1 fixture required.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 469/469 passed; four existing hal_queue.rs qualification warnings.
+
+cargo +1.93.1 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib
+# 161/161 passed after the final helper-scope cleanup.
+
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib --quiet
+# 122/122 passed.
+
+cargo +1.93.1 clippy --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --tests
+cargo +1.93.1 clippy --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --tests
+cargo +1.93.1 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests
+# All passed. Existing warnings remain in Naga parser_tests, Core fixture and
+# DX11 HAL qualification/test-style/argument-count code; no warning remains
+# in the new Naga helper lowering.
+
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+# Both passed.
+```
+
+The first Naga full-test invocation outside the Visual Studio developer
+environment failed because `link.exe` was not on PATH; the test passed when
+rerun through `VsDevCmd.bat`. The independent read-only validation review
+found no concrete mismatch in selected-entry proof, exact helper scoping,
+host-dimension bounds or capability reporting. Historical FL9_1 and
+Lumia/CoreWindow runtime verification remain external gaps.
+
+Code checkpoint: `fcfd47afcc14692c579fc592eb045a2ae2c05dc3` (`dx11: support
+selected 3D texture dimensions helper`).
