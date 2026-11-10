@@ -1,5 +1,15 @@
 # FL9_1 completion plan
 
+## Strict CTS buffer/texture-copy slice — 2026-11-10
+
+The curated strict DX11 CTS run now has additional public evidence for
+buffer-to-buffer copies, ordered overlapping copies, buffer-to-texture
+initialization and filtered RGBA8 2D texture-to-texture copies. All four
+selectors passed on the forced-FL9_1 RTX 3090 Ti with zero skips. See
+`TESTING.md` and `FL9_1_PROGRESS.md` for exact commands and counts. Continue
+the downlevel CTS inventory with one selector at a time; selector success is
+not a claim of general WebGPU conformance.
+
 ## HAL panic reachability audit — 2026-11-10
 
 An independent read-only review found no confirmed safe-public-wgpu-reachable

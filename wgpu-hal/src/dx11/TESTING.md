@@ -4088,3 +4088,20 @@ and validates all 64 RGBA8 output pixels for each operation. `frexp` is a
 negative case: Core rejects its integer-bearing result with
 `UnsupportedRuntimeIntegerShaderOperations` before HAL or FXC. This is
 implementation-boundary evidence, not a feature-level capability claim.
+
+### Strict public CTS copy subset
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyBufferToBuffer:single:*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyBufferToBuffer:copy_order:*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,resource_init,buffer:copy_buffer_to_texture:*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rgba8unorm";dstFormat="rgba8unorm";dimension="2d"'
+```
+
+On 2026-11-10 these selectors passed 2/2, 1/1, 1/1 and 1/1 respectively,
+with zero skips and zero failures. They ran against the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) at requested/actual FL9_1. The
+texture-copy case restricts the generated cases to RGBA8, 2D and non-array
+resources; it still exercises multiple mip/region subcases. These results are
+operation-level CTS evidence, not broad WebGPU conformance.

@@ -1,5 +1,21 @@
 # FL9_1 progress
 
+## Strict downlevel CTS copy coverage — 2026-11-10
+
+Three additional CTS selectors ran on the physical RTX 3090 Ti under strict
+DX11 selection (`0x10de:0x2203`, driver `32.0.16.2101`, requested/actual
+FL9_1). Buffer-to-buffer copy covered 2/2 cases, ordered overlapping-range
+copies covered 1/1, and buffer-to-texture resource initialization covered
+1/1 with both source-offset subcases. All selectors had zero skips and zero
+failures. A filtered RGBA8 2D texture-to-texture selector also passed 1/1
+with zero skips, covering generated mip/region copy subcases. These extend
+public CTS evidence for already implemented operations and do not change the
+capability projection.
+
+The first texture-copy invocation used malformed shell quoting for the JSON
+selector parameters and failed before the CTS runner parsed a test. The command
+was corrected to pass quoted JSON values and the strict selector then passed.
+
 ## Public HAL panic reachability review — 2026-11-10
 
 An independent bounded audit of production `hal_device.rs`, `hal_encoder.rs`,
@@ -12,6 +28,7 @@ the encoder render-state unwraps are dominated by state checks in their
 exclusive methods. The audit did not cover `surface.rs`, `fence.rs`, shader or
 pipeline internals, or capability assertions; those remain in the broader
 contract review. No code changed and no test was run for this read-only audit.
+Documentation checkpoint: `e998d3407` (`docs: record FL9_1 HAL panic audit`).
 
 ## Public floating-point builtin verification — 2026-11-10
 
@@ -38,6 +55,7 @@ No advertised capability changed. The first probe confirmed the four
 floating-point results, then failed on `frexp` with
 `UnsupportedRuntimeIntegerShaderOperations`; the finalized test asserts that
 boundary. This coverage does not establish historical-driver behavior.
+Code checkpoint: `e74b186a5` (`dx11: verify FL9_1 floating-point shader builtins`).
 
 ## Optional `Rgba8Uint` texture query — 2026-11-10
 
