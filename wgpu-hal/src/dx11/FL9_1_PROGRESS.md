@@ -14020,6 +14020,9 @@ rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_invariant_position.rs
 git diff --check
 ```
 
+Checkpoint: `d509e98c58a342730df9c423ac2e0844653ec6ff`
+(`dx11: verify FL9_1 invariant position depth prepass`).
+
 This is an additional public execution proof. The broad Core/HAL contract
 audit, unsupported-operation closure, historical FL9_1 hardware, Lumia ARM32/
 CoreWindow runtime and physical device-removal recovery remain open.
