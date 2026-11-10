@@ -3792,18 +3792,23 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 The 2D query also supports one selected, no-argument straight-line helper that
 returns the queried `u32` for direct conversion to `f32`. The helper itself is
 query-only, but the selected entry may also contain exactly one direct implicit
-sample of the same image through one group-zero non-comparison sampler. Nested
-or repeated calls, helper sampling, control flow, mismatched images, additional
-selected resources, multiple samples and explicit LOD remain rejected. 3D/cube
-query paths remain direct-only. The strict helper readback uses one- and
-three-level views and checks both helper-only and helper-plus-sample variants.
-Run its production proofs and hardware test with:
+sample of the same image through one group-zero non-comparison sampler with
+matching coordinates. Nested or repeated calls, helper sampling, control flow,
+mismatched images, additional selected resources, multiple samples and
+explicit LOD remain rejected. Each dimension permits the selected helper. The
+strict 2D helper readback uses one- and three-level views and checks both
+helper-only and helper-plus-sample variants. The 3D/cube readback checks
+helper-only execution; helper-plus-sample is covered by Core, HAL and Naga
+proof/compilation tests. Run its production proofs and hardware test with:
 
 ```powershell
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_texture_num_levels_accepts_one_selected_query_helper
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,glsl,std --lib fl9_texture_num_levels_helper_allows_one_matching_implicit_sample
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_texture_num_levels_3d_and_cube_helpers_are_dimension_gated
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels_accepts_one_selected_helper
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels_helper_accepts_one_same_texture_sample
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels_3d_and_cube_accept_selected_helpers
+cargo +1.93 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_texture_num_levels_3d_and_cube_helpers
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_num_levels_through_selected_helper_compiles_with_fxc -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_num_levels_helper_with_implicit_sample_compiles_with_fxc -- --nocapture --test-threads=1
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
@@ -3816,9 +3821,9 @@ queries, the helper remains query-only and the sample must be a direct entry
 operation. The strict public test switches between one- and three-level views
 over an initialized RGBA8 mip chain; the first output channel depends on the
 view mip count and the next two channels depend on the sampled texel. Core,
-Naga and private HAL tests accept the helper-plus-sample shape only for 2D and
-reject a different image, multiple samples, explicit LOD, helper sampling,
-comparison sampling or extra resources. FXC compiles the helper composition at
+Naga and private HAL tests accept the helper-plus-sample shape for 2D, 3D and
+cube images, and reject a different image, multiple samples, explicit LOD,
+helper sampling, comparison sampling or extra resources. FXC compiles the helper composition at
 `ps_4_0_level_9_1`; the host mip-count query remains the existing `b13`
 constant emulation and the sample remains an ordinary implicit `.Sample`.
 
@@ -3835,21 +3840,25 @@ pixels were verified on the RTX 3090 Ti at explicitly requested and selected
 FL9_1. General `texture_query` stays disabled. This is a narrow host metadata
 emulation and does not establish historical FL9_1 driver behavior.
 
-The `public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91` test also
-queries sampled RGBA8 3D and cube views through the independent
+The `public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91` test queries
+sampled RGBA8 3D and cube views through the independent
 `texture_num_levels_3d_float_fragment` and
 `texture_num_levels_cube_float_fragment` limits. It switches between a
 one-level view at the resource's lowest mip and a full-chain view, checking the
 full 8x8 readback for each dimension. Both views include the lowest LOD as
 required by FL9_1 shader-resource views. If the selected device lacks optional
 mip support, the test still executes the single-mip query and reports that the
-differing-count subcase was unavailable. The shader remains direct
-fragment-only; helpers, extra resources and unrelated queries remain rejected.
+differing-count subcase was unavailable. The same strict test now also runs
+the query through one selected parameterless helper for both dimensions. Each
+helper itself remains fragment-only and query-only; extra resources and
+unrelated queries remain rejected.
 
 ```powershell
 cargo +1.93 test --offline -j8 -p wgpu-types restricted_3d_and_cube_texture_num_levels_are_independent
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_num_levels_3d_and_cube_limits_are_independent
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_num_levels_3d_and_cube_helpers_are_dimension_gated
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels_accepts_3d_and_cube_images
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels_3d_and_cube_accept_selected_helpers
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_num_levels_compiles_for_3d_and_cube_images
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91 -- --nocapture --test-threads=1

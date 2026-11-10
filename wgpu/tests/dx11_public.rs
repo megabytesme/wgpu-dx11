@@ -32993,10 +32993,15 @@ fn verify_fl91_texture_num_levels_views(
     } else {
         ""
     };
+    let sample_coordinate = match config.image_type {
+        "texture_2d<f32>" => "vec2f(0.5)",
+        "texture_3d<f32>" | "texture_cube<f32>" => "vec3f(0.5)",
+        _ => unreachable!("unsupported textureNumLevels test image type"),
+    };
     let output = if config.sample {
-        "let sampled = textureSample(image, smp, vec2f(0.5)); return vec4f(levels / 3.0, sampled.r, sampled.g, 1.0);"
+        format!("let sampled = textureSample(image, smp, {sample_coordinate}); return vec4f(levels / 3.0, sampled.r, sampled.g, 1.0);")
     } else {
-        "return vec4f(levels / 3.0, 0.0, 0.0, 1.0);"
+        "return vec4f(levels / 3.0, 0.0, 0.0, 1.0);".to_string()
     };
     let fragment_source = format!(
         "@group(0) @binding(42) var image: {image_type}; {sample_declaration} {helper} \
@@ -33004,7 +33009,7 @@ fn verify_fl91_texture_num_levels_views(
              {query} \
              {output} \
          }}",
-        image_type = config.image_type
+        image_type = config.image_type,
     );
     let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some(label),
@@ -33458,6 +33463,19 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
                 sample: false,
             },
         );
+        verify_fl91_texture_num_levels_views(
+            &device,
+            &queue,
+            "FL9_1 3D textureNumLevels selected helper",
+            &lowest_mip_view,
+            &full_chain_view,
+            Fl9TextureNumLevelsViewConfig {
+                image_type: "texture_3d<f32>",
+                suffix_levels: mip_count,
+                helper_query: true,
+                sample: false,
+            },
+        );
         if mip_count == 1 {
             println!("SKIP: selected FL9_1 device lacks optional 3D mip support; the single-mip query executed");
         }
@@ -33535,6 +33553,19 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
                 image_type: "texture_cube<f32>",
                 suffix_levels: mip_count,
                 helper_query: false,
+                sample: false,
+            },
+        );
+        verify_fl91_texture_num_levels_views(
+            &device,
+            &queue,
+            "FL9_1 cube textureNumLevels selected helper",
+            &lowest_mip_view,
+            &full_chain_view,
+            Fl9TextureNumLevelsViewConfig {
+                image_type: "texture_cube<f32>",
+                suffix_levels: mip_count,
+                helper_query: true,
                 sample: false,
             },
         );

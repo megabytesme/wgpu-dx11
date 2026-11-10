@@ -1908,6 +1908,66 @@ mod tests {
     }
 
     #[test]
+    fn fl9_texture_num_levels_3d_and_cube_accept_selected_helpers() {
+        for (image_type, coordinate, dimension) in [
+            ("texture_3d<f32>", "vec3f(0.5)", naga::ImageDimension::D3),
+            (
+                "texture_cube<f32>",
+                "vec3f(0.5)",
+                naga::ImageDimension::Cube,
+            ),
+        ] {
+            for sample in [false, true] {
+                let sampler = if sample {
+                    "@group(0) @binding(7) var smp: sampler;"
+                } else {
+                    ""
+                };
+                let output = if sample {
+                    format!(
+                        "return textureSample(image, smp, {coordinate}) \
+                         * vec4f(f32(levels()) / 4.0, 1.0, 1.0, 1.0);"
+                    )
+                } else {
+                    "let count = f32(levels()); return vec4f(count / 3.0, 0.0, 0.0, 1.0);"
+                        .to_string()
+                };
+                let source = format!(
+                    "@group(0) @binding(42) var image: {image_type}; {sampler} \
+                     fn levels() -> u32 {{ return textureNumLevels(image); }} \
+                     @fragment fn fs() -> @location(0) vec4f {{ {output} }}"
+                );
+                let module = naga::front::wgsl::parse_str(&source).unwrap();
+                let info = naga::valid::Validator::new(
+                    naga::valid::ValidationFlags::all(),
+                    naga::valid::Capabilities::empty(),
+                )
+                .validate(&module)
+                .unwrap();
+                let proof = fl9_texture_emulation_binding(
+                    &module,
+                    &info,
+                    naga::ShaderStage::Fragment,
+                    "fs",
+                )
+                .unwrap()
+                .expect("3D and cube mip-count queries may use one selected helper");
+                assert_eq!(
+                    proof.binding,
+                    naga::ResourceBinding {
+                        group: 0,
+                        binding: 42,
+                    }
+                );
+                assert_eq!(proof.dimension, dimension);
+                assert!(matches!(proof.kind, Fl9TextureEmulationKind::NumLevels));
+                assert!(proof.has_helper);
+                assert_eq!(proof.has_implicit_sample, sample);
+            }
+        }
+    }
+
+    #[test]
     fn fl9_texture_num_levels_helper_accepts_one_same_texture_sample() {
         let module = naga::front::wgsl::parse_str(
             r#"
@@ -4193,7 +4253,9 @@ fn fl9_texture_num_levels_helper(
         || !matches!(
             module.types[image.ty].inner,
             naga::TypeInner::Image {
-                dim: naga::ImageDimension::D2,
+                dim: naga::ImageDimension::D2
+                    | naga::ImageDimension::D3
+                    | naga::ImageDimension::Cube,
                 arrayed: false,
                 class: naga::ImageClass::Sampled {
                     kind: naga::ScalarKind::Float,

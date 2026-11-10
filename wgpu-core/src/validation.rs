@@ -3878,13 +3878,13 @@ fn entry_point_supports_fl9_texture_num_levels(
         .iter()
         .any(|statement| matches!(statement, naga::Statement::Call { .. }))
     {
-        return dimension == naga::ImageDimension::D2
-            && entry_point_supports_fl9_texture_num_levels_helper(
-                module,
-                module_info,
-                entry_point,
-                function_info,
-            );
+        return entry_point_supports_fl9_texture_num_levels_helper(
+            module,
+            module_info,
+            entry_point,
+            function_info,
+            dimension,
+        );
     }
     if entry_point.stage != naga::ShaderStage::Fragment
         || entry_point.function.arguments.len() > 1
@@ -4083,6 +4083,7 @@ fn entry_point_supports_fl9_texture_num_levels_helper(
     module_info: &naga::valid::ModuleInfo,
     entry_point: &naga::EntryPoint,
     entry_info: &naga::valid::FunctionInfo,
+    dimension: naga::ImageDimension,
 ) -> bool {
     if entry_point.stage != naga::ShaderStage::Fragment
         || !entry_point.function.arguments.is_empty()
@@ -4246,6 +4247,11 @@ fn entry_point_supports_fl9_texture_num_levels_helper(
         return false;
     };
     let mut sample_binding = None;
+    let coordinate_size = match dimension {
+        naga::ImageDimension::D2 => naga::VectorSize::Bi,
+        naga::ImageDimension::D3 | naga::ImageDimension::Cube => naga::VectorSize::Tri,
+        _ => return false,
+    };
     for (handle, expression) in entry_point.function.expressions.iter() {
         let naga::Expression::ImageSample {
             image,
@@ -4270,12 +4276,12 @@ fn entry_point_supports_fl9_texture_num_levels_helper(
             || !matches!(
                 entry_info[*coordinate].ty.inner_with(&module.types),
                 naga::TypeInner::Vector {
-                    size: naga::VectorSize::Bi,
+                    size,
                     scalar: naga::Scalar {
                         kind: naga::ScalarKind::Float,
                         width: 4
                     }
-                }
+                } if *size == coordinate_size
             )
             || !matches!(
                 entry_info[handle].ty.inner_with(&module.types),
@@ -4334,13 +4340,13 @@ fn entry_point_supports_fl9_texture_num_levels_helper(
         && matches!(
             module.types[texture.ty].inner,
             naga::TypeInner::Image {
-                dim: naga::ImageDimension::D2,
+                dim: image_dimension,
                 arrayed: false,
                 class: naga::ImageClass::Sampled {
                     kind: naga::ScalarKind::Float,
                     multi: false
                 }
-            }
+            } if image_dimension == dimension
         )
 }
 
@@ -10132,17 +10138,6 @@ mod tests {
                 "#,
                 &cube_only,
             ),
-            (
-                "3D query through a helper",
-                r#"
-                @group(0) @binding(0) var image: texture_3d<f32>;
-                fn levels() -> u32 { return textureNumLevels(image); }
-                @fragment fn main() -> @location(0) vec4f {
-                    return vec4f(f32(levels()), 0.0, 0.0, 1.0);
-                }
-                "#,
-                &three_d_only,
-            ),
         ];
         for (name, source, limits) in rejected {
             let interface = make_interface(source);
@@ -10161,6 +10156,80 @@ mod tests {
                     naga::ShaderStage::Fragment,
                     "main",
                     limits,
+                )
+                .unwrap());
+        }
+    }
+
+    #[test]
+    fn fl9_texture_num_levels_3d_and_cube_helpers_are_dimension_gated() {
+        for (image_type, coordinate, limits, other_limits) in [
+            (
+                "texture_3d<f32>",
+                "vec3f(0.5)",
+                wgt::DownlevelLimits {
+                    texture_query: false,
+                    texture_num_levels_3d_float_fragment: true,
+                    ..Default::default()
+                },
+                wgt::DownlevelLimits {
+                    texture_query: false,
+                    texture_num_levels_cube_float_fragment: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "texture_cube<f32>",
+                "vec3f(0.5)",
+                wgt::DownlevelLimits {
+                    texture_query: false,
+                    texture_num_levels_cube_float_fragment: true,
+                    ..Default::default()
+                },
+                wgt::DownlevelLimits {
+                    texture_query: false,
+                    texture_num_levels_3d_float_fragment: true,
+                    ..Default::default()
+                },
+            ),
+        ] {
+            let source = format!(
+                "@group(0) @binding(0) var image: {image_type}; \
+                 @group(0) @binding(1) var smp: sampler; \
+                 fn levels() -> u32 {{ return textureNumLevels(image); }} \
+                 @fragment fn main() -> @location(0) vec4f {{ \
+                     let count = f32(levels()); \
+                     return textureSample(image, smp, {coordinate}) \
+                         * vec4f(count / 4.0, 1.0, 1.0, 1.0); \
+                 }}"
+            );
+            let module = naga::front::wgsl::parse_str(&source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+            assert!(!interface
+                .entry_point_uses_unsupported_texture_num_levels(
+                    naga::ShaderStage::Fragment,
+                    "main",
+                    &limits,
+                )
+                .unwrap());
+            assert!(!interface
+                .entry_point_uses_unsupported_texture_query(
+                    naga::ShaderStage::Fragment,
+                    "main",
+                    &limits,
+                )
+                .unwrap());
+            assert!(interface
+                .entry_point_uses_unsupported_texture_num_levels(
+                    naga::ShaderStage::Fragment,
+                    "main",
+                    &other_limits,
                 )
                 .unwrap());
         }

@@ -2301,3 +2301,19 @@ coupled and should be integrated by one owner. The next code candidate should
 come from a reproduced application workload or a strict compiler/runtime
 probe, not from unverified feature-count expansion. Avoid simultaneous edits
 to shared capability, validation and public-test files.
+
+## Current shader-query increment — selected 3D/cube helper — 2026-11-10
+
+The restricted `textureNumLevels` helper proof now supports selected 3D and
+cube fragment entries, matching the existing query limits for each image
+dimension. Core, Naga and HAL require the one argument-free straight-line
+helper to return the query directly; they preserve same-image sampling limits
+and reject dimension mismatches. Strict FL9_1 readback verified helper-only
+and direct-query-plus-sample paths for both 3D and cube views on the RTX 3090
+Ti. Helper-plus-sample for 3D/cube is covered by Core/HAL proof and FXC
+compilation, not GPU readback. This adds no general texture-query capability.
+The complete Core/HAL/public/Naga and DX12 Core suites pass after the change.
+See `FL9_1_PROGRESS.md` for exact commands. Continue by selecting gaps from a
+real workload or a separately reproduced compiler/runtime boundary; do not
+expand general texture queries or infer historical-driver support from this
+modern adapter.

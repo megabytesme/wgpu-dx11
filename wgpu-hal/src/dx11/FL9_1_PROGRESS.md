@@ -15090,3 +15090,40 @@ conversion notices. The RTX 3090 Ti remains the only physical GPU in this
 verification, so historical FL9_1 driver and Lumia runtime behavior remain
 unverified. The verified code and test checkpoint is commit
 `dc8f445d5377fa8ca151af3ee36f256c76f86b13`.
+
+## Selected 3D/cube `textureNumLevels` helper — 2026-11-10
+
+Extended the narrow selected-entry `textureNumLevels` helper proof from the
+already supported 2D case to 3D and cube float textures. Core gates the helper
+against the selected entry's dimension-specific downlevel limit; the Naga HLSL
+proof checks the image dimension and matching `vec3f` sampling coordinate; HAL
+retains the same group-0 image, direct-return, straight-line and optional
+same-image implicit-sampling restrictions. No general `texture_query`
+capability changed. Strict hardware execution checks helper-only query results
+for both 3D and cube views, including differing view mip counts. The
+helper-plus-sample composition for 3D/cube is covered by Core/HAL proof and
+Naga HLSL generation tests; the strict helper-plus-sample readback remains
+2D-only.
+
+Hardware execution used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), with explicitly requested and
+selected FL9_1 and software/WARP false. The focused public test passed four
+render/readback cases: direct and selected-helper queries for 3D and cube;
+each case verified all 64 pixels. The full strict public D3D11 suite passed
+121/121, the strict Core fixture suite passed 133/133, and the private HAL
+suite passed 469/469. Naga HLSL/WGSL tests passed 160/160 and the DX12 Core
+regression suite passed 122/122. `cargo +1.93.1 fmt --all -- --check` and
+`git diff --check` passed. Targeted Clippy completed successfully for Naga,
+Core and HAL; warnings are existing pattern-matching, test-style,
+qualification, argument-count and test-module-order warnings outside this
+change. The first DX12 test invocation lacked the Visual Studio environment
+and failed to locate `link.exe`; rerunning from `VsDevCmd.bat` passed. The
+public test's default-enumeration isolation check also passed in the full
+suite. Historical FL9_1 drivers and Lumia runtime remain unverified.
+
+The code checkpoint is intended to be committed separately, then its hash
+recorded here. Next work should come from a concrete application workload or
+a reproduced API/compiler boundary. Keep feature/profile limits, deliberately
+unsupported backend operations and missing historical-device verification as
+separate categories; do not treat the remaining FL9_1 task list as a batch of
+independent agent patches.

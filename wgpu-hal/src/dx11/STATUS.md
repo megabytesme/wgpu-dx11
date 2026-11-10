@@ -1399,20 +1399,22 @@ The opt-in projection exposes separate
 directly converted to `f32`. The 2D query may be direct or returned by exactly
 one reachable, argument-free straight-line helper called once by the selected
 entry point. That helper itself cannot sample, but the selected entry may also
-contain one direct implicit sample of the same 2D image with one group-0
-non-comparison sampler. The 3D and cube forms remain direct-only. The selected entry may also contain exactly one
-implicit sample of that same image with a compatible coordinate type and one
-group-0 non-comparison sampler. The 3D/cube paths are gated by the selected
-device's sampled RGBA8 volume/cube support; they do not require mip support
-because a single-mip view validly reports one level. Core, Naga and HAL retain
-the direct-query proof, reject helpers, control flow, additional resources,
-other image operations, multiple samples, mismatched image/sampler shapes and
-unrelated integer semantics. HAL supplies the selected bound view's mip count
-through `b13`; texture and sampler retain their ordinary register assignments.
-The 2D selected-helper-plus-sample path remains restricted to one direct sample
-of the same image; 3D/cube helpers are unsupported. The strict public helper
-test checks both helper-only and helper-plus-sample rendering across one- and
-three-level views. The composed output matched `[85,64,128,255]` and
+contain one direct implicit sample of the same image with one group-0
+non-comparison sampler and a coordinate type matching its dimension. The
+selected image may be 2D, 3D or cube, each gated by its corresponding limit.
+The 3D/cube paths are gated by the selected device's sampled RGBA8 volume/cube
+support; they do not require mip support because a single-mip view validly
+reports one level. Core, Naga and HAL require a direct query or one selected
+parameterless straight-line helper that returns the query, with no control
+flow, additional resources, other image operations beyond at most one
+same-image implicit sample, mismatched image/sampler shapes or unrelated
+integer semantics. HAL supplies
+the selected bound view's mip count through `b13`; texture and sampler retain
+their ordinary register assignments. Strict GPU execution covers helper-only
+3D and cube queries across one- and three-level views. The helper-plus-sample
+combination is covered by CPU proof and FXC compilation tests, while the 2D
+helper-plus-sample form has full GPU readback coverage. The 2D composed output
+matched `[85,64,128,255]` and
 `[255,128,64,255]` for all 64 pixels on the RTX 3090 Ti at requested/actual
 FL9_1. The separate direct query-plus-sample test also remains covered. General
 `texture_query` remains unavailable.
