@@ -777,7 +777,10 @@ impl Capabilities {
                 texture_1d: false,
                 texture_3d: texture_3d_sampling,
                 texture_3d_usage_mask: if texture_3d_sampling {
-                    (wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST).bits()
+                    (wgt::TextureUsages::TEXTURE_BINDING
+                        | wgt::TextureUsages::COPY_SRC
+                        | wgt::TextureUsages::COPY_DST)
+                        .bits()
                 } else {
                     0
                 },
@@ -2504,9 +2507,11 @@ mod tests {
                 .capabilities
                 .downlevel
                 .limits
-                .texture_3d_usage_mask
-                & wgt::TextureUsages::COPY_SRC.bits(),
-            0
+                .texture_3d_usage_mask,
+            (wgt::TextureUsages::TEXTURE_BINDING
+                | wgt::TextureUsages::COPY_SRC
+                | wgt::TextureUsages::COPY_DST)
+                .bits()
         );
         assert!(!projection.capabilities.downlevel.limits.texture_3d_mipmaps);
 
@@ -2788,7 +2793,10 @@ mod tests {
         assert!(exposed.downlevel.limits.texture_3d);
         assert_eq!(
             exposed.downlevel.limits.texture_3d_usage_mask,
-            (wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST).bits()
+            (wgt::TextureUsages::TEXTURE_BINDING
+                | wgt::TextureUsages::COPY_SRC
+                | wgt::TextureUsages::COPY_DST)
+                .bits()
         );
         assert!(exposed
             .downlevel

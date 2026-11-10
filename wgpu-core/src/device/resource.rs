@@ -4329,6 +4329,7 @@ impl Device {
         let mut dynamic_binding_info = Vec::new();
         let mut sampled_texture_npot = FastHashMap::default();
         let mut sampled_texture_mip_levels = FastHashMap::default();
+        let mut fl9_texture_load_compatible = FastHashMap::default();
         let mut sampler_uses_repeat = FastHashMap::default();
         let mut sampler_mip_compatibility = FastHashMap::default();
         let mut sampler_texture_sample_bias_compatible = FastHashMap::default();
@@ -4463,6 +4464,14 @@ impl Device {
                             );
                             sampled_texture_mip_levels
                                 .insert(binding, vec![binding_model::sampled_view_mip_count(view)]);
+                            fl9_texture_load_compatible.insert(
+                                binding,
+                                vec![
+                                    binding_model::sampled_view_fl9_texture_load_view_compatibility(
+                                        view,
+                                    ),
+                                ],
+                            );
                         }
                         let tb = self.create_texture_binding(
                             binding,
@@ -4494,6 +4503,17 @@ impl Device {
                             views
                                 .iter()
                                 .map(|view| binding_model::sampled_view_mip_count(view))
+                                .collect(),
+                        );
+                        fl9_texture_load_compatible.insert(
+                            binding,
+                            views
+                                .iter()
+                                .map(|view| {
+                                    binding_model::sampled_view_fl9_texture_load_view_compatibility(
+                                        view,
+                                    )
+                                })
                                 .collect(),
                         );
                     }
@@ -4612,6 +4632,7 @@ impl Device {
             late_buffer_binding_infos,
             sampled_texture_npot,
             sampled_texture_mip_levels,
+            fl9_texture_load_compatible,
             sampler_uses_repeat,
             sampler_mip_compatibility,
             sampler_texture_sample_bias_compatible,
@@ -5733,6 +5754,7 @@ impl Device {
         let mut _mesh_entry_point_name = String::new();
         let mut immediate_slots_required = naga::valid::ImmediateSlots::default();
         let mut sampling_pairs = Vec::new();
+        let mut fl9_texture_load_binding = None;
         let mut requires_texture_sample_bias_compatible_samplers = false;
         match desc.vertex {
             pipeline::RenderPipelineVertexProcessor::Vertex(ref vertex) => {
@@ -6473,6 +6495,19 @@ impl Device {
                     );
                 }
 
+                if self.downlevel.limits.texture_load_2d_float_fragment
+                    || self.downlevel.limits.texture_load_3d_float_fragment
+                {
+                    if let Some(interface) = interface {
+                        fl9_texture_load_binding = interface
+                            .fl9_texture_load_binding_used(
+                                stage.to_naga(),
+                                &fragment_entry_point_name,
+                            )
+                            .map_err(stage_err)?;
+                    }
+                }
+
                 if (!self.downlevel.limits.matrix_inverse
                     || self.downlevel.limits.matrix_inverse_2x2)
                     && match shader_module.interface.interface() {
@@ -6949,13 +6984,6 @@ impl Device {
         };
 
         let mut flags = pipeline::PipelineFlags::empty();
-        for state in color_targets.iter().filter_map(|s| s.as_ref()) {
-            if let Some(ref bs) = state.blend {
-                if bs.color.uses_constant() | bs.alpha.uses_constant() {
-                    flags |= pipeline::PipelineFlags::BLEND_CONSTANT;
-                }
-            }
-        }
         if let Some(ds) = depth_stencil_state.as_ref() {
             if ds.stencil.is_enabled() && ds.stencil.needs_ref_value() {
                 flags |= pipeline::PipelineFlags::STENCIL_REFERENCE;
@@ -7003,6 +7031,7 @@ impl Device {
             late_sized_buffer_groups,
             immediate_slots_required,
             sampling_pairs,
+            fl9_texture_load_binding,
             requires_texture_sample_bias_compatible_samplers,
             label: desc.label.to_string(),
             tracking_data: TrackingData::new(self.tracker_indices.render_pipelines.clone()),

@@ -2372,14 +2372,15 @@ modern adapter.
 ## Coordinator continuation — bounded fragment uniform indexing — 2026-11-10
 
 A narrow selected-entry fragment uniform-indexing subset now has independent
-Core, HAL/Naga, and strict GPU evidence. It accepts only direct indexing of a
-two-element `vec4f` uniform array by a scalar `u32` field in the same
-group-0 structure; the separate downlevel limit defaults false elsewhere.
-Unsupported shapes remain rejected. The RTX 3090 Ti forced to FL9_1 rendered
-both array elements correctly. Core (134), private HAL (471), public D3D11
-(122), and DX12 Core (123) suites pass; see `FL9_1_PROGRESS.md` for exact
-commands. This is a concrete workload/compiler-boundary slice, not broad
-runtime-integer support.
+Core, HAL/Naga, and strict GPU evidence. It accepts direct indexing of a
+`vec4f` uniform array of lengths 2 through 24 by a scalar `u32` field in the
+same group-0 structure; the separate downlevel limit defaults false elsewhere.
+The 24-element shader uses 25 of the 32 fragment constant vectors and FXC
+rejects length 25 at constant register 32. Unsupported shapes remain
+rejected. The RTX 3090 Ti forced to FL9_1 rendered indices 0, 1 and 23
+correctly. Core (134), private HAL (471), public D3D11 (122), and DX12 Core
+(123) suites pass; see `FL9_1_PROGRESS.md` for exact commands. This is a
+concrete compiler-bounded subset, not broad runtime-integer support.
 
 Continue agent-assisted work by delegating independent audits, selector
 triage, and compiler feasibility probes, then integrating one cross-layer
@@ -2387,3 +2388,70 @@ Core/Naga/HAL change at a time. Do not split a single vertical shader feature
 among agents editing shared validation or capability files. The remaining
 implementation gaps and external historical-device/Lumia verification are
 still open.
+
+## Coordinator continuation — measured fragment uniform-array boundary — 2026-11-10
+
+The direct selected-entry fragment uniform-indexing proof now accepts array
+lengths 2–24, aligned across Core and HAL. Naga-generated HLSL/FXC evidence
+shows length 24 uses 40 Level9 instruction slots and length 25 fails with the
+constant-register-32 diagnostic; the test now asserts that diagnostic.
+Strict forced-FL9_1 readback verified three selected values on the RTX 3090
+Ti. Full Core, HAL, public D3D11 and DX12 Core tests, Clippy, formatting and
+diff checks are recorded in `FL9_1_PROGRESS.md`. This remains one narrowly
+proved integer-indexing shape. Continue the remaining mission through
+independent read-only audit/probe tasks and one integrated code slice at a
+time; do not infer broad API usability from this increment.
+
+## Coordinator continuation — direct interpolated 2D `textureLoad` coordinates — 2026-11-10
+
+Core and the D3D11 HAL now accept one additional exact shader shape: a direct
+fragment entry point with one `@location(0) vec2f` argument converts that value
+to `vec2i` and uses it as the coordinate of its sole single-mip 2D float
+`textureLoad`. The proof excludes coordinate arithmetic, helper-based dynamic
+coordinates, and any other runtime integer operation. Strict forced-FL9_1
+readback on the RTX 3090 Ti verified 16 distinct source texels and 48
+out-of-bounds zero pixels. Full Core, private HAL, public D3D11, and DX12 Core
+regressions passed; exact commands are in `FL9_1_PROGRESS.md`.
+
+This small improvement does not make the remaining runtime-integer or shader
+subset general. Continue with a reproduced workload or compiler/runtime
+boundary, using agents for independent audits and probes rather than splitting
+one Core/Naga/HAL vertical change. Historical FL9_1 and Lumia/CoreWindow
+runtime verification remain external requirements.
+
+## Core/HAL textureLoad view contract — 2026-11-10
+
+A follow-up Core-to-HAL audit found that the selected-entry 2D `textureLoad`
+shader proof did not validate the actual texture view. The private HAL
+emulation is narrower: it supports only single-mip, single-sample
+`Rgba8Unorm` 2D and 3D views. Core now stores the proved `(group, binding,
+dimension)` on the render pipeline and compatibility metadata on each bind
+group, then checks the currently selected pipeline and bound group before
+direct or bundle draw execution. Incompatible views produce validation errors
+before HAL; sibling entry points without `textureLoad` are unaffected. Strict
+RTX validation rejects R8 and multi-mip 2D views, rejects a multi-mip 3D view,
+and executes compatible and unrelated-entry paths. The full Core, public
+D3D11 and DX12 Core regressions now pass after the generalized 3D guard: 134
+Core fixtures, 122 public DX11 tests, and 123 DX12 Core tests. Strict hardware
+tests used the RTX 3090 Ti at requested/actual FL9_1. Exact commands and
+counts are in `FL9_1_PROGRESS.md`.
+
+## Query-gated 3D texture-to-buffer readback — 2026-11-10
+
+The selected FL9_1 RGBA8 3D path now accepts `COPY_SRC` only for an ordered
+CPU shadow. This is not a native 3D GPU copy: the shadow is authoritative
+because the currently exposed 3D resource can only be zero-initialized or
+updated by ordered buffer-to-texture uploads; render, storage and texture-copy
+writes remain unavailable. Core still reports 3D texture-to-texture copies as
+unsupported. Strict RTX execution verifies full and partial readback, padded
+rows/depth, nonzero offsets and zero-initialized texels. The cost is one CPU
+allocation matching every mip in each `COPY_SRC` volume plus a temporary
+region-sized allocation for each read. See `STATUS.md` for the current
+capability boundary and `FL9_1_PROGRESS.md` for exact results.
+
+Next, continue the bounded Core-to-HAL audit and workload/compiler probes.
+Recent agent review found no substantiated Core-valid request that reaches an
+unimplemented HAL operation in the audited areas; avoid speculative feature
+expansion until another concrete mismatch or useful application workload is
+reproduced. Historical FL9_1 driver behavior, Lumia ARM32/CoreWindow execution
+and device-removal recovery remain external verification requirements.

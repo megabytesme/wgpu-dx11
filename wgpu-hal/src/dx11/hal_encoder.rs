@@ -713,6 +713,20 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         }
         for region in regions {
+            if src.dimension == wgt::TextureDimension::D3 {
+                let transfer = match self.device.prepare_texture_3d_to_buffer(src, dst, &region) {
+                    Ok(transfer) => transfer,
+                    Err(error) => {
+                        self.failure = Some(super::hal_device::device_error(error));
+                        return;
+                    }
+                };
+                self.record(NativeCommand::Texture3DToBuffer(transfer));
+                if self.failure.is_some() {
+                    return;
+                }
+                continue;
+            }
             let transfer = match self.device.prepare_texture_to_buffer(src, dst, &region) {
                 Ok(transfer) => transfer,
                 Err(error) => {

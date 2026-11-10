@@ -1045,6 +1045,7 @@ impl super::Adapter {
             texture_sample_bias_dynamic: true,
             texture_sample_bias_offset: true,
             texture_sample_bias_requires_compatible_sampler: false,
+            fragment_uniform_array_indexing: false,
             fragment_derivatives: true,
             runtime_integer_shader_operations: true,
             matrix_inverse: true,

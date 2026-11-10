@@ -1213,7 +1213,6 @@ bitflags::bitflags! {
     #[repr(transparent)]
     #[derive(Debug, Copy, Clone, PartialEq, Eq, Hash)]
     pub struct PipelineFlags: u32 {
-        const BLEND_CONSTANT = 1 << 0;
         const STENCIL_REFERENCE = 1 << 1;
         const WRITES_DEPTH = 1 << 2;
         const WRITES_STENCIL = 1 << 3;
@@ -1263,6 +1262,7 @@ pub struct RenderPipeline {
     pub(crate) late_sized_buffer_groups: ArrayVec<LateSizedBufferGroup, { hal::MAX_BIND_GROUPS }>,
     pub(crate) immediate_slots_required: naga::valid::ImmediateSlots,
     pub(crate) sampling_pairs: Vec<validation::SamplingPair>,
+    pub(crate) fl9_texture_load_binding: Option<validation::TextureLoadBinding>,
     pub(crate) requires_texture_sample_bias_compatible_samplers: bool,
     /// The `label` from the descriptor used to create the resource.
     pub(crate) label: String,
@@ -1352,6 +1352,7 @@ impl RenderPipeline {
             late_sized_buffer_groups: ArrayVec::new(),
             immediate_slots_required: naga::valid::ImmediateSlots::default(),
             sampling_pairs: Vec::new(),
+            fl9_texture_load_binding: None,
             requires_texture_sample_bias_compatible_samplers: false,
             label,
             is_mesh: false,

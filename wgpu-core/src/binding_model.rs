@@ -1361,9 +1361,16 @@ pub struct BindGroup {
     pub(crate) late_buffer_binding_infos: Vec<BindGroupLateBufferBindingInfo>,
     pub(crate) sampled_texture_npot: FastHashMap<u32, Vec<bool>>,
     pub(crate) sampled_texture_mip_levels: FastHashMap<u32, Vec<u32>>,
+    pub(crate) fl9_texture_load_compatible: FastHashMap<u32, Vec<Fl9TextureLoadViewCompatibility>>,
     pub(crate) sampler_uses_repeat: FastHashMap<u32, Vec<bool>>,
     pub(crate) sampler_mip_compatibility: FastHashMap<u32, Vec<hal::SamplerMipCompatibility>>,
     pub(crate) sampler_texture_sample_bias_compatible: FastHashMap<u32, Vec<bool>>,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct Fl9TextureLoadViewCompatibility {
+    pub d2: bool,
+    pub d3: bool,
 }
 
 pub(crate) fn sampled_view_mip_count(view: &TextureView) -> u32 {
@@ -1371,6 +1378,34 @@ pub(crate) fn sampled_view_mip_count(view: &TextureView) -> u32 {
         .mips
         .end
         .saturating_sub(view.selector.mips.start)
+}
+
+pub(crate) fn sampled_view_fl9_texture_load_compatible(
+    view: &TextureView,
+    dimension: naga::ImageDimension,
+) -> bool {
+    let expected_dimension = match dimension {
+        naga::ImageDimension::D2 => wgt::TextureViewDimension::D2,
+        naga::ImageDimension::D3 => wgt::TextureViewDimension::D3,
+        _ => return false,
+    };
+    view.desc.format == wgt::TextureFormat::Rgba8Unorm
+        && view.desc.dimension == expected_dimension
+        && view.parent.desc.sample_count == 1
+        && sampled_view_mip_count(view) == 1
+        && view
+            .desc
+            .usage
+            .contains(wgt::TextureUsages::TEXTURE_BINDING)
+}
+
+pub(crate) fn sampled_view_fl9_texture_load_view_compatibility(
+    view: &TextureView,
+) -> Fl9TextureLoadViewCompatibility {
+    Fl9TextureLoadViewCompatibility {
+        d2: sampled_view_fl9_texture_load_compatible(view, naga::ImageDimension::D2),
+        d3: sampled_view_fl9_texture_load_compatible(view, naga::ImageDimension::D3),
+    }
 }
 
 pub(crate) fn sampled_view_is_npot_2d(view: &TextureView) -> bool {

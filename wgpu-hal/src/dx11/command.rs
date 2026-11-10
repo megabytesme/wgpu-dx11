@@ -3,7 +3,9 @@ use super::{
     buffer::{NativeBuffer, NativeBufferClear, NativeBufferCopy},
     device::NativeDevice,
     hal_index::IndexBinding,
-    hal_transfer::{BufferToTexture, BufferToTexture3D, TextureToBuffer, TextureToTexture},
+    hal_transfer::{
+        BufferToTexture, BufferToTexture3D, Texture3DToBuffer, TextureToBuffer, TextureToTexture,
+    },
     hal_uniform::UniformBinding,
 };
 use alloc::{
@@ -205,6 +207,7 @@ pub(super) enum NativeCommand {
     },
     BufferToTexture(BufferToTexture),
     BufferToTexture3D(BufferToTexture3D),
+    Texture3DToBuffer(Texture3DToBuffer),
     TextureToBuffer(TextureToBuffer),
     TextureToTexture(TextureToTexture),
     #[cfg(test)]
@@ -618,7 +621,7 @@ impl CommandBuffer {
         let mut active_depth_state = None;
         let mut active_blend_state = None;
         let mut active_sample_mask = u32::MAX;
-        let mut blend_constant = [1.0; 4];
+        let mut blend_constant = [0.0; 4];
         let mut stencil_reference = 0;
         let mut active_vertex_index_slot = None;
         for command in &self.commands {
@@ -691,6 +694,7 @@ impl CommandBuffer {
 
                     NativeCommand::BufferToTexture(copy) => copy.execute(context)?,
                     NativeCommand::BufferToTexture3D(copy) => copy.execute(context)?,
+                    NativeCommand::Texture3DToBuffer(copy) => copy.execute(context)?,
                     NativeCommand::TextureToBuffer(copy) => copy.execute(context)?,
                     NativeCommand::TextureToTexture(copy) => copy.execute(context),
                     #[cfg(test)]
@@ -715,7 +719,7 @@ impl CommandBuffer {
                         active_depth_state = None;
                         active_blend_state = None;
                         active_sample_mask = u32::MAX;
-                        blend_constant = [1.0; 4];
+                        blend_constant = [0.0; 4];
                         stencil_reference = 0;
                         context.ClearState();
                         active_vertex_index_slot = None;

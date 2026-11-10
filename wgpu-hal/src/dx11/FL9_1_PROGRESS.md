@@ -15349,3 +15349,295 @@ warnings remain on the new proof predicates. Default DX11 adapter selection
 is unchanged; this increment does not broaden advertised integer operations.
 The broader Core/HAL shader-contract audit, historical FL9_1 device checks and
 Lumia runtime verification remain open.
+
+## Expanded fragment uniform-array boundary — 2026-11-10
+
+Expanded the separately gated direct fragment-uniform indexing subset from
+length two to `2 <= N <= 24`. Core and HAL both require one same-group
+`array<vec4f, N>` field at offset 16, a scalar `u32` index at offset zero, a
+16-byte array stride, and structure span `16 + 16*N`. They retain the selected
+entry proof: the index is used only for the direct array access; computed
+indices, helper use, additional integer use, wrong element types and lengths
+outside the range remain rejected. The 24-element structure occupies 400
+bytes, or 25 fragment constant vectors including its index, within the
+selected FL9_1 fragment budget of 32 vectors.
+
+The Naga-to-FXC probe compiles lengths 2 and 24 for
+`ps_4_0_level_9_1`; length 24 lowers to 40 Level9 `ps_2_0` instruction slots.
+Length 25 is rejected by FXC with `X5589: Invalid const register num: 32. Max
+allowed is 31.` The test asserts this exact register-boundary diagnostic so
+an unrelated compiler error cannot masquerade as the boundary. A read-only
+review found Core/HAL ranges aligned and confirmed uniform accounting includes
+the full referenced array; its diagnostic-isolation finding was fixed and the
+focused probe rerun.
+
+Strict GPU execution used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) with requested and actual FL9_1 and
+software/WARP false. The public test checked every 8x8 output pixel for three
+indices: index 0 produced red, index 1 blue, and index 23 green (192 pixel
+checks total).
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_fragment_uniform_array public_dx11_fragment_uniform_array_indexing_at_fl91 -- --nocapture --test-threads=1
+# 1/1 strict physical GPU test passed; all 192 pixel checks matched.
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib restricted_fragment_uniform_array_indexing_is_selected_entry_aware
+# 1/1 selected-entry validation test passed.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --test-threads=1
+# 134/134 passed.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 471/471 passed.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 122/122 passed; optional format/IA cases that logged SKIP are not GPU passes.
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib --quiet
+# 123/123 passed.
+```
+
+Clippy passed for wgpu-types, Core, HAL and the new public test target. Existing
+warnings remain for serde-disabled type imports, older Core fixture style,
+HAL qualification/argument-count/test-style patterns and other pre-existing
+test code. Formatting and `git diff --check` passed. This evidence expands one
+compiler-bounded subset; it does not establish general fragment integer
+indexing or historical FL9_1 behavior.
+
+## Direct interpolated 2D fragment `textureLoad` coordinates — 2026-11-10
+
+Added a separately proven dynamic-coordinate form to the selected-entry
+fragment 2D float `textureLoad` path. Core and HAL allow exactly one direct
+`@location(0) vec2f` argument converted to signed 32-bit vector coordinates
+for the sole load in the entry point. The proof does not allow coordinate
+arithmetic, helper-derived coordinates, additional integer uses or additional
+resources/operations. The existing emulation still performs point sampling at
+texel centers and returns zero out of bounds.
+
+The strict public test used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested and confirmed
+FL9_1, and reported software/WARP false. It uploaded a patterned 4x4 source,
+interpolated coordinates into an 8x8 target, and checked every output pixel:
+16 source texels matched at distinct coordinates and all 48 out-of-bounds
+pixels were zero.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_texture_load_dynamic -- --nocapture --test-threads=1
+# 1/1 strict physical FL9_1 GPU test passed; all 64 pixels matched.
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texel_proof -- --nocapture
+# 3/3 Naga/FXC proof tests passed, including acceptance of the exact varying and rejection of unsupported forms.
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --test-threads=1
+# 134/134 Core fixture tests passed.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+# 472/472 private HAL tests passed; GPU cases executed on the physical FL9_1 device.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 122/122 passed. Optional IA/mipmap paths logged SKIP and are not hardware passes.
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib --quiet
+# 123/123 passed.
+cargo +1.93.1 clippy --offline -j16 -p wgpu-types --no-default-features --lib
+cargo +1.93.1 clippy --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib
+cargo +1.93.1 clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib
+cargo +1.93.1 clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_texture_load_dynamic
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+# Clippy, format and diff checks passed.
+```
+
+The full suite emitted pre-existing HAL `unused_qualifications` warnings in
+`hal_queue.rs`; Clippy emitted existing `too_many_arguments` warnings in
+`hal_index.rs` and `texture.rs`. The public suite printed optional-path SKIPs
+for unsupported selected-device IA/mipmap capabilities; those were not counted
+as GPU execution. The first Core/HAL test attempts outside the Visual Studio
+developer environment could not find `link.exe`; rerunning from the VS 2026
+x64 developer environment succeeded. This change does not establish general
+runtime integer operations or historical FL9_1 behavior.
+
+## Selected-entry 2D `textureLoad` view validation — 2026-11-10
+
+A Core-to-HAL audit found that Core proved the shader shape but did not check
+the selected entry point's actual view. The D3D11 emulation accepts only a
+single-mip, single-sample `Rgba8Unorm` 2D view; another floating-point format
+or a multi-mip view could otherwise reach the HAL and become an unexpected
+device error. Core now retains the proven `(group, binding)` on the render
+pipeline and a compatibility bit per bound texture view, then checks the
+currently selected pipeline and bind group before render-pass and bundle draw
+execution. Missing proof metadata also fails as validation. A safe sibling
+entry point without `textureLoad` is not subject to the restriction.
+
+Strict hardware verification used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1, with
+software/WARP false. The dynamic-coordinate render checked all 64 pixels (16
+patterned in-bounds texels and 48 out-of-bounds zero values). R8 and multi-mip
+views each produced the expected Core `IncompatibleTextureLoadView`
+validation error with no internal error; the unrelated sibling entry rendered
+successfully with the R8 view.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_texture_load_dynamic -- --nocapture --test-threads=1
+# 1/1 strict physical FL9_1 test passed; compatible output and both rejection cases verified.
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --test-threads=1
+# 134/134 Core fixture tests passed, including the non-enumerated hardware fixture.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 122/122 passed; optional selected-device IA/mipmap cases logged SKIP and were not counted as executed capabilities.
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib --quiet
+# 123/123 passed.
+cargo +1.93.1 clippy --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib
+cargo +1.93.1 clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_texture_load_dynamic
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+# Clippy, formatting and diff checks passed.
+```
+
+Clippy reported only existing HAL `too_many_arguments` warnings in
+`hal_index.rs` and `texture.rs`. The private HAL 472-test run recorded above
+predates this Core-only guard; no HAL source changed for the guard. Historical
+FL9_1 behavior remains unverified by the modern RTX forced-level test.
+
+## Selected-entry 3D `textureLoad` view validation — 2026-11-10
+
+An independent review found the same Core/HAL contract gap in 3D: Core
+validated the shader operation but did not require the HAL's single-mip RGBA8
+view. The pipeline metadata now carries the proven texture binding and image
+dimension for both narrow 2D and 3D textureLoad paths. Bind groups retain
+per-view compatibility for each dimension, and the common Binder check runs
+against the currently bound group before direct or render-bundle draw
+execution. The limit remains independently gated; this changes validation,
+not the supported shader subset.
+
+Strict hardware verification used the physical RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`) at requested/actual FL9_1, with software/WARP false.
+The 3D public test submitted a selected 3D textureLoad pipeline with a
+two-mip view. Core returned `IncompatibleTextureLoadView`, the Internal error
+scope remained empty, and the existing valid 3D rendering still matched all
+320 checked pixels.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_3d_texture_load_at_fl91 -- --exact --nocapture --test-threads=1
+# 1/1 strict physical FL9_1 test passed; invalid multi-mip rejection and existing 3D GPU readback passed.
+cargo +1.93.1 check --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib
+cargo +1.93.1 check --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+# Both Core and public test targets compiled.
+```
+
+The full Core and public D3D11 suites need rerunning after this 3D extension;
+the previous full runs followed the 2D-only guard. The existing HAL full suite
+remains applicable because no HAL source changed. Historical 3D FL9_1 driver
+behavior remains unverified.
+
+## 2D/3D textureLoad view-validation regression closure — 2026-11-10
+
+After extending the selected-entry Core/HAL view guard from 2D to 3D, the
+complete Core fixture suite passed 134/134 and the strict public DX11 target
+passed 122/122. The public target included a real FL9_1 RTX 3090 Ti execution
+of the 3D negative case: Core rejected a multi-mip 3D view with
+`IncompatibleTextureLoadView`, no internal HAL error was recorded, and the
+existing valid 3D textureLoad path still matched its 320 readback pixels. The
+new 2D dynamic-coordinate test also passed on the physical adapter, checking
+all 64 pixels (16 patterned in-bounds results and 48 out-of-bounds zeros).
+These strict GPU tests requested and confirmed FL9_1 on the RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false).
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 122/122 passed; optional selected-device format/IA/mipmap cases that logged
+# SKIP are not counted as executed GPU capabilities.
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --test-threads=1
+# 134/134 passed.
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib --quiet
+# 123/123 passed.
+cargo +1.93.1 clippy --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib
+cargo +1.93.1 clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+# Clippy, formatting and diff checks passed. Clippy emitted the existing
+# HAL too_many_arguments warnings in hal_index.rs and texture.rs.
+```
+
+The full private HAL suite last passed 472/472 before this Core-only change;
+HAL implementation files were not modified by the view-validation guard.
+No historical FL9_1 driver behavior is inferred from the modern forced-level
+RTX test. The wider Core/HAL contract audit remains open.
+
+## Query-gated 3D texture-to-buffer readback — 2026-11-10
+
+The selected FL9_1 RGBA8 volume capability now permits `COPY_SRC` for a narrow
+readback implementation. It does not issue a native 3D texture copy: native
+10Level9 copy restrictions do not permit the needed 3D texture-to-buffer path.
+Textures with `COPY_SRC` retain a zero-initialized RGBA8 CPU shadow. Ordered
+buffer-to-texture commands update the shadow from the same source bytes staged
+for `UpdateSubresource`, and texture-to-buffer commands materialize the
+requested shadow region into the destination buffer during command replay.
+This is sound for the current supported volume subset because 3D render-target,
+storage and texture-to-texture writes remain rejected. The path adds memory
+equal to the complete volume (and all exposed mips) plus a temporary copy for
+each readback region.
+
+The strict test ran on the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at requested/actual FL9_1. In one submission it uploaded a
+2x2x2 patch to origin (1,1,1) from a nonzero source offset with padded rows,
+then read back the 4x4x4 texture to a nonzero destination offset with padded
+rows. All 64 voxels matched. A second command read back the nonzero-origin
+2x2x2 patch into another padded, nonzero-offset buffer; every byte, including
+padding, matched. Core still rejected 3D texture-to-texture copies. The full
+strict public DX11 test binary passed 123/123 after this partial-region check.
+The strict private HAL suite passed 473/473, the Core fixture suite passed
+134/134, and the DX12 Core regression passed 123/123. Clippy passed for the
+HAL tests and public integration target with existing warnings only; workspace
+formatting and `git diff --check` passed. An independent read-only review found
+no correctness defect in the shadow authority, transfer ordering, bounds or
+destination-buffer writes. See `TESTING.md` for the exact focused command.
+
+## Strict blend-constant CTS and cross-backend compile fix — 2026-11-10
+
+The first strict CTS build found that the new shared
+`DownlevelLimits::fragment_uniform_array_indexing` field had no explicit value
+in GLES's downlevel initializer. GLES now initializes that D3D11-specific
+proof limit to false; its behavior is unchanged. Rebuilding the CTS runner
+then succeeded, and the strict `color_target_state:blend_constant,setting:*`
+selector passed on the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at
+requested/actual FL9_1. All three cases executed; the runner reported 1/1
+selector passed, 0 skipped and 0 failed. This checks dynamic constant blend
+state and pixel output without exercising the unresolved separate-alpha case.
+The `wgpu-types` unit suite also passed 111/111. Its first invocation lacked
+the Visual Studio developer environment and failed to locate `link.exe`; the
+rerun from `VsDevCmd.bat` succeeded. Existing serde-import and qualification
+warnings were unchanged.
+
+## Lumia Device Portal availability check — 2026-11-10
+
+A read-only `GET /api/os/devicefamily` request through the configured Device
+Portal helper timed out; a TCP connection check to `192.168.1.157:443` also
+failed. No Lumia/CoreWindow runtime test was possible in this session. Retry
+when the device and portal are reachable; do not infer mobile behavior from
+the desktop forced-FL9_1 results or the ARM32 compile checks.
+
+## Render-pass blend-constant default — 2026-11-10
+
+Strict CTS exposed that Core rejected constant-factor blending when the
+application omitted `setBlendConstant`, despite the public API specifying a
+transparent-black default at the start of each render pass. Core now records
+that zero default for every pass and no longer requires an explicit setter;
+the D3D11 replay cache initializes and resets to the same value. Render bundles
+continue to inherit the active pass value, as required. No capability report
+changed.
+
+On the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), requested/actual FL9_1, `blend_constant,initial` and
+`blend_constant,not_inherited` each passed 1/1 with zero skips. The sibling
+`color_write_mask,blending_disabled` selector passed 2/2. The corresponding
+two blend-constant selectors also passed 1/1 each on DX12.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 123/123 passed; one optional selected-device vertex-format case logged SKIP.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 473/473 passed, including private FL9_1 hardware rendering cases.
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --test-threads=1
+# 134/134 passed.
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib --quiet
+# 123/123 passed.
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+# Both formatting checks passed. Core and HAL Clippy completed successfully;
+# output contained existing HAL lint warnings in queue/test code and
+# argument-count warnings in index/texture paths.
+```
+
+An independent read-only review confirmed bundle execution preserves the
+current render-pass blend value; bundles have no blend-constant setter and do
+not reset this pass-level state.

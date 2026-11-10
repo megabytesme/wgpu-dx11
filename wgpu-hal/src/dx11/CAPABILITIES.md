@@ -593,16 +593,24 @@ usage combination must pass the same private HAL path.
 For FL9_1, general `textureLoad` remains unsupported. The opt-in public
 projection separately permits one fragment-only subset through
 `DownlevelLimits::texture_load_2d_float_fragment`: a selected entry point may
-directly load one single-mip, non-arrayed `texture_2d<f32>`. Core rejects
-helpers, control flow, additional bound globals, other image operations,
+load one single-mip, non-arrayed `texture_2d<f32>`. Constant-coordinate loads
+may occur through validated straight-line helpers that directly reference the
+same image. For a direct load in the entry point only, one `@location(0) vec2f`
+argument may be converted directly to `vec2i` and used as the coordinate;
+coordinate arithmetic and other runtime integer operations remain rejected.
+Core rejects control flow, additional bound globals, other image operations,
 additional images and non-fragment stages before HAL. The private path maps the
 resource to `t0` and emulates point sampling at texel centers with an internal
 sampler at `s15` and dimensions at `b13`. The shader returns zero for
-out-of-bounds coordinates and nonzero mip requests. A strict public test
-validated all 192 pixels covering in-bounds, out-of-bounds and nonzero-mip
-results on a physical RTX 3090 Ti explicitly restricted to FL9_1. This does
-not enable general texture-load support or establish compatibility with
-historical 9_1 hardware.
+out-of-bounds coordinates and nonzero mip requests. Strict public tests on a
+physical RTX 3090 Ti explicitly restricted to FL9_1 validated the constant
+coordinate cases and 16 distinct texels plus 48 out-of-bounds pixels for the
+interpolated coordinate case. Core checks the actual bound view for the
+selected entry point before draw execution: it must be a single-mip,
+single-sample `Rgba8Unorm` 2D view. Incompatible formats and mip ranges produce
+a validation error instead of a late HAL error; sibling entry points without
+`textureLoad` do not inherit this restriction. This does not enable general
+texture-load support or establish compatibility with historical 9_1 hardware.
 
 A separate `texture_load_3d_float_fragment` limit covers one fragment
 `textureLoad` from a single-mip, non-arrayed `texture_3d<f32>`. The selected
@@ -617,9 +625,11 @@ and supplies `(width, height, depth, 0)` through `b13`; it samples at texel
 centers and returns zero for out-of-bounds coordinates or nonzero mip levels.
 Strict public FL9_1 readback on the RTX 3090 Ti verifies direct and nested
 helper loads, two distinct volume texels, both zero cases, and Core rejection
-of a branching helper. The 2D and 3D narrow limits are independent, while the
-general `texture_load` limit remains false. This selected modern-driver result
-does not establish historical FL9_1 behavior.
+of a branching helper. Core also checks the selected 3D textureLoad entry
+point's current view and rejects a multi-mip view before HAL execution. The
+2D and 3D narrow limits are independent, while the general `texture_load`
+limit remains false. This selected modern-driver result does not establish
+historical FL9_1 behavior.
 
 Per-format `SINGLE_MIP_ONLY` metadata reports the current one-mip ceiling for
 R8G8_UNORM, R16G16_SNORM, BC1_UNORM, BC2_UNORM, BC3_UNORM, D16_UNORM and
@@ -1200,20 +1210,18 @@ historical-driver behavior. A narrow public exception permits direct
 vertex-stage indexing of fixed-size `vec3` and `vec4` uniform arrays using
 `vertex_index` or `instance_index`; other runtime integer indexing remains
 rejected. A separate `DownlevelLimits::fragment_uniform_array_indexing`
-exception permits one direct fragment-stage read from `array<vec4<f32>, 2>` in
-the same group-0 uniform structure as a scalar `u32` index at offset zero. The
-array begins at offset 16 with stride 16 in a 48-byte structure. The selected
-entry must use the index only for that access; computed indices, helper calls,
-additional integer uses/accesses and other shapes remain rejected. FXC accepts
-the signed clamp emitted for `ps_4_0_level_9_1` and lowers the two-element
-lookup to four `ps_2_0` instruction slots. A strict public forced-FL9_1 test
-renders indices zero and one and verifies all 64 pixels for each color. Its
-additional `u32::MAX` probe completed without an out-of-bounds access and
-observed the index-zero color after the signed conversion/clamp. WGSL does not
-guarantee an out-of-bounds uniform-array value, so this is an implementation
-observation rather than part of the supported in-range contract. This is
-compiler/backend evidence on the RTX 3090 Ti, not general fragment integer
-support or a historical-driver guarantee. The vertex path also accepts the
+exception permits one direct fragment-stage read from an `array<vec4<f32>, N>`
+field for `2 <= N <= 24`, in the same group-0 uniform structure as a scalar
+`u32` index at offset zero. The array begins at offset 16 with stride 16, and
+the structure span must be `16 + 16*N` bytes. The selected entry must use the
+index only for that access; computed indices, helper calls, additional integer
+uses/accesses and other shapes remain rejected. Naga emits a signed clamp for
+`ps_4_0_level_9_1`. FXC accepts the 24-element case and rejects 25 elements;
+the 24-element shader uses 40 Level9 pixel-shader instruction slots. Strict
+public forced-FL9_1 readback checked all 64 pixels for indices zero, one and
+23. This compiler/backend boundary is measured on the RTX 3090 Ti and does
+not establish historical-driver behavior or general fragment integer support.
+The vertex path also accepts the
 WGSL-valid padded wrapper form where each array element is a 16-byte struct
 containing one `vec2<f32>` at offset zero. A plain uniform
 `array<vec2<f32>, N>` remains invalid WGSL due to its 8-byte stride. Core and
@@ -1316,7 +1324,7 @@ the limit disabled pending its own capability decision and regression
 coverage. This is compiler/backend support, not a broader FL9_1 hardware
 guarantee.
 Computed indices, helper-mediated indexing, fragment-stage indexing outside
-the exact two-element subset above, integer or nested array elements and other
+the exact 2–24 element vec4 subset above, integer or nested array elements and other
 general dynamic uniform indexing remain unsupported.
 `DownlevelLimits::vertex_uniform_array_indexing` enables only the direct vertex
 builtin subset described above. The RTX 3090 Ti at
@@ -1613,7 +1621,9 @@ are exposed only when
 the selected device's RGBA8 query includes `TEXTURE3D | SHADER_SAMPLE` and the
 sampled-upload backend path is present. This narrow path supports POT RGBA8,
 single-sample volumes up to the FL9_1 dimension limit of 256, with
-`TEXTURE_BINDING | COPY_DST` usages. Mip chains are exposed only when the
+`TEXTURE_BINDING | COPY_DST` usages. `COPY_SRC` is also accepted when requested
+for an execution-ordered CPU shadow used only for texture-to-buffer readback;
+it does not enable native 3D GPU copies. Mip chains are exposed only when the
 selected RGBA8 query also includes `D3D11_FORMAT_SUPPORT_MIP` and the backend
 mip path is enabled. Each mip is initialized and uploaded separately; shader
 resource views must include the resource's lowest mip, as required by the
@@ -1626,14 +1636,23 @@ readback remain unavailable. This is also required by the 10Level9 FL9_1
 context contract: only 2D textures and buffers may be copied within
 GPU-accessible memory, 3D textures cannot be copied from GPU-accessible to
 CPU-accessible memory, and mipmapped volume textures cannot be copied. The
-public test verifies that a 3D `COPY_SRC` descriptor is rejected by core. If
-the selected format query lacks MIP support, the public descriptor remains
-single-mip.
+backend instead retains a zero-initialized CPU shadow for `COPY_SRC` volumes;
+ordered buffer-to-volume upload commands update that shadow from the same
+staged source bytes used for the native upload. A later texture-to-buffer
+command copies the requested region from the shadow into the destination
+buffer, preserving row padding and submission ordering. This adds one full
+RGBA8 volume allocation plus a region-sized temporary readback allocation and
+does not support GPU-written 3D resources. Texture-to-texture copies remain
+disabled. If the selected format query lacks MIP support, the public
+descriptor remains single-mip.
 A strict private test also uploads a padded, nonzero-offset 2×2×2 region to a
 4×4×4 volume at (1,1,1), samples every slice, and checks all 64 pixels,
 including initialized untouched voxels. The RTX 3090 Ti passed at
-requested/actual FL9_1; this tests upload layout and ordering, not 3D copy or
-readback, which remain unavailable.
+requested/actual FL9_1. A separate strict public test checks ordered upload
+followed by full-volume and partial-region CPU-shadow readback, including
+nonzero buffer offsets and padded row/depth layouts; all 64 volume texels and
+all bytes in the partial destination buffer were validated. 3D GPU-to-GPU
+copies remain unavailable.
 
 The dynamic-uniform pipeline limit is twelve, matching the largest valid
 six-vertex/six-fragment visibility split; one shader stage remains limited to

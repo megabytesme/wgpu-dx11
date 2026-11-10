@@ -14777,6 +14777,88 @@ fn public_dx11_fragment_3d_texture_load_at_fl91() {
         .expect("mapped 3D textureLoad triangle")
         .copy_from_slice(&vertex_bytes);
     vertex.unmap();
+
+    let mipmapped_volume = device.create_texture(&TextureDescriptor {
+        label: Some("multi-mip volume rejected by restricted FL9_1 textureLoad"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+        mip_level_count: 2,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING,
+        view_formats: &[],
+    });
+    let mipmapped_volume_view = mipmapped_volume.create_view(&TextureViewDescriptor {
+        dimension: Some(TextureViewDimension::D3),
+        ..Default::default()
+    });
+    let mipmapped_volume_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("multi-mip 3D textureLoad group"),
+        layout: &bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 7,
+            resource: BindingResource::TextureView(&mipmapped_volume_view),
+        }],
+    });
+    let validation_scope = device.push_error_scope(ErrorFilter::Validation);
+    let internal_scope = device.push_error_scope(ErrorFilter::Internal);
+    let validation_target = device.create_texture(&TextureDescriptor {
+        label: Some("multi-mip 3D textureLoad validation target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let validation_target_view = validation_target.create_view(&TextureViewDescriptor::default());
+    let mut validation_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("reject multi-mip FL9_1 3D textureLoad view"),
+    });
+    {
+        let mut pass = validation_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("multi-mip 3D textureLoad validation pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &validation_target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipelines[0]);
+        pass.set_bind_group(0, &mipmapped_volume_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    queue.submit([validation_encoder.finish()]);
+    assert!(
+        poll_ready(internal_scope.pop()).is_none(),
+        "multi-mip 3D textureLoad view must not reach a HAL internal error"
+    );
+    let validation_error = poll_ready(validation_scope.pop())
+        .expect("Core rejects a multi-mip view for restricted 3D textureLoad");
+    assert!(
+        format!("{validation_error:?}").contains("IncompatibleTextureLoadView"),
+        "multi-mip 3D textureLoad view produced the wrong error: {validation_error:?}"
+    );
+    println!("PASS: Core rejected a multi-mip 3D textureLoad view before HAL execution");
+
     let targets: Vec<_> = (0..5)
         .map(|_| {
             device.create_texture(&TextureDescriptor {
@@ -28690,7 +28772,7 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
     assert!(!downlevel.limits.texture_3d_texture_copies);
     assert_eq!(
         downlevel.limits.texture_3d_usage_mask,
-        (TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST).bits()
+        (TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST).bits()
     );
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; 3D RGBA8 sampled/upload-only, max dimension=256",
@@ -28735,22 +28817,6 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
             usage: TextureUsages::TEXTURE_BINDING
                 | TextureUsages::COPY_DST
                 | TextureUsages::RENDER_ATTACHMENT,
-            view_formats: &[],
-        }));
-    });
-    expect_validation_error(&device, "unsupported FL9_1 3D copy source", || {
-        drop(device.create_texture(&TextureDescriptor {
-            label: Some("unsupported FL9_1 3D copy source"),
-            size: Extent3d {
-                width: 4,
-                height: 4,
-                depth_or_array_layers: 4,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D3,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::COPY_SRC,
             view_formats: &[],
         }));
     });
@@ -29449,6 +29515,309 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
     println!(
         "PASS: FL9_1 3D RGBA8 upload, nonzero-offset partial update, zero initialization, sparse sampled bindings and 128 readback pixels verified"
     );
+}
+
+#[test]
+fn public_dx11_texture_3d_cpu_shadow_readback_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().find(|adapter| {
+        let info = adapter.get_info();
+        info.backend == Backend::Dx11
+            && info.driver_info.contains("FL9_1")
+            && info.driver_info.contains("physical")
+    }) else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical FL9_1 D3D11 adapter for 3D CPU-shadow readback");
+        return;
+    };
+    let info = adapter.get_info();
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(downlevel.limits.texture_3d);
+    assert!(!downlevel.limits.texture_3d_texture_copies);
+    assert!(downlevel
+        .limits
+        .supports_texture_to_buffer_copy(TextureFormat::Rgba8Unorm));
+    assert!(downlevel
+        .limits
+        .supports_texture_3d_usage(TextureUsages::COPY_SRC));
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=ordered CPU-shadow 3D texture-to-buffer readback",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 3D shadow readback"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the public FL9_1 projection");
+
+    let volume = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 3D CPU-shadow volume"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let upload_offset = 16usize;
+    let upload_row_pitch = 256usize;
+    let upload_depth_pitch = upload_row_pitch * 4;
+    let upload_size = upload_offset + upload_depth_pitch + upload_row_pitch + 8;
+    let mut upload_data = vec![0xA5; upload_size];
+    for z in 0..2usize {
+        for y in 0..2usize {
+            for x in 0..2usize {
+                let pixel = [40 + z as u8 * 80, 20 + y as u8 * 90, 30 + x as u8 * 60, 255];
+                let offset = upload_offset + z * upload_depth_pitch + y * upload_row_pitch + x * 4;
+                upload_data[offset..offset + 4].copy_from_slice(&pixel);
+            }
+        }
+    }
+    let upload = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 3D shadow source buffer"),
+        size: upload_data.len() as u64,
+        usage: BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&upload, 0, &upload_data);
+
+    let readback_offset = 12usize;
+    let readback_size = 4096usize;
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 3D shadow readback buffer"),
+        size: readback_size as u64,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let initial_readback = vec![0x5A; readback_size];
+    queue.write_buffer(&readback, 0, &initial_readback);
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 3D upload then shadow readback"),
+    });
+    encoder.copy_buffer_to_texture(
+        TexelCopyBufferInfo {
+            buffer: &upload,
+            layout: TexelCopyBufferLayout {
+                offset: upload_offset as u64,
+                bytes_per_row: Some(upload_row_pitch as u32),
+                rows_per_image: Some(4),
+            },
+        },
+        TexelCopyTextureInfo {
+            texture: &volume,
+            mip_level: 0,
+            origin: Origin3d { x: 1, y: 1, z: 1 },
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+    );
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &volume,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: readback_offset as u64,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(4),
+            },
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for 3D upload and readback commands");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("3D shadow readback callback")
+        .expect("map 3D shadow readback");
+    let pixels = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped 3D shadow readback");
+    let mut checked = 0;
+    for z in 0..4usize {
+        for y in 0..4usize {
+            for x in 0..4usize {
+                let expected =
+                    if (1..=2).contains(&x) && (1..=2).contains(&y) && (1..=2).contains(&z) {
+                        [
+                            40 + (z - 1) as u8 * 80,
+                            20 + (y - 1) as u8 * 90,
+                            30 + (x - 1) as u8 * 60,
+                            255,
+                        ]
+                    } else {
+                        [0, 0, 0, 0]
+                    };
+                let offset = readback_offset + z * 1024 + y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    expected,
+                    "3D shadow readback voxel ({x}, {y}, {z})"
+                );
+                checked += 1;
+            }
+        }
+    }
+    assert_eq!(checked, 64);
+    for z in 0..4usize {
+        for y in 0..4usize {
+            if z == 3 && y == 3 {
+                continue;
+            }
+            let padding = readback_offset + z * 1024 + y * 256 + 16;
+            assert!(pixels[padding..readback_offset + z * 1024 + y * 256 + 256]
+                .iter()
+                .all(|byte| *byte == 0x5A));
+        }
+    }
+    drop(pixels);
+    readback.unmap();
+
+    let partial_offset = 20usize;
+    let partial_buffer_size = 1100usize;
+    let partial_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 partial 3D shadow readback buffer"),
+        size: partial_buffer_size as u64,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&partial_readback, 0, &vec![0x5A; partial_buffer_size]);
+    let mut partial_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 partial 3D shadow readback"),
+    });
+    partial_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &volume,
+            mip_level: 0,
+            origin: Origin3d { x: 1, y: 1, z: 1 },
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &partial_readback,
+            layout: TexelCopyBufferLayout {
+                offset: partial_offset as u64,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(3),
+            },
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+    );
+    let partial_submission = queue.submit([partial_encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    partial_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(partial_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for partial 3D shadow readback");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("partial 3D shadow readback callback")
+        .expect("map partial 3D shadow readback");
+    let partial_pixels = partial_readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped partial 3D shadow readback");
+    let mut expected_partial = vec![0x5A; partial_buffer_size];
+    for z in 0..2usize {
+        for y in 0..2usize {
+            for x in 0..2usize {
+                let pixel = [40 + z as u8 * 80, 20 + y as u8 * 90, 30 + x as u8 * 60, 255];
+                let offset = partial_offset + z * 768 + y * 256 + x * 4;
+                expected_partial[offset..offset + 4].copy_from_slice(&pixel);
+            }
+        }
+    }
+    assert_eq!(&partial_pixels[..], &expected_partial);
+    drop(partial_pixels);
+    partial_readback.unmap();
+    println!(
+        "PASS: partial 2x2x2 3D readback preserved the nonzero origin, offset and padded rows"
+    );
+
+    let destination = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 unsupported 3D texture copy destination"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    expect_validation_error(&device, "FL9_1 3D texture-to-texture copy", || {
+        let mut invalid_encoder =
+            device.create_command_encoder(&CommandEncoderDescriptor::default());
+        invalid_encoder.copy_texture_to_texture(
+            TexelCopyTextureInfo {
+                texture: &volume,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyTextureInfo {
+                texture: &destination,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 4,
+            },
+        );
+        drop(invalid_encoder.finish());
+    });
+    println!("PASS: ordered FL9_1 3D upload and full/partial CPU-shadow readback preserved all voxels, nonzero offsets and padded rows; native 3D texture copies remained rejected");
 }
 
 #[test]

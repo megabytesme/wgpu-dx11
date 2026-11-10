@@ -68,12 +68,14 @@ Bottom level categories:
 - Allow one selected-entry parameterless helper to return the restricted FL9_1 fragment 3D `textureDimensions` query in the opt-in D3D11 backend.
 - Emulate a selected-entry single-mip 3D float fragment `textureLoad` on query-supported FL9_1 volume textures in the opt-in D3D11 backend.
 - Raise the opt-in D3D11 FL9_1 dynamic uniform-buffer limit to twelve per pipeline layout, bounded by six bindings per shader stage.
+- Permit a directly interpolated fragment `vec2f` to provide coordinates for the restricted FL9_1 2D float `textureLoad` path.
 - Add query-gated FL9_1 cube-texture sampling for supported formats, with separate cube-size and format limits.
 - Add query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled uploads to the opt-in D3D11 backend.
 - Add selected-format-query-gated same-format GPU copies for RGB5A1 and RGBA4 textures in the opt-in FL9_1 D3D11 backend.
 - Add query-backed single-mip R8 and RG8 color attachments to the opt-in D3D11 backend.
 - Add query-gated single-mip RGB565 color attachments to the opt-in D3D11 backend.
 - Add selected-device-query-gated FL9_1 RGBA8 3D texture sampling and staged uploads to the opt-in D3D11 backend.
+- Add ordered CPU-shadow texture-to-buffer readback for query-supported, CPU-written FL9_1 D3D11 RGBA8 volumes.
 - Add query-gated R8, RG8 and RGB565 texture copies and CPU readback to the opt-in D3D11 backend.
 - Add query-gated BC1 GPU texture-to-texture copying to the opt-in D3D11 FL9_1 backend.
 - Add query-gated R8, RG8 and RGB565 attachment blending to the opt-in D3D11 backend.
@@ -86,6 +88,7 @@ Bottom level categories:
 - Support direct `vertex_index` and `instance_index` reads, including unchanged helper forwarding, from fixed-size `vec3` and `vec4` uniform arrays in the opt-in FL9_1 D3D11 backend.
 - Support constant-mip cube `textureDimensions` queries in the narrowly validated FL9_1 D3D11 fragment subset.
 - Support direct `vertex_index` reads from one initialized fixed-size local `array<vec2f, 3>` in the opt-in FL9_1 D3D11 backend.
+- Support direct fragment indexing of `array<vec4f, N>` uniform fields for `2 <= N <= 24` in the narrowly validated opt-in FL9_1 D3D11 subset.
 - Expose same-format RGBA8_SNORM GPU texture copies when the selected FL9_1 D3D11 device query supports them, without enabling CPU readback.
 
 ### Changes
@@ -166,7 +169,9 @@ Bottom level categories:
 
 #### Validation
 
+- Initialize each render pass's blend constant to transparent black, allowing constant-factor blending without an explicit setter.
 - Treat depth-image sampling as floating-point shader semantics when checking downlevel runtime integer operations.
+- Validate the currently bound view before restricted FL9_1 D3D11 fragment 2D or 3D `textureLoad` reaches the HAL.
 - Reject unsupported dynamic composite indexing in FL9_1 D3D11 shader entries before HAL pipeline compilation.
 - Reject unsupported combinations of index-buffer usages on downlevel adapters.
 - Reject non-finite viewport coordinates and dimensions.

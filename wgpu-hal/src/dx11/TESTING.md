@@ -3614,14 +3614,15 @@ unsupported shapes in core and HAL.
 
 ### Direct fragment uniform-array indexing
 
-Core and HAL permit a separate fragment-only subset: one direct lookup of a
-two-element `array<vec4f, 2>` using the scalar `u32` member of the same
-group-0 uniform structure. Its required layout is a 48-byte structure with
-the index at byte zero and the array at byte 16. The selected fragment entry
-must use that index only for the lookup; computed indices, helper calls,
-additional integer uses, and other array shapes remain rejected. FXC's
-`ps_4_0_level_9_1` proof shows a signed clamp lowered to four `ps_2_0`
-instruction slots.
+Core and HAL permit a separate fragment-only subset: one direct lookup of an
+`array<vec4f, N>` for `2 <= N <= 24`, using the scalar `u32` member of the
+same group-0 uniform structure. Its required layout is `16 + 16*N` bytes,
+with the index at byte zero and the array at byte 16. The selected fragment
+entry must use that index only for the lookup; computed indices, helper calls,
+additional integer uses, and other array shapes remain rejected. FXC accepts
+the generated level-9 shaders for lengths 2 and 24 (40 pixel instruction
+slots at length 24) and rejects length 25 with X5589 for constant register 32
+(the profile limit is 31).
 
 Run the CPU validation/compiler probes and the strict public GPU test from a
 Visual Studio x64 developer environment:
@@ -3633,14 +3634,11 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_fragment_uniform_array public_dx11_fragment_uniform_array_indexing_at_fl91 -- --nocapture --test-threads=1
 ```
 
-The public test renders with indices zero and one, checks all 64 pixels for
-each distinct RGBA8 result, and requires a physical adapter in strict mode. It
-also submits `u32::MAX`; the RTX test observed the index-zero color after the
-signed conversion/clamp and completed readback. That out-of-bounds value is
-not a WGSL guarantee and is only a bounds-safety implementation probe. The
-supported contract covers indices zero and one. This is a narrow
-compiler/backend subset, not general fragment runtime integer support or a
-historical-driver guarantee.
+The public test renders with indices zero, one and 23, checks all 64 pixels
+for each distinct RGBA8 result, and requires a physical adapter in strict
+mode. This verifies both the compact and measured upper array-length cases.
+This is a narrow compiler/backend subset, not general fragment runtime integer
+support or a historical-driver guarantee.
 
 The hidden input also consumes one of the sixteen physical D3D input slots.
 Core mirrors HAL's FL9_1 overlap-allocation rules and rejects an exhausted
@@ -3741,6 +3739,25 @@ requests. The public test on the physical RTX 3090 Ti at requested/actual
 FL9_1 checked four 8×8 outputs: 64 direct-helper in-bounds green pixels, 64 out-of-bounds zero pixels, 64 zero pixels for a nonzero mip request and 64 nested-helper in-bounds green pixels. The broader
 strict public suite also includes this test. This modern driver result does
 not establish behavior on historical FL9_1 hardware.
+
+A separate proven coordinate form permits a direct fragment entry-point
+`@location(0) vec2f` argument to be converted to `vec2i` and used as the
+coordinate of the single 2D `textureLoad`. It does not permit coordinate
+arithmetic, helper-based coordinate conversion or other runtime integer
+operations. The strict public test checks a 4×4 patterned source through an
+8×8 render target: all 16 in-bounds texels must match and the 48 out-of-bounds
+samples must be zero.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_texture_load_dynamic -- --nocapture --test-threads=1
+```
+
+Core validates the current view before this selected entry point reaches HAL.
+The restricted path requires a single-mip, single-sample `Rgba8Unorm` 2D
+view. The test verifies that R8 and multi-mip views report validation errors
+without an internal HAL error, while a sibling entry point that does not use
+`textureLoad` can draw with the same layout and R8 view.
 
 ### FL9_1 GLSL `outerProduct`
 
@@ -3998,6 +4015,10 @@ from the 2D limit and is projected only for positively queried, implemented
 RGBA8 volume sampling. General `texture_load` stays disabled; historical
 FL9_1 drivers are not represented by the RTX result.
 
+The same strict public test submits a draw with a two-mip 3D view and verifies
+Core reports `IncompatibleTextureLoadView` with no internal HAL error. The
+selected shader entry and currently bound view determine this check.
+
 ### Narrow FL9_1 fragment cube `textureDimensions`
 
 ```powershell
@@ -4147,3 +4168,47 @@ cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware '
 It ran on the same physical RTX 3090 Ti at requested/actual FL9_1 with zero
 skips and zero failures. This adds CTS coverage for an already tested render
 state and does not change capability reporting.
+
+### Strict dynamic blend-constant CTS selector
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,color_target_state:blend_constant,setting:*'
+```
+
+The selector passed on the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at requested/actual FL9_1. All three blend-constant cases
+executed, with zero skips and zero failures. The test verifies resulting
+pixels for constant blending and does not exercise differing alpha equations.
+
+The CTS initial-value and pass-isolation cases also passed after correcting
+Core's pass state to start at transparent black and resetting the D3D11 replay
+factor for every pass:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,color_target_state:blend_constant,initial:*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,color_target_state:blend_constant,not_inherited:*'
+```
+
+Both selectors passed 1/1 with zero skips on the physical RTX 3090 Ti at
+requested/actual FL9_1. The matching DX12 selectors also passed 1/1 each.
+`color_write_mask,blending_disabled:*` passed 2/2 on DX11. These runs exposed
+and corrected Core's former requirement that applications explicitly set a
+blend constant even though every render pass starts with `[0, 0, 0, 0]`.
+
+### Strict FL9_1 3D CPU-shadow readback
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_3d_cpu_shadow_readback_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+On the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at
+requested/actual FL9_1, the test ordered a padded, nonzero-offset partial
+buffer upload and full-volume readback in one submission. All 64 voxels
+matched the uploaded 2x2x2 pattern or initialized zero. A second copy read a
+2x2x2 region from a nonzero origin into a padded destination with a nonzero
+offset; all destination bytes, including padding, matched. Core continued to
+reject 3D texture-to-texture copy. This verifies an upload-backed CPU shadow,
+not native GPU 3D readback or readback of GPU-written 3D resources.

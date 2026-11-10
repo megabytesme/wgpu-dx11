@@ -20,8 +20,6 @@ use crate::{
 #[derive(Clone, Debug, Error)]
 #[non_exhaustive]
 pub enum DrawError {
-    #[error("Blend constant needs to be set")]
-    MissingBlendConstant,
     #[error("Render pipeline must be set")]
     MissingPipeline(#[from] pass::MissingPipeline),
     #[error("Currently set {pipeline} requires vertex buffer {index} to be set")]
@@ -96,6 +94,10 @@ pub enum DrawError {
     ViewportTransformUnavailable,
     #[error("Sampling binding metadata is missing for group {group} binding {binding}")]
     MissingSamplingBindingMetadata { group: u32, binding: u32 },
+    #[error("TextureLoad binding metadata is missing for group {group} binding {binding}")]
+    MissingTextureLoadBindingMetadata { group: u32, binding: u32 },
+    #[error("The restricted FL9_1 textureLoad path requires a single-mip, single-sample Rgba8Unorm view at group {group} binding {binding}")]
+    IncompatibleTextureLoadView { group: u32, binding: u32 },
 }
 
 impl WebGpuError for DrawError {

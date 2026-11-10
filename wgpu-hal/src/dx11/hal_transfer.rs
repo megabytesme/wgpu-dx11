@@ -2,7 +2,7 @@
 use super::{
     buffer::NativeBuffer,
     device::NativeDevice,
-    texture::{format_block_layout, NativeTexture, TextureBlockLayout},
+    texture::{format_block_layout, NativeTexture, Texture3DShadow, TextureBlockLayout},
 };
 use windows::{
     core::{Error, Interface, Result},
@@ -164,11 +164,26 @@ pub(super) struct BufferToTexture3D {
     source: ID3D11Buffer,
     staging: ID3D11Buffer,
     texture: ID3D11Texture3D,
+    shadow: Option<alloc::sync::Arc<Texture3DShadow>>,
     mip_level: u32,
     source_box: D3D11_BOX,
     destination_box: D3D11_BOX,
     row_pitch: u32,
     depth_pitch: u32,
+    source_size: usize,
+}
+
+#[derive(Debug)]
+pub(super) struct Texture3DToBuffer {
+    shadow: alloc::sync::Arc<Texture3DShadow>,
+    destination: ID3D11Buffer,
+    mip_level: u32,
+    source_origin: [u32; 3],
+    extent: [u32; 3],
+    destination_offset: u32,
+    row_pitch: u32,
+    depth_pitch: u32,
+    row_bytes: u32,
 }
 
 /// A checked operation retaining a texture, buffer and staging texture.
@@ -245,6 +260,7 @@ impl NativeDevice {
             source: native_source,
             staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
             texture: texture.raw.as_3d()?.clone(),
+            shadow: texture.cpu_shadow.clone(),
             mip_level: base.mip_level,
             source_box: D3D11_BOX {
                 left: offset,
@@ -264,6 +280,70 @@ impl NativeDevice {
             },
             row_pitch: pitch,
             depth_pitch,
+            source_size: total as usize,
+        })
+    }
+
+    pub(super) fn prepare_texture_3d_to_buffer(
+        &self,
+        texture: &NativeTexture,
+        destination: &NativeBuffer,
+        region: &crate::BufferTextureCopy,
+    ) -> Result<Texture3DToBuffer> {
+        let base = &region.texture_base;
+        let size = &region.size;
+        let layout = &region.buffer_layout;
+        let shadow = texture.cpu_shadow.clone().ok_or_else(invalid)?;
+        if texture.dimension != wgt::TextureDimension::D3
+            || texture.format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || !texture.usage.contains(wgt::TextureUses::COPY_SRC)
+            || base.array_layer != 0
+            || base.aspect != crate::FormatAspects::COLOR
+            || size.width == 0
+            || size.height == 0
+            || size.depth == 0
+        {
+            return Err(invalid());
+        }
+        let desc = self.texture_3d_desc(texture)?;
+        if base.mip_level >= desc.MipLevels {
+            return Err(invalid());
+        }
+        let mip_width = (desc.Width >> base.mip_level).max(1);
+        let mip_height = (desc.Height >> base.mip_level).max(1);
+        let mip_depth = (desc.Depth >> base.mip_level).max(1);
+        let right = base.origin.x.checked_add(size.width).ok_or_else(invalid)?;
+        let bottom = base.origin.y.checked_add(size.height).ok_or_else(invalid)?;
+        let back = base.origin.z.checked_add(size.depth).ok_or_else(invalid)?;
+        if right > mip_width || bottom > mip_height || back > mip_depth {
+            return Err(invalid());
+        }
+        let block = format_block_layout(texture.format)?;
+        if !block_aligned_box(base, size, block) {
+            return Err(invalid());
+        }
+        let (offset, row_pitch, row_bytes, slice_total) =
+            copy_layout(layout, size.width, size.height, block)?;
+        let rows = block.height_blocks(size.height);
+        let rows_per_image = layout.rows_per_image.unwrap_or(rows);
+        let depth_pitch = row_pitch.checked_mul(rows_per_image).ok_or_else(invalid)?;
+        let total = (size.depth - 1)
+            .checked_mul(depth_pitch)
+            .and_then(|offset| offset.checked_add(slice_total))
+            .ok_or_else(invalid)?;
+        offset.checked_add(total).ok_or_else(invalid)?;
+        let native_destination =
+            self.texture_copy_buffer_destination(destination, u64::from(offset), total as usize)?;
+        Ok(Texture3DToBuffer {
+            shadow,
+            destination: native_destination,
+            mip_level: base.mip_level,
+            source_origin: [base.origin.x, base.origin.y, base.origin.z],
+            extent: [size.width, size.height, size.depth],
+            destination_offset: offset,
+            row_pitch,
+            depth_pitch,
+            row_bytes,
         })
     }
 
@@ -513,6 +593,29 @@ impl BufferToTexture3D {
                 context.Unmap(&self.staging, 0);
                 return Err(Error::from_hresult(E_FAIL));
             }
+            if let Some(shadow) = &self.shadow {
+                let source =
+                    core::slice::from_raw_parts(mapped.pData.cast::<u8>(), self.source_size);
+                if let Err(error) = shadow.write_region(
+                    self.mip_level,
+                    [
+                        self.destination_box.left,
+                        self.destination_box.top,
+                        self.destination_box.front,
+                    ],
+                    [
+                        self.destination_box.right - self.destination_box.left,
+                        self.destination_box.bottom - self.destination_box.top,
+                        self.destination_box.back - self.destination_box.front,
+                    ],
+                    self.row_pitch,
+                    self.depth_pitch,
+                    source,
+                ) {
+                    context.Unmap(&self.staging, 0);
+                    return Err(error);
+                }
+            }
             context.UpdateSubresource(
                 &self.texture,
                 self.mip_level,
@@ -524,6 +627,47 @@ impl BufferToTexture3D {
             context.Unmap(&self.staging, 0);
             Ok(())
         }
+    }
+}
+
+impl Texture3DToBuffer {
+    pub(super) fn execute(&self, context: &ID3D11DeviceContext) -> Result<()> {
+        let bytes = self
+            .shadow
+            .read_region(self.mip_level, self.source_origin, self.extent)?;
+        let row_bytes = self.row_bytes as usize;
+        let mut source_offset = 0usize;
+        unsafe {
+            for z in 0..self.extent[2] {
+                for y in 0..self.extent[1] {
+                    let destination_offset = self
+                        .destination_offset
+                        .checked_add(z.checked_mul(self.depth_pitch).ok_or_else(invalid)?)
+                        .and_then(|offset| offset.checked_add(y.checked_mul(self.row_pitch)?))
+                        .ok_or_else(invalid)?;
+                    let area = D3D11_BOX {
+                        left: destination_offset,
+                        right: destination_offset
+                            .checked_add(self.row_bytes)
+                            .ok_or_else(invalid)?,
+                        top: 0,
+                        bottom: 1,
+                        front: 0,
+                        back: 1,
+                    };
+                    context.UpdateSubresource(
+                        &self.destination,
+                        0,
+                        Some(&area),
+                        bytes.as_ptr().add(source_offset).cast(),
+                        0,
+                        0,
+                    );
+                    source_offset += row_bytes;
+                }
+            }
+        }
+        Ok(())
     }
 }
 

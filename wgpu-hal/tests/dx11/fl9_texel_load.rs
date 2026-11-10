@@ -135,6 +135,8 @@ fn naga_fl9_texel_proof_rejects_unsupported_resources_and_control_flow() {
     assert!(lower_source(unsigned_math).is_err());
     let position = "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs(@builtin(position) p: vec4f) -> @location(0) vec4f { return textureLoad(image, vec2i(p.xy), 0); }";
     assert!(lower_source(position).is_err());
+    let dynamic_varying = "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs(@location(0) coord: vec2f) -> @location(0) vec4f { return textureLoad(image, vec2i(coord), 0); }";
+    assert!(lower_source(dynamic_varying).is_ok());
     let varying = "@group(0) @binding(0) var image: texture_2d<f32>; @fragment fn fs(@location(1) p: vec2f) -> @location(0) vec4f { return textureLoad(image, vec2i(p), 0); }";
     assert!(lower_source(varying).is_err());
 }

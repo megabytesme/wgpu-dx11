@@ -573,6 +573,44 @@ impl Binder {
         Ok(())
     }
 
+    pub(super) fn check_fl9_texture_load_views(
+        &self,
+        pipeline: &RenderPipeline,
+    ) -> Result<(), DrawError> {
+        let Some(binding) = pipeline.fl9_texture_load_binding else {
+            return Ok(());
+        };
+
+        let group = self
+            .list_valid()
+            .find_map(|(index, group, _)| (index == binding.group as usize).then_some(group))
+            .ok_or(DrawError::MissingTextureLoadBindingMetadata {
+                group: binding.group,
+                binding: binding.binding,
+            })?;
+        let compatibility = group
+            .fl9_texture_load_compatible
+            .get(&binding.binding)
+            .ok_or(DrawError::MissingTextureLoadBindingMetadata {
+                group: binding.group,
+                binding: binding.binding,
+            })?;
+
+        let view_is_compatible = match binding.dimension {
+            naga::ImageDimension::D2 => compatibility.len() == 1 && compatibility[0].d2,
+            naga::ImageDimension::D3 => compatibility.len() == 1 && compatibility[0].d3,
+            _ => false,
+        };
+        if view_is_compatible {
+            Ok(())
+        } else {
+            Err(DrawError::IncompatibleTextureLoadView {
+                group: binding.group,
+                binding: binding.binding,
+            })
+        }
+    }
+
     pub(super) fn check_texture_sample_bias_samplers(
         &self,
         pipeline: &RenderPipeline,

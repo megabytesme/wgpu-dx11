@@ -1,10 +1,11 @@
 //! Restricted native D3D11 texture creation, views, sampling and transfers.
 use super::device::{FeatureLevel, NativeDevice};
 use alloc::{sync::Arc, vec, vec::Vec};
+use parking_lot::Mutex;
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
-        Foundation::{E_FAIL, E_INVALIDARG},
+        Foundation::{E_FAIL, E_INVALIDARG, E_OUTOFMEMORY},
         Graphics::{
             Direct3D::{
                 D3D11_SRV_DIMENSION_TEXTURE2D, D3D11_SRV_DIMENSION_TEXTURE3D,
@@ -100,6 +101,177 @@ pub struct NativeTexture {
     pub(super) logical_format: Option<wgt::TextureFormat>,
     sample_count: u32,
     pub(super) usage: wgt::TextureUses,
+    pub(super) cpu_shadow: Option<Arc<Texture3DShadow>>,
+}
+
+#[derive(Debug)]
+pub(super) struct Texture3DShadow {
+    mips: Mutex<Vec<Texture3DShadowMip>>,
+}
+
+#[derive(Debug)]
+struct Texture3DShadowMip {
+    width: u32,
+    height: u32,
+    depth: u32,
+    bytes: Vec<u8>,
+}
+
+impl Texture3DShadow {
+    pub(super) fn from_mips(
+        width: u32,
+        height: u32,
+        depth: u32,
+        mip_bytes: Vec<Vec<u8>>,
+    ) -> Result<Arc<Self>> {
+        let max_dimension = width.max(height).max(depth);
+        if width == 0
+            || height == 0
+            || depth == 0
+            || mip_bytes.is_empty()
+            || mip_bytes.len() > max_dimension.ilog2() as usize + 1
+        {
+            return Err(invalid());
+        }
+        let mut mips = Vec::new();
+        mips.try_reserve_exact(mip_bytes.len())
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        for (mip, bytes) in mip_bytes.into_iter().enumerate() {
+            let mip = mip as u32;
+            let width = (width >> mip).max(1);
+            let height = (height >> mip).max(1);
+            let depth = (depth >> mip).max(1);
+            if bytes.len() != volume_byte_count(width, height, depth)? {
+                return Err(invalid());
+            }
+            mips.push(Texture3DShadowMip {
+                width,
+                height,
+                depth,
+                bytes,
+            });
+        }
+        Ok(Arc::new(Self {
+            mips: Mutex::new(mips),
+        }))
+    }
+
+    pub(super) fn write_mip(&self, mip: u32, bytes: &[u8]) -> Result<()> {
+        let mut mips = self.mips.lock();
+        let target = mips.get_mut(mip as usize).ok_or_else(invalid)?;
+        if bytes.len() != target.bytes.len() {
+            return Err(invalid());
+        }
+        target.bytes.copy_from_slice(bytes);
+        Ok(())
+    }
+
+    pub(super) fn write_region(
+        &self,
+        mip: u32,
+        origin: [u32; 3],
+        extent: [u32; 3],
+        row_pitch: u32,
+        depth_pitch: u32,
+        source: &[u8],
+    ) -> Result<()> {
+        let mut mips = self.mips.lock();
+        let target = mips.get_mut(mip as usize).ok_or_else(invalid)?;
+        let right = origin[0].checked_add(extent[0]).ok_or_else(invalid)?;
+        let bottom = origin[1].checked_add(extent[1]).ok_or_else(invalid)?;
+        let back = origin[2].checked_add(extent[2]).ok_or_else(invalid)?;
+        if extent.contains(&0)
+            || right > target.width
+            || bottom > target.height
+            || back > target.depth
+        {
+            return Err(invalid());
+        }
+        let row_bytes = extent[0].checked_mul(4).ok_or_else(invalid)?;
+        let minimum_depth_pitch = row_pitch.checked_mul(extent[1]).ok_or_else(invalid)?;
+        if row_pitch < row_bytes || depth_pitch < minimum_depth_pitch {
+            return Err(invalid());
+        }
+        let source_size = (extent[2] - 1)
+            .checked_mul(depth_pitch)
+            .and_then(|offset| offset.checked_add((extent[1] - 1).checked_mul(row_pitch)?))
+            .and_then(|offset| offset.checked_add(row_bytes))
+            .ok_or_else(invalid)? as usize;
+        if source.len() < source_size {
+            return Err(invalid());
+        }
+        let target_row_pitch = target.width.checked_mul(4).ok_or_else(invalid)? as usize;
+        let target_depth_pitch = target_row_pitch
+            .checked_mul(target.height as usize)
+            .ok_or_else(invalid)?;
+        let source_row_pitch = row_pitch as usize;
+        let source_depth_pitch = depth_pitch as usize;
+        let row_bytes = row_bytes as usize;
+        for z in 0..extent[2] as usize {
+            for y in 0..extent[1] as usize {
+                let source_start = z * source_depth_pitch + y * source_row_pitch;
+                let target_start = (origin[2] as usize + z) * target_depth_pitch
+                    + (origin[1] as usize + y) * target_row_pitch
+                    + origin[0] as usize * 4;
+                target.bytes[target_start..target_start + row_bytes]
+                    .copy_from_slice(&source[source_start..source_start + row_bytes]);
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn read_region(
+        &self,
+        mip: u32,
+        origin: [u32; 3],
+        extent: [u32; 3],
+    ) -> Result<Vec<u8>> {
+        let mips = self.mips.lock();
+        let source = mips.get(mip as usize).ok_or_else(invalid)?;
+        let right = origin[0].checked_add(extent[0]).ok_or_else(invalid)?;
+        let bottom = origin[1].checked_add(extent[1]).ok_or_else(invalid)?;
+        let back = origin[2].checked_add(extent[2]).ok_or_else(invalid)?;
+        if extent.contains(&0)
+            || right > source.width
+            || bottom > source.height
+            || back > source.depth
+        {
+            return Err(invalid());
+        }
+        let row_bytes = extent[0].checked_mul(4).ok_or_else(invalid)? as usize;
+        let row_pitch = (source.width.checked_mul(4).ok_or_else(invalid)?) as usize;
+        let depth_pitch = row_pitch
+            .checked_mul(source.height as usize)
+            .ok_or_else(invalid)?;
+        let output_size = row_bytes
+            .checked_mul(extent[1] as usize)
+            .and_then(|size| size.checked_mul(extent[2] as usize))
+            .ok_or_else(invalid)?;
+        let mut output = Vec::new();
+        output
+            .try_reserve_exact(output_size)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        output.resize(output_size, 0);
+        for z in 0..extent[2] as usize {
+            for y in 0..extent[1] as usize {
+                let source_start = (origin[2] as usize + z) * depth_pitch
+                    + (origin[1] as usize + y) * row_pitch
+                    + origin[0] as usize * 4;
+                let target_start = (z * extent[1] as usize + y) * row_bytes;
+                output[target_start..target_start + row_bytes]
+                    .copy_from_slice(&source.bytes[source_start..source_start + row_bytes]);
+            }
+        }
+        Ok(output)
+    }
+}
+
+fn volume_byte_count(width: u32, height: u32, depth: u32) -> Result<usize> {
+    (width as usize)
+        .checked_mul(height as usize)
+        .and_then(|size| size.checked_mul(depth as usize))
+        .and_then(|size| size.checked_mul(4))
+        .ok_or_else(invalid)
 }
 
 impl NativeTexture {
@@ -136,6 +308,7 @@ impl NativeTexture {
             logical_format: None,
             sample_count: 1,
             usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::PRESENT,
+            cpu_shadow: None,
         })
     }
 
@@ -417,6 +590,7 @@ impl NativeDevice {
             logical_format: None,
             sample_count: 1,
             usage: wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE,
+            cpu_shadow: None,
         })
     }
 
@@ -530,6 +704,7 @@ impl NativeDevice {
             logical_format: Some(logical_format),
             sample_count,
             usage: wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE,
+            cpu_shadow: None,
         })
     }
 
@@ -1191,6 +1366,7 @@ impl NativeDevice {
                         wgt::TextureUses::empty()
                     }
             },
+            cpu_shadow: None,
         })
     }
 
@@ -1443,9 +1619,9 @@ impl NativeDevice {
                     };
                     let copy_count = mip_count.checked_mul(layers).ok_or_else(invalid)?;
                     let mut copies = Vec::new();
-                    copies.try_reserve_exact(copy_count as usize).map_err(|_| {
-                        Error::from_hresult(windows::Win32::Foundation::E_OUTOFMEMORY)
-                    })?;
+                    copies
+                        .try_reserve_exact(copy_count as usize)
+                        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
                     for layer in 0..layers {
                         for mip in 0..mip_count {
                             copies.push(SampledRefreshCopy {
@@ -1728,6 +1904,9 @@ impl NativeDevice {
                 row_pitch,
                 depth_pitch,
             );
+        }
+        if let Some(shadow) = &texture.cpu_shadow {
+            shadow.write_mip(mip, bytes)?;
         }
         Ok(())
     }
@@ -2060,6 +2239,49 @@ mod tests {
         let other = adapter.open_device(&[FeatureLevel::L9_1])?;
         assert!(other.clear_rgba_render_target(&target, [0.0; 4]).is_err());
         assert!(device.create_rgba_render_target(0, 4).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn texture_3d_shadow_preserves_partial_padded_updates() -> Result<()> {
+        let shadow = Texture3DShadow::from_mips(4, 4, 4, alloc::vec![alloc::vec![0; 256]])?;
+        let row_pitch = 16usize;
+        let depth_pitch = 32usize;
+        let mut source = alloc::vec![0xA5; depth_pitch + row_pitch + 8];
+        for z in 0..2usize {
+            for y in 0..2usize {
+                for x in 0..2usize {
+                    let pixel = [40 + z as u8 * 80, 20 + y as u8 * 90, 30 + x as u8 * 60, 255];
+                    let offset = z * depth_pitch + y * row_pitch + x * 4;
+                    source[offset..offset + 4].copy_from_slice(&pixel);
+                }
+            }
+        }
+        shadow.write_region(0, [1, 1, 1], [2, 2, 2], 16, 32, &source)?;
+        let result = shadow.read_region(0, [0, 0, 0], [4, 4, 4])?;
+        for z in 0..4usize {
+            for y in 0..4usize {
+                for x in 0..4usize {
+                    let expected =
+                        if (1..=2).contains(&x) && (1..=2).contains(&y) && (1..=2).contains(&z) {
+                            [
+                                40 + (z - 1) as u8 * 80,
+                                20 + (y - 1) as u8 * 90,
+                                30 + (x - 1) as u8 * 60,
+                                255,
+                            ]
+                        } else {
+                            [0; 4]
+                        };
+                    let offset = ((z * 4 + y) * 4 + x) * 4;
+                    assert_eq!(&result[offset..offset + 4], expected);
+                }
+            }
+        }
+        assert!(shadow
+            .write_region(0, [3, 0, 0], [2, 1, 1], 8, 8, &[0; 8])
+            .is_err());
+        assert!(shadow.read_region(0, [0, 0, 3], [1, 1, 2]).is_err());
         Ok(())
     }
 }

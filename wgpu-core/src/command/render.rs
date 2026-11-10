@@ -404,21 +404,6 @@ impl fmt::Debug for RenderPass {
     }
 }
 
-#[derive(Debug, PartialEq)]
-enum OptionalState {
-    Unused,
-    Required,
-    Set,
-}
-
-impl OptionalState {
-    fn require(&mut self, require: bool) {
-        if require && *self == Self::Unused {
-            *self = Self::Required;
-        }
-    }
-}
-
 #[derive(Debug, Default)]
 struct IndexState {
     buffer_format: Option<IndexFormat>,
@@ -672,7 +657,6 @@ impl VertexState {
 
 struct State<'scope, 'snatch_guard, 'cmd_enc> {
     pipeline_flags: PipelineFlags,
-    blend_constant: OptionalState,
     stencil_reference: u32,
     pipeline: Option<Arc<RenderPipeline>>,
     viewport_requires_transform: bool,
@@ -698,6 +682,9 @@ impl<'scope, 'snatch_guard, 'cmd_enc> State<'scope, 'snatch_guard, 'cmd_enc> {
                 return Err(DrawError::ViewportTransformUnavailable);
             }
             self.pass.binder.check_compatibility(pipeline.as_ref())?;
+            self.pass
+                .binder
+                .check_fl9_texture_load_views(pipeline.as_ref())?;
             self.pass.binder.check_npot_sampling(pipeline.as_ref())?;
             self.pass
                 .binder
@@ -706,10 +693,6 @@ impl<'scope, 'snatch_guard, 'cmd_enc> State<'scope, 'snatch_guard, 'cmd_enc> {
                 .binder
                 .check_texture_sample_bias_samplers(pipeline.as_ref())?;
             self.pass.binder.check_late_buffer_bindings()?;
-
-            if self.blend_constant == OptionalState::Required {
-                return Err(DrawError::MissingBlendConstant);
-            }
 
             self.vertex.validate(pipeline.as_ref(), &self.pass.binder)?;
 
@@ -2363,7 +2346,6 @@ pub(super) fn encode_render_pass(
 
         let mut state = State {
             pipeline_flags: PipelineFlags::empty(),
-            blend_constant: OptionalState::Unused,
             stencil_reference: 0,
             pipeline: None,
             viewport_requires_transform: false,
@@ -2403,6 +2385,10 @@ pub(super) fn encode_render_pass(
             active_occlusion_query: None,
             active_pipeline_statistics_query: None,
         };
+
+        unsafe {
+            state.pass.base.raw_encoder.set_blend_constants(&[0.0; 4]);
+        }
 
         for command in base.commands.drain(..) {
             match command {
@@ -2813,10 +2799,6 @@ fn set_pipeline(
         return Err(RenderCommandError::IncompatibleStencilAccess(pipeline.error_ident()).into());
     }
 
-    state
-        .blend_constant
-        .require(pipeline.flags.contains(PipelineFlags::BLEND_CONSTANT));
-
     unsafe {
         state
             .pass
@@ -2991,7 +2973,6 @@ fn set_vertex_buffer(
 fn set_blend_constant(state: &mut State, color: &Color) {
     api_log!("RenderPass::set_blend_constant");
 
-    state.blend_constant = OptionalState::Set;
     let array = [
         color.r as f32,
         color.g as f32,

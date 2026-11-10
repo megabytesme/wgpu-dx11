@@ -48,7 +48,7 @@ fn public_dx11_fragment_uniform_array_indexing_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=fragment uniform array indices 0, 1 and u32::MAX",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=fragment uniform array indices 0, 1 and 23",
         info.name, info.vendor, info.device, info.driver_info
     );
     let limits = adapter.limits();
@@ -74,7 +74,7 @@ fn public_dx11_fragment_uniform_array_indexing_at_fl91() {
             ty: BindingType::Buffer {
                 ty: BufferBindingType::Uniform,
                 has_dynamic_offset: false,
-                min_binding_size: NonZeroU64::new(48),
+                min_binding_size: NonZeroU64::new(400),
             },
             count: None,
         }],
@@ -90,7 +90,7 @@ fn public_dx11_fragment_uniform_array_indexing_at_fl91() {
             r#"
 struct Params {
     index: u32,
-    values: array<vec4f, 2>,
+    values: array<vec4f, 24>,
 }
 @group(0) @binding(0) var<uniform> params: Params;
 
@@ -181,7 +181,7 @@ fn fs() -> @location(0) vec4f {
 
     let uniform_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 fragment uniform array values"),
-        size: 48,
+        size: 400,
         usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
         mapped_at_creation: false,
     });
@@ -196,12 +196,18 @@ fn fs() -> @location(0) vec4f {
 
     for (index, expected_pixel) in [
         (0u32, [255, 0, 0, 255]),
-        (1u32, [0, 255, 0, 255]),
-        (u32::MAX, [255, 0, 0, 255]),
+        (1u32, [0, 0, 255, 255]),
+        (23u32, [0, 255, 0, 255]),
     ] {
-        let mut uniform = [0u8; 48];
+        let mut uniform = vec![0u8; 400];
         uniform[0..4].copy_from_slice(&index.to_ne_bytes());
-        for (offset, value) in [(16, [1.0f32, 0.0, 0.0, 1.0]), (32, [0.0f32, 1.0, 0.0, 1.0])] {
+        for array_index in 0..24 {
+            let value = match array_index {
+                0 => [1.0f32, 0.0, 0.0, 1.0],
+                23 => [0.0f32, 1.0, 0.0, 1.0],
+                _ => [0.0f32, 0.0, 1.0, 1.0],
+            };
+            let offset = 16 + array_index * 16;
             for (component, bytes) in value.into_iter().flat_map(f32::to_ne_bytes).enumerate() {
                 uniform[offset + component] = bytes;
             }

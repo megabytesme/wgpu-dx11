@@ -238,8 +238,9 @@ impl crate::Device for Device {
             if !format_supported
                 || desc.format != wgt::TextureFormat::Rgba8Unorm
                 || desc.usage.is_empty()
-                || !wgt::TextureUses::COPY_DST
-                    .union(wgt::TextureUses::RESOURCE)
+                || !(wgt::TextureUses::COPY_DST
+                    | wgt::TextureUses::COPY_SRC
+                    | wgt::TextureUses::RESOURCE)
                     .contains(desc.usage)
                 || (desc.mip_level_count > 1 && !capabilities.texture_3d_mipmaps())
                 || desc.sample_count != 1
@@ -266,6 +267,14 @@ impl crate::Device for Device {
                 )
                 .map_err(device_error)?;
             texture.logical_format = Some(desc.format);
+            let mut shadow_mips = if desc.usage.contains(wgt::TextureUses::COPY_SRC) {
+                let mut mips = Vec::new();
+                mips.try_reserve_exact(desc.mip_level_count as usize)
+                    .map_err(|_| DeviceError::OutOfMemory)?;
+                Some(mips)
+            } else {
+                None
+            };
             for mip in 0..desc.mip_level_count {
                 let width = (desc.size.width >> mip).max(1);
                 let height = (desc.size.height >> mip).max(1);
@@ -283,6 +292,20 @@ impl crate::Device for Device {
                 self.native
                     .write_texture_volume_bytes(&texture, mip, &zeroes)
                     .map_err(device_error)?;
+                if let Some(mips) = &mut shadow_mips {
+                    mips.push(zeroes);
+                }
+            }
+            if let Some(mips) = shadow_mips {
+                texture.cpu_shadow = Some(
+                    super::texture::Texture3DShadow::from_mips(
+                        desc.size.width,
+                        desc.size.height,
+                        desc.size.depth_or_array_layers,
+                        mips,
+                    )
+                    .map_err(device_error)?,
+                );
             }
             texture.set_usage(desc.usage);
             return Ok(texture);

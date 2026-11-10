@@ -1712,6 +1712,8 @@ impl State {
     fn is_ready(&mut self, family: DrawCommandFamily) -> Result<(), DrawError> {
         if let Some(pipeline) = self.pipeline.as_ref() {
             self.binder.check_compatibility(pipeline.as_ref())?;
+            self.binder
+                .check_fl9_texture_load_views(pipeline.as_ref())?;
             self.binder.check_npot_sampling(pipeline.as_ref())?;
             self.binder.check_sampler_mip_ranges(pipeline.as_ref())?;
             self.binder

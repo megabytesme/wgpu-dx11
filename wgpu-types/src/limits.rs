@@ -1215,7 +1215,7 @@ pub struct DownlevelLimits {
     /// default so other backends retain their existing shader-validation behavior.
     #[cfg_attr(feature = "serde", serde(default))]
     pub vertex_uniform_array_indexing: bool,
-    /// Whether fragment entry points may directly index one fixed `array<vec4<f32>, 2>`
+    /// Whether fragment entry points may directly index one fixed `array<vec4<f32>, 2..=24>`
     /// uniform field with a scalar `u32` field from the same group-0 uniform binding.
     ///
     /// This does not permit helper forwarding, other array lengths, computed indices, or any

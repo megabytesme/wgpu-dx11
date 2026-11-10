@@ -161,8 +161,16 @@ single-mip, single-sample volumes up to 256³ with texture-binding and upload
 usages. Forced-FL9_1 public readback on the RTX 3090 Ti verified four distinct
 slices, a nonzero-offset partial voxel update and zero initialization for
 untouched voxels across 128 pixels. Buffer-to-volume upload currently stages
-through a mapped buffer and `UpdateSubresource`; 3D texture copies, render
-attachments, storage and readback remain unavailable.
+through a mapped buffer and `UpdateSubresource`. `COPY_SRC` uses an
+execution-ordered CPU shadow because 10Level9 does not provide a safe native
+3D texture-to-buffer copy path; buffer-to-volume uploads update both the GPU
+resource and shadow from the staged source. Strict public FL9_1 readback
+verified all 64 voxels after a partial padded upload and a separate partial
+region readback, preserving nonzero source/destination offsets and every byte
+of destination row padding. This path adds a full volume CPU allocation and a
+temporary region copy, and is valid only because
+3D render/storage writes and texture-to-texture copies remain unavailable.
+Render attachments and storage remain unavailable.
 The private HAL transfer regression additionally uploads a padded, nonzero-
 offset 2×2×2 region at volume origin (1,1,1), samples every slice and verifies
 all 64 target pixels, including 56 initialized untouched voxels. It passed on
@@ -545,10 +553,12 @@ error if a future adapter reports the current private shader subset.
 The selected-entry shader audit also covers `textureLoad`. General
 `DownlevelLimits::texture_load` remains false, but the D3D11 public projection
 sets `texture_load_2d_float_fragment` when the private FL9_1 emulation path is
-available. Core accepts one fragment load identity from a single-mip 2D float image. The selected entry point and reachable straight-line helper functions may directly use that global; resource handles passed as parameters or results, control flow, other reachable resources or image operations, additional image identities and vertex-stage use are rejected before HAL. Unreachable helpers and helpers belonging only to sibling entry points are excluded. The
-private path reserves t0, s15 and b13; strict public rendering verifies
-in-bounds, out-of-bounds and nonzero-mip behavior. Safe sibling entry points
-remain usable when they satisfy the ordinary shader restrictions.
+available. Core accepts one fragment load identity from a single-mip 2D float image. The selected entry point and reachable straight-line helper functions may directly use that global; resource handles passed as parameters or results, control flow, other reachable resources or image operations, additional image identities and vertex-stage use are rejected before HAL. Unreachable helpers and helpers belonging only to sibling entry points are excluded. For a direct entry-point load only, Core and HAL also accept a direct `@location(0) vec2f` argument converted to `vec2i`; coordinate arithmetic and other runtime integer operations remain rejected.
+The private path reserves t0, s15 and b13; strict public rendering verifies
+in-bounds, out-of-bounds and nonzero-mip behavior for constant coordinates,
+and distinct texels plus out-of-bounds zeros for interpolated coordinates.
+Safe sibling entry points remain usable when they satisfy the ordinary shader
+restrictions.
 
 Core now also applies the FL9_x conditional-NPOT addressing rule to the actual
 texture/sampler pairs used by the selected render-pipeline entry points. Naga's
@@ -935,13 +945,16 @@ all out-of-target rectangles. Other backends keep the default true capability.
   map and can stall; odd-sized GPU copies remain unverified on historical
   drivers. Runtime integer expressions and integer-containing uniforms or
   interfaces are conservatively rejected for selected FL9 entries in both
-  checked and unchecked modes. Earlier RTX integer-shader results are
-  superseded by explicit rejection tests with float-only GPU controls.
+  checked and unchecked modes, except the separately proved vertex built-ins
+  and narrow direct fragment uniform-array indexing documented below. Earlier
+  RTX integer-shader results are superseded by explicit rejection tests with
+  float-only GPU controls.
 - The forced-FL9_1 private shader path executes static WGSL reads of vertex
   constant c254 and pixel constant c31. Changing the vertex value moves the
   triangle and changing the pixel value changes its color; readback distinguishes
-  17 baseline green pixels and 4 shifted red pixels. Runtime integer-indexed
-  uniform arrays remain rejected.
+  17 baseline green pixels and 4 shifted red pixels. General runtime
+  integer-indexed uniform arrays remain rejected outside the narrowly proved
+  vertex and fragment subsets described below.
 - Triangle-list and nonindexed triangle-strip passes with up to sixteen sparse
   vertex- or instance-rate streams, winding and face
   culling, bounds-checked scissors, per-channel color write masks, translated
@@ -1268,23 +1281,20 @@ space and is not a supported workaround.
 
 ## Direct fragment uniform-array indexing
 
-Core and HAL permit one direct fragment-stage read from `array<vec4f, 2>` in
-the same group-0 uniform structure as its scalar `u32` index. The structure
-must be 48 bytes, with the index at offset zero and the array at offset 16.
-The selected entry must use the index only for this access; helper calls,
-computed indices, other integer uses or accesses, and different array shapes
-remain rejected. The selected FL9_1 projection reports the dedicated
-`DownlevelLimits::fragment_uniform_array_indexing` gate rather than reusing a
-vertex-only capability. The Naga HLSL compiler probe passed FXC for
-`ps_4_0_level_9_1`; Level9 disassembly showed a four-slot `ps_2_0` sequence
-for the signed clamp and two-element selection. The strict public RTX 3090 Ti
-test at requested/actual FL9_1 rendered both in-range indices and verified the
-complete 64-pixel target was red for index zero and green for index one. An
-additional `u32::MAX` out-of-bounds probe completed without an invalid access
-and observed the index-zero color after signed conversion/clamping; WGSL does
-not guarantee the value of an out-of-bounds uniform-array read, so this is not
-part of the supported contract. This does not enable general fragment integer
-operations or establish historical-driver behavior.
+Core and HAL permit one direct fragment-stage read from `array<vec4f, N>` for
+`2 <= N <= 24`, in the same group-0 uniform structure as its scalar `u32`
+index. The structure span is `16 + 16*N`, with the index at offset zero and
+the array at offset 16. The selected entry must use the index only for this
+access; helper calls, computed indices, other integer uses or accesses, and
+different array shapes remain rejected. The selected FL9_1 projection reports
+the dedicated `DownlevelLimits::fragment_uniform_array_indexing` gate rather
+than reusing a vertex-only capability. Naga-generated HLSL compiles under FXC
+for lengths 2 and 24; FXC rejects length 25 with X5589 at constant register
+32 (maximum 31). The 24-element Level9 shader uses 40 pixel-shader instruction
+slots. The strict public RTX 3090 Ti test at
+requested/actual FL9_1 rendered indices zero, one and 23 and verified all 64
+pixels per value. This does not enable general fragment integer operations or
+establish historical-driver behavior.
 
 ## Hidden `vertex_index` input-slot validation
 
@@ -1490,7 +1500,10 @@ checks two in-bounds colors, zero for an out-of-bounds coordinate and a
 nonzero mip, plus a nested helper result, across 320 pixels. FXC accepts the
 generated direct and helper shaders under `ps_4_0_level_9_1`. This does not
 enable general `texture_load` or 3D copies, attachments or readback; device
-support remains gated by the selected RGBA8 volume-sampling query.
+support remains gated by the selected RGBA8 volume-sampling query. Core also
+validates the selected entry point's currently bound 3D view before HAL draw
+execution; a strict test rejects a multi-mip view as Validation rather than
+allowing a late HAL error.
 
 ## Native timestamp diagnostics; public feature deferred
 
