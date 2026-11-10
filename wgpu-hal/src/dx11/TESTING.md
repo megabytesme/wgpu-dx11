@@ -4251,3 +4251,41 @@ matched the uploaded 2x2x2 pattern or initialized zero. A second copy read a
 offset; all destination bytes, including padding, matched. Core continued to
 reject 3D texture-to-texture copy. This verifies an upload-backed CPU shadow,
 not native GPU 3D readback or readback of GPU-written 3D resources.
+
+### Public D24S8 depth-fail stencil remapping at FL9_1
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_depth_never_remaps_stencil_depth_fail_replace_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+The test creates D24S8 as render-attachment-only, clears stencil to 1, and
+executes depth `Never` with stencil `depthFailOp=Replace` and reference 3.
+An Equal/reference-3 draw colors the left half green; a follow-up
+Equal/reference-1 draw leaves the right half black. All 64 pixels matched on
+the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested
+and actual FL9_1. The strict full public target then passed 125/125 with zero
+skips, including default adapter-enumeration isolation.
+
+The analogous CTS selector
+`webgpu:api,operation,rendering,stencil:stencil_depthFailOp_operation:format="depth24plus-stencil8";depthFailOp="replace";initialStencil=1`
+ran one case but failed before it could validate the stencil operation:
+the CTS helper requests D24S8 `COPY_DST`, which this backend deliberately
+does not support. This is a fixture/resource-usage blocker, not a hardware
+pass or evidence that the depth-fail remap is incorrect. The public test above
+exercises the supported render-attachment path directly.
+
+### sRGB blend CTS observation at FL9_1
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware --print-output-when always 'webgpu:api,operation,rendering,color_target_state:blending,formats:format="rgba8unorm-srgb"'
+```
+
+The single selected case passed with zero skips on the same forced-FL9_1 RTX
+3090 Ti. The CTS comparator passed; this run did not capture raw readback
+bytes. Microsoft's D3D11 blend-state documentation warns that feature levels
+9_1–9_3 blend sRGB render targets in sRGB space, while WebGPU expects linear
+blend semantics. Treat this result as evidence for this modern NVIDIA driver
+only, not as proof for historical FL9_x hardware or a reason to broaden the
+public capability projection.

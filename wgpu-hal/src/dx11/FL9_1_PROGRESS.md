@@ -15767,3 +15767,31 @@ test code; no new warning referred to the matrix proof or public test.
 Workspace `cargo fmt --all -- --check` and `git diff --check` passed. The first
 focused Core link attempt lacked `link.exe`; rerunning under the VS Developer
 Command Prompt passed. No Naga writer change or capability flag was added.
+
+## Public D24S8 depth-fail stencil remap and sRGB blend coverage — 2026-11-10
+
+The strict D24S8 CTS selector for `depthFailOp="replace"` ran one case but
+could not validate the operation: its helper creates a D24S8 texture with
+`COPY_DST`, which Core rejects under the current FL9_1 format/usage contract.
+The selector therefore records a prerequisite mismatch, not an operation
+regression. A focused public test now uses the supported render-attachment-
+only path: clear stencil to 1, run depth `Never` with stencil
+`depthFailOp=Replace` and reference 3, then draw with Equal/reference 3 on
+the left and Equal/reference 1 on the right. It passed on the physical RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), with requested/actual
+FL9_1; all 64 pixels were green on the left and black on the right. The full
+strict `dx11_public` target passed 125/125 with zero skips, including the
+default-enumeration isolation test.
+
+The targeted RGBA8 sRGB blend CTS selector passed 1/1 with zero skips on the
+same device and forced feature level. This log establishes the CTS comparator
+passed, not raw pixel bytes. Microsoft's D3D11 blend-state documentation
+describes sRGB-space blending at feature levels through 9_3, which may differ
+from WebGPU's linear-space semantics. Retain a hardware-portability caveat;
+the modern NVIDIA result does not settle behavior on older FL9_x drivers.
+
+The command
+`cargo +1.93.1 clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public`
+passed after the new test, with only existing HAL `too_many_arguments`
+warnings. The test is isolated in `wgpu/tests/dx11_public.rs`; no capability
+or backend behavior changed in this coverage checkpoint.

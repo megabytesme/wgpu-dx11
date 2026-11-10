@@ -2,21 +2,22 @@
 
 ## Current state and next queue — 2026-11-10
 
-Checkpoint `e3f437dff` extends the bounded fragment uniform-array-index proof
-to nonzero groups while preserving its shape and selected-entry restrictions.
-The current verified slice permits direct, statically indexed column or scalar
+Checkpoint `816b85fa1` permits direct, statically indexed column or scalar
 component stores to local `matCx2<f32>` struct members; whole-matrix, dynamic,
-helper, nested and array-contained stores remain rejected. Strict forced-FL9_1
-readback, Core/HAL proof tests, full Core/HAL/public tests and DX12 Core
-regression all pass. The backend remains opt-in through explicit DX11
-selection; it is not a general or Core-WebGPU-compliant FL9_1 implementation.
+helper, nested and array-contained stores remain rejected. The selected-entry
+uniform-array, matrix-store, D24S8 depth-fail/stencil mapping and sRGB blend
+checks below all ran on the forced-FL9_1 RTX 3090 Ti. The strict public test
+suite passed 125/125 with zero skips. The backend remains opt-in through
+explicit DX11 selection; it is not a general or Core-WebGPU-compliant FL9_1
+implementation.
 
-Next, run the strict D24S8 `stencil_depthFailOp_operation` CTS case for
-`depthFailOp="replace"`, then the 13-case D24S8 matrix if it passes. Follow
-with the audited D24S8 depth-comparison and sRGB blend selectors. These are
-coverage checks against already implemented paths, not capability expansion
-unless a concrete mismatch is found. Continue the Core/HAL contract audit from
-public-API-valid operations.
+The D24S8 depth-fail CTS selector could not reach its intended operation
+because its helper requires unsupported D24S8 `COPY_DST`. A render-attachment-
+only public test now covers the operation without that prerequisite. The sRGB
+blend CTS selector passed on this NVIDIA driver, but Microsoft's downlevel
+documentation leaves historical FL9_x sRGB blend behavior as a portability
+concern; retain that limitation until tested on older hardware. Continue the
+Core/HAL contract audit using operations with valid public resource descriptors.
 
 Known external verification gaps are historical FL9_1 hardware, Lumia/CoreWindow
 runtime and physical device-removal/recovery behavior. Native compute/UAV,
