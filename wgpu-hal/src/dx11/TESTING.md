@@ -981,14 +981,16 @@ the fixture's rendering/readback cases; its out-of-target viewport case is a
 validation-only negative case and does not issue a GPU draw.
 
 The out-of-target limit does not reject fractional viewports contained by the
-target. FL9_x `RSSetViewports` uses DWORDs internally, so the HAL requires its
-adjusted vertex shader to preserve fractional coordinates too. Pipeline
-creation therefore continues to report an FXC/linkage failure if only that
-variant exceeds the level-9 instruction budget; deferring the missing-variant
-failure until draw submission would accept a Core-valid request that HAL
-cannot execute. `fl91_viewport_fractional_coordinates` verifies the supported
-path, while `fl91_naga_viewport_transform_preserves_base_shader_budget`
-captures the compiler budget boundary.
+target. FL9_x `RSSetViewports` uses DWORDs internally, so the HAL needs its
+adjusted vertex shader to preserve fractional coordinates. The adjusted
+variant is optional at pipeline creation: Core tracks its availability and
+rejects a draw only when its selected viewport requires the missing transform.
+The public viewport-budget regression verifies that the ordinary shader and
+integer full-target viewport still render, while a fractional viewport draw is
+rejected during Core validation. `fl91_viewport_fractional_coordinates`
+verifies the supported remap path, while
+`fl91_naga_viewport_transform_preserves_base_shader_budget` captures the
+compiler budget boundary.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

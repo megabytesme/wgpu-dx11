@@ -434,22 +434,6 @@ fn expect_validation_error_containing(
     );
 }
 
-fn expect_internal_error_containing(
-    device: &Device,
-    label: &str,
-    expected: &str,
-    operation: impl FnOnce(),
-) {
-    let scope = device.push_error_scope(ErrorFilter::Internal);
-    operation();
-    let error = poll_ready(scope.pop()).unwrap_or_else(|| panic!("{label} was accepted"));
-    assert!(matches!(error, Error::Internal { .. }), "{error:?}");
-    assert!(
-        format!("{error:?}").contains(expected),
-        "{label} produced the wrong internal error: {error:?}"
-    );
-}
-
 #[test]
 fn public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
@@ -1858,33 +1842,31 @@ fn public_dx11_uses_255_vertex_uniform_vectors_with_post_encoding_queue_write_at
         step_mode: VertexStepMode::Vertex,
         attributes: &viewport_budget_attributes,
     })];
-    expect_internal_error_containing(
-        &device,
-        "FL9_1 vertex shader whose viewport-remapped variant exceeds FXC limits",
-        "viewport-remapped vertex shader compilation failed",
-        || {
-            drop(device.create_render_pipeline(&RenderPipelineDescriptor {
-                label: Some("FL9_1 viewport-remap shader budget rejection"),
-                layout: Some(&pipeline_layout),
-                vertex: VertexState {
-                    module: &viewport_budget_shader,
-                    entry_point: Some("vs"),
-                    compilation_options: PipelineCompilationOptions::default(),
-                    buffers: &viewport_budget_vertex_layout,
-                },
-                primitive: PrimitiveState::default(),
-                depth_stencil: None,
-                multisample: MultisampleState::default(),
-                fragment: Some(FragmentState {
-                    module: &viewport_budget_shader,
-                    entry_point: Some("fs"),
-                    compilation_options: PipelineCompilationOptions::default(),
-                    targets: &targets,
-                }),
-                multiview_mask: None,
-                cache: None,
-            }));
+    let viewport_pipeline_scope = device.push_error_scope(ErrorFilter::Internal);
+    let viewport_budget_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 viewport-remap shader budget boundary"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &viewport_budget_shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &viewport_budget_vertex_layout,
         },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &viewport_budget_shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    assert!(
+        poll_ready(viewport_pipeline_scope.pop()).is_none(),
+        "ordinary FL9_1 pipeline creation must not depend on the optional viewport variant"
     );
 
     let create_buffer = |label: &'static str, size: usize, data: &[u8], usage| {
@@ -2100,8 +2082,145 @@ fn public_dx11_uses_255_vertex_uniform_vectors_with_post_encoding_queue_write_at
         red_x * green_count > green_x * red_count,
         "c254 did not shift the rendered geometry right: green={green_count}/{green_x}, red={red_count}/{red_x}"
     );
+
+    let mut viewport_vertex_data = Vec::with_capacity(3 * 16);
+    for position in [
+        [-0.75f32, -0.75, 0.5, 1.0],
+        [0.75, -0.75, 0.5, 1.0],
+        [0.0, 0.75, 0.5, 1.0],
+    ] {
+        for value in position {
+            viewport_vertex_data.extend_from_slice(&value.to_ne_bytes());
+        }
+    }
+    let viewport_vertex_buffer = create_buffer(
+        "FL9_1 viewport budget test vertices",
+        viewport_vertex_data.len(),
+        &viewport_vertex_data,
+        BufferUsages::VERTEX,
+    );
+    let mut viewport_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 viewport budget full-target draw"),
+    });
+    {
+        let mut pass = viewport_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 viewport budget full-target pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_viewport(0.0, 0.0, 8.0, 8.0, 0.0, 1.0);
+        pass.set_pipeline(&viewport_budget_pipeline);
+        pass.set_vertex_buffer(0, viewport_vertex_buffer.slice(..));
+        pass.set_bind_group(0, &base_group, &[]);
+        pass.draw(0..3, 0..1);
+    }
+    viewport_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let viewport_submission = queue.submit([viewport_encoder.finish()]);
+    let (viewport_sender, viewport_receiver) = std::sync::mpsc::channel();
+    readback.slice(..).map_async(MapMode::Read, move |result| {
+        viewport_sender.send(result).unwrap()
+    });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(viewport_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 viewport budget draw");
+    viewport_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("viewport budget readback callback")
+        .expect("map viewport budget readback");
+    let (mut viewport_green, mut viewport_black) = (0, 0);
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                match &data[offset..offset + 4] {
+                    [0, 255, 0, 255] => viewport_green += 1,
+                    [0, 0, 0, 255] => viewport_black += 1,
+                    pixel => panic!("unexpected viewport budget pixel ({x}, {y}): {pixel:?}"),
+                }
+            }
+        }
+    }
+    readback.unmap();
+    assert!(
+        viewport_green > 0,
+        "full-target viewport draw produced no pixels"
+    );
+    assert_eq!(viewport_green + viewport_black, 64);
+
+    expect_validation_error_containing(
+        &device,
+        "fractional viewport with unavailable FL9_1 remap variant",
+        "viewport remapping is unavailable",
+        || {
+            let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("FL9_1 rejected fractional viewport draw"),
+            });
+            {
+                let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                    label: Some("FL9_1 rejected fractional viewport pass"),
+                    color_attachments: &[Some(RenderPassColorAttachment {
+                        view: &target_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::BLACK),
+                            store: StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_viewport(0.25, 0.0, 7.5, 8.0, 0.0, 1.0);
+                pass.set_pipeline(&viewport_budget_pipeline);
+                pass.set_vertex_buffer(0, viewport_vertex_buffer.slice(..));
+                pass.set_bind_group(0, &base_group, &[]);
+                pass.draw(0..3, 0..1);
+            }
+            drop(encoder.finish());
+        },
+    );
     println!(
-        "PASS: public FL9_1 queue.write_buffer after command encoding changed c31 blue to green before the first draw; c254 shifted geometry across two draws ({green_count} green, {red_count} red pixels), and core rejected 256 vertex vectors before HAL"
+        "PASS: public FL9_1 queue.write_buffer after command encoding changed c31 blue to green before the first draw; c254 shifted geometry across two draws ({green_count} green, {red_count} red pixels); ordinary pipeline creation and integer viewport rendering succeeded without the optional remap variant, while Core rejected its fractional-viewport draw; 256 vertex vectors remained rejected"
     );
 }
 

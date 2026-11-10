@@ -358,6 +358,7 @@ impl RenderBundleEncoder {
         let mut state = State {
             trackers: RenderBundleScope::new(),
             pipeline: None,
+            requires_viewport_transform: false,
             vertex: Default::default(),
             index: None,
             flat_dynamic_offsets: Vec::new(),
@@ -546,6 +547,7 @@ impl RenderBundleEncoder {
             commands,
             buffer_memory_init_actions,
             texture_memory_init_actions,
+            requires_viewport_transform,
             ..
         } = state;
 
@@ -573,6 +575,7 @@ impl RenderBundleEncoder {
             buffer_memory_init_actions,
             texture_memory_init_actions,
             context,
+            requires_viewport_transform,
             label: desc.label.to_string(),
             tracking_data: TrackingData::new(tracker_indices),
             discard_hal_labels,
@@ -1040,6 +1043,7 @@ fn draw(
         .validate_instance_limit(first_instance, instance_count)?;
 
     if instance_count > 0 && vertex_count > 0 {
+        state.note_viewport_transform_requirement();
         state.flush_vertex_buffers();
         state.flush_bindings();
         state.commands.push(ArcRenderCommand::Draw {
@@ -1079,6 +1083,7 @@ fn draw_indexed(
         .validate_instance_limit(first_instance, instance_count)?;
 
     if instance_count > 0 && index_count > 0 {
+        state.note_viewport_transform_requirement();
         state.flush_index();
         state.flush_vertex_buffers();
         state.flush_bindings();
@@ -1126,6 +1131,7 @@ fn draw_mesh_tasks(
     .map_err(|err| RenderBundleErrorInner::Draw(err.into()))?;
 
     if total_count > 0 {
+        state.note_viewport_transform_requirement();
         state.flush_bindings();
         state.commands.push(ArcRenderCommand::DrawMeshTasks {
             group_count_x,
@@ -1187,6 +1193,7 @@ fn multi_draw_indirect(
 
     state.flush_vertex_buffers();
     state.flush_bindings();
+    state.note_viewport_transform_requirement();
     state.commands.push(ArcRenderCommand::DrawIndirect {
         buffer,
         offset,
@@ -1263,6 +1270,7 @@ pub struct RenderBundle {
     pub(super) buffer_memory_init_actions: Vec<BufferInitTrackerAction>,
     pub(super) texture_memory_init_actions: Vec<TextureInitTrackerAction>,
     pub(super) context: RenderPassContext,
+    pub(super) requires_viewport_transform: bool,
     /// The `label` from the descriptor used to create the resource.
     label: String,
     pub(crate) tracking_data: TrackingData,
@@ -1613,6 +1621,7 @@ struct State {
 
     /// The currently set pipeline, if any.
     pipeline: Option<Arc<RenderPipeline>>,
+    requires_viewport_transform: bool,
 
     /// The state of each vertex buffer slot.
     vertex: super::VertexState,
@@ -1641,6 +1650,16 @@ struct State {
 }
 
 impl State {
+    fn note_viewport_transform_requirement(&mut self) {
+        if self
+            .pipeline
+            .as_ref()
+            .is_some_and(|pipeline| !pipeline.supports_viewport_transform())
+        {
+            self.requires_viewport_transform = true;
+        }
+    }
+
     /// Set the bundle's current index buffer and its associated parameters.
     fn set_index_buffer(
         &mut self,

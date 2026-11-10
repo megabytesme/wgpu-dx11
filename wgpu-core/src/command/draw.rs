@@ -92,6 +92,8 @@ pub enum DrawError {
     },
     #[error("Sampler group {group} binding {binding} is incompatible with textureSampleBias; minification and magnification filters must match and effective anisotropy must be 1")]
     IncompatibleTextureSampleBiasSampler { group: u32, binding: u32 },
+    #[error("FL9_1 viewport remapping is unavailable for the selected render pipeline")]
+    ViewportTransformUnavailable,
     #[error("Sampling binding metadata is missing for group {group} binding {binding}")]
     MissingSamplingBindingMetadata { group: u32, binding: u32 },
 }

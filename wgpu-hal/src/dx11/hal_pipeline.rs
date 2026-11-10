@@ -416,12 +416,13 @@ fn viewport_shader_fatal_error(error: &windows::core::Error) -> Option<crate::De
 }
 
 fn viewport_shader_creation_error(error: &windows::core::Error) -> crate::PipelineError {
-    match viewport_shader_fatal_error(error) {
-        Some(error) => crate::PipelineError::Device(error),
-        None => crate::PipelineError::Linkage(
+    if error.code() == windows::Win32::Foundation::E_INVALIDARG {
+        crate::PipelineError::Linkage(
             wgt::ShaderStages::VERTEX,
             alloc::format!("FL9_1 viewport-remapped vertex shader creation failed: {error}"),
-        ),
+        )
+    } else {
+        crate::PipelineError::Device(super::hal_device::classify_device_error(error.code()))
     }
 }
 
@@ -431,18 +432,6 @@ fn pipeline_object_creation_error(error: &windows::core::Error) -> crate::Pipeli
         None => crate::PipelineError::Linkage(
             wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
             error.to_string(),
-        ),
-    }
-}
-
-fn viewport_shader_compile_error(error: crate::PipelineError) -> crate::PipelineError {
-    match error {
-        error @ (crate::PipelineError::Device(_)
-        | crate::PipelineError::EntryPoint(_)
-        | crate::PipelineError::PipelineConstants(..)) => error,
-        crate::PipelineError::Linkage(_, message) => crate::PipelineError::Linkage(
-            wgt::ShaderStages::VERTEX,
-            alloc::format!("FL9_1 viewport-remapped vertex shader compilation failed: {message}"),
         ),
     }
 }
@@ -2754,7 +2743,11 @@ mod tests {
     }
 }
 crate::impl_dyn_resource!(RenderPipeline);
-impl crate::DynRenderPipeline for RenderPipeline {}
+impl crate::DynRenderPipeline for RenderPipeline {
+    fn supports_viewport_transform(&self) -> bool {
+        self.vertex_viewport.is_some()
+    }
+}
 
 impl PipelineLayout {
     pub(super) fn plan_for(
@@ -3143,11 +3136,9 @@ impl RenderPipeline {
             },
             vertex_stage.constants,
         ) {
-            Ok(code) => code,
-            Err(crate::PipelineError::Device(error)) => {
-                return Err(crate::PipelineError::Device(error))
-            }
-            Err(error) => return Err(viewport_shader_compile_error(error)),
+            Ok(code) => Some(code),
+            Err(crate::PipelineError::Linkage(_, _)) => None,
+            Err(error) => return Err(error),
         };
         let texel_load_binding = fragment
             .map(|fragment| {
@@ -3324,19 +3315,21 @@ impl RenderPipeline {
                 .raw_device()
                 .CreateVertexShader(&vertex_code, None::<&ID3D11ClassLinkage>, Some(&mut vertex))
                 .map_err(failure)?;
-            owner
-                .raw_device()
-                .CreateVertexShader(
+            if let Some(vertex_viewport_code) = vertex_viewport_code {
+                match owner.raw_device().CreateVertexShader(
                     &vertex_viewport_code,
                     None::<&ID3D11ClassLinkage>,
                     Some(&mut viewport_vertex),
-                )
-                .map_err(|error| viewport_shader_creation_error(&error))?;
-            if viewport_vertex.is_none() {
-                return Err(crate::PipelineError::Linkage(
-                    wgt::ShaderStages::VERTEX,
-                    "FL9_1 viewport-remapped vertex shader creation returned no shader".into(),
-                ));
+                ) {
+                    Ok(()) if viewport_vertex.is_some() => {}
+                    Ok(()) => {
+                        return Err(crate::PipelineError::Device(crate::DeviceError::Unexpected));
+                    }
+                    Err(error) => match viewport_shader_creation_error(&error) {
+                        crate::PipelineError::Linkage(..) => {}
+                        error => return Err(error),
+                    },
+                }
             }
             owner
                 .raw_device()

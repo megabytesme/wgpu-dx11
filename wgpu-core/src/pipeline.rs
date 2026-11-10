@@ -1247,6 +1247,7 @@ impl Default for VertexStep {
 pub(crate) struct RenderPipelineState {
     pub(crate) raw: ManuallyDrop<Box<dyn hal::DynRenderPipeline>>,
     pub(crate) layout: Arc<PipelineLayout>,
+    pub(crate) supports_viewport_transform: bool,
 }
 
 #[derive(Debug)]
@@ -1313,6 +1314,13 @@ impl RenderPipeline {
             return Err(InvalidResourceError(self.error_ident()));
         };
         Ok(&state.layout)
+    }
+
+    pub(crate) fn supports_viewport_transform(&self) -> bool {
+        match &self.state {
+            ResourceState::Valid(state) => state.supports_viewport_transform,
+            ResourceState::Invalid => false,
+        }
     }
 
     pub(crate) fn check_valid(&self) -> Result<(), InvalidResourceError> {

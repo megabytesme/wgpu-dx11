@@ -675,6 +675,7 @@ struct State<'scope, 'snatch_guard, 'cmd_enc> {
     blend_constant: OptionalState,
     stencil_reference: u32,
     pipeline: Option<Arc<RenderPipeline>>,
+    viewport_requires_transform: bool,
     index: IndexState,
     vertex: VertexState,
 
@@ -693,6 +694,9 @@ struct State<'scope, 'snatch_guard, 'cmd_enc> {
 impl<'scope, 'snatch_guard, 'cmd_enc> State<'scope, 'snatch_guard, 'cmd_enc> {
     fn is_ready(&self, family: DrawCommandFamily) -> Result<(), DrawError> {
         if let Some(pipeline) = self.pipeline.as_ref() {
+            if self.viewport_requires_transform && !pipeline.supports_viewport_transform() {
+                return Err(DrawError::ViewportTransformUnavailable);
+            }
             self.pass.binder.check_compatibility(pipeline.as_ref())?;
             self.pass.binder.check_npot_sampling(pipeline.as_ref())?;
             self.pass
@@ -2362,6 +2366,7 @@ pub(super) fn encode_render_pass(
             blend_constant: OptionalState::Unused,
             stencil_reference: 0,
             pipeline: None,
+            viewport_requires_transform: false,
             index: IndexState::default(),
             vertex: VertexState::default(),
 
@@ -3078,6 +3083,7 @@ fn set_viewport(
         w: rect.w,
         h: rect.h,
     };
+    state.viewport_requires_transform = viewport_requires_transform(rect);
     unsafe {
         state
             .pass
@@ -3086,6 +3092,14 @@ fn set_viewport(
             .set_viewport(&r, depth_min..depth_max);
     }
     Ok(())
+}
+
+fn viewport_requires_transform(rect: Rect<f32>) -> bool {
+    rect.w != 0.0
+        && rect.h != 0.0
+        && [rect.x, rect.y, rect.w, rect.h]
+            .into_iter()
+            .any(|value| value.fract() != 0.0)
 }
 
 fn viewport_extends_outside_target(rect: Rect<f32>, extent: wgt::Extent3d) -> bool {
@@ -3614,6 +3628,9 @@ fn execute_bundle(
                 bundle_stencil: bundle.is_stencil_read_only,
             },
         );
+    }
+    if state.viewport_requires_transform && bundle.requires_viewport_transform {
+        return Err(DrawError::ViewportTransformUnavailable.into());
     }
 
     state.pass.base.buffer_memory_init_actions.extend(
@@ -4715,5 +4732,15 @@ mod viewport_tests {
             rect(0.0, 1.0, 4.0, 5.5),
             extent
         ));
+    }
+
+    #[test]
+    fn viewport_transform_requirement_ignores_empty_rectangles() {
+        let rect = |x, y, w, h| Rect { x, y, w, h };
+
+        assert!(!viewport_requires_transform(rect(0.0, 0.0, 8.0, 6.0)));
+        assert!(viewport_requires_transform(rect(0.25, 0.0, 7.5, 6.0)));
+        assert!(!viewport_requires_transform(rect(0.25, 0.0, 0.0, 6.0)));
+        assert!(!viewport_requires_transform(rect(0.0, 0.25, 8.0, 0.0)));
     }
 }

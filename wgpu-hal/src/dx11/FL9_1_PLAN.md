@@ -87,23 +87,25 @@ FL9_1 hardware, Lumia ARM32/CoreWindow runtime, and physical device-removal
 recovery. See the latest progress entries and handoff for boundaries and
 verification detail.
 
-## Latest Core/HAL boundary finding — viewport remap shader — 2026-11-09
+## Resolved Core/HAL boundary finding — viewport remap shader — 2026-11-10
 
-An optional-variant pipeline change was withdrawn after a deeper contract
-audit. Microsoft documents that level-9 `RSSetViewports` uses DWORDs
-internally, so an in-target fractional viewport also needs the adjusted
-vertex-shader variant. Core rejects out-of-target rectangles but accepts
-fractional rectangles inside the target. If FXC cannot compile the adjusted
-variant, failing pipeline creation with a linkage error is safer than
-creating a pipeline whose valid draw fails during submission. A future
-optional-variant design needs per-pipeline Core/HAL validation or a
-semantics-preserving lower-cost transform. No capability is added. Strict HAL
-and debug-layer validation passed after restoring the fail-at-pipeline path;
-details are in `FL9_1_PROGRESS.md`.
+Core now retains whether each pipeline has the optional FL9_1 fractional-
+viewport vertex variant. Pipeline creation succeeds when only that variant
+exceeds FXC's level-9 instruction budget; direct and indexed draws reject at
+Core validation only when the active viewport needs the unavailable transform.
+Render bundles record this requirement and are checked against the viewport
+active when they execute. Ordinary integer viewport rendering and the base
+shader remain available. A strict RTX 3090 Ti FL9_1 public test verifies
+ordinary pipeline creation and readback, then checks Core's fractional-viewport
+rejection. Full Core, HAL and public regression suites passed; see
+`FL9_1_PROGRESS.md`.
 
-This remains an experimental opt-in subset. The public Core/HAL operation
-audit, CTS routing, historical FL9_1 hardware, Lumia/CoreWindow runtime, and
-physical device-removal behavior remain open.
+The next bounded infrastructure task is a strict, downlevel-aware CTS request
+path. The previous `basic:*` attempt failed at device creation because the
+runner requested Core WebGPU defaults beyond the experimental adapter's
+limits. Keep this adaptation test-only and preserve normal adapter/device
+defaults. Historical FL9_1 hardware, Lumia/CoreWindow runtime, physical device
+removal/recovery, and the broad Core/HAL operation audit remain open.
 
 ## Latest shader execution proof — fragment `discard` — 2026-11-09
 

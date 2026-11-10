@@ -289,17 +289,20 @@ separately compiled FL9_1 vertex shader variant when clipping or fractional
 coordinates change its transform. This is required because FL9_x
 `RSSetViewports` uses DWORDs internally, so fractional coordinates are not
 preserved by the native viewport. The adjusted shader can fail FXC's level-9
-instruction limits even when the original shader compiles; in that case
-pipeline creation fails with a linkage error. Core carries the outside-target
-restriction as `DownlevelLimits::viewport_rectangles_outside_target`; when it
-is false, rectangles extending past any attachment edge are rejected during
-render-command validation before HAL. It does not reject fractional
-rectangles contained by the target, so a pipeline still needs a valid adjusted
-variant for those requests. The controlled FL9_1 core fixture tests the
-out-of-target rejection. The strict public wgpu test also verifies a 4×6
-scissor inside an 8×8 target (24 green and 40 unchanged blue pixels) and
-confirms an out-of-target viewport is rejected before HAL. Other backends
-retain the default true capability. See Microsoft's
+instruction limits even when the original shader compiles. Pipeline creation
+retains the ordinary shader and records whether its optional adjusted variant
+exists; Core rejects a direct draw or executed bundle draw using a fractional
+viewport when that pipeline lacks the variant. Device errors from
+adjusted-shader object creation still fail pipeline creation. Core carries the
+outside-target restriction as
+`DownlevelLimits::viewport_rectangles_outside_target`; when it is false,
+rectangles extending past any attachment edge are rejected during
+render-command validation before HAL. The strict public test verifies that a
+shader at the remap instruction boundary creates and renders with a full-target
+viewport, then rejects its fractional-viewport draw in Core. The controlled
+FL9_1 core fixture tests the out-of-target rejection. Another strict public
+test verifies a 4×6 scissor inside an 8×8 target (24 green and 40 unchanged
+blue pixels). Other backends retain the default true capability. See Microsoft's
 [D3D11_VIEWPORT feature-level behavior](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_viewport).
 
 ## Recorded forced-FL9_1 observation

@@ -105,7 +105,12 @@ pub trait DynFence: DynResource + fmt::Debug {}
 pub trait DynPipelineCache: DynResource + fmt::Debug {}
 pub trait DynPipelineLayout: DynResource + fmt::Debug {}
 pub trait DynQuerySet: DynResource + fmt::Debug {}
-pub trait DynRenderPipeline: DynResource + fmt::Debug {}
+pub trait DynRenderPipeline: DynResource + fmt::Debug {
+    /// Whether this pipeline has a vertex-shader variant for FL9_1 viewport transforms.
+    fn supports_viewport_transform(&self) -> bool {
+        true
+    }
+}
 pub trait DynRayTracingPipeline: DynResource + fmt::Debug {}
 
 /// Texture-view mip requirements imposed by a backend sampler translation.

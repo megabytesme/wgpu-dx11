@@ -6970,10 +6970,12 @@ impl Device {
         sampling_pairs.sort_unstable();
         sampling_pairs.dedup();
 
+        let supports_viewport_transform = raw.supports_viewport_transform();
         let pipeline = pipeline::RenderPipeline {
             state: ResourceState::Valid(pipeline::RenderPipelineState {
                 raw: ManuallyDrop::new(raw),
                 layout: pipeline_layout.clone(),
+                supports_viewport_transform,
             }),
             device: self.clone(),
             pass_context,

@@ -14325,7 +14325,54 @@ The first invocation from a plain PowerShell failed before linking because
 `link.exe` was not in that shell's PATH. Re-running from the installed Visual
 Studio 2022 Build Tools developer environment passed. The `VsDevCmd.bat`
 banner printed a non-fatal `Unknown error`, but the MSVC linker and compiler
-completed successfully. The next candidate is to avoid rejecting otherwise
-usable pipelines when only the optional fractional-viewport-remap shader
-variant exceeds FXC limits; that path needs Core/HAL metadata so only draws
-requiring the unavailable variant are rejected.
+completed successfully.
+
+## Optional fractional-viewport shader variant — 2026-11-10
+
+FL9_1 viewport remapping needs an adjusted vertex shader because level-9
+`RSSetViewports` does not preserve fractional coordinates. FXC can reject that
+optional shader at its instruction limit even while accepting the base shader.
+The D3D11 pipeline now retains the base pipeline when only the remap shader
+fails with a linkage/invalid-argument result, and reports whether the variant
+exists through the dynamic HAL pipeline interface. Core stores that bit and
+rejects direct draws using a nonempty fractional viewport only when the
+selected pipeline lacks the variant. Render bundles record whether their
+draws need a remap and are checked against the viewport active at execution.
+Zero-area viewports do not require a transform. Device errors still fail
+pipeline creation. Other backends use the default `true` implementation, so
+their behavior is unchanged.
+
+The strict public regression builds the 255-vector boundary shader whose base
+vertex shader compiles while the remapped variant exceeds the FL9_1 profile.
+It renders and reads back the ordinary full-target viewport, then verifies
+Core rejects the fractional-viewport draw before HAL submission. The hardware
+was NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`,
+software=false; requested and actual feature level were FL9_1.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j12 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_uses_255_vertex_uniform_vectors_with_post_encoding_queue_write_at_fl91 -- --exact --nocapture --test-threads=1
+# 1 strict hardware test passed; normal viewport readback matched 17 green and 4 red pixels.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j12 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --nocapture --test-threads=1
+# 130 passed, 0 failed; includes the physical FL9_1 Core fixture.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j12 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 467 passed, 0 failed; includes viewport shader, remapping, texture, sampler, uniform and transfer regressions.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j12 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 117 passed, 0 failed; optional selected-device capability subcases reported SKIP.
+
+cargo +1.93 check --offline -j12 -p wgpu-core --no-default-features --features dx12,wgsl,std
+# passed; three pre-existing unused-variable warnings in FL9 helper analysis.
+
+cargo +1.93 clippy --offline -j12 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --tests
+cargo +1.93 clippy --offline -j12 -p wgpu-hal --no-default-features --features dx11 --tests
+cargo +1.93 clippy --offline -j12 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+# all completed successfully; existing warnings in unrelated HAL/Core tests remain.
+
+rustfmt +1.93 --edition 2021 --check [changed Rust files]
+git diff --check
+# passed; Git printed existing LF-to-CRLF working-copy notices.
+```
+
+The full `dx11_public` target includes `experimental_dx11_is_not_enabled_by_default`, which passed and confirms default D3D11 enumeration remains disabled. This fixes one over-rejection without advertising another capability. The next infrastructure slice is a downlevel-aware strict CTS request path; historical FL9_1 devices, Lumia/CoreWindow runtime, physical device removal/recovery and the broader Core/HAL operation audit remain open.
