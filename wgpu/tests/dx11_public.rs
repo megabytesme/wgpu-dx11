@@ -33826,8 +33826,7 @@ fn public_dx11_fragment_texture_dimensions_3d_constant_mip_at_fl91() {
     readback.unmap();
 }
 
-#[test]
-fn public_dx11_fragment_texture_dimensions_3d_at_fl91() {
+fn run_public_dx11_fragment_texture_dimensions_3d_at_fl91(use_helper: bool) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -33955,12 +33954,14 @@ fn public_dx11_fragment_texture_dimensions_3d_at_fl91() {
                 .into(),
         ),
     });
+    let fragment_source = if use_helper {
+        "@group(0) @binding(0) var image: texture_3d<f32>; @group(0) @binding(1) var image_sampler: sampler; fn dimensions() -> vec3u { return textureDimensions(image); } @fragment fn fs() -> @location(0) vec4f { let size = vec3f(dimensions()); return textureSample(image, image_sampler, vec3f(0.5)) * vec4f(size / vec3f(4.0, 4.0, 16.0), 1.0); }"
+    } else {
+        "@group(0) @binding(0) var image: texture_3d<f32>; @group(0) @binding(1) var image_sampler: sampler; @fragment fn fs() -> @location(0) vec4f { let dimensions = vec3f(textureDimensions(image)); return textureSample(image, image_sampler, vec3f(0.5)) * vec4f(dimensions / vec3f(4.0, 4.0, 16.0), 1.0); }"
+    };
     let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 3D textureDimensions fragment shader"),
-        source: ShaderSource::Wgsl(
-            "@group(0) @binding(0) var image: texture_3d<f32>; @group(0) @binding(1) var image_sampler: sampler; @fragment fn fs() -> @location(0) vec4f { let dimensions = vec3f(textureDimensions(image)); return textureSample(image, image_sampler, vec3f(0.5)) * vec4f(dimensions / vec3f(4.0, 4.0, 16.0), 1.0); }"
-                .into(),
-        ),
+        source: ShaderSource::Wgsl(fragment_source.into()),
     });
     let target = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 3D textureDimensions output"),
@@ -34159,10 +34160,21 @@ fn public_dx11_fragment_texture_dimensions_3d_at_fl91() {
             }
         }
         println!(
-            "PASS: forced FL9_1 3D textureDimensions plus implicit sampling transitioned from 4x2x8 to 2x4x1; dimensions and sampled texels affected all 64 pixels"
+            "PASS: forced FL9_1 3D textureDimensions{} plus implicit sampling transitioned from 4x2x8 to 2x4x1; dimensions and sampled texels affected all 64 pixels",
+            if use_helper { " helper" } else { "" }
         );
     }
     readback.unmap();
+}
+
+#[test]
+fn public_dx11_fragment_texture_dimensions_3d_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_3d_at_fl91(false);
+}
+
+#[test]
+fn public_dx11_fragment_texture_dimensions_3d_helper_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_3d_at_fl91(true);
 }
 
 #[test]

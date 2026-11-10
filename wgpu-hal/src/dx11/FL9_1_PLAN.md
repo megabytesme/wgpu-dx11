@@ -1,5 +1,23 @@
 # FL9_1 completion plan
 
+## Selected FL9_1 3D `textureDimensions` helper — 2026-11-10
+
+The selected fragment-entry 3D `textureDimensions` emulation now accepts one
+parameterless, straight-line helper that directly returns the level-less
+`vec3u` query, when the entry point directly converts the result to `vec3f`.
+Core, Naga and HAL independently constrain the proof to the selected entry
+and the same volume. FXC requires the proven helper's return and call-result
+temporaries to use `int3`; the writer scopes that substitution to the exact
+validated helper handle. FL9_1's 256 dimension limit keeps host-supplied values
+within signed range. Other helper/query forms remain rejected, and no general
+texture-query capability is enabled.
+
+Continue the public Core/HAL contract audit and select the next task from a
+reproducible workload or compiler boundary. Keep historical FL9_1 hardware,
+Lumia/CoreWindow runtime and physical device-removal verification as external
+gaps; do not treat them as implementation tasks that more code agents can
+resolve.
+
 ## Optional `Rgba8Uint` texture candidate — 2026-11-10
 
 The strict integer vertex-format test now also queries

@@ -840,6 +840,7 @@ pub struct Writer<'a, W> {
     options: &'a Options,
     /// Per-stage backend options
     pipeline_options: &'a PipelineOptions,
+    fl9_texture_dimensions_3d_helper: Option<Handle<crate::Function>>,
     /// Information about entry point arguments and result types.
     entry_point_io: crate::FastHashMap<usize, writer::EntryPointInterface>,
     /// Set of expressions that have associated temporary variables

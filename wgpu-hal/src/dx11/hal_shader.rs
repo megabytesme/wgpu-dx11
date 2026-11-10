@@ -1150,6 +1150,74 @@ mod tests {
         .unwrap_or_else(|error| panic!("FL9_1 cube dimensions helper failed FXC: {error:?}"));
         assert!(compiled.starts_with(b"DXBC"));
 
+        let three_d_helper_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var volume: texture_3d<f32>;
+            fn query_dimensions() -> vec3u { return textureDimensions(volume); }
+            @fragment fn dimensions() -> @location(0) vec4f {
+                return vec4f(vec3f(query_dimensions()) / vec3f(4.0, 2.0, 8.0), 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let three_d_helper_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&three_d_helper_module)
+        .unwrap();
+        let three_d_helper_proof = fl9_texture_emulation_binding(
+            &three_d_helper_module,
+            &three_d_helper_info,
+            naga::ShaderStage::Fragment,
+            "dimensions",
+        )
+        .unwrap()
+        .expect("3D dimensions may use a no-argument query helper");
+        assert!(matches!(
+            three_d_helper_proof.kind,
+            Fl9TextureEmulationKind::Dimensions3D
+        ));
+        assert!(three_d_helper_proof.has_helper);
+        let compiled = compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &three_d_helper_module,
+            &three_d_helper_info,
+            naga::ShaderStage::Fragment,
+            "dimensions",
+            ShaderProfile::PixelLevel9_1,
+            &[ShaderBinding {
+                binding: three_d_helper_proof.binding,
+                slot: 6,
+                kind: ShaderBindingKind::TextureFloat,
+            }],
+            Fl9ShaderInputOptions {
+                texture_dimensions_3d_binding: Some(three_d_helper_proof.binding),
+                texture_dimensions_helper: true,
+                ..Default::default()
+            },
+            &[],
+        )
+        .unwrap_or_else(|error| panic!("FL9_1 3D dimensions helper failed FXC: {error:?}"));
+        assert!(compiled.starts_with(b"DXBC"));
+
+        let three_d_helper_with_mip = naga::front::wgsl::parse_str(
+            "@group(0) @binding(7) var volume: texture_3d<f32>; fn query_dimensions() -> vec3u { return textureDimensions(volume, 0u); } @fragment fn dimensions() -> @location(0) vec4f { return vec4f(vec3f(query_dimensions()), 1.0); }",
+        )
+        .unwrap();
+        let three_d_helper_with_mip_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&three_d_helper_with_mip)
+        .unwrap();
+        assert!(fl9_texture_emulation_binding(
+            &three_d_helper_with_mip,
+            &three_d_helper_with_mip_info,
+            naga::ShaderStage::Fragment,
+            "dimensions",
+        )
+        .is_err());
+
         for source in [
             r#"
             @group(0) @binding(7) var image: texture_cube<f32>;
@@ -3906,6 +3974,15 @@ fn fl9_texture_dimensions_helper(
             } if *actual == kind
         )
     };
+    let is_dimensions_vector = |inner: &naga::TypeInner, size, kind| {
+        matches!(
+            inner,
+            naga::TypeInner::Vector {
+                size: actual_size,
+                scalar: naga::Scalar { kind: actual_kind, width: 4 }
+            } if *actual_size == size && *actual_kind == kind
+        )
+    };
     let entry_inputs_supported = match entry.function.arguments.as_slice() {
         [] => true,
         [argument] => {
@@ -3949,10 +4026,6 @@ fn fl9_texture_dimensions_helper(
         || reachable.len() != 1
         || reachable[0] != *helper_handle
         || entry_info[*call_result].ref_count != 1
-        || !is_vec2(
-            entry_info[*call_result].ty.inner_with(&module.types),
-            naga::ScalarKind::Uint,
-        )
     {
         return None;
     }
@@ -3970,10 +4043,7 @@ fn fl9_texture_dimensions_helper(
         return None;
     };
     if !helper.arguments.is_empty()
-        || !helper
-            .result
-            .as_ref()
-            .is_some_and(|result| is_vec2(&module.types[result.ty].inner, naga::ScalarKind::Uint))
+        || helper.result.is_none()
         || helper.body.iter().any(|statement| {
             !matches!(
                 statement,
@@ -4030,7 +4100,9 @@ fn fl9_texture_dimensions_helper(
         || !matches!(
             module.types[image.ty].inner,
             naga::TypeInner::Image {
-                dim: naga::ImageDimension::D2 | naga::ImageDimension::Cube,
+                dim: naga::ImageDimension::D2
+                    | naga::ImageDimension::D3
+                    | naga::ImageDimension::Cube,
                 arrayed: false,
                 class: naga::ImageClass::Sampled {
                     kind: naga::ScalarKind::Float,
@@ -4039,6 +4111,30 @@ fn fl9_texture_dimensions_helper(
             }
         )
     {
+        return None;
+    }
+    let dimensions_size = match module.types[image.ty].inner {
+        naga::TypeInner::Image {
+            dim: naga::ImageDimension::D2 | naga::ImageDimension::Cube,
+            ..
+        } => naga::VectorSize::Bi,
+        naga::TypeInner::Image {
+            dim: naga::ImageDimension::D3,
+            ..
+        } => naga::VectorSize::Tri,
+        _ => return None,
+    };
+    if !is_dimensions_vector(
+        entry_info[*call_result].ty.inner_with(&module.types),
+        dimensions_size,
+        naga::ScalarKind::Uint,
+    ) || !helper.result.as_ref().is_some_and(|result| {
+        is_dimensions_vector(
+            &module.types[result.ty].inner,
+            dimensions_size,
+            naga::ScalarKind::Uint,
+        )
+    }) {
         return None;
     }
     let mut direct_casts = 0;
@@ -4053,8 +4149,9 @@ fn fl9_texture_dimensions_helper(
         ) {
             direct_casts += 1;
             if entry_info[handle].ref_count == 0
-                || !is_vec2(
+                || !is_dimensions_vector(
                     entry_info[handle].ty.inner_with(&module.types),
+                    dimensions_size,
                     naga::ScalarKind::Float,
                 )
             {
@@ -4491,6 +4588,27 @@ fn fl9_texture_emulation_binding(
                     .is_none()
                 }
             }
+            Fl9TextureEmulationKind::Dimensions3D => {
+                if reachable_functions.is_empty() {
+                    function.body.iter().any(|statement| {
+                        !matches!(
+                            statement,
+                            naga::Statement::Emit(_) | naga::Statement::Return { .. }
+                        )
+                    }) || function.expressions.iter().any(|(_, expression)| {
+                        matches!(expression, naga::Expression::Select { .. })
+                    })
+                } else {
+                    fl9_texture_dimensions_helper(
+                        module,
+                        info,
+                        &module.entry_points[entry_index],
+                        function_info,
+                        &reachable_functions,
+                    )
+                    .is_none()
+                }
+            }
             Fl9TextureEmulationKind::NumLevels => {
                 if reachable_functions.is_empty() {
                     function.body.iter().any(|statement| {
@@ -4581,7 +4699,9 @@ fn fl9_texture_emulation_binding(
                 query: naga::ImageQuery::Size { level },
             } if matches!(
                 kind,
-                Fl9TextureEmulationKind::Dimensions | Fl9TextureEmulationKind::LoadDimensions
+                Fl9TextureEmulationKind::Dimensions
+                    | Fl9TextureEmulationKind::Dimensions3D
+                    | Fl9TextureEmulationKind::LoadDimensions
             ) =>
             {
                 dimensions_query_count += 1;
@@ -4897,7 +5017,15 @@ fn fl9_texture_emulation_binding(
                 }
                 kind = Fl9TextureEmulationKind::Dimensions3D;
             }
-            (Fl9TextureEmulationKind::Dimensions3D, naga::ImageDimension::D3) => {}
+            (Fl9TextureEmulationKind::Dimensions3D, naga::ImageDimension::D3) => {
+                if has_explicit_mip_level && sample_count != 0 {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 3D textureDimensions with an explicit mip level cannot also sample"
+                            .into(),
+                    ));
+                }
+            }
             (Fl9TextureEmulationKind::Dimensions, naga::ImageDimension::Cube) => {
                 if has_explicit_mip_level && sample_count != 0 {
                     return Err(crate::PipelineError::Linkage(
@@ -4972,7 +5100,9 @@ fn fl9_texture_emulation_binding(
     let allow_unselected_bound_resources = matches!(kind, Fl9TextureEmulationKind::BaseClamp)
         || (matches!(
             kind,
-            Fl9TextureEmulationKind::Dimensions | Fl9TextureEmulationKind::NumLevels
+            Fl9TextureEmulationKind::Dimensions
+                | Fl9TextureEmulationKind::Dimensions3D
+                | Fl9TextureEmulationKind::NumLevels
         ) && !reachable_functions.is_empty());
     if matches!(kind, Fl9TextureEmulationKind::BaseClamp)
         || (matches!(
@@ -5047,6 +5177,7 @@ fn fl9_texture_emulation_binding(
                 has_helper: matches!(
                     kind,
                     Fl9TextureEmulationKind::Dimensions
+                        | Fl9TextureEmulationKind::Dimensions3D
                         | Fl9TextureEmulationKind::DimensionsCube
                         | Fl9TextureEmulationKind::NumLevels
                 ) && !reachable_functions.is_empty(),
@@ -5651,6 +5782,11 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
             (function_info[query].ref_count == 1 && has_direct_float_conversion).then_some(query)
         });
     let texture_dimensions_helper_result = if input_options.texture_dimensions_helper {
+        let expected_size = if input_options.texture_dimensions_3d_binding.is_some() {
+            naga::VectorSize::Tri
+        } else {
+            naga::VectorSize::Bi
+        };
         function
             .expressions
             .iter()
@@ -5660,12 +5796,12 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                     || !matches!(
                         function_info[handle].ty.inner_with(&module.types),
                         naga::TypeInner::Vector {
-                            size: naga::VectorSize::Bi,
+                            size,
                             scalar: naga::Scalar {
                                 kind: naga::ScalarKind::Uint,
                                 width: 4
                             }
-                        }
+                        } if *size == expected_size
                     )
                 {
                     return None;
@@ -5754,15 +5890,20 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
             let texture_dimensions_helper_function = input_options.texture_dimensions_helper
                 && function_handle.is_some()
                 && function.result.as_ref().is_some_and(|result| {
+                    let expected_size = if input_options.texture_dimensions_3d_binding.is_some() {
+                        naga::VectorSize::Tri
+                    } else {
+                        naga::VectorSize::Bi
+                    };
                     matches!(
                         module.types[result.ty].inner,
                         naga::TypeInner::Vector {
-                            size: naga::VectorSize::Bi,
+                            size,
                             scalar: naga::Scalar {
                                 kind: naga::ScalarKind::Uint,
                                 width: 4
                             }
-                        }
+                        } if size == expected_size
                     )
                 });
             let texture_num_levels_helper_function = input_options.texture_num_levels_helper
@@ -5825,7 +5966,9 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                             function.expressions[*image],
                             naga::Expression::GlobalVariable(global)
                                 if module.global_variables[global].binding
-                                    == input_options.texture_dimensions_binding
+                                    == input_options.texture_dimensions_binding.or(
+                                        input_options.texture_dimensions_3d_binding
+                                    )
                         )
                     );
                 let supported_texture_num_levels_query = texture_num_levels_helper_function
@@ -7928,6 +8071,7 @@ impl ShaderModule {
                 }
                 Fl9TextureEmulationKind::Dimensions3D => {
                     input_options.texture_dimensions_3d_binding = Some(proof.binding);
+                    input_options.texture_dimensions_helper = proof.has_helper;
                 }
                 Fl9TextureEmulationKind::DimensionsCube => {
                     input_options.texture_dimensions_binding = Some(proof.binding);

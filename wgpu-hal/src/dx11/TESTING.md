@@ -3918,27 +3918,30 @@ evidence. General texture queries remain disabled.
 ### Narrow FL9_1 fragment 3D `textureDimensions`
 
 ```powershell
-cargo +1.93 test --offline -j1 -p naga --lib --features hlsl-out fl9_3d_texture_dimensions_can_share_texture_with_one_implicit_sample
-cargo +1.93 test --offline -j1 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_3d_texture_dimensions_has_an_independent_narrow_proof
-cargo +1.93 test --offline -j1 -p wgpu-hal --no-default-features --features dx11 --lib fl9_3d_texture_dimensions_binding_is_distinct_from_2d_emulation
-cargo +1.93 test --offline -j1 -p wgpu-hal --no-default-features --features dx11 --lib fl91_3d_texture_dimensions_and_implicit_sample_compile
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_3d_texture_dimensions_has_an_independent_narrow_proof
+cargo +1.93.1 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_3d_texture_dimensions_uses_host_supplied_int3
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_3d_and_cube_texture_dimensions_use_distinct_emulations -- --nocapture
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
-cargo +1.93 test --offline -j1 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_3d_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_3d -- --nocapture --test-threads=1
 ```
 
 The selected fragment entry may combine one direct no-level
 `textureDimensions(volume)` converted to `vec3f` with one level-less implicit
 sample of that same non-array `texture_3d<f32>` through one group-0
-non-comparison sampler. Helpers, extra resources, explicit LOD, explicit query
-levels and unrelated image operations remain rejected. The strict test uploads
-two different volumes, transitions bind groups from 4x2x8 to 2x4x1, and
-multiplies the sampled color by the queried dimensions. On the physical RTX
+non-comparison sampler. It may alternatively call one parameterless,
+straight-line helper that directly returns the level-less `vec3u` query and
+directly convert that result to `vec3f`; helper mip arguments, extra helper
+operations, additional bound resources, explicit LOD, explicit query levels
+and unrelated image operations remain rejected. The strict direct and helper
+tests upload two different volumes, transition bind groups from 4x2x8 to
+2x4x1, and multiply sampled color by queried dimensions. On the physical RTX
 3090 Ti explicitly requested and selected at FL9_1, all 64 output pixels
 matched `[200, 80, 40, 255]` on the first half and `[40, 120, 10, 255]` on the
-second half. The full private HAL suite passed 434/434, the full strict public
-D3D11 target passed 98/98, Naga passed 147/147 and DX11 Core passed 106/106.
-Optional capability subcases may report SKIP and are not GPU execution passes.
-This result does not establish historical FL9_1 driver behavior.
+second half. The focused Core, Naga and HAL tests passed 1/1 each, and the
+strict public filter passed all 3 matching direct, constant-mip and helper
+tests; all three were hardware executions. Optional capability subcases may
+report SKIP and are not GPU execution passes. This result does not establish
+historical FL9_1 driver behavior.
 
 ### Narrow FL9_1 fragment 3D `textureLoad`
 

@@ -3316,7 +3316,7 @@ fn entry_point_supports_fl9_texture_dimensions(
     {
         return matches!(
             dimension,
-            naga::ImageDimension::D2 | naga::ImageDimension::Cube
+            naga::ImageDimension::D2 | naga::ImageDimension::D3 | naga::ImageDimension::Cube
         ) && entry_point_supports_fl9_texture_dimensions_helper(
             module,
             entry_point,
@@ -3563,6 +3563,11 @@ fn entry_point_supports_fl9_texture_dimensions_helper(
     entry_info: &naga::valid::FunctionInfo,
     dimension: naga::ImageDimension,
 ) -> bool {
+    let vector_size = match dimension {
+        naga::ImageDimension::D2 | naga::ImageDimension::Cube => naga::VectorSize::Bi,
+        naga::ImageDimension::D3 => naga::VectorSize::Tri,
+        _ => return false,
+    };
     let entry_inputs_supported = match entry_point.function.arguments.as_slice() {
         [] => true,
         [argument] => {
@@ -3633,12 +3638,12 @@ fn entry_point_supports_fl9_texture_dimensions_helper(
         || !matches!(
             entry_info[call_result].ty.inner_with(&module.types),
             naga::TypeInner::Vector {
-                size: naga::VectorSize::Bi,
+                size,
                 scalar: naga::Scalar {
                     kind: naga::ScalarKind::Uint,
                     width: 4
                 }
-            }
+            } if *size == vector_size
         )
     {
         return false;
@@ -3647,7 +3652,7 @@ fn entry_point_supports_fl9_texture_dimensions_helper(
     let mut sample_binding = None;
     let sample_coordinate_size = match dimension {
         naga::ImageDimension::D2 => naga::VectorSize::Bi,
-        naga::ImageDimension::Cube => naga::VectorSize::Tri,
+        naga::ImageDimension::D3 | naga::ImageDimension::Cube => naga::VectorSize::Tri,
         _ => return false,
     };
     for (handle, expression) in entry_point.function.expressions.iter() {
@@ -3712,12 +3717,13 @@ fn entry_point_supports_fl9_texture_dimensions_helper(
             matches!(
                 module.types[result.ty].inner,
                 naga::TypeInner::Vector {
-                    size: naga::VectorSize::Bi,
+                    size,
                     scalar: naga::Scalar {
                         kind: naga::ScalarKind::Uint,
                         width: 4
                     }
                 }
+                if size == vector_size
             )
         })
         || helper.body.iter().any(|statement| {
@@ -3806,12 +3812,13 @@ fn entry_point_supports_fl9_texture_dimensions_helper(
                 || !matches!(
                     entry_info[handle].ty.inner_with(&module.types),
                     naga::TypeInner::Vector {
-                        size: naga::VectorSize::Bi,
+                        size,
                         scalar: naga::Scalar {
                             kind: naga::ScalarKind::Float,
                             width: 4
                         }
                     }
+                    if *size == vector_size
                 )
             {
                 return false;
@@ -9352,6 +9359,40 @@ mod tests {
             .unwrap());
         assert!(!three_d_with_sample
             .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "main",
+                &three_d_only,
+            )
+            .unwrap());
+
+        let three_d_query_helper = make_interface(
+            r#"
+            @group(0) @binding(0) var image: texture_3d<f32>;
+            fn dimensions() -> vec3u { return textureDimensions(image); }
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec3f(dimensions()) / 8.0, 1.0);
+            }
+            "#,
+        );
+        assert!(!three_d_query_helper
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "main",
+                &three_d_only,
+            )
+            .unwrap());
+
+        let three_d_helper_explicit_level = make_interface(
+            r#"
+            @group(0) @binding(0) var image: texture_3d<f32>;
+            fn dimensions() -> vec3u { return textureDimensions(image, 0u); }
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec3f(dimensions()) / 8.0, 1.0);
+            }
+            "#,
+        );
+        assert!(three_d_helper_explicit_level
+            .entry_point_uses_unsupported_texture_query(
                 naga::ShaderStage::Fragment,
                 "main",
                 &three_d_only,

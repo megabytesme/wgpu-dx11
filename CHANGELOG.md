@@ -65,6 +65,7 @@ Bottom level categories:
 - Allow the restricted FL9_1 2D `textureDimensions` helper path to co-use one implicit sample of the same texture.
 - Allow the restricted FL9_1 2D `textureNumLevels` helper path to co-use one implicit sample of the same texture.
 - Allow the narrow FL9_1 fragment 3D `textureDimensions` path to co-use one implicit sample of the same volume and one compatible sampler.
+- Allow one selected-entry parameterless helper to return the restricted FL9_1 fragment 3D `textureDimensions` query in the opt-in D3D11 backend.
 - Emulate a selected-entry single-mip 3D float fragment `textureLoad` on query-supported FL9_1 volume textures in the opt-in D3D11 backend.
 - Raise the opt-in D3D11 FL9_1 dynamic uniform-buffer limit to twelve per pipeline layout, bounded by six bindings per shader stage.
 - Add query-gated FL9_1 cube-texture sampling for supported formats, with separate cube-size and format limits.

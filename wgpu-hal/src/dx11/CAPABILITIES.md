@@ -1428,16 +1428,23 @@ exposed only when the selected FL9_1 device passes the existing RGBA8 3D
 sampled-texture format query and the backend path is enabled; multi-mip
 resources additionally require the selected device's `MIP` format query and
 the separate `texture_3d_mipmaps` limit. Core, Naga and HAL keep this proof
-distinct from the 2D path and from 2D texel-load emulation; helpers, additional
-bound resources and other image operations are rejected. A level-less query
-may also share the entry point with one implicit sample of that same volume
+distinct from the 2D path and from 2D texel-load emulation. It permits one
+parameterless, straight-line helper that directly returns the level-less
+`vec3u` query, with the entry point directly converting that result to
+`vec3f`; a helper cannot take a mip argument, perform other operations or call
+another function. Since FXC rejects the helper's unsigned vector return in
+`ps_4_0_level_9_1` with X3548, Naga emits a signed `int3` helper return and
+call result only for this proof; the host-supplied dimensions are known
+nonnegative and fit the signed range. Additional bound resources and other
+image operations are rejected. A level-less query may also share the entry
+point with one implicit sample of that same volume
 through one group-0 non-comparison sampler using `vec3f` coordinates. HAL
 supplies the selected view's width, height and depth at the requested mip via
 `b13`, while the shared binding map assigns the ordinary texture and sampler
 registers. A strict RTX 3090 Ti test switched between 4x2x8 and 2x4x1 volumes
 with different texel values; both dimensions and sampled data affected the
 expected 64 readback pixels. A second strict test queried mip 1 of an 8x4x8,
-three-level volume and verified 4x2x4 through GPU readback. Helper functions,
+three-level volume and verified 4x2x4 through GPU readback. Other helpers,
 explicit LOD, extra resources and other image operations remain rejected. 3D
 texture copies, attachments, readback and general texture queries remain
 unavailable.

@@ -1447,9 +1447,14 @@ allocated through the shared logical binding map. The existing strict public
 test on the RTX 3090 Ti explicitly selected FL9_1 and transitioned between
 4x2x8 and 2x4x1 volumes containing different colors. The new mip test queries
 level 1 of an 8x4x8, three-level volume and checks 4x2x4 through GPU readback.
-Helpers, extra resources, other image operations, explicit LOD and additional
-samples remain rejected; this does not enable general texture queries, 3D
-copies, render attachments or readback.
+One parameterless, straight-line helper may directly return a level-less
+`vec3u` query when the selected entry directly converts that result to
+`vec3f`; helper mip arguments, extra helper operations or nested calls remain
+rejected. The strict helper test transitions the same two volumes and verifies
+dimensions and sampled colors across all 64 readback pixels. Extra resources,
+other image operations, explicit LOD and additional samples remain rejected;
+this does not enable general texture queries, 3D copies, render attachments or
+readback.
 
 ## Narrow FL9_1 fragment 3D `textureLoad`
 

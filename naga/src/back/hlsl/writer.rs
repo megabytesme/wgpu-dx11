@@ -300,6 +300,15 @@ fn fl9_texture_dimensions_functions(
             } if *actual == kind
         )
     };
+    let is_dimensions_vector = |inner: &TypeInner, size, kind| {
+        matches!(
+            inner,
+            TypeInner::Vector {
+                size: actual_size,
+                scalar: Scalar { kind: actual_kind, width: 4 }
+            } if *actual_size == size && *actual_kind == kind
+        )
+    };
     let entry_inputs_supported = match *entry.function.arguments.as_slice() {
         [] => true,
         [ref argument] => {
@@ -328,15 +337,7 @@ fn fl9_texture_dimensions_functions(
             crate::Expression::CallResult(function) if function == helper_handle
         )
         || entry_info[call_result].ref_count != 1
-        || !is_vec2(
-            entry_info[call_result].ty.inner_with(&module.types),
-            ScalarKind::Uint,
-        )
         || !helper.arguments.is_empty()
-        || !helper
-            .result
-            .as_ref()
-            .is_some_and(|result| is_vec2(&module.types[result.ty].inner, ScalarKind::Uint))
         || helper.body.iter().any(|statement| {
             !matches!(
                 statement,
@@ -374,7 +375,9 @@ fn fl9_texture_dimensions_functions(
     ) || !matches!(
         module.types[image_global.ty].inner,
         TypeInner::Image {
-            dim: crate::ImageDimension::D2 | crate::ImageDimension::Cube,
+            dim: crate::ImageDimension::D2
+                | crate::ImageDimension::D3
+                | crate::ImageDimension::Cube,
             arrayed: false,
             class: crate::ImageClass::Sampled {
                 kind: ScalarKind::Float,
@@ -384,6 +387,30 @@ fn fl9_texture_dimensions_functions(
     ) {
         return None;
     }
+    let dimensions_size = match module.types[image_global.ty].inner {
+        TypeInner::Image {
+            dim: crate::ImageDimension::D2 | crate::ImageDimension::Cube,
+            ..
+        } => crate::VectorSize::Bi,
+        TypeInner::Image {
+            dim: crate::ImageDimension::D3,
+            ..
+        } => crate::VectorSize::Tri,
+        _ => return None,
+    };
+    if !is_dimensions_vector(
+        entry_info[call_result].ty.inner_with(&module.types),
+        dimensions_size,
+        ScalarKind::Uint,
+    ) || !helper.result.as_ref().is_some_and(|result| {
+        is_dimensions_vector(
+            &module.types[result.ty].inner,
+            dimensions_size,
+            ScalarKind::Uint,
+        )
+    }) {
+        return None;
+    }
     let sample_coordinate_size = match module.types[image_global.ty].inner {
         TypeInner::Image {
             dim: crate::ImageDimension::D2,
@@ -391,6 +418,10 @@ fn fl9_texture_dimensions_functions(
         } => crate::VectorSize::Bi,
         TypeInner::Image {
             dim: crate::ImageDimension::Cube,
+            ..
+        } => crate::VectorSize::Tri,
+        TypeInner::Image {
+            dim: crate::ImageDimension::D3,
             ..
         } => crate::VectorSize::Tri,
         _ => return None,
@@ -484,8 +515,9 @@ fn fl9_texture_dimensions_functions(
         ) {
             direct_casts += 1;
             if entry_info[handle].ref_count == 0
-                || !is_vec2(
+                || !is_dimensions_vector(
                     entry_info[handle].ty.inner_with(&module.types),
+                    dimensions_size,
                     ScalarKind::Float,
                 )
             {
@@ -964,6 +996,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             namer: proc::Namer::default(),
             options,
             pipeline_options,
+            fl9_texture_dimensions_3d_helper: None,
             entry_point_io: crate::FastHashMap::default(),
             named_expressions: crate::NamedExpressions::default(),
             wrapped: super::Wrapped::default(),
@@ -987,6 +1020,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             &mut self.names,
         );
         self.entry_point_io.clear();
+        self.fl9_texture_dimensions_3d_helper = None;
         self.named_expressions.clear();
         self.wrapped.clear();
         self.written_committed_intersection = false;
@@ -1149,6 +1183,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             .is_some()
             || self.options.fl9_texture_base_clamp_proof.is_some()
             || self.options.fl9_texture_dimensions_proof.is_some()
+            || self.options.fl9_texture_dimensions_3d_proof.is_some()
             || self.options.fl9_texture_num_levels_proof.is_some()
         {
             let Some(&(ShaderStage::Fragment, ref name)) =
@@ -1176,7 +1211,9 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 .collect::<Vec<_>>();
             let reachable_functions = if combined_texel_load_dimensions_proof {
                 fl9_reachable_functions(module, &entry.function)
-            } else if self.options.fl9_texture_dimensions_proof.is_some() {
+            } else if self.options.fl9_texture_dimensions_proof.is_some()
+                || self.options.fl9_texture_dimensions_3d_proof.is_some()
+            {
                 fl9_texture_dimensions_functions(module, module_info, entry, info).ok_or_else(
                         || {
                             Error::Custom(
@@ -1210,6 +1247,17 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         used_globals.push(global);
                     }
                 }
+            }
+            if self.options.fl9_texture_dimensions_3d_proof.is_some() {
+                self.fl9_texture_dimensions_3d_helper = match reachable_functions.len() {
+                    0 => None,
+                    1 => Some(reachable_functions[0]),
+                    _ => {
+                        return Err(Error::Custom(
+                            "FL9 3D textureDimensions proof resolved multiple helpers".into(),
+                        ));
+                    }
+                };
             }
             if let Some((target, _)) = module.global_variables.iter().find(|&(_, global)| {
                 global.binding
@@ -1764,6 +1812,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             let mut texel_load_count = 0;
             let mut functions_to_check = vec![(&entry.function, entry_info, None)];
             if self.options.fl9_texture_dimensions_proof.is_some()
+                || self.options.fl9_texture_dimensions_3d_proof.is_some()
                 || self.options.fl9_texture_num_levels_proof.is_some()
             {
                 if let Some(reachable) = fl9_texel_load_reachable_functions.as_ref() {
@@ -2028,6 +2077,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 }
             }
             if self.options.fl9_texture_dimensions_proof.is_some()
+                || self.options.fl9_texture_dimensions_3d_proof.is_some()
                 || self.options.fl9_texture_num_levels_proof.is_some()
             {
                 if let Some(reachable) = fl9_texel_load_reachable_functions.as_ref() {
@@ -2056,6 +2106,17 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                                             kind: ScalarKind::Uint,
                                             width: 4
                                         })
+                                    )
+                                } else if self.options.fl9_texture_dimensions_3d_proof.is_some() {
+                                    matches!(
+                                        helper_info[query_handle].ty.inner_with(&module.types),
+                                        TypeInner::Vector {
+                                            size: crate::VectorSize::Tri,
+                                            scalar: Scalar {
+                                                kind: ScalarKind::Uint,
+                                                width: 4
+                                            }
+                                        }
                                     )
                                 } else {
                                     matches!(
@@ -2185,6 +2246,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 }
             } else if self.options.fl9_texture_base_clamp_proof.is_none()
                 && self.options.fl9_texture_dimensions_proof.is_none()
+                && self.options.fl9_texture_dimensions_3d_proof.is_none()
                 && self.options.fl9_texture_num_levels_proof.is_none()
                 && (!module.functions.is_empty()
                     || entry.function.body.iter().any(|statement| {
@@ -3603,6 +3665,11 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             back::FunctionType::EntryPoint(idx) => Some(&module.entry_points[idx as usize]),
             back::FunctionType::Function(_) => None,
         };
+        let is_fl9_texture_dimensions_3d_helper = matches!(
+            func_ctx.ty,
+            back::FunctionType::Function(handle)
+                if self.fl9_texture_dimensions_3d_helper == Some(handle)
+        );
 
         let nested = matches!(
             ep,
@@ -3643,6 +3710,19 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 back::FunctionType::Function(_) => {
                     if let Some(array_return_type) = array_return_type {
                         write!(self.out, "{array_return_type}")?;
+                    } else if is_fl9_texture_dimensions_3d_helper
+                        && matches!(
+                            module.types[result.ty].inner,
+                            TypeInner::Vector {
+                                size: crate::VectorSize::Tri,
+                                scalar: Scalar {
+                                    kind: ScalarKind::Uint,
+                                    width: 4
+                                }
+                            }
+                        )
+                    {
+                        write!(self.out, "int3")?;
                     } else if self.options.fl9_texture_dimensions_proof.is_some()
                         && matches!(
                             module.types[result.ty].inner,
@@ -4713,6 +4793,9 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     };
                     let fl9_dimensions_call = self.options.fl9_texture_dimensions_proof.is_some()
                         && matches!(func_ctx.ty, back::FunctionType::EntryPoint(_));
+                    let fl9_3d_dimensions_call = self.fl9_texture_dimensions_3d_helper
+                        == Some(function)
+                        && matches!(func_ctx.ty, back::FunctionType::EntryPoint(_));
                     let fl9_num_levels_call = self.options.fl9_texture_num_levels_proof.is_some()
                         && matches!(func_ctx.ty, back::FunctionType::EntryPoint(_));
                     if fl9_dimensions_call
@@ -4731,6 +4814,22 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                             "FL9 textureDimensions helper result must be vec2u".into(),
                         ));
                     }
+                    if fl9_3d_dimensions_call
+                        && !matches!(
+                            *ty_inner,
+                            TypeInner::Vector {
+                                size: crate::VectorSize::Tri,
+                                scalar: Scalar {
+                                    kind: ScalarKind::Uint,
+                                    width: 4
+                                }
+                            }
+                        )
+                    {
+                        return Err(Error::Custom(
+                            "FL9 3D textureDimensions helper result must be vec3u".into(),
+                        ));
+                    }
                     if fl9_num_levels_call
                         && !matches!(
                             *ty_inner,
@@ -4746,6 +4845,8 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     }
                     if fl9_dimensions_call {
                         write!(self.out, "int2 {name}")?;
+                    } else if fl9_3d_dimensions_call {
+                        write!(self.out, "int3 {name}")?;
                     } else if fl9_num_levels_call {
                         write!(self.out, "int {name}")?;
                     } else {
@@ -8008,6 +8109,28 @@ mod fl9_viewport_tests {
         assert!(output.contains("int3(naga_fl9_load_size.xyz)"), "{output}");
         assert!(!output.contains("GetDimensions"), "{output}");
 
+        let helper = "@group(0) @binding(0) var volume: texture_3d<f32>; fn dimensions() -> vec3u { return textureDimensions(volume); } @fragment fn main() -> @location(0) vec4f { return vec4f(vec3f(dimensions()) / 256.0, 1.0); }";
+        let helper_output = translate(helper, &options, ShaderStage::Fragment).unwrap();
+        assert!(
+            helper_output.contains("int3(naga_fl9_load_size.xyz)"),
+            "{helper_output}"
+        );
+        assert!(
+            helper_output.contains("int3 dimensions()"),
+            "{helper_output}"
+        );
+        assert!(
+            helper_output.contains("const int3 _e0 = dimensions()"),
+            "{helper_output}"
+        );
+        assert!(!helper_output.contains("GetDimensions"), "{helper_output}");
+
+        let helper_with_mip = "@group(0) @binding(0) var volume: texture_3d<f32>; fn dimensions() -> vec3u { return textureDimensions(volume, 0u); } @fragment fn main() -> @location(0) vec4f { return vec4f(vec3f(dimensions()) / 256.0, 1.0); }";
+        assert!(translate(helper_with_mip, &options, ShaderStage::Fragment).is_err());
+
+        let helper_with_extra_operation = "@group(0) @binding(0) var volume: texture_3d<f32>; fn dimensions() -> vec3u { return textureDimensions(volume) + vec3u(1u); } @fragment fn main() -> @location(0) vec4f { return vec4f(vec3f(dimensions()) / 256.0, 1.0); }";
+        assert!(translate(helper_with_extra_operation, &options, ShaderStage::Fragment).is_err());
+
         let explicit_level = "@group(0) @binding(0) var volume: texture_3d<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(volume, 0)), 1.0); }";
         let explicit_output = translate(explicit_level, &options, ShaderStage::Fragment).unwrap();
         assert!(
@@ -8051,6 +8174,86 @@ mod fl9_viewport_tests {
 
         options.fl9_texture_dimensions_proof = Some(binding);
         assert!(translate(source, &options, ShaderStage::Fragment).is_err());
+    }
+
+    #[test]
+    fn fl9_3d_dimensions_helper_lowering_is_scoped_to_the_proven_function() {
+        let binding = crate::ResourceBinding {
+            group: 0,
+            binding: 0,
+        };
+        let module = crate::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var volume: texture_3d<f32>;
+            fn dimensions() -> vec3u { return textureDimensions(volume); }
+            fn unrelated() -> vec3u { return vec3u(1u, 2u, 3u); }
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec3f(dimensions()), 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let selected_helper = module
+            .functions
+            .iter()
+            .find_map(|(handle, function)| {
+                (function.name.as_deref() == Some("dimensions")).then_some(handle)
+            })
+            .unwrap();
+        let unrelated = module
+            .functions
+            .iter()
+            .find_map(|(handle, function)| {
+                (function.name.as_deref() == Some("unrelated")).then_some(handle)
+            })
+            .unwrap();
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_dimensions_3d_proof: Some(binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        let pipeline = PipelineOptions {
+            entry_point: Some((ShaderStage::Fragment, "main".into())),
+        };
+        let mut output = String::new();
+        let mut writer = super::super::Writer::new(&mut output, &options, &pipeline);
+        writer.write(&module, &info, None).unwrap();
+        assert_eq!(
+            writer.fl9_texture_dimensions_3d_helper,
+            Some(selected_helper)
+        );
+        assert!(writer.out.contains("int3 dimensions()"), "{}", writer.out);
+
+        writer.out.clear();
+        let function = &module.functions[unrelated];
+        let function_info = &info[unrelated];
+        let function_ctx = back::FunctionCtx {
+            ty: back::FunctionType::Function(unrelated),
+            info: function_info,
+            expressions: &function.expressions,
+            named_expressions: &function.named_expressions,
+        };
+        writer
+            .write_function(
+                &module,
+                "unrelated",
+                function,
+                &function_ctx,
+                function_info,
+                String::new(),
+            )
+            .unwrap();
+        assert!(writer.out.contains("uint3 unrelated()"), "{}", writer.out);
     }
 
     #[test]
