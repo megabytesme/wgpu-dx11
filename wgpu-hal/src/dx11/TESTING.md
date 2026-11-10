@@ -4105,3 +4105,15 @@ with zero skips and zero failures. They ran against the physical RTX 3090 Ti
 texture-copy case restricts the generated cases to RGBA8, 2D and non-array
 resources; it still exercises multiple mip/region subcases. These results are
 operation-level CTS evidence, not broad WebGPU conformance.
+
+The strict color write-mask CTS selector passed all 16 channel-mask
+combinations:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,color_target_state:color_write_mask,channel_work:*'
+```
+
+It ran on the same physical RTX 3090 Ti at requested/actual FL9_1 with zero
+skips and zero failures. This adds CTS coverage for an already tested render
+state and does not change capability reporting.

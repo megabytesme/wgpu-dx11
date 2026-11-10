@@ -1,5 +1,31 @@
 # FL9_1 progress
 
+## Public render-state CTS slice — 2026-11-10
+
+The strict DX11 CTS `color_write_mask,channel_work:*` selector passed all
+16 mask combinations, with zero skips or failures, on the physical RTX 3090 Ti
+at requested/actual FL9_1 (`0x10de:0x2203`, driver `32.0.16.2101`). This
+complements the existing full-target strict write-mask test and adds no
+capability.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware "webgpu:api,operation,rendering,color_target_state:color_write_mask,channel_work:*"
+# 16 passed, 0 skipped, 0 failed.
+```
+
+## Additional public-path audits — 2026-11-10
+
+Independent bounded reviews of production shader/pipeline and HWND surface/
+fence paths found no concrete safe-public-wgpu-reachable panic or incorrect
+success in the checked areas. The shader review found selected-entry and
+resource/layout failures returned as validation/linkage errors. The surface
+review found owner-thread/configuration/device/frame checks, RAII reservation
+cleanup, and ordered event-fence completion. Physical device/display removal
+is still unverified; surface lifecycle coverage did include injected removal.
+The reviews did not cover all queue resource-tracker internals, capability
+assertions, every shader proof or all unsafe raw-handle misuse, so the overall
+contract audit remains open.
+
 ## Strict downlevel CTS copy coverage — 2026-11-10
 
 Three additional CTS selectors ran on the physical RTX 3090 Ti under strict
