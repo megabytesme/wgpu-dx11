@@ -374,7 +374,7 @@ fn fl9_texture_dimensions_functions(
     ) || !matches!(
         module.types[image_global.ty].inner,
         TypeInner::Image {
-            dim: crate::ImageDimension::D2,
+            dim: crate::ImageDimension::D2 | crate::ImageDimension::Cube,
             arrayed: false,
             class: crate::ImageClass::Sampled {
                 kind: ScalarKind::Float,
@@ -384,6 +384,17 @@ fn fl9_texture_dimensions_functions(
     ) {
         return None;
     }
+    let sample_coordinate_size = match module.types[image_global.ty].inner {
+        TypeInner::Image {
+            dim: crate::ImageDimension::D2,
+            ..
+        } => crate::VectorSize::Bi,
+        TypeInner::Image {
+            dim: crate::ImageDimension::Cube,
+            ..
+        } => crate::VectorSize::Tri,
+        _ => return None,
+    };
     let mut sampled_sampler = None;
     for (handle, expression) in entry.function.expressions.iter() {
         let (image, sampler, coordinate) = match *expression {
@@ -424,12 +435,12 @@ fn fl9_texture_dimensions_functions(
             || !matches!(
                 entry_info[coordinate].ty.inner_with(&module.types),
                 TypeInner::Vector {
-                    size: crate::VectorSize::Bi,
+                    size,
                     scalar: Scalar {
                         kind: ScalarKind::Float,
                         width: 4
                     }
-                }
+                } if *size == sample_coordinate_size
             )
         {
             return None;
@@ -6069,9 +6080,13 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     let needs_bound_check = self.options.restrict_indexing
                         && !indexing_binding_array
                         && match resolved.pointer_space() {
+                            Some(crate::AddressSpace::Function) => {
+                                signed_restrict_indexing =
+                                    self.options.signed_function_restrict_indexing;
+                                true
+                            }
                             Some(
-                                crate::AddressSpace::Function
-                                | crate::AddressSpace::Private
+                                crate::AddressSpace::Private
                                 | crate::AddressSpace::WorkGroup
                                 | crate::AddressSpace::Immediate
                                 | crate::AddressSpace::TaskPayload
@@ -7510,6 +7525,30 @@ mod fl9_viewport_tests {
     }
 
     #[test]
+    fn function_index_restriction_can_opt_in_to_signed_clamping() {
+        let source = "@vertex fn main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f { var positions = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0)); return vec4f(positions[index], 0.0, 1.0); }";
+        let mut options = Options {
+            fl9_vertex_index_input: true,
+            ..Options::default()
+        };
+
+        let default = translate(source, &options, ShaderStage::Vertex).unwrap();
+        assert!(default.contains("min(uint("), "{default}");
+        assert!(default.contains("2u)"), "{default}");
+
+        options.signed_function_restrict_indexing = true;
+        let signed = translate(source, &options, ShaderStage::Vertex).unwrap();
+        assert!(signed.contains("min(max(int("), "{signed}");
+        assert!(signed.contains("), 0), 2)"), "{signed}");
+        assert!(!signed.contains("min(uint("), "{signed}");
+
+        let private_source = "var<private> positions: array<vec2f, 3> = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0)); @vertex fn main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f { return vec4f(positions[index], 0.0, 1.0); }";
+        let private = translate(private_source, &options, ShaderStage::Vertex).unwrap();
+        assert!(private.contains("min(uint("), "{private}");
+        assert!(private.contains("2u)"), "{private}");
+    }
+
+    #[test]
     fn fl9_base_clamp_uses_host_dimensions_and_implicit_sample() {
         let texture_binding = crate::ResourceBinding {
             group: 0,
@@ -8282,6 +8321,79 @@ mod fl9_viewport_tests {
 
         let wrong_dimension = "@group(0) @binding(7) var volume: texture_3d<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(volume)), 1.0); }";
         assert!(translate(wrong_dimension, &options, ShaderStage::Fragment).is_err());
+    }
+
+    #[test]
+    fn fl9_cube_texture_dimensions_parameterless_helper_uses_face_size_metadata() {
+        let texture_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let source = r#"
+            @group(0) @binding(7) var cube: texture_cube<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn query_dimensions() -> vec2u { return textureDimensions(cube); }
+            @fragment fn main() -> @location(0) vec4f {
+                let dimensions = vec2f(query_dimensions());
+                let sampled = textureSample(cube, smp, vec3f(1.0, 0.0, 0.0));
+                return sampled * vec4f(dimensions / vec2f(8.0), 1.0, 1.0);
+            }
+        "#;
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_dimensions_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            texture_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        options.binding_map.insert(
+            sampler_binding,
+            super::super::BindTarget {
+                register: 3,
+                ..Default::default()
+            },
+        );
+
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("int2 query_dimensions()"), "{output}");
+        assert!(
+            output.contains("return int2(naga_fl9_load_size.xy);"),
+            "{output}"
+        );
+        assert!(output.contains("TextureCube<float4>"), "{output}");
+        assert!(output.contains("register(t0)"), "{output}");
+        assert!(output.contains("register(s3)"), "{output}");
+        assert!(output.contains(".Sample("), "{output}");
+        assert!(!output.contains("GetDimensions"), "{output}");
+
+        let repeated_helper = r#"
+            @group(0) @binding(7) var cube: texture_cube<f32>;
+            fn query_dimensions() -> vec2u { return textureDimensions(cube); }
+            @fragment fn main() -> @location(0) vec4f {
+                let first = vec2f(query_dimensions());
+                let second = vec2f(query_dimensions());
+                return vec4f((first + second) / vec2f(8.0), 0.0, 1.0);
+            }
+        "#;
+        assert!(translate(repeated_helper, &options, ShaderStage::Fragment).is_err());
+
+        let explicit_level = r#"
+            @group(0) @binding(7) var cube: texture_cube<f32>;
+            fn query_dimensions() -> vec2u { return textureDimensions(cube, 0u); }
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(query_dimensions()) / vec2f(8.0), 0.0, 1.0);
+            }
+        "#;
+        assert!(translate(explicit_level, &options, ShaderStage::Fragment).is_err());
     }
 
     #[test]

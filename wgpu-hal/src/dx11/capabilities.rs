@@ -381,6 +381,7 @@ pub(super) struct BackendCapabilities {
     pub vertex_index_topology_mask: u8,
     pub instance_index_input: bool,
     pub vertex_uniform_array_indexing: bool,
+    pub vertex_index_local_array_indexing: bool,
     pub vertex_texture_sampling: bool,
     pub fragment_derivatives: bool,
     pub texture_query: bool,
@@ -530,6 +531,7 @@ impl BackendCapabilities {
         ),
         instance_index_input: true,
         vertex_uniform_array_indexing: true,
+        vertex_index_local_array_indexing: true,
         vertex_texture_sampling: false,
         fragment_derivatives: false,
         texture_query: false,
@@ -822,6 +824,7 @@ impl Capabilities {
                 vertex_index_topology_mask: self.backend.vertex_index_topology_mask,
                 instance_index_input: self.backend.instance_index_input,
                 vertex_uniform_array_indexing: self.backend.vertex_uniform_array_indexing,
+                vertex_index_local_array_indexing: self.backend.vertex_index_local_array_indexing,
                 max_sampled_textures_per_vertex_stage: if self.backend.vertex_texture_sampling {
                     self.backend.sampled_textures_per_group
                 } else {
@@ -912,13 +915,6 @@ impl Capabilities {
         let mut features = wgt::Features::empty();
         if self.wireframe_rasterizer_supported() {
             features |= wgt::Features::POLYGON_MODE_LINE;
-        }
-        if self.backend.timestamp_queries
-            && matches!(self.driver.timestamp_frequency, Query::Value(frequency) if frequency > 0)
-        {
-            features |= wgt::Features::TIMESTAMP_QUERY
-                | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
-                | wgt::Features::TIMESTAMP_QUERY_INSIDE_PASSES;
         }
         if self
             .texture_format_capabilities(wgt::TextureFormat::Rg16Snorm)
@@ -2312,37 +2308,25 @@ mod tests {
     }
 
     #[test]
-    fn timestamp_query_features_require_a_positive_frequency_probe_and_backend_path() {
+    fn timestamp_queries_are_not_projected_without_submission_wide_disjoint_tracking() {
         let timestamp_features = wgt::Features::TIMESTAMP_QUERY
             | wgt::Features::TIMESTAMP_QUERY_INSIDE_ENCODERS
             | wgt::Features::TIMESTAMP_QUERY_INSIDE_PASSES;
-        let mut caps = model(FeatureLevel::L9_1);
-        assert!(caps
-            .wgpu_projection()
-            .unwrap()
-            .features
-            .contains(timestamp_features));
-
-        caps.driver.timestamp_frequency = Query::Value(0);
-        assert!(!caps
-            .wgpu_projection()
-            .unwrap()
-            .features
-            .intersects(timestamp_features));
-        caps.driver.timestamp_frequency = Query::Unavailable(-1);
-        assert!(!caps
-            .wgpu_projection()
-            .unwrap()
-            .features
-            .intersects(timestamp_features));
-
-        caps.driver.timestamp_frequency = Query::Value(1_000_000_000);
-        caps.backend.timestamp_queries = false;
-        assert!(!caps
-            .wgpu_projection()
-            .unwrap()
-            .features
-            .intersects(timestamp_features));
+        for frequency in [
+            Query::Value(0),
+            Query::Unavailable(-1),
+            Query::Value(1_000_000_000),
+        ] {
+            let mut caps = model(FeatureLevel::L9_1);
+            caps.driver.timestamp_frequency = frequency;
+            caps.backend.timestamp_queries = true;
+            assert!(caps
+                .wgpu_projection()
+                .unwrap()
+                .features
+                .intersection(timestamp_features)
+                .is_empty());
+        }
     }
 
     #[test]
@@ -2861,6 +2845,7 @@ mod tests {
             .supports_vertex_index_topology(wgt::PrimitiveTopology::TriangleStrip));
         assert!(exposed.downlevel.limits.instance_index_input);
         assert!(exposed.downlevel.limits.vertex_uniform_array_indexing);
+        assert!(exposed.downlevel.limits.vertex_index_local_array_indexing);
         assert!(!exposed.downlevel.limits.texture_query);
         assert!(!exposed.downlevel.limits.texture_sample_base_clamp_to_edge);
         assert!(

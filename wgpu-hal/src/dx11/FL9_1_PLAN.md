@@ -1,21 +1,92 @@
 # FL9_1 completion plan
 
+## Optional `Rgba8Uint` texture candidate — 2026-11-10
+
+The strict integer vertex-format test now also queries
+`DXGI_FORMAT_R8G8B8A8_UINT` on the physical RTX 3090 Ti after explicitly
+creating an FL9_1 device. `CheckFormatSupport` returned `0x00000002`, which is
+`IA_VERTEX_BUFFER` only; it did not report `TEXTURE2D`. Microsoft likewise
+guarantees this format at FL9_1 only for vertex input. The `Rgba8Uint`
+`COPY_SRC | COPY_DST` CTS cases therefore remain unsupported and are not an
+actionable texture-transfer expansion on this device. Do not infer texture
+support from the existing vertex-format mapping.
+
+## Current confirmed shader-validation gap — 2026-11-10
+
+The strict `basic:fullscreen_quad` CTS selector exposed dynamic indexing of a
+function-local array that Core previously allowed through to the FL9_1 shader
+path. A strict GPU run returned black output; FXC also rejects the tested
+dynamic `vertex_index` vector-index form with X3548. Core and HAL now reject
+selected-entry dynamic array/matrix/vector indexing before execution, while
+preserving constant indexing and the separately proven uniform-array subset.
+The regression follows helper calls and fails closed when bounded analysis
+cannot prove the resource origin. The strict public/Core/HAL suites pass; this
+CTS shader remains outside the adapter's reported downlevel subset and is
+rejected explicitly.
+
+Continue selecting new implementation work from reproducible ordinary API
+gaps. The remaining broad work is contract-audit closure and representative
+workload coverage, not indiscriminate expansion into FL9_1-incompatible APIs.
+Historical FL9_1 hardware, Lumia ARM32/CoreWindow execution and physical
+device-removal recovery require external hardware/runtime verification.
+
+## Current coordinator audit — adapter selection and CTS boundaries — 2026-11-10
+
+The Core/HAL unsupported-path audit found no confirmed public-API-reachable
+panic or Core-valid operation reaching an unimplemented HAL panic in the
+Device, CommandEncoder, Queue, resource, binding and pipeline paths reviewed.
+The apparent vertex-plus-index buffer gap is already rejected by Core because
+the DX11 projection omits `UNRESTRICTED_INDEX_BUFFER`; FL9_1 requires one native
+vertex, index or constant-buffer bind role at a time.
+
+The public adapter is opt-in, not globally hidden: default backend selection
+excludes DX11, while an application with the Cargo feature enabled can request
+`Backends::DX11` or `Backends::all()` and enumerate physical adapters passing
+the FL9_1 projection. Documentation now states this distinction explicitly.
+
+The strict CTS runner can validate curated compatible operations, but its
+general image-copy cases generate unsupported dimensions and array shapes.
+The filtered RGBA8/2D origins-and-extents case still generates array-layer
+subcases, so its failure does not isolate the supported single-layer transfer
+path. Keep those results separate from backend regressions. Continue auditing
+Core validation and use strict public integration tests for downlevel-specific
+operations; historical hardware and Lumia runtime remain external checks.
+
+## Current verification checkpoint — ARM32 UWP and lifecycle audit — 2026-11-10
+
+Strict public FL9_1 coverage now includes read-only stencil bundles and
+fractional-viewport bundles (121/121 public tests pass). Independent audits
+of render/Core-HAL, resource/transfer, shader and queue/fence contracts found
+no confirmed correctness mismatch in the inspected paths. The surface audit
+also found the opt-in HWND contract consistently gated; physical device
+removal, display-mode changes and Lumia/CoreWindow runtime remain unverified.
+
+Using Rust 1.95.0 nightly with `rust-src` and `-Z build-std=std,panic_unwind`,
+both the D3D11 HAL and public `wgpu` DX11 feature set cross-check successfully
+for `thumbv7a-uwp-windows-msvc`. This is compilation evidence only. The Lumia
+Device Portal at `192.168.1.157` was unreachable from this host on ports 443
+and 8080.
+
+Continue the Core-valid-to-HAL audit, focusing on remaining query,
+unsupported-operation and public surface error paths. Do not broaden limits to
+turn intentionally unavailable FL9_1 APIs into accepted requests. Keep real
+historical-GPU and Lumia testing as external verification requirements.
+
 ## Current Core/HAL fix — zero-input draw range — 2026-11-10
 
-Zero-input, no-`vertex_index` draws now normalize the internal native batching
-range when the API start/count arithmetic exceeds `u32`; the effective start
-is unobservable for that pipeline. A strict Core/HAL FL9_1 test verifies
-submission and clear-color readback. Real fetch and `vertex_index` checks are
-unchanged. Continue the broader contract audit; do not change shared Core
-semantics for this backend-local case.
+Zero-input, no-`vertex_index` draws now normalize the effective start to zero
+when the API start/count arithmetic exceeds `u32`, across TriangleList,
+LineList, LineStrip and TriangleStrip replay. A strict Core/HAL FL9_1 test
+verifies submission and readback for each topology; negative controls retain
+real-fetch and `vertex_index` rejection. Continue the broader contract audit;
+do not change shared Core semantics for this backend-local case.
 
 ## Current Core/HAL fix — timestamped depth-Never draws — 2026-11-10
 
 Valid depth-Never draws now execute with color and depth writes disabled, so
 pass-boundary and explicit in-pass timestamps do not turn the draw into an
 encoding error. Strict public readback verifies color, depth and timestamp
-ordering at forced FL9_1. Continue the command/API contract sweep; the
-zero-input draw-range overflow is a separate narrow boundary case.
+ordering at forced FL9_1. Continue the command/API contract sweep.
 
 ## Current strict CTS operation evidence — 2026-11-10
 
@@ -2158,3 +2229,75 @@ optional viewport-remapped vertex shader variant fails compilation even
 though the base variant is usable. Preserve the base pipeline and validate
 fractional-viewport draws against remap-variant availability before HAL
 execution; keep all existing integer viewport behavior intact.
+
+## Current audit checkpoint — 2026-11-10
+
+The strict public `dx11_public` target passed 119/119 on the RTX 3090 Ti at
+requested/actual FL9_1, including depth-only and read-only depth bundle
+execution. A strict cube-dimensions integration test also passes with one
+parameterless query-only helper lowered through existing face-size metadata.
+The public/Core/HAL audit fixed writable remapping of noncoherent `MAP_WRITE`
+buffers so prior bytes survive a partial host edit and later GPU copy. A
+proposed runtime integer-comparison exception for emulated `instance_index`
+was rejected after review found it could alter FL9_1 semantics for large
+values; production validation remains conservative. Continue with the
+Core-valid-to-HAL audit, including remaining shader/resource and command/pass
+boundary cases. The later audit also verified read-only D24S8 stencil bundles
+and fractional-viewport bundles with strict FL9_1 GPU readback. Physical
+historical FL9_1 devices, Lumia ARM32 CoreWindow runtime, and actual hardware
+device-removal/recovery remain external gaps.
+
+## Timestamp query contract — 2026-11-10
+
+Do not re-enable public D3D11 timestamp features based on a startup frequency
+probe. Core permits timestamp pairs and resolves to cross submissions, while
+D3D11 only certifies timestamp reliability and frequency inside a disjoint
+interval. A correct future implementation needs a public representation that
+preserves interval validity and period, or a demonstrated invariant from the
+runtime. Native timestamp queries currently remain diagnostic-only; focused
+hardware, Core, HAL, and public validation is recorded in
+`FL9_1_PROGRESS.md`.
+
+## Coordinator support inventory — 2026-11-10
+
+The opt-in native Rust adapter has substantial tested FL9_1 coverage: desktop
+HWND presentation, multi-group uniform and sampled resources, 2D mip/view and
+copy operations, query-gated cube/3D sampling and format usages, depth/stencil,
+and selected multisample color/depth paths. It is useful for applications
+whose exact workload stays within that verified subset. It is not a general
+WebGPU adapter or complete implementation of all behavior nominally available
+on a modern D3D11 device.
+
+Keep these categories separate when planning work:
+
+1. **Feature/profile boundaries:** compute, UAV/storage execution, geometry
+   shaders, gather and explicit texture LOD are outside this FL9_1 profile or
+   its tested contract. Do not try to make them green by inventing CPU
+   fallbacks or advertising modern D3D11 capability.
+2. **Current deliberate software limits:** general runtime integer shader
+   operations, derivatives/gradients, arbitrary dynamic indexing, ordinary
+   texture arrays, broad 3D copies/readback/attachments, and occlusion or
+   pipeline-statistics queries remain unavailable. Some may admit narrow,
+   workload-backed subsets; each needs Core proof, matching HAL checks, FXC
+   evidence and strict pixel/query results.
+3. **Device-dependent subsets:** texture formats/usages, volume and cube
+   paths, multisample counts and optional IA formats are admitted only from
+   selected-device queries. A format available on the RTX is not guaranteed
+   on historical FL9_1 hardware.
+4. **External verification:** the RTX 3090 Ti forced to FL9_1 is not a
+   historical-driver simulator. Lumia 950 XL installation, CoreWindow public
+   presentation, ARM32 GPU execution and physical device-removal recovery need
+   external device/runtime access. Desktop HWND presentation is independently
+   verified.
+5. **Audit coverage:** separate read-only resource/transfer, Core validation,
+   render/API and shader reviews found no new concrete Core-valid request that
+   reaches an unsupported HAL operation in their reviewed scopes. The full
+   Core-to-HAL contract audit is still incomplete.
+
+Coordinator workflow: use agents for independent read-only inventories and
+feasibility probes, then assign one end-to-end vertical slice at a time.
+Core validation, Naga lowering and HAL execution for one shader feature are
+coupled and should be integrated by one owner. The next code candidate should
+come from a reproduced application workload or a strict compiler/runtime
+probe, not from unverified feature-count expansion. Avoid simultaneous edits
+to shared capability, validation and public-test files.

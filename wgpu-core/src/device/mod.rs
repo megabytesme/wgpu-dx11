@@ -246,7 +246,7 @@ pub(crate) fn map_buffer(
             })?
     };
 
-    if !mapping.is_coherent && kind == HostMap::Read {
+    if !mapping.is_coherent {
         #[allow(clippy::single_range_in_vec_init)]
         if let Err(error) =
             unsafe { raw_device.invalidate_mapped_ranges(raw_buffer, &[offset..offset + size]) }

@@ -298,6 +298,8 @@ struct EntryPoint {
     fl9_texture_load_3d_supported: bool,
     fl9_texture_load_dimensions_supported: bool,
     unsupported_runtime_integer_semantics: bool,
+    unsupported_runtime_integer_indexing: bool,
+    vertex_index_local_array_indexing_used: bool,
     matrix_inverse_used: bool,
     unsupported_matrix_inverse_2x2: bool,
     matrix_outer_product_used: bool,
@@ -470,6 +472,265 @@ fn dynamic_access_has_uniform_origin(
         }
     }
     false
+}
+
+fn function_uses_unsupported_runtime_integer_indexing(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    allowed_local_access: Option<naga::Handle<naga::Expression>>,
+    budget: &mut usize,
+) -> bool {
+    let Some(remaining) = budget.checked_sub(function.expressions.len()) else {
+        return true;
+    };
+    *budget = remaining;
+    let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+    function.expressions.iter().any(|(handle, expression)| {
+        let naga::Expression::Access { base, index } = *expression else {
+            return false;
+        };
+        Some(handle) != allowed_local_access
+            && function_info[handle].ref_count != 0
+            && !kinds.is_const(index)
+            && dynamic_access_base_is_unsupported_composite(module, function_info, base)
+            && dynamic_access_has_uniform_origin_bounded(
+                module,
+                function,
+                function_info,
+                base,
+                budget,
+            ) != Some(true)
+    })
+}
+
+fn dynamic_access_base_is_unsupported_composite(
+    module: &naga::Module,
+    function_info: &naga::valid::FunctionInfo,
+    base: naga::Handle<naga::Expression>,
+) -> bool {
+    match function_info[base].ty.inner_with(&module.types) {
+        naga::TypeInner::Array { .. }
+        | naga::TypeInner::Matrix { .. }
+        | naga::TypeInner::Vector { .. } => true,
+        naga::TypeInner::Pointer { base, .. } => {
+            matches!(
+                module.types[*base].inner,
+                naga::TypeInner::Array { .. }
+                    | naga::TypeInner::Matrix { .. }
+                    | naga::TypeInner::Vector { .. }
+            )
+        }
+        naga::TypeInner::ValuePointer { size: Some(_), .. } => true,
+        _ => false,
+    }
+}
+
+fn block_is_straight_line_read_only(block: &naga::Block) -> bool {
+    block.iter().all(|statement| {
+        matches!(
+            statement,
+            naga::Statement::Emit(_) | naga::Statement::Return { .. }
+        )
+    })
+}
+
+fn supported_vertex_index_local_array_access(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+    function_info: &naga::valid::FunctionInfo,
+) -> Option<naga::Handle<naga::Expression>> {
+    if entry_point.stage != naga::ShaderStage::Vertex
+        || !block_is_straight_line_read_only(&entry_point.function.body)
+    {
+        return None;
+    }
+
+    let function = &entry_point.function;
+    let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+    let mut candidate = None;
+    for (handle, expression) in function.expressions.iter() {
+        let naga::Expression::Access { base, index } = *expression else {
+            continue;
+        };
+        if function_info[handle].ref_count == 0 || kinds.is_const(index) {
+            continue;
+        }
+
+        if candidate.is_some() {
+            return None;
+        }
+        let naga::Expression::LocalVariable(local) = function.expressions[base] else {
+            return None;
+        };
+        let local = &function.local_variables[local];
+        if local.init.is_none()
+            || !matches!(
+                module.types[local.ty].inner,
+                naga::TypeInner::Array {
+                    base,
+                    size: naga::ArraySize::Constant(size),
+                    stride: 8,
+                } if size.get() == 3 && matches!(
+                    module.types[base].inner,
+                    naga::TypeInner::Vector {
+                        size: naga::VectorSize::Bi,
+                        scalar: naga::Scalar {
+                            kind: naga::ScalarKind::Float,
+                            width: 4,
+                        }
+                    }
+                )
+            )
+            || !matches!(
+                function_info[base].ty.inner_with(&module.types),
+                naga::TypeInner::Pointer {
+                    base,
+                    space: naga::AddressSpace::Function,
+                } if *base == local.ty
+            )
+            || !expression_is_supported_vertex_index_argument(module, function, index)
+            || block_uses_dynamic_access_as_pointer(
+                module,
+                function,
+                function_info,
+                &function.body,
+                handle,
+            )
+        {
+            return None;
+        }
+
+        let load_count = function
+            .expressions
+            .iter()
+            .filter(|(_, expression)| {
+                matches!(
+                    expression,
+                    naga::Expression::Load { pointer }
+                        if pointer_path_contains(function, *pointer, handle)
+                )
+            })
+            .count();
+        if load_count != 1 {
+            return None;
+        }
+        candidate = Some(handle);
+    }
+    candidate
+}
+
+fn dynamic_access_has_uniform_origin_bounded(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    base: naga::Handle<naga::Expression>,
+    budget: &mut usize,
+) -> Option<bool> {
+    let mut expression = base;
+    loop {
+        *budget = budget.checked_sub(1)?;
+        if function_info[expression]
+            .ty
+            .inner_with(&module.types)
+            .pointer_space()
+            == Some(naga::AddressSpace::Uniform)
+        {
+            return Some(true);
+        }
+        match function.expressions[expression] {
+            naga::Expression::GlobalVariable(global) => {
+                return Some(module.global_variables[global].space == naga::AddressSpace::Uniform);
+            }
+            naga::Expression::Access { base, .. } | naga::Expression::AccessIndex { base, .. } => {
+                expression = base;
+            }
+            naga::Expression::Load { pointer } => expression = pointer,
+            _ => return Some(false),
+        }
+    }
+}
+
+fn collect_called_functions_bounded(
+    block: &naga::Block,
+    called_functions: &mut Vec<naga::Handle<naga::Function>>,
+    budget: &mut usize,
+) -> bool {
+    let mut blocks = alloc::vec![block];
+    while let Some(block) = blocks.pop() {
+        for statement in block.iter() {
+            let Some(remaining) = budget.checked_sub(1) else {
+                return false;
+            };
+            *budget = remaining;
+            match statement {
+                naga::Statement::Call { function, .. } => called_functions.push(*function),
+                naga::Statement::Block(block) => blocks.push(block),
+                naga::Statement::If { accept, reject, .. } => {
+                    blocks.push(accept);
+                    blocks.push(reject);
+                }
+                naga::Statement::Switch { cases, .. } => {
+                    blocks.extend(cases.iter().map(|case| &case.body));
+                }
+                naga::Statement::Loop {
+                    body, continuing, ..
+                } => {
+                    blocks.push(body);
+                    blocks.push(continuing);
+                }
+                _ => {}
+            }
+        }
+    }
+    true
+}
+
+fn entry_point_uses_unsupported_runtime_integer_indexing(
+    module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
+    entry_point: &naga::EntryPoint,
+    entry_point_info: &naga::valid::FunctionInfo,
+) -> (bool, bool) {
+    let allowed_local_access =
+        supported_vertex_index_local_array_access(module, entry_point, entry_point_info);
+    let mut budget = 65_536;
+    if function_uses_unsupported_runtime_integer_indexing(
+        module,
+        &entry_point.function,
+        entry_point_info,
+        allowed_local_access,
+        &mut budget,
+    ) {
+        return (true, false);
+    }
+    let mut pending = Vec::new();
+    if !collect_called_functions_bounded(&entry_point.function.body, &mut pending, &mut budget) {
+        return (true, false);
+    }
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = pending.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        if visited.len() > 1024 {
+            return (true, false);
+        }
+        let function = &module.functions[handle];
+        if function_uses_unsupported_runtime_integer_indexing(
+            module,
+            function,
+            &module_info[handle],
+            None,
+            &mut budget,
+        ) {
+            return (true, false);
+        }
+        if !collect_called_functions_bounded(&function.body, &mut pending, &mut budget) {
+            return (true, false);
+        }
+    }
+    (false, allowed_local_access.is_some())
 }
 
 fn pointer_path_contains(
@@ -3053,12 +3314,15 @@ fn entry_point_supports_fl9_texture_dimensions(
         .iter()
         .any(|statement| matches!(statement, naga::Statement::Call { .. }))
     {
-        return dimension == naga::ImageDimension::D2
-            && entry_point_supports_fl9_texture_dimensions_helper(
-                module,
-                entry_point,
-                function_info,
-            );
+        return matches!(
+            dimension,
+            naga::ImageDimension::D2 | naga::ImageDimension::Cube
+        ) && entry_point_supports_fl9_texture_dimensions_helper(
+            module,
+            entry_point,
+            function_info,
+            dimension,
+        );
     }
     if entry_point.stage != naga::ShaderStage::Fragment
         || entry_point.function.arguments.len() > 1
@@ -3200,12 +3464,12 @@ fn entry_point_supports_fl9_texture_dimensions(
         || !matches!(
             function_info[query].ty.inner_with(&module.types),
             naga::TypeInner::Vector {
-                size: vector_size,
+                size,
                 scalar: naga::Scalar {
                     kind: naga::ScalarKind::Uint,
                     width: 4
                 }
-            }
+            } if *size == vector_size
         )
     {
         return false;
@@ -3224,12 +3488,12 @@ fn entry_point_supports_fl9_texture_dimensions(
             || !matches!(
                 function_info[handle].ty.inner_with(&module.types),
                 naga::TypeInner::Vector {
-                    size: vector_size,
+                    size,
                     scalar: naga::Scalar {
                         kind: naga::ScalarKind::Float,
                         width: 4
                     }
-                }
+                } if *size == vector_size
             )
             || function_info[handle].ref_count == 0)
         {
@@ -3297,6 +3561,7 @@ fn entry_point_supports_fl9_texture_dimensions_helper(
     module: &naga::Module,
     entry_point: &naga::EntryPoint,
     entry_info: &naga::valid::FunctionInfo,
+    dimension: naga::ImageDimension,
 ) -> bool {
     let entry_inputs_supported = match entry_point.function.arguments.as_slice() {
         [] => true,
@@ -3380,6 +3645,11 @@ fn entry_point_supports_fl9_texture_dimensions_helper(
     }
 
     let mut sample_binding = None;
+    let sample_coordinate_size = match dimension {
+        naga::ImageDimension::D2 => naga::VectorSize::Bi,
+        naga::ImageDimension::Cube => naga::VectorSize::Tri,
+        _ => return false,
+    };
     for (handle, expression) in entry_point.function.expressions.iter() {
         let naga::Expression::ImageSample {
             image,
@@ -3404,12 +3674,12 @@ fn entry_point_supports_fl9_texture_dimensions_helper(
             || !matches!(
                 entry_info[*coordinate].ty.inner_with(&module.types),
                 naga::TypeInner::Vector {
-                    size: naga::VectorSize::Bi,
+                    size,
                     scalar: naga::Scalar {
                         kind: naga::ScalarKind::Float,
                         width: 4
                     }
-                }
+                } if *size == sample_coordinate_size
             )
         {
             return false;
@@ -3491,13 +3761,13 @@ fn entry_point_supports_fl9_texture_dimensions_helper(
         || !matches!(
             module.types[image.ty].inner,
             naga::TypeInner::Image {
-                dim: naga::ImageDimension::D2,
+                dim,
                 arrayed: false,
                 class: naga::ImageClass::Sampled {
                     kind: naga::ScalarKind::Float,
                     multi: false
                 }
-            }
+            } if dim == dimension
         )
         || !sample_sampler.is_none_or(|sampler| {
             let sampler = &module.global_variables[sampler];
@@ -5589,6 +5859,13 @@ impl Interface {
                     entry_point,
                     info,
                 );
+            let (unsupported_runtime_integer_indexing, vertex_index_local_array_indexing_used) =
+                entry_point_uses_unsupported_runtime_integer_indexing(
+                    module,
+                    module_info,
+                    entry_point,
+                    info,
+                );
             let texture_load_used = entry_point_uses_texture_load(module, entry_point);
             let (fl9_texture_load_2d_supported, fl9_texture_load_3d_supported) =
                 entry_point_fl9_texture_load_support(module, module_info, entry_point, info);
@@ -5630,6 +5907,8 @@ impl Interface {
                         entry_point,
                         info,
                     ),
+                unsupported_runtime_integer_indexing,
+                vertex_index_local_array_indexing_used,
                 matrix_inverse_used: entry_point_uses_matrix_inverse(module, entry_point),
                 unsupported_matrix_inverse_2x2: entry_point_uses_unsupported_matrix_inverse_2x2(
                     module,
@@ -6176,15 +6455,18 @@ impl Interface {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
         Ok(!limits.runtime_integer_shader_operations
-            && ((entry_point.unsupported_runtime_integer_semantics
-                && !entry_point.fl9_texture_dimensions_supported
-                && !entry_point.fl9_texture_dimensions_3d_supported
-                && !entry_point.fl9_texture_dimensions_cube_supported
-                && !entry_point.fl9_texture_num_levels_supported
-                && !entry_point.fl9_texture_num_levels_3d_supported
-                && !entry_point.fl9_texture_num_levels_cube_supported)
+            && (entry_point.unsupported_runtime_integer_indexing
+                || (entry_point.unsupported_runtime_integer_semantics
+                    && !entry_point.fl9_texture_dimensions_supported
+                    && !entry_point.fl9_texture_dimensions_3d_supported
+                    && !entry_point.fl9_texture_dimensions_cube_supported
+                    && !entry_point.fl9_texture_num_levels_supported
+                    && !entry_point.fl9_texture_num_levels_3d_supported
+                    && !entry_point.fl9_texture_num_levels_cube_supported)
                 || (entry_point.dynamic_uniform_array_indexing_used
-                    && !limits.vertex_uniform_array_indexing)))
+                    && !limits.vertex_uniform_array_indexing)
+                || (entry_point.vertex_index_local_array_indexing_used
+                    && !limits.vertex_index_local_array_indexing)))
     }
 
     pub(crate) fn entry_point_uses_unsupported_matrix_aggregate_store(
@@ -8862,6 +9144,147 @@ mod tests {
     }
 
     #[test]
+    fn fl9_cube_texture_dimensions_allows_one_parameterless_helper() {
+        fn make_interface(source: &str) -> Interface {
+            let module = naga::front::wgsl::parse_str(source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            Interface::new(&module, &info, wgt::Limits::defaults())
+        }
+
+        let cube_dimensions = wgt::DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_cube_float_fragment: true,
+            ..Default::default()
+        };
+        let supported = make_interface(
+            r#"
+            @group(0) @binding(7) var image: texture_cube<f32>;
+            @group(0) @binding(42) var image_sampler: sampler;
+            @group(1) @binding(3) var sibling_image: texture_cube<f32>;
+            fn face_dimensions() -> vec2u { return textureDimensions(image); }
+            @fragment fn selected() -> @location(0) vec4f {
+                let dimensions = vec2f(face_dimensions());
+                return textureSample(image, image_sampler, vec3f(1.0, 0.0, 0.0))
+                    + vec4f(dimensions / 16.0, 0.0, 0.0);
+            }
+            @fragment fn sibling() -> @location(0) vec4f {
+                let dimensions = vec2f(face_dimensions()) + vec2f(textureDimensions(sibling_image));
+                return vec4f(dimensions, 0.0, 1.0);
+            }
+            "#,
+        );
+        assert!(!supported
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "selected",
+                &cube_dimensions,
+            )
+            .unwrap());
+        assert!(!supported
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "selected",
+                &cube_dimensions,
+            )
+            .unwrap());
+        assert!(supported
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "sibling",
+                &cube_dimensions,
+            )
+            .unwrap());
+        assert!(supported
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "selected",
+                &wgt::DownlevelLimits {
+                    texture_query: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap());
+
+        for source in [
+            r#"
+            @group(0) @binding(0) var image: texture_cube<f32>;
+            fn dimensions() -> vec2u { return textureDimensions(image); }
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(dimensions()) + vec2f(dimensions()), 0.0, 1.0);
+            }
+            "#,
+            r#"
+            @group(0) @binding(0) var image: texture_cube<f32>;
+            fn leaf() -> vec2u { return textureDimensions(image); }
+            fn dimensions() -> vec2u { return leaf(); }
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(dimensions()), 0.0, 1.0);
+            }
+            "#,
+            r#"
+            @group(0) @binding(0) var image: texture_cube<f32>;
+            fn dimensions(level: u32) -> vec2u { return textureDimensions(image); }
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(dimensions(0u)), 0.0, 1.0);
+            }
+            "#,
+            r#"
+            @group(0) @binding(0) var image: texture_cube<f32>;
+            fn dimensions() -> vec2u { return textureDimensions(image, 0u); }
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(dimensions()), 0.0, 1.0);
+            }
+            "#,
+            r#"
+            @group(0) @binding(0) var image: texture_cube<f32>;
+            fn dimensions() -> vec2u {
+                if true { return textureDimensions(image); }
+                return vec2u(0u);
+            }
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(dimensions()), 0.0, 1.0);
+            }
+            "#,
+            r#"
+            @group(0) @binding(0) var image: texture_cube<f32>;
+            @group(0) @binding(1) var image_sampler: sampler;
+            fn dimensions() -> vec2u {
+                let color = textureSample(image, image_sampler, vec3f(1.0, 0.0, 0.0));
+                return textureDimensions(image);
+            }
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(dimensions()), 0.0, 1.0);
+            }
+            "#,
+            r#"
+            @group(0) @binding(0) var image: texture_cube<f32>;
+            @group(0) @binding(1) var<uniform> extra: vec4f;
+            fn dimensions() -> vec2u { return textureDimensions(image); }
+            @fragment fn main() -> @location(0) vec4f {
+                return vec4f(vec2f(dimensions()), 0.0, 1.0) + extra;
+            }
+            "#,
+        ] {
+            let unsupported = make_interface(source);
+            assert!(
+                unsupported
+                    .entry_point_uses_unsupported_texture_query(
+                        naga::ShaderStage::Fragment,
+                        "main",
+                        &cube_dimensions,
+                    )
+                    .unwrap(),
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
     fn fl9_3d_texture_dimensions_has_an_independent_narrow_proof() {
         fn make_interface(source: &str) -> Interface {
             let module = naga::front::wgsl::parse_str(source).unwrap();
@@ -9223,7 +9646,7 @@ mod tests {
             }
             "#,
         );
-        assert!(cube_helper
+        assert!(!cube_helper
             .entry_point_uses_unsupported_texture_query(
                 naga::ShaderStage::Fragment,
                 "main",
@@ -11053,6 +11476,35 @@ mod tests {
             @vertex fn bad_instance_integer_math(@builtin(instance_index) index: u32) -> @builtin(position) vec4f {
                 return vec4f(f32(index + 1u), 0.0, 0.0, 1.0);
             }
+            fn local_positions(index: u32) -> vec2f {
+                let positions = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0));
+                return positions[index];
+            }
+            @vertex fn vertex_index_local_array(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                var positions = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0));
+                return vec4f(positions[index], 0.0, 1.0);
+            }
+            @vertex fn bad_vertex_index_local_array_helper(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                return vec4f(local_positions(index), 0.0, 1.0);
+            }
+            @vertex fn bad_vertex_index_local_array_computed(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                var positions = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0));
+                return vec4f(positions[index + 1u], 0.0, 1.0);
+            }
+            @vertex fn bad_vertex_index_local_array_write(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                var positions = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0));
+                positions[index] = vec2f(0.0);
+                return vec4f(positions[0], 0.0, 1.0);
+            }
+            @vertex fn safe_vertex_index_static_array() -> @builtin(position) vec4f {
+                let positions = array<vec2f, 3>(vec2f(-1.0, -3.0), vec2f(3.0, 1.0), vec2f(-1.0, 1.0));
+                return vec4f(positions[0], 0.0, 1.0);
+            }
+            @vertex fn bad_vertex_index_dynamic_vector(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                let x = vec3f(-1.0, 3.0, -1.0);
+                let y = vec3f(-3.0, 1.0, 1.0);
+                return vec4f(x[index], y[index], 0.0, 1.0);
+            }
             @fragment fn float_override() -> @location(0) vec4f {
                 return vec4f(tint, 0.0, 0.0, 1.0);
             }
@@ -11107,6 +11559,68 @@ mod tests {
             .entry_point_uses_unsupported_runtime_integer_semantics(
                 naga::ShaderStage::Vertex,
                 "bad_instance_integer_math",
+                &fl91,
+            )
+            .unwrap());
+        for entry in [
+            "bad_vertex_index_local_array_helper",
+            "bad_vertex_index_local_array_computed",
+            "bad_vertex_index_local_array_write",
+            "bad_vertex_index_dynamic_vector",
+        ] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_runtime_integer_semantics(
+                        naga::ShaderStage::Vertex,
+                        entry,
+                        &fl91,
+                    )
+                    .unwrap(),
+                "{entry}"
+            );
+        }
+        let local_array_limit = wgt::DownlevelLimits {
+            runtime_integer_shader_operations: false,
+            vertex_index_local_array_indexing: true,
+            ..Default::default()
+        };
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Vertex,
+                "vertex_index_local_array",
+                &local_array_limit,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Vertex,
+                "vertex_index_local_array",
+                &fl91,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Vertex,
+                "bad_vertex_index_local_array_helper",
+                &local_array_limit,
+            )
+            .unwrap());
+        for entry in [
+            "bad_vertex_index_local_array_computed",
+            "bad_vertex_index_local_array_write",
+        ] {
+            assert!(interface
+                .entry_point_uses_unsupported_runtime_integer_semantics(
+                    naga::ShaderStage::Vertex,
+                    entry,
+                    &local_array_limit,
+                )
+                .unwrap());
+        }
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Vertex,
+                "safe_vertex_index_static_array",
                 &fl91,
             )
             .unwrap());

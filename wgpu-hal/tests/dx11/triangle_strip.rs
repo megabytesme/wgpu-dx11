@@ -699,20 +699,12 @@ fn fl91_nonindexed_triangle_strip_winding_and_first_vertex() -> windows::core::R
             encoder.end_encoding().is_err(),
             "indexed strips must be rejected"
         );
-        encoder.begin_encoding(None).unwrap();
-        encoder.begin_render_pass(&pass).unwrap();
-        encoder.set_render_pipeline(&zero_input);
-        encoder.draw(u32::MAX, 3, 0, 1);
-        encoder.end_render_pass();
-        assert!(
-            encoder.end_encoding().is_err(),
-            "vertex index overflow must be rejected"
-        );
     }
     let zero_commands = unsafe {
         encoder.begin_encoding(None).unwrap();
         encoder.begin_render_pass(&pass).unwrap();
         encoder.set_render_pipeline(&zero_input);
+        encoder.draw(u32::MAX, 3, 0, 1);
         encoder.draw(u32::MAX - 2, 3, 0, 1);
         encoder.draw(0, 65_536, 0, 1);
         encoder.end_render_pass();

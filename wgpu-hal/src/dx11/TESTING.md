@@ -143,6 +143,12 @@ contract to make this CTS slice pass. The strict preflight reports failures
 rather than hardware skips, and ordinary Deno backend selection still excludes
 DX11.
 
+The FL9_1 integer vertex-format test also logs the selected device's
+`CheckFormatSupport(DXGI_FORMAT_R8G8B8A8_UINT)` result. On the RTX 3090 Ti it
+returned `0x00000002` (`IA_VERTEX_BUFFER` only), without `TEXTURE2D`. Microsoft
+requires this format at FL9_1 only for vertex input, so this result provides no
+basis for enabling the CTS texture-copy cases.
+
 Two narrow strict CTS operation slices also pass with actual GPU work:
 
 ```powershell
@@ -156,18 +162,28 @@ and actual FL9_1. The first clears an RGBA8 target and validates copied
 readback; the second validates ordered buffer copies and readback. These are
 focused operation checks, not a claim of CTS suite conformance.
 
+The CTS operation files are not generally downlevel-aware. For example,
+`image_copy:origins_and_extents` generates 1D and 3D textures, 2D array layers,
+and formats outside this projection. Filtering to `rgba8unorm` and `2d` still
+leaves array-layer subcases, which Core correctly rejects because this adapter
+does not report `TEXTURE_2D_ARRAYS`. Such a selector does not isolate the
+supported single-layer transfer path and is not evidence of a transfer bug or
+a passing CTS result. Continue using curated selectors and the strict public
+readback tests until the runner can select only operations supported by the
+reported downlevel contract.
+
 ### Zero-input draw at an overflowing start vertex
 
-The strict Core fixture verifies that a count-2 TriangleList with
-`first_vertex = u32::MAX` succeeds when the selected pipeline has no
-per-vertex inputs and does not consume `vertex_index`. It completes submission
-and readback, checking all 64 pixels remain clear. The HAL normalizes only its
-internal range for this unobservable case; real vertex fetch and
-`vertex_index` emulation remain range-checked.
+The strict Core fixture verifies count-2 TriangleList, LineList and LineStrip
+draws plus a count-3 TriangleStrip with `first_vertex = u32::MAX`. Each draw
+uses a pipeline with no per-vertex inputs and no `vertex_index`; submission and
+readback complete, with all 64 pixels remaining clear after each. Negative
+controls verify Core still rejects overflowing real vertex-fetch ranges and
+HAL rejects overflow when the selected shader consumes `vertex_index`.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
-cargo +1.93.1 test --offline -j2 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_zero_input_incomplete_triangle_accepts_wrapping_vertex_range -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_zero_input_draws_normalize_wrapping_vertex_ranges -- --nocapture --test-threads=1
 ```
 
 The physical RTX 3090 Ti ran the request at forced FL9_1; all 64 readback
@@ -2816,10 +2832,12 @@ driver integer behavior.
 
 The selected FL9 shader profile guard applies to checked and unchecked modes.
 It rejects runtime integer values, operations, conversions and bitcasts,
-integer-containing uniforms or interfaces, switches, and non-folded global
-initializers and overrides. Proven static literal indices and float-only shader
-paths remain available; analysis limits fail closed. These restrictions do not
-establish general integer shader support or broaden the public shader contract.
+integer-containing uniforms or interfaces, switches, non-folded global
+initializers and overrides, and selected-entry dynamic indexing of non-uniform
+arrays, matrices and vectors. Proven static literal indices and the separately
+validated uniform-array subset remain available; analysis limits fail closed.
+These restrictions do not establish general integer shader support or broaden
+the public shader contract.
 
 Core exposes the backend restrictions through
 `DownlevelLimits::runtime_integer_shader_operations` and
@@ -2830,18 +2848,21 @@ matrix aggregate stores through a pointer helper, safe matrix reads and safe
 sibling entry points:
 
 ```powershell
-cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl fl91_ -- --nocapture
-cargo +1.93 test --offline -j32 -p wgpu-types --lib unsupported_fl9_shader_semantics
+cargo +1.93.1 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl fl91_ -- --nocapture
+cargo +1.93.1 test --offline -j8 -p wgpu-types --lib unsupported_fl9_shader_semantics
 ```
 
-The strict public API regression runs in the offscreen test and verifies that
+The strict public API regression runs in the offscreen test. It renders a
+fullscreen triangle from one initialized local `array<vec2f, 3>` directly
+indexed by `vertex_index` and checks all 64 readback pixels. Helper-forwarded,
+computed, multiple-access, write and dynamic-vector indexing remain rejected;
 fragment runtime integer arithmetic and a vertex store through a matrix
-aggregate fail with core validation errors, while the unused safe sibling
-entries compile:
+aggregate also fail with Core validation errors. Constant local-array
+indexing and unused safe sibling entries compile:
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
-cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
 ```
 
 The physical validation run used the RTX 3090 Ti at requested and actual
@@ -2890,7 +2911,7 @@ in-pass timestamps resolve in nondecreasing command order.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
-cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_timestamp_queries_resolve_on_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_timestamp_queries_are_not_advertised_at_fl91 -- --nocapture --test-threads=1
 ```
 
 On the RTX 3090 Ti at requested/actual FL9_1, all 16 color pixels matched the
@@ -3021,6 +3042,21 @@ both views, drops them and then successfully destroys the buffer. The strict
 run selected the RTX 3090 Ti at requested/actual FL9_1. This test exercises
 native mapped-buffer lifetime, not a GPU draw or submission.
 
+### Async `MAP_WRITE` preserves prior contents
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_async_write_map_updates_nonzero_slice_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+The test fills a `MAP_WRITE | COPY_SRC` buffer, uses it in a GPU copy, maps a
+nonzero range again for writing and checks its prior bytes before changing
+only two bytes. A later full GPU copy and readback verifies all untouched
+bytes remain unchanged. Core invalidates noncoherent mapped contents before
+exposing them to the CPU, which preserves this behavior for backends that use
+CPU shadows. The strict RTX 3090 Ti run requested and selected FL9_1 and
+passed 1/1. This follows the [WebGPU writable mapping contract](https://www.w3.org/TR/webgpu/#dom-gpumapmode-write).
+
 The public `public_dx11_buffer_handles_survive_until_submission_at_fl91` test
 complements that mapped-view case. It maps and initializes a 64-byte COPY_SRC
 buffer, queues sentinel bytes into a destination, records a partial source to
@@ -3034,6 +3070,32 @@ strict public target passed 105/105. Reproduce it with:
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_buffer_handles_survive_until_submission_at_fl91 -- --nocapture --test-threads=1
 ```
+
+### Depth-only render bundles
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_depth_only_render_bundle_executes_at_fl91 -- --exact --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_read_only_depth_render_bundle_at_fl91 -- --exact --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_read_only_stencil_render_bundle_at_fl91 -- --exact --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fractional_viewport_render_bundle_remaps_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+This strict public test executes a colorless D16 render bundle in a depth-only
+pass on the RTX 3090 Ti at requested/actual FL9_1. Follow-up depth probes
+verified 64 green and zero red pixels, and Core rejected use of the same bundle
+in a color-only pass. The read-only D16 test initializes depth to 0.25, executes
+a depth-write-disabled bundle in a pass with no depth operations, and uses a
+later Greater probe at 0.5 to confirm the stored depth was preserved. All 64
+pixels matched red; Core rejected a writable bundle in the same read-only pass.
+Both tests request and assert physical FL9_1 on the RTX 3090 Ti. The read-only
+D24S8 bundle initialized stencil to 7, rendered green in the left half, and a
+later stencil-equal probe rendered red in the right half; all 64 pixels
+matched, and Core rejected a writable bundle in a read-only stencil pass. The
+fractional-viewport bundle used a quad matching its 3.5-by-3.5 logical viewport;
+readback matched 9 green pixels and 55 clear pixels. The full strict public
+target passed 121/121 after these tests were added. These tests cover the
+selected GPU and do not establish historical-driver behavior.
 
 The unsafe, nondefault fixture injects one explicitly selected hardware FL9_1
 device into core separately from ordinary adapter enumeration. The test uses
@@ -3071,6 +3133,22 @@ The `public_dx11_enforces_query_type_feature_gates_at_fl91` test confirms that
 timestamps still require the caller to request the advertised feature, while
 occlusion and pipeline-statistics queries remain unsupported. The focused
 timestamp execution test and current command are recorded below.
+
+### ARM32 UWP cross-compilation
+
+The pinned Rust 1.93.1 distribution has no prebuilt standard library for
+`thumbv7a-uwp-windows-msvc`. With `rust-src` installed, the D3D11 HAL and public
+API can be checked for ARM32 UWP using the installed Rust 1.95.0 nightly:
+
+```powershell
+cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && cargo +nightly check -Z build-std=std,panic_unwind --offline -j8 -p wgpu-hal --no-default-features --features dx11 --target thumbv7a-uwp-windows-msvc'
+cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && cargo +nightly check -Z build-std=std,panic_unwind --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --target thumbv7a-uwp-windows-msvc'
+```
+
+Both commands passed with commit `eda76d9d1` and the Windows MSVC
+environment. They verify compilation only. The Device Portal address
+`192.168.1.157` was unreachable from this host on ports 443 and 8080, so this
+run did not exercise Windows 10 Mobile or CoreWindow at runtime.
 
 ### FL9_1 line topologies
 
@@ -3587,43 +3665,31 @@ inverse-bearing helper functions before the HLSL writer while an ordinary
 separate shader module remains valid; pipeline validation does not issue a
 draw.
 
-### Optional FL9_1 timestamp queries
+### FL9_1 timestamp-query contract
 
-Run the capability projection test, native probe and public resolve test from
-an x64 Visual Studio developer environment:
+Run the synthetic projection test, the native diagnostic and the public
+rejection test from an x64 Visual Studio developer environment:
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
-cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib timestamp_query_features_require_a_positive_frequency_probe_and_backend_path
-cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_timestamp_and_disjoint_queries_execute_on_hardware -- --nocapture --test-threads=1
-cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_timestamp_queries_resolve_on_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib timestamp_queries_are_not_projected_without_submission_wide_disjoint_tracking
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_timestamp_and_disjoint_queries_execute_on_hardware -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_timestamp_queries_are_not_advertised_at_fl91 -- --exact --nocapture --test-threads=1
 ```
 
-The native probe creates timestamp and disjoint queries on the selected FL9_1
-device, flushes and reads the disjoint frequency. A positive result enables
-timestamp query sets, encoder writes and explicit writes inside render and
-compute passes. The public test resolves timestamps written outside a pass, at
-the beginning and end of a render pass, explicitly before and after a draw,
-around an empty compute pass, and explicitly inside that compute pass. It
-copies all ten values to mapped memory and checks every value is nonzero and
-the command sequence is nondecreasing in execution order (query indices
-`0, 1, 2, 6, 7, 3, 4, 8, 9, 5`). Pass descriptor timestamps
-require only `TIMESTAMP_QUERY`; explicit pass writes additionally require
-`TIMESTAMP_QUERY_INSIDE_PASSES`, which is exposed only with the positive
-selected-device probe. Compute pipeline creation and dispatch remain
-unsupported. The test also confirms occlusion and pipeline-statistics sets
-remain rejected. D3D11 has no native query-result copy command here, so resolve
-waits for `GetData` on the CPU. Strict execution passed 1/1 on the physical
-NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at
-requested/actual FL9_1 (`software=false`). The ten query-index values were
-`[1794227433154996224, 1794227433155000320, 1794227433155001344,
-1794227433155020800, 1794227433155020800, 1794227433155020800,
-1794227433155009536, 1794227433155020800, 1794227433155020800,
-1794227433155020800]`; in command order
-`0, 1, 2, 6, 7, 3, 4, 8, 9, 5`, all ten were nonzero and nondecreasing.
-The observed queue period was 1 ns/tick. The complete strict public target
-passed 113/113 and the complete strict private HAL suite passed 450/450.
-
+The synthetic test verifies that neither a positive startup frequency nor
+native query implementation promotes the public timestamp features. The HAL
+diagnostic creates one disjoint query and two timestamp queries, brackets both
+writes in that interval, and checks that the interval is valid and ordered on
+the selected physical FL9_1 device. This diagnostic does not validate
+arbitrary public timestamp pairs: WebGPU permits writes and resolves across
+queue submissions, while D3D11 exposes reliability and frequency only for a
+disjoint interval. The public projection therefore omits timestamp query
+features; the public test verifies that requesting them and creating a
+`Timestamp` query set fail validation before HAL timestamp commands are
+recorded. The public queue timestamp period is zero. HAL query code remains
+available for diagnostics and CPU-side tests only; its resolves wait for
+`GetData` and can stall.
 ### Narrow FL9_1 fragment `textureLoad`
 
 Run the selected-entry proof and limit-projection tests, then execute the strict
@@ -3893,18 +3959,22 @@ FL9_1 drivers are not represented by the RTX result.
 ### Narrow FL9_1 fragment cube `textureDimensions`
 
 ```powershell
-cargo +1.93 test --offline -j8 -p naga --lib --features hlsl-out fl9_cube_texture_dimensions_uses_face_size_metadata
-cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_cube_texture_dimensions_has_an_independent_narrow_proof
-cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_cube_texture_dimensions_selects_face_metadata_emulation
-cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_cube_texture_dimensions_and_implicit_sample_compile
+cargo +1.93.1 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_cube_texture_dimensions_parameterless_helper_uses_face_size_metadata -- --nocapture
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_cube_texture_dimensions_allows_one_parameterless_helper -- --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_cube_texture_dimensions_selects_face_metadata_emulation -- --nocapture --test-threads=1
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_cube_at_fl91 -- --nocapture --test-threads=1
 ```
 
-The previously verified strict public test explicitly selected the physical
-RTX 3090 Ti at requested/actual FL9_1, initialized two RGBA8 cube resources,
-and rendered through one 8x8 then one 4x4 view. Its padded readback matched
-yellow `[255,255,0,255]` and half-yellow `[128,128,0,255]` across all 64 pixels.
+The strict public test explicitly selected the physical RTX 3090 Ti at
+requested/actual FL9_1, initialized two RGBA8 cube resources, and rendered
+through one direct-query 8x8 view then a helper-query 4x4 view. Its padded
+readback matched yellow `[255,255,0,255]` and half-yellow `[128,128,0,255]`
+across all 64 pixels. The Naga writer test also compiles a helper query beside
+one implicit sample of the same cube and rejects repeated helper calls and
+explicit helper mip levels. The Core and HAL tests reject sibling-only
+queries, helper calls with parameters or control flow, helper-side sampling,
+extra used resources and unsupported image dimensions.
 The test now also includes a constant-level query of mip 1 from an initialized
 four-level cube when the selected-device RGBA8 format features permit mip
 chains. Strict execution on the RTX 3090 Ti at requested/actual FL9_1 matched
@@ -3975,3 +4045,20 @@ reported `0x10de:0x2203`, driver `32.0.16.2101`, and matched
 strict public `dx11_public` suite. This does not enable general
 `texture_query`, dynamic texture-load coordinates in the combined proof,
 helper calls or other image-operation compositions.
+
+A third compatible strict CTS operation now passes on the physical RTX:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_BUILD_JOBS = '2'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,clearBuffer:clear:*'
+```
+
+This selector passed 1/1 with all 50 offset/size/buffer-size subcases executed,
+zero failures and zero skips, on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at requested/actual FL9_1. It performs GPU clear and readback.
+Two exploratory selectors remain outside the published subset:
+`rendering,depth:depth_disabled:*` failed because CTS cleanup requests
+D24S8 `COPY_DST`, and `rendering,draw:default_arguments:*` failed because the
+shader uses unsupported runtime integer operations. These are contract
+boundary results, not reasons to broaden the projection.

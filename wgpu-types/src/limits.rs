@@ -1215,6 +1215,13 @@ pub struct DownlevelLimits {
     /// default so other backends retain their existing shader-validation behavior.
     #[cfg_attr(feature = "serde", serde(default))]
     pub vertex_uniform_array_indexing: bool,
+    /// Whether vertex entry points may perform one direct read from a fixed, initialized
+    /// `array<vec2<f32>, 3>` using `@builtin(vertex_index)`.
+    ///
+    /// Some downlevel shader profiles can preserve this narrow local-array access while rejecting
+    /// other runtime indexing operations.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub vertex_index_local_array_indexing: bool,
     /// Maximum number of sampled texture bindings statically used by a vertex shader.
     ///
     /// This can be lower than [`Limits::max_sampled_textures_per_shader_stage`], which also
@@ -1582,6 +1589,7 @@ impl Default for DownlevelLimits {
             vertex_index_topology_mask: Self::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: true,
             vertex_uniform_array_indexing: false,
+            vertex_index_local_array_indexing: false,
             max_sampled_textures_per_vertex_stage: 16,
             max_sampled_texture_sampler_pairs_per_shader_stage: u32::MAX,
             max_vertex_shader_uniform_vectors: u32::MAX,
@@ -1833,6 +1841,8 @@ impl DownlevelLimits {
                     == required.vertex_index_topology_mask)
             && (!required.instance_index_input || self.instance_index_input)
             && (!required.vertex_uniform_array_indexing || self.vertex_uniform_array_indexing)
+            && (!required.vertex_index_local_array_indexing
+                || self.vertex_index_local_array_indexing)
             && self.max_sampled_textures_per_vertex_stage
                 >= required.max_sampled_textures_per_vertex_stage
             && self.max_sampled_texture_sampler_pairs_per_shader_stage
@@ -2582,6 +2592,7 @@ mod tests {
             vertex_index_topology_mask: DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: false,
             vertex_uniform_array_indexing: false,
+            vertex_index_local_array_indexing: false,
             max_sampled_textures_per_vertex_stage: 4,
             max_sampled_texture_sampler_pairs_per_shader_stage: 16,
             max_vertex_shader_uniform_vectors: 4,
@@ -2661,6 +2672,7 @@ mod tests {
             vertex_index_topology_mask: DownlevelLimits::VERTEX_INDEX_TOPOLOGY_MASK_ALL,
             instance_index_input: false,
             vertex_uniform_array_indexing: false,
+            vertex_index_local_array_indexing: false,
             max_sampled_textures_per_vertex_stage: 3,
             max_sampled_texture_sampler_pairs_per_shader_stage: 16,
             max_vertex_shader_uniform_vectors: 3,
@@ -3733,6 +3745,21 @@ mod tests {
         }
         .is_webgpu_compliant());
         assert!(!DownlevelLimits::default().vertex_uniform_array_indexing);
+    }
+
+    #[test]
+    fn vertex_index_local_array_indexing_is_a_subset_capability() {
+        let available = DownlevelLimits {
+            vertex_index_local_array_indexing: true,
+            ..DownlevelLimits::default()
+        };
+        let required = DownlevelLimits {
+            vertex_index_local_array_indexing: true,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&required));
+        assert!(!DownlevelLimits::default().check_limits(&required));
+        assert!(!DownlevelLimits::default().vertex_index_local_array_indexing);
     }
 
     #[test]

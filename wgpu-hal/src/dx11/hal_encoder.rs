@@ -1467,6 +1467,11 @@ impl crate::CommandEncoder for CommandEncoder {
             }
             vertices.push((physical as u32, buffer.clone(), *offset, stride));
         }
+        let first_vertex = if vertices.is_empty() && !uses_vertex_index {
+            0
+        } else {
+            first_vertex
+        };
         let Some(topology) = render.topology else {
             self.reject();
             return;

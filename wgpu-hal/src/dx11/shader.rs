@@ -449,6 +449,10 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         fl9_texture_num_levels_proof: input_options.texture_num_levels_binding,
         fl9_texture_base_clamp_proof: input_options.texture_base_clamp_binding,
         fl9_uniform_index_arguments: uniform_index_arguments.to_vec(),
+        signed_function_restrict_indexing: matches!(
+            profile,
+            ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
+        ) && input_options.vertex_index_input,
         // Keep these guarantees explicit even if Naga's defaults change.
         restrict_indexing: true,
         // FXC rejects Naga's dynamic loop guard at FL9_1. Without the guard,
@@ -1071,6 +1075,56 @@ mod tests {
             compile_hlsl(&hlsl, &entry, ShaderProfile::VertexLevel9_1)
                 .unwrap_or_else(|error| panic!("generated HLSL did not compile: {error:?}\n{hlsl}"));
         }
+    }
+
+    #[test]
+    fn fl91_naga_instance_index_compare_select_fxc_probe() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @vertex fn main(@builtin(instance_index) id: u32) -> @builtin(position) vec4f {
+                let matches = id == 3u;
+                let x = select(-0.5, 0.5, matches);
+                return vec4f(x, 0.0, 0.5, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let (hlsl, entry) = translate_naga_with_viewport_and_fl9_inputs(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "main",
+            ShaderProfile::VertexLevel9_1,
+            &[],
+            Fl9ShaderInputOptions {
+                instance_index_input: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+
+        println!("Generated HLSL for vs_4_0_level_9_1 probe:\n{hlsl}");
+        assert!(hlsl.contains("naga_fl9_instance_index"), "{hlsl}");
+        assert!(hlsl.contains("== 3"), "{hlsl}");
+        assert!(
+            hlsl.contains("?"),
+            "expected select to consume comparison:\n{hlsl}"
+        );
+
+        let bytecode =
+            compile_hlsl(&hlsl, &entry, ShaderProfile::VertexLevel9_1).unwrap_or_else(|error| {
+                panic!("FXC rejected vs_4_0_level_9_1 probe: {error:?}\n{hlsl}")
+            });
+        println!(
+            "FXC accepted vs_4_0_level_9_1 probe; DXBC size={} bytes. This is compiler evidence only, not enabled backend support.",
+            bytecode.len()
+        );
     }
 
     #[test]

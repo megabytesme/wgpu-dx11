@@ -291,6 +291,7 @@ fn fl91_core_empty_unmap_and_mapped_write_flush_failure_cleans_up() {
                     vertex_index_topology_mask: 0,
                     instance_index_input: false,
                     vertex_uniform_array_indexing: true,
+                    vertex_index_local_array_indexing: false,
                     max_sampled_textures_per_vertex_stage: 0,
                     max_sampled_texture_sampler_pairs_per_shader_stage: 16,
                     max_vertex_shader_uniform_vectors: 255,
@@ -3717,7 +3718,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
 }
 
 #[test]
-fn fl91_core_zero_input_incomplete_triangle_accepts_wrapping_vertex_range() {
+fn fl91_core_zero_input_draws_normalize_wrapping_vertex_ranges() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
     let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
@@ -3802,7 +3803,7 @@ fn fl91_core_zero_input_incomplete_triangle_accepts_wrapping_vertex_range() {
         device,
         &wgt::BufferDescriptor {
             label: None,
-            size: 256 * 8,
+            size: 2048 * 4,
             usage: wgt::BufferUsages::COPY_DST | wgt::BufferUsages::MAP_READ,
             mapped_at_creation: false,
         },
@@ -3817,7 +3818,20 @@ fn fl91_core_zero_input_incomplete_triangle_accepts_wrapping_vertex_range() {
             runtime_checks: wgt::ShaderRuntimeChecks::checked(),
         },
         crate::pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(
-            "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }",
+            r#"
+                @vertex fn vs() -> @builtin(position) vec4f {
+                    return vec4f(0.0, 0.0, 0.0, 1.0);
+                }
+                @vertex fn vs_index(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                    return vec4f(f32(index), 0.0, 0.0, 1.0);
+                }
+                @vertex fn vs_input(@location(0) position: vec4f) -> @builtin(position) vec4f {
+                    return position;
+                }
+                @fragment fn fs() -> @location(0) vec4f {
+                    return vec4f(1.0, 0.0, 0.0, 1.0);
+                }
+            "#,
         )),
         None,
     );
@@ -3839,31 +3853,37 @@ fn fl91_core_zero_input_incomplete_triangle_accepts_wrapping_vertex_range() {
         zero_initialize_workgroup_memory: false,
     };
     let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
-    let (pipeline, error) = global.device_create_render_pipeline(
-        device,
-        &crate::pipeline::RenderPipelineDescriptor {
-            label: None,
-            layout: Some(layout),
-            vertex: crate::pipeline::VertexState {
-                stage: stage("vs"),
-                buffers: Cow::Borrowed(&[]),
-            },
-            primitive: wgt::PrimitiveState::default(),
-            depth_stencil: None,
-            multisample: wgt::MultisampleState::default(),
-            fragment: Some(crate::pipeline::FragmentState {
-                stage: stage("fs"),
-                targets: Cow::Borrowed(&targets),
-            }),
-            multiview_mask: None,
-            cache: None,
+    let mut pipeline_descriptor = crate::pipeline::RenderPipelineDescriptor {
+        label: None,
+        layout: Some(layout),
+        vertex: crate::pipeline::VertexState {
+            stage: stage("vs"),
+            buffers: Cow::Borrowed(&[]),
         },
-        None,
-    );
-    assert!(
-        error.is_none(),
-        "no-input render pipeline creation: {error:?}"
-    );
+        primitive: wgt::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgt::MultisampleState::default(),
+        fragment: Some(crate::pipeline::FragmentState {
+            stage: stage("fs"),
+            targets: Cow::Borrowed(&targets),
+        }),
+        multiview_mask: None,
+        cache: None,
+    };
+    let cases = [
+        (wgt::PrimitiveTopology::TriangleList, 2),
+        (wgt::PrimitiveTopology::LineList, 2),
+        (wgt::PrimitiveTopology::LineStrip, 2),
+        (wgt::PrimitiveTopology::TriangleStrip, 3),
+    ];
+    let mut pipelines = Vec::new();
+    for (topology, _) in cases {
+        pipeline_descriptor.primitive.topology = topology;
+        let (pipeline, error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        assert!(error.is_none(), "{topology:?} pipeline creation: {error:?}");
+        pipelines.push(pipeline);
+    }
 
     let (encoder, error) = global.device_create_command_encoder(
         device,
@@ -3871,53 +3891,60 @@ fn fl91_core_zero_input_incomplete_triangle_accepts_wrapping_vertex_range() {
         None,
     );
     assert!(error.is_none(), "draw encoder creation: {error:?}");
-    let attachments = [Some(crate::command::RenderPassColorAttachment {
-        view,
-        depth_slice: None,
-        resolve_target: None,
-        load_op: wgt::LoadOp::Clear(wgt::Color::BLACK),
-        store_op: wgt::StoreOp::Store,
-    })];
-    let (mut pass, error) = global.command_encoder_begin_render_pass(
-        encoder,
-        &crate::command::RenderPassDescriptor {
-            label: None,
-            color_attachments: Cow::Borrowed(&attachments),
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        },
-    );
-    assert!(error.is_none(), "render pass creation: {error:?}");
-    global
-        .render_pass_set_pipeline(&mut pass, pipeline)
-        .unwrap();
-    global
-        .render_pass_draw(&mut pass, 2, 1, u32::MAX, 0)
-        .expect("record zero-input incomplete TriangleList draw");
-    global.render_pass_end(&mut pass).unwrap();
-    drop(pass);
-    global
-        .command_encoder_copy_texture_to_buffer(
+    for (case_index, ((topology, vertex_count), pipeline)) in
+        cases.into_iter().zip(&pipelines).enumerate()
+    {
+        let attachments = [Some(crate::command::RenderPassColorAttachment {
+            view,
+            depth_slice: None,
+            resolve_target: None,
+            load_op: wgt::LoadOp::Clear(wgt::Color::BLACK),
+            store_op: wgt::StoreOp::Store,
+        })];
+        let (mut pass, error) = global.command_encoder_begin_render_pass(
             encoder,
-            &wgt::TexelCopyTextureInfo {
-                texture: target,
-                mip_level: 0,
-                origin: wgt::Origin3d::ZERO,
-                aspect: wgt::TextureAspect::All,
+            &crate::command::RenderPassDescriptor {
+                label: None,
+                color_attachments: Cow::Borrowed(&attachments),
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
             },
-            &wgt::TexelCopyBufferInfo {
-                buffer: readback,
-                layout: wgt::TexelCopyBufferLayout {
-                    offset: 0,
-                    bytes_per_row: Some(256),
-                    rows_per_image: Some(8),
+        );
+        assert!(
+            error.is_none(),
+            "{topology:?} render pass creation: {error:?}"
+        );
+        global
+            .render_pass_set_pipeline(&mut pass, *pipeline)
+            .unwrap();
+        global
+            .render_pass_draw(&mut pass, vertex_count, 1, u32::MAX, 0)
+            .unwrap_or_else(|error| panic!("record {topology:?} zero-input draw: {error:?}"));
+        global.render_pass_end(&mut pass).unwrap();
+        drop(pass);
+        global
+            .command_encoder_copy_texture_to_buffer(
+                encoder,
+                &wgt::TexelCopyTextureInfo {
+                    texture: target,
+                    mip_level: 0,
+                    origin: wgt::Origin3d::ZERO,
+                    aspect: wgt::TextureAspect::All,
                 },
-            },
-            &extent,
-        )
-        .expect("record target readback");
+                &wgt::TexelCopyBufferInfo {
+                    buffer: readback,
+                    layout: wgt::TexelCopyBufferLayout {
+                        offset: (case_index * 2048) as u64,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(8),
+                    },
+                },
+                &extent,
+            )
+            .expect("record target readback");
+    }
     let (command, error) =
         global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
     assert!(
@@ -3933,7 +3960,7 @@ fn fl91_core_zero_input_incomplete_triangle_accepts_wrapping_vertex_range() {
         .buffer_map_async(
             readback,
             0,
-            Some(256 * 8),
+            Some(2048 * 4),
             BufferMapOperation {
                 host: HostMap::Read,
                 callback: Some(Box::new(move |result| sender.send(result).unwrap())),
@@ -3954,22 +3981,162 @@ fn fl91_core_zero_input_incomplete_triangle_accepts_wrapping_vertex_range() {
         .expect("readback map callback")
         .expect("readback map result");
     let (pointer, length) = global
-        .buffer_get_mapped_range(readback, 0, Some(256 * 8))
+        .buffer_get_mapped_range(readback, 0, Some(2048 * 4))
         .unwrap();
     let pixels = unsafe { core::slice::from_raw_parts(pointer.as_ptr(), length as usize) };
-    for y in 0..8 {
-        for x in 0..8 {
-            let offset = y * 256 + x * 4;
-            assert_eq!(
-                &pixels[offset..offset + 4],
-                &[0, 0, 0, 255],
-                "incomplete zero-input triangle must leave ({x}, {y}) clear"
-            );
+    for (case_index, (topology, _)) in cases.iter().enumerate() {
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = case_index * 2048 + y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    &[0, 0, 0, 255],
+                    "degenerate zero-input {topology:?} pixel ({x}, {y})"
+                );
+            }
         }
     }
 
     global.buffer_unmap(readback).unwrap();
-    global.render_pipeline_drop(pipeline);
+    for pipeline in pipelines {
+        global.render_pipeline_drop(pipeline);
+    }
+
+    let attributes = [wgt::VertexAttribute {
+        format: wgt::VertexFormat::Float32x4,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(crate::pipeline::VertexBufferLayout {
+        array_stride: 16,
+        step_mode: wgt::VertexStepMode::Vertex,
+        attributes: Cow::Borrowed(&attributes),
+    })];
+    pipeline_descriptor.vertex.stage = stage("vs_input");
+    pipeline_descriptor.vertex.buffers = Cow::Borrowed(&vertex_buffers);
+    pipeline_descriptor.primitive.topology = wgt::PrimitiveTopology::TriangleList;
+    let (vertex_pipeline, error) =
+        global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+    assert!(error.is_none(), "vertex-input pipeline creation: {error:?}");
+    let (vertices, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: None,
+            size: 16,
+            usage: wgt::BufferUsages::VERTEX,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(error.is_none(), "vertex input buffer creation: {error:?}");
+    let (invalid_encoder, error) = global.device_create_command_encoder(
+        device,
+        &wgt::CommandEncoderDescriptor::default(),
+        None,
+    );
+    assert!(
+        error.is_none(),
+        "vertex-input validation encoder: {error:?}"
+    );
+    let attachments = [Some(crate::command::RenderPassColorAttachment {
+        view,
+        depth_slice: None,
+        resolve_target: None,
+        load_op: wgt::LoadOp::Clear(wgt::Color::BLACK),
+        store_op: wgt::StoreOp::Store,
+    })];
+    let (mut pass, error) = global.command_encoder_begin_render_pass(
+        invalid_encoder,
+        &crate::command::RenderPassDescriptor {
+            label: None,
+            color_attachments: Cow::Borrowed(&attachments),
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        },
+    );
+    assert!(error.is_none(), "vertex-input validation pass: {error:?}");
+    global
+        .render_pass_set_pipeline(&mut pass, vertex_pipeline)
+        .unwrap();
+    global
+        .render_pass_set_vertex_buffer(&mut pass, 0, Some(vertices), 0, None)
+        .unwrap();
+    global
+        .render_pass_draw(&mut pass, 2, 1, u32::MAX, 0)
+        .unwrap();
+    global.render_pass_end(&mut pass).unwrap();
+    drop(pass);
+    let (invalid_command, error) = global.command_encoder_finish(
+        invalid_encoder,
+        &wgt::CommandBufferDescriptor::default(),
+        None,
+    );
+    let error = error.expect("real vertex fetch overflow must remain rejected");
+    assert!(
+        std::format!("{error:?}").contains("VertexBeyondLimit"),
+        "real vertex fetch must retain Core's vertex-limit validation: {error:?}"
+    );
+    global.command_buffer_drop(invalid_command);
+    global.command_encoder_drop(invalid_encoder);
+    global.render_pipeline_drop(vertex_pipeline);
+    global.buffer_drop(vertices);
+
+    pipeline_descriptor.vertex.stage = stage("vs_index");
+    pipeline_descriptor.vertex.buffers = Cow::Borrowed(&[]);
+    let (vertex_index_pipeline, error) =
+        global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+    assert!(error.is_none(), "vertex_index pipeline creation: {error:?}");
+    let (invalid_encoder, error) = global.device_create_command_encoder(
+        device,
+        &wgt::CommandEncoderDescriptor::default(),
+        None,
+    );
+    assert!(
+        error.is_none(),
+        "vertex_index validation encoder: {error:?}"
+    );
+    let attachments = [Some(crate::command::RenderPassColorAttachment {
+        view,
+        depth_slice: None,
+        resolve_target: None,
+        load_op: wgt::LoadOp::Clear(wgt::Color::BLACK),
+        store_op: wgt::StoreOp::Store,
+    })];
+    let (mut pass, error) = global.command_encoder_begin_render_pass(
+        invalid_encoder,
+        &crate::command::RenderPassDescriptor {
+            label: None,
+            color_attachments: Cow::Borrowed(&attachments),
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        },
+    );
+    assert!(error.is_none(), "vertex_index validation pass: {error:?}");
+    global
+        .render_pass_set_pipeline(&mut pass, vertex_index_pipeline)
+        .unwrap();
+    global
+        .render_pass_draw(&mut pass, 2, 1, u32::MAX, 0)
+        .unwrap();
+    global.render_pass_end(&mut pass).unwrap();
+    drop(pass);
+    let (invalid_command, error) = global.command_encoder_finish(
+        invalid_encoder,
+        &wgt::CommandBufferDescriptor::default(),
+        None,
+    );
+    assert!(
+        error.is_some(),
+        "vertex_index range overflow must remain rejected before submission"
+    );
+    global.command_buffer_drop(invalid_command);
+    global.command_encoder_drop(invalid_encoder);
+    global.render_pipeline_drop(vertex_index_pipeline);
+
     global.pipeline_layout_drop(layout);
     global.shader_module_drop(shader);
     global.buffer_drop(readback);
@@ -3981,7 +4148,7 @@ fn fl91_core_zero_input_incomplete_triangle_accepts_wrapping_vertex_range() {
     global.device_drop(device);
     global.adapter_drop(adapter_id);
     std::println!(
-        "PASS: FL9_1 zero-input count-2 draw at first_vertex=u32::MAX encoded, submitted, completed and preserved all 64 clear pixels"
+        "PASS: FL9_1 zero-input draws for all four supported nonindexed topologies normalized first_vertex=u32::MAX, completed with 64 unchanged pixels each, and retained real-fetch and vertex_index rejection"
     );
 }
 

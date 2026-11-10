@@ -48,6 +48,12 @@ predicate for the private RGBA8, BGRA8, D24S8, R8_UNORM, R8G8_UNORM, R8G8_SNORM,
 R16G16_SNORM, R8G8B8A8_SNORM, B5G6R5 and BC1/BC2/BC3 unorm and sRGB subsets;
 it is not a complete texture validation rule.
 
+DX11 is excluded from `Backends::default()`, but adapter enumeration is not
+globally disabled: when the Cargo `dx11` feature is enabled, applications that
+explicitly request `Backends::DX11` (or `Backends::all()`) can enumerate the
+physical adapters that pass this FL9_1 projection. The default-isolation test
+only verifies that the default instance does not enable DX11.
+
 For RGBA8/BGRA8 linear and sRGB formats, each reported usage is now projected
 from its own selected-device query and production usage check. Missing render-
 target support no longer hides independently valid sampled and copy-destination
@@ -490,7 +496,7 @@ historical-driver behavior remain unsupported or unverified.
 | Category | Hardware and private implementation | Coverage; wgpu mapping and remaining work |
 | --- | --- | --- |
 | Device / adapter | Native DXGI discovery excludes software adapters and creates only an explicitly requested FL9_1 device. The public opt-in adapter exposes the selected-device projection and a constrained HWND surface: BGRA8 sRGB FIFO, opaque composition, render-attachment usage, one frame of latency and owner-thread lifecycle. | Strict public wgpu tests select the RTX 3090 Ti, render/read back with uniforms in group 0, a sampler in group 4 and textures in group 7, replace only the group-7 texture between draws, verify overlapping near/far draws in both orders, concurrently submit through two public devices sharing the selected native device/context, and verify core rejection of unsupported resource/layout requests. A hidden-window lifecycle test configures, presents, resizes and presents again; a visible-window example presents 60 animated textured, indexed, depth-tested frames. The adapter exposes `TEXTURE_FORMAT_16BIT_NORM`, `TEXTURE_FORMAT_16BIT_PACKED` and comparison-sampler `ADDRESS_MODE_CLAMP_TO_BORDER` only when their implemented paths and selected-device queries permit them. It is not WebGPU-compliant. The exhaustive contract audit remains outstanding; visible client-area output has been qualitatively captured and inspected. |
-| Buffers, maps, copies | Native buffers and copies exist. Private HAL implements vertex, index, uniform, copy and explicit CPU-shadow mappings; vertex+index is rejected at 9_1/9_2. The FL9_1 logical size limit leaves one 4-byte alignment unit below `u32::MAX`, so core's vertex sentinel byte and 4-byte allocation rounding still fit D3D11's `ByteWidth`. Storage usage bits and even storage-only allocation are accepted when otherwise core-valid; FL9_1 native allocation uses a dummy vertex bind for storage-only buffers, while shader storage binding remains unavailable. Indirect usage is unsupported. | Copy, clear, map, initialization and ownership tests. Core requires `VERTEX_STORAGE`, `FRAGMENT_STORAGE` or `COMPUTE_SHADERS` for storage-buffer layouts visible to those stages; writable fragment buffers also require `FRAGMENT_WRITABLE_STORAGE`. The controlled fixture verifies unsupported stage layouts fail before HAL and a storage/copy buffer still uploads, copies and reads back. A strict public test creates a storage-only buffer but verifies storage layouts remain rejected. Public `Buffer::destroy` rejects outstanding mapped views before core unmaps the D3D11 shadow allocation; strict public readback coverage verifies disjoint views remain valid after the rejected destroy. Strict public `clear_buffer` readback verifies an aligned 16..48 byte range is zeroed in queue order while the surrounding bytes retain their uploaded values; core rejects unaligned and out-of-bounds clear ranges. `UNRESTRICTED_INDEX_BUFFER` and limits describe only part of the buffer contract. |
+| Buffers, maps, copies | Native buffers and copies exist. Private HAL implements vertex, index, uniform, copy and explicit CPU-shadow mappings; noncoherent mappings are synchronized before CPU access. Vertex+index is rejected at 9_1/9_2. The FL9_1 logical size limit leaves one 4-byte alignment unit below `u32::MAX`, so core's vertex sentinel byte and 4-byte allocation rounding still fit D3D11's `ByteWidth`. Storage usage bits and even storage-only allocation are accepted when otherwise core-valid; FL9_1 native allocation uses a dummy vertex bind for storage-only buffers, while shader storage binding remains unavailable. Indirect usage is unsupported. | Copy, clear, map, initialization and ownership tests. Strict public FL9_1 coverage remaps a `MAP_WRITE | COPY_SRC` range, verifies the prior contents, changes only two bytes and checks complete GPU copy/readback preserves all other bytes. Core requires `VERTEX_STORAGE`, `FRAGMENT_STORAGE` or `COMPUTE_SHADERS` for storage-buffer layouts visible to those stages; writable fragment buffers also require `FRAGMENT_WRITABLE_STORAGE`. The controlled fixture verifies unsupported stage layouts fail before HAL and a storage/copy buffer still uploads, copies and reads back. A strict public test creates a storage-only buffer but verifies storage layouts remain rejected. Public `Buffer::destroy` rejects outstanding mapped views before core unmaps the D3D11 shadow allocation; strict public readback coverage verifies disjoint views remain valid after the rejected destroy. Strict public `clear_buffer` readback verifies an aligned 16..48 byte range is zeroed in queue order while the surrounding bytes retain their uploaded values; core rejects unaligned and out-of-bounds clear ranges. `UNRESTRICTED_INDEX_BUFFER` and limits describe only part of the buffer contract. |
 | 2D textures / formats / views | FL9_1 texture use is projected per format from the static level guarantee, selected-device `CheckFormatSupport` and implemented usage path. RGBA8/BGRA8 support sampled/upload, render-target, copy and readback paths; mip support and optional attachment/copy uses require the relevant query. R8_UNORM, R8G8_SNORM and R8G8B8A8_SNORM support sampled/upload, with mip chains gated by `TEXTURE2D | MIP`; RGBA8_SNORM also permits same-format GPU copy-source use when the selected device reports `TEXTURE2D` and the backend path is enabled. RG8_SNORM copy-source use remains disabled because valid copies failed on the forced-FL9_1 development driver. SNORM copy paths do not enable CPU readback or render-target use. R8G8_UNORM, R16G16_SNORM and packed 16-bit formats have narrower selected-query paths. BC1/2/3 unorm and sRGB each have a separate narrow sampled/upload feature and query-gated GPU-copy subset, not CPU readback. D16/D24 formats support their restricted depth attachment and query-gated sampling paths. Other formats/usages remain unavailable. | Strict public tests verify uploads, sampled readback, optional per-format attachments/copies, mip selection and format-specific validation. RGBA8_SNORM upload→GPU-copy→sample execution is verified at requested/actual FL9_1; its copy path does not add render-target or CPU readback use. An RG8_SNORM copy attempt failed on the forced-FL9_1 RTX 3090 Ti and is not exposed. BC sRGB sampling verifies actual decoding. Core `TextureFormatFeatures` and downlevel limits must track the same query and backend predicates. Historical-driver format behavior remains unverified. |
 | Texture view dimensions | The native resource path now includes RGBA8-family and selected query-backed cube SRVs: square POT, six faces, one sample; cube views are sampled-only, while cube resources may also use the documented optional copy usages. Mip chains are query-gated. The reported six array layers cover the cube backing only; `TEXTURE_2D_ARRAYS` remains absent. Ordinary arrays, cube arrays, render-target cubes and single-face D2 views remain unsupported. | Core gates cube resources/views on `CUBE_TEXTURES`, the selected cube dimension/NPOT limits and per-format cube mask; the no-array path rejects unsupported cube shapes/usages before HAL. Strict public forced-FL9_1 rendering samples all six RGBA8 faces across four mips and a non-suffix view (960/960 pixels). D1 and ordinary array paths remain gated; the separate 3D RGBA8 sampled-upload path is narrowly query-gated below. Historical drivers are unverified. |
 | Mips, arrays, NPOT / sampling | POT RGBA8 and BGRA8 2D textures and sampled cube textures can have mip chains when format support is reported. Sampled suffix views are native; other supported mip ranges use a GPU clone. Color-attachment views select one mip. Sampled and color-attachment usages can coexist, with optional copy usages. NPOT 2D mip chains are capability-gated by positive `FullNonPow2TextureSupport` and per-format `MIP`; cube mip chains remain square POT, and ordinary arrays remain unavailable. | Strict FL9_1 tests verify per-mip transfers, attachment rendering, suffix and clone-backed non-suffix sampling on the RTX. A public 6×10 four-level RGBA8 texture uploaded with padded rows and sampled at mip 2 matched 64/64 output pixels. Cube mip chains require square POT dimensions, exactly six faces, one sample, supported sampled usage and a positive per-format `MIP` query. Contents are caller-uploaded; autogeneration is unavailable. Core requires `NON_POWER_OF_TWO_MIPMAPPED_TEXTURES`; D3D11 sets it only when its implementation path and the selected 9_x device's full-NPOT query are positive (10+ treats the hardware guarantee as sufficient). Negative or unavailable 9_x results leave the flag absent. Other NPOT formats/usages are gated by format and backend validation and remain less thoroughly tested. |
@@ -668,15 +674,12 @@ GPU test submits 65,536 points and 65,538 triangle vertices; the visible point
 and triangle are only in the final batch, and readback confirms both. The
 triangle readback contained 32 red and 32 blue pixels. Historical driver
 behavior at large draw boundaries remains unverified.
-| Queries / synchronization / readback | The 10Level9 feature table marks occlusion queries unavailable at FL9_1 and available from FL9_2; they remain rejected. Timestamp support is optional per selected device: creation and execution of timestamp plus disjoint queries are probed, and only a positive nonzero frequency enables `TIMESTAMP_QUERY`, `TIMESTAMP_QUERY_INSIDE_ENCODERS` and `TIMESTAMP_QUERY_INSIDE_PASSES`. HAL implements `PassTimestampWrites` boundary markers for render passes and empty compute passes; this descriptor requires `TIMESTAMP_QUERY`. Explicit in-pass writes use the same ordered `End` command and require `TIMESTAMP_QUERY_INSIDE_PASSES`, exposed only when the selected-device timestamp/disjoint probe succeeds. Compute pipeline creation and dispatch remain unavailable. Pipeline-statistics queries remain unavailable. Query resolve flushes and waits for D3D11 `GetData`, then writes results to a checked `QUERY_RESOLVE` buffer; this preserves order but can block the CPU. Queue period is derived from the observed disjoint-query frequency. Queue submission serializes the immediate context, and staging readback waits for completion. If replay fails after issuing earlier commands, HAL ends and flushes an event query and waits for prior GPU work before returning the error, keeping borrowed command buffers and resources alive until that partial submission drains. Shared HRESULT classification recognizes device hung, removed, reset and driver-internal-error results as device loss. | Strict RTX 3090 Ti tests at requested/actual FL9_1 cover encoder markers, render/compute pass boundaries and explicit timestamp writes around a render draw and inside an empty compute pass. All ten resolved values were nonzero and nondecreasing in command order; the queue period was 1 ns/tick. See `TESTING.md` for the observed values. Public tests reject occlusion and pipeline-statistics sets. Fence, sequencing, copy, partial-replay-failure and GPU readback tests; CPU tests cover HRESULT classification. A controlled core fixture injects `DXGI_ERROR_DEVICE_REMOVED` during replay on a forced-FL9_1 device and verifies `DeviceError::Lost`, core invalidation and exactly one lost callback; this does not physically remove the selected GPU. Core tests inject removal from fence wait, GetData, `GetDeviceRemovedReason` and queue-drop `wait_for_idle` paths; callbacks can re-enter polling, and queue destruction completes without panicking. Physical device removal/recovery, remaining lifetime/error paths and debug-layer diagnostics remain unverified. A synthetic GetData failure test confirms the pending query remains retained until a later real completion. |
+| Queries / synchronization / readback | The 10Level9 feature table marks occlusion queries unavailable at FL9_1 and available from FL9_2; they remain rejected. Native timestamp/disjoint query execution is retained for HAL diagnostics, but the public projection does not advertise timestamp features. WebGPU permits timestamp pairs to cross queue submissions, while D3D11 only guarantees their reliability and frequency within one disjoint interval; this HAL cannot report interval-specific frequency or invalid results. HAL implements `PassTimestampWrites` boundary markers for render passes and empty compute passes; this descriptor requires `TIMESTAMP_QUERY`. The native HAL can record these ordered `End` commands for diagnostics, but Core rejects public timestamp use because the timestamp features are absent. Compute pipeline creation and dispatch remain unavailable. Pipeline-statistics queries remain unavailable. Query resolve flushes and waits for D3D11 `GetData`, then writes results to a checked `QUERY_RESOLVE` buffer; this preserves order but can block the CPU. The public queue timestamp period is zero; a startup frequency sample is not treated as a lifetime guarantee. Queue submission serializes the immediate context, and staging readback waits for completion. If replay fails after issuing earlier commands, HAL ends and flushes an event query and waits for prior GPU work before returning the error, keeping borrowed command buffers and resources alive until that partial submission drains. Shared HRESULT classification recognizes device hung, removed, reset and driver-internal-error results as device loss. | A strict private HAL diagnostic brackets two timestamp writes in one disjoint interval and verifies a positive frequency and monotonic values. A strict public test verifies the feature request and query-set creation are rejected and the queue period is zero; see `TESTING.md`. Public tests reject occlusion and pipeline-statistics sets. Fence, sequencing, copy, partial-replay-failure and GPU readback tests; CPU tests cover HRESULT classification. A controlled core fixture injects `DXGI_ERROR_DEVICE_REMOVED` during replay on a forced-FL9_1 device and verifies `DeviceError::Lost`, core invalidation and exactly one lost callback; this does not physically remove the selected GPU. Core tests inject removal from fence wait, GetData, `GetDeviceRemovedReason` and queue-drop `wait_for_idle` paths; callbacks can re-enter polling, and queue destruction completes without panicking. Physical device removal/recovery, remaining lifetime/error paths and debug-layer diagnostics remain unverified. A synthetic GetData failure test confirms the pending query remains retained until a later real completion. |
 
 Microsoft's [Direct3D feature-level table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro)
 lists occlusion queries as unavailable at FL9_1 and available at FL9_2 and
 above. This settles that specific query gap as a hardware boundary for this
-mission. Timestamp support is not inferred from that table: the selected
-device must positively create and execute timestamp/disjoint queries and
-report a nonzero frequency. Pipeline-statistics support is not inferred from
-timestamp support.
+mission. A positive startup timestamp/disjoint probe is diagnostic only: it does not guarantee reliable timestamp pairs across later submissions. The public timestamp features remain disabled until the backend can preserve disjoint validity and interval-specific frequency. Pipeline-statistics support remains unavailable.
 | Compute / storage | No native compute shader or UAV support at FL9_1; private HAL accepts paired empty compute passes but rejects compute pipeline creation, dispatch and shader storage bindings. Core may retain storage bits for transfer-capable buffers but does not bind them as storage. Other APIs may require CPU or graphics emulation. | Strict hardware test verifies ordered copies around an empty pass and rejects dispatch and invalid pass sequences. The controlled core fixture checks stage-specific storage-buffer layout rejection before HAL. Public strict tests verify core rejects compute-pipeline creation and `INDIRECT` buffer creation before reaching the corresponding unsupported HAL paths. No compute/storage feature is exposed; feature/limit gating alone remains insufficient for public device exposure. |
 | Presentation | FL9 hardware can support display through platform/format-specific paths. The private backend retains the WinRT CoreWindow path and exposes a constrained Win32 HWND surface through opt-in public wgpu: BGRA8 sRGB FIFO, opaque composition, render-attachment usage and one frame of latency. Configure, acquire and present are owner-thread-only. CoreWindow construction requires dispatcher-thread access and subsequent operations use the captured owner thread; public CoreWindow capabilities remain withheld. | Queue and selected context-backed operations serialize against Present; same-thread reentrant mutations are rejected. Strict RTX tests cover hidden-window configure/present/resize, wrong-thread acquisition rejection and a visible 60-frame textured indexed scene. A client-area capture was visually inspected and showed distinct red and green faces over the clear color. A fixture-only public test injects `DXGI_ERROR_DEVICE_REMOVED` at Present and verifies exactly one public lost callback plus prompt reentrant-poll rejection; this is synthetic and does not remove the GPU. Deterministic presentation pixels remain unavailable, while equivalent color/depth behavior is covered by offscreen readback. Further lifecycle/error edges and historical driver behavior remain unverified. CoreWindow dispatcher/thread checks have CPU coverage and ARM32-UWP compile coverage only; no UWP runtime is claimed. This is not general surface or WebGPU support. |
 
@@ -1235,9 +1238,19 @@ allows only offset zero. Four-byte alignment is the private HAL minimum; a futur
 public adapter must enforce its reported wgpu alignment through core. For the
 selected FL9 shader entry, checked and unchecked compilation rejects runtime
 integer values, operations, conversions and bitcasts, integer-containing
-uniforms or interfaces, switches, and non-folded global initializers and
-overrides. This also rejects runtime integer-based vector indexing. Proven
-static literal indices and float-only paths remain available. Matrix-containing aggregate stores are rejected
+uniforms or interfaces, switches, non-folded global initializers and overrides,
+and non-uniform dynamic array, matrix and vector indexing. One separate
+`DownlevelLimits::vertex_index_local_array_indexing` exception permits a
+single direct read from an initialized function-local `array<vec2<f32>, 3>`
+in a straight-line vertex entry, indexed directly by `vertex_index`. It does
+not permit helper forwarding, computed indices, writes, multiple dynamic
+accesses or vector indexing. The level-9 HLSL writer uses signed clamping for
+this exact fixed array because FXC rejects its unsigned clamp form. Strict
+public readback verified a fullscreen triangle with all 64 pixels white;
+Core, Naga and HAL keep the exception synchronized. FXC rejects the tested
+dynamic `vertex_index` vector-index form with X3548. Proven static literal
+indices and the separately validated uniform-array subset remain available.
+Matrix-containing aggregate stores are rejected
 in checked and unchecked shaders because Naga's current HLSL special lowering
 can lose writes or omit an index clamp. The conservative guard also rejects
 unrelated stores to such aggregates and shaders exceeding its analysis budget.
@@ -1249,9 +1262,11 @@ rejects unsupported pipelines before HAL; safe sibling entry points and direct
 integer-vector-to-float vertex input conversion remain usable. Matrix stores
 through an aggregate containing a two-row matrix remain unsupported, while
 float-only matrix reads are allowed. These are backend/compiler limits, not
-feature-level hardware guarantees. The public regression covers fragment
-integer arithmetic and vertex aggregate stores on the forced-FL9_1 path; CPU
-tests cover helper pointer arguments and entry-point selection.
+feature-level hardware guarantees. The strict public regression accepts the
+exact direct local-array form and rejects helper-reached or computed local
+indexing, dynamic vector indexing, fragment integer arithmetic and vertex
+aggregate stores on the forced-FL9_1 path; CPU tests cover helper pointer
+arguments and selected-entry boundaries.
 Naga's HLSL writer lowers only f32 `mat2x2` inverse using scalar cofactors.
 DX11 exposes that subset through `DownlevelLimits::matrix_inverse_2x2` and
 keeps the general `matrix_inverse` limit false. Core validates selected
@@ -1642,11 +1657,20 @@ distinct expected color. Two bundles also select distinct dynamic uniform
 offsets from one buffer and verify red/green output after dropping the source
 buffer and bind group. Another pair switches between a uniform-only pipeline
 layout and a texture/sampler-only pipeline layout, verifying both outputs
-after their source resources are dropped. Other bundle state combinations and
-restart topologies remain unverified. A final test in this group binds a
-writable D16 attachment to two consecutive bundles; the far draw fails depth
-and readback checks all 64 near-red pixels after dropping the source vertex
-buffer.
+after their source resources are dropped. Strict public coverage also includes
+empty-bundle state reset, indexed triangle- and line-strip restart, inherited
+scissor and blend constants, inherited stencil reference, and writable D16
+depth across consecutive bundles. A colorless D16 bundle writes depth in a
+depth-only pass; later depth probes verify its contents and Core rejects using
+that bundle in a color-only pass. Read-only D24S8 stencil bundle aspects and
+fractional-viewport bundle execution are verified by strict forced-FL9_1
+public readback tests. A separate read-only D16 depth-bundle test executes in a
+read-only depth pass, verifies all 64 color
+pixels, proves with a later depth probe that the bundle preserved depth, and
+confirms Core rejects a writable bundle in the same pass. A final test in this
+group binds a writable D16 attachment to two consecutive bundles; the far draw
+fails depth and readback checks all 64 near-red pixels after dropping the
+source vertex buffer.
 
 ## Shader loop control
 
@@ -1693,18 +1717,23 @@ fragment entry point, followed by direct conversion of its `vec2u` result to
 module constant. An explicit-level query cannot coexist with sampling in that
 entry point; a level-less query may retain the existing one implicit sample.
 The result is the selected cube view's face dimensions, not its layer count.
-Core, Naga and HAL reject helper use, dynamic or negative levels, unrelated
-image operations, extra resources and runtime integer operations for this
-proof. Naga emits the cube SRV with the shared resource mapping; FXC consumes
-the host-provided dimensions rather than emitting `GetDimensions`, which the
-level-9 profile rejects. HAL supplies the current view's dimensions at the
-selected mip through the existing `b13` emulation constant. Nonzero levels
-still require the selected RGBA8 format to support mip chains; that format
-query remains independent of this shader-query limit. General `texture_query`
-remains false. Strict forced-FL9_1 readback on the RTX 3090 Ti verified the
-existing 8x8-to-4x4 view transition and the new constant mip-1 query in an
-initialized mipmapped cube; all 64 pixels matched within one byte. Historical
-FL9_1 driver behavior is not established by the modern forced-level result.
+Core, Naga and HAL accept either a direct query or one parameterless,
+query-only helper called exactly once by the selected entry point. A helper
+must query the same bound cube directly, return `vec2u`, and contain no
+sampling, extra calls, control flow or explicit mip. Any entry-point sample
+must use that same cube with a `vec3f` coordinate. Dynamic or negative levels,
+unrelated image operations, extra resources and runtime integer operations
+remain rejected. Naga emits the cube SRV with the shared resource mapping; FXC
+consumes the host-provided dimensions rather than emitting `GetDimensions`,
+which the level-9 profile rejects. HAL supplies the current view's dimensions
+at the selected mip through the existing `b13` emulation constant. Nonzero
+levels still require the selected RGBA8 format to support mip chains; that
+format query remains independent of this shader-query limit. General
+`texture_query` remains false. Strict forced-FL9_1 readback on the RTX 3090 Ti
+verified the 8x8-to-4x4 transition across a direct query and a helper call and
+the constant mip-1 query in an initialized mipmapped cube; all 64 pixels
+matched within one byte. Historical FL9_1 driver behavior is not established
+by the modern forced-level result.
 
 ## Combined FL9_1 2D `textureLoad` and `textureDimensions`
 
@@ -1729,9 +1758,10 @@ unverified.
 Core may accept an API draw whose `first_vertex + vertex_count - 1` exceeds
 `u32` when the pipeline has no per-vertex inputs and the selected shader does
 not consume `vertex_index`. In this case the start vertex is not observable
-through vertex fetch or shader input. HAL normalizes its internal batch range
-and native `StartVertexLocation` to zero only for this path. Real vertex-fetch
-bounds and the separate `vertex_index` emulation range remain checked. A
-strict Core/HAL FL9_1 fixture verified a count-2 TriangleList with
-`first_vertex = u32::MAX` completed and left all 64 readback pixels clear; this
-does not change the capability projection.
+through vertex fetch or shader input. HAL normalizes the effective first
+vertex to zero for generic and topology-specific replay only for this path.
+Real vertex-fetch bounds and the separate `vertex_index` emulation range
+remain checked. A strict Core/HAL FL9_1 fixture verified count-2 TriangleList,
+LineList and LineStrip draws plus a count-3 TriangleStrip with
+`first_vertex = u32::MAX`; each completed and left all 64 readback pixels
+clear. This does not change the capability projection.

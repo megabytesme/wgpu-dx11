@@ -1,10 +1,11 @@
 
 ## Zero-input draw range
 
-For the no-per-vertex-input, no-`vertex_index` draw case, HAL normalizes its
-internal range to zero when `first_vertex + vertex_count` exceeds `u32`. Strict
-Core/HAL readback verifies the draw completes and leaves the target unchanged;
-real fetch and `vertex_index` checks remain intact.
+For nonindexed draws with no per-vertex inputs and no `vertex_index` use, HAL
+normalizes the effective first vertex to zero when `first_vertex + count`
+exceeds `u32`. Strict Core/HAL readback covers TriangleList, LineList,
+LineStrip and TriangleStrip; real fetch and `vertex_index` checks remain
+intact.
 
 ## Timestamped depth-Never draws
 
@@ -248,7 +249,13 @@ destruction. A writable D16 bundle attachment test verifies that a later far
 draw fails depth across all 64 pixels. One bundle can also execute twice while
 the pass changes its scissor rectangle and blend constant; strict FL9_1
 readback verifies both regions and confirms pass-level state survives bundle
-execution. Other bundle state combinations remain part of the API audit.
+execution. Colorless D16 bundles execute in depth-only passes, and a read-only
+D16 bundle executes in a read-only depth pass while a later depth probe proves
+the stored depth was preserved. Core rejects color-only execution of the
+colorless bundle and rejects a writable bundle in the read-only pass. Strict
+public GPU tests now also cover a read-only D24S8 stencil bundle and a
+fractional-viewport render bundle; the stencil comparison and viewport remap
+were both verified through readback at forced FL9_1.
 The public stencil-reference bundle test also exposed a Core replay mismatch:
 render-bundle pipeline changes did not restore the render pass's dynamic
 stencil reference. Core now reapplies it after each bundle pipeline that uses
@@ -609,8 +616,9 @@ all out-of-target rectangles. Other backends keep the default true capability.
   cross-thread waiting are tested. Surface operation reservations track their
   owner thread; same-thread reentrant `unconfigure` logs and returns without
   waiting, while cross-thread calls still wait. Native callback delivery and
-  CoreWindow/ARM32 execution remain unverified; the HAL cross-compiles for
-  ARM32 UWP, but the Lumia runtime was unavailable.
+  CoreWindow/ARM32 execution remain unverified. Both the HAL and public wgpu
+  DX11 feature set cross-check for `thumbv7a-uwp-windows-msvc` using nightly
+  `build-std`; the Lumia runtime remains unavailable.
 - Buffer copies, initialization clears, fences, queue submission, and
   explicitly synchronized mapped CPU shadows, including transient staging.
   Core-internal storage usage bits can accompany a supported transfer buffer,
@@ -862,11 +870,11 @@ all out-of-target rectangles. Other backends keep the default true capability.
   methods are unreachable through this public capability contract.
 - Public core rejects compute-pipeline creation through its missing
   `COMPUTE_SHADERS` downlevel gate before invoking the unsupported HAL path.
-- Public core rejects occlusion and pipeline-statistics query sets. Timestamp
-  query sets and encoder writes are exposed only when selected-device
-  timestamp/disjoint execution reports a positive frequency; query resolve is
-  ordered but waits for `GetData` before writing the result buffer. Timestamp
-  writes inside render/compute passes remain unavailable.
+- Public core rejects occlusion and pipeline-statistics query sets. Native
+  timestamp/disjoint commands remain available for diagnostics, but public
+  timestamp features and query-set creation are rejected because D3D11 only
+  guarantees frequency within a disjoint interval while wgpu permits queries
+  across submissions. The public queue timestamp period is zero.
 - Negative and fractional viewports use a separately compiled vertex shader
   and a reserved constant buffer. FL9_x viewport calls do not preserve
   fractional values. If FXC cannot compile the adjusted variant, pipeline
@@ -1381,8 +1389,6 @@ same reserved `b13` constants. Strict public forced-FL9_1 rendering verified
 64/64 output pixels as `[100, 60, 80, 255]`. This composition adds no new
 capability flag and general `texture_query` remains disabled.
 
-## Optional timestamp query support
-
 ## Narrow FL9_1 fragment `textureNumLevels`
 
 The opt-in projection exposes separate
@@ -1460,41 +1466,34 @@ generated direct and helper shaders under `ps_4_0_level_9_1`. This does not
 enable general `texture_load` or 3D copies, attachments or readback; device
 support remains gated by the selected RGBA8 volume-sampling query.
 
-## Optional timestamp query support
+## Native timestamp diagnostics; public feature deferred
 
-Native device creation performs one bounded timestamp/disjoint query probe.
-Only a nonzero frequency adds `TIMESTAMP_QUERY`,
-`TIMESTAMP_QUERY_INSIDE_ENCODERS` and `TIMESTAMP_QUERY_INSIDE_PASSES` to the
-explicit FL9_1 adapter projection.
-Query-set creation supports timestamps only. Encoder and render/compute pass
-boundary writes issue D3D11 timestamp `End` commands; empty compute passes can
-be bracketed, while compute pipelines and dispatch remain unavailable.
-Explicit timestamp writes inside render and compute passes also issue ordered
-D3D11 timestamp `End` commands when the same selected-device probe succeeds.
-The strict public test covers a draw bracketed by render-pass writes and two
-writes inside an empty compute pass, in addition to the existing encoder and
-pass-boundary cases. On the physical RTX 3090 Ti at requested/actual FL9_1,
-all ten resolved values were nonzero and nondecreasing in command execution
-order. Resolve flushes, waits for `GetData` and updates the retained
-query-resolve buffer in sequence, which can stall the CPU. Compute pipeline
-dispatch, occlusion and pipeline-statistics queries remain unavailable. See
-`TESTING.md` for the focused command and observed values.
-
+The HAL retains native timestamp and disjoint-query code for diagnostics. A
+strict FL9_1 hardware test executes two timestamp writes inside one disjoint
+interval and checks the reported frequency and ordering. This does not justify
+public `TIMESTAMP_QUERY` support: Core permits query writes and resolves across
+queue submissions, while D3D11 only guarantees timestamp reliability and
+frequency within one disjoint interval. The public projection therefore omits
+`TIMESTAMP_QUERY` and both inside-encoder/pass features, and the public queue
+period is zero. Public tests verify feature requests and query-set creation are
+rejected before HAL timestamp commands can be recorded.
 ## Narrow FL9_1 fragment cube `textureDimensions`
 
 The opt-in projection adds `texture_dimensions_cube_float_fragment`, gated by
 the selected device's cube-format sampling query and the backend path. Core,
-Naga and HAL permit a direct cube face-size query converted from `vec2u` to
-`vec2f`, with either no mip argument or a nonnegative literal/module-constant
-level. An explicit-level query cannot also sample in the same selected entry
-point; the existing level-less query may share one implicit sample. The HAL
-supplies the selected view's face dimensions at that mip through `b13`;
-nonzero levels additionally require the existing selected-format mip support
-query. Ordinary cube resource binding continues through the existing mapping.
-FXC's level-9 profile does not receive `GetDimensions`; the size comes from
-the shared emulation constant. Strict public execution on the RTX 3090 Ti at
-requested/actual FL9_1 verified both 8x8/4x4 view transitions and a mip-1
-query on a populated four-level cube. Helpers, dynamic/negative levels,
+Naga and HAL permit a direct cube face-size query or one parameterless,
+query-only helper converted from `vec2u` to `vec2f`, with either no mip
+argument or a nonnegative literal/module-constant level. An explicit-level
+query cannot also sample in the same selected entry point; the level-less
+query may share one implicit sample of the same cube with `vec3f` coordinates.
+The HAL supplies the selected view's face dimensions at that mip through
+`b13`; nonzero levels additionally require the existing selected-format mip
+support query. Ordinary cube resource binding continues through the existing
+mapping. FXC's level-9 profile does not receive `GetDimensions`; the size comes
+from the shared emulation constant. Strict public execution on the RTX 3090 Ti
+at requested/actual FL9_1 verified a direct query and one helper call across
+the 8x8/4x4 view transition and a mip-1 query on a populated four-level cube.
+Helper-side sampling, extra calls/resources, dynamic or negative levels,
 explicit level plus sampling, unrelated image operations and general texture
 queries remain unsupported.
 
@@ -1543,4 +1542,18 @@ available. Strict Core fixture validation and rendering passed on the RTX
 Core, which checks the selected pipeline's sampled pairs against the currently
 bound view ranges during render-pass and bundle command validation. A strict
 Core case rejects a two-mip view for a single-mip-restricted sampler before
-HAL draw execution. Public D3D11 enumeration remains disabled.
+HAL draw execution. DX11 remains excluded from default backend selection, but
+applications that explicitly enable the `dx11` feature and request the backend
+can enumerate the restricted public adapter.
+
+## Direct FL9_1 vertex-index local-array read
+
+Core, Naga and HAL permit one direct `vertex_index` read from an initialized
+function-local `array<vec2<f32>, 3>` in a straight-line vertex entry. The
+selected public projection reports the narrow
+`DownlevelLimits::vertex_index_local_array_indexing` limit. Helper forwarding,
+computed indices, writes, multiple dynamic accesses, and dynamic vector or
+uniform indexing remain rejected. A strict public fullscreen-triangle test
+verified all 64 pixels on the RTX 3090 Ti at requested/actual FL9_1. This is a
+compiler/backend subset, not general runtime integer support, and historical
+FL9_1 hardware remains unverified.

@@ -41,6 +41,12 @@ fn fl91_integer_vertex_formats_render() -> windows::core::Result<()> {
             windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R16G16B16A16_SINT,
         ),
     ];
+    let rgba8_uint_texture_support = unsafe {
+        native
+            .raw_device()
+            .CheckFormatSupport(windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UINT)
+    }?;
+    std::println!("FL9_1 R8G8B8A8_UINT format support flags: {rgba8_uint_texture_support:#010x}");
     for (format, dxgi) in format_requirements {
         let support = unsafe { native.raw_device().CheckFormatSupport(dxgi) }?;
         assert_ne!(

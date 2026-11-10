@@ -84,6 +84,7 @@ Bottom level categories:
 - Accept proven in-range `textureSampleBias` literals forwarded through helper calls in the opt-in FL9_1 D3D11 backend.
 - Support direct `vertex_index` and `instance_index` reads, including unchanged helper forwarding, from fixed-size `vec3` and `vec4` uniform arrays in the opt-in FL9_1 D3D11 backend.
 - Support constant-mip cube `textureDimensions` queries in the narrowly validated FL9_1 D3D11 fragment subset.
+- Support direct `vertex_index` reads from one initialized fixed-size local `array<vec2f, 3>` in the opt-in FL9_1 D3D11 backend.
 - Expose same-format RGBA8_SNORM GPU texture copies when the selected FL9_1 D3D11 device query supports them, without enabling CPU readback.
 
 ### Changes
@@ -164,6 +165,7 @@ Bottom level categories:
 #### Validation
 
 - Treat depth-image sampling as floating-point shader semantics when checking downlevel runtime integer operations.
+- Reject unsupported dynamic composite indexing in FL9_1 D3D11 shader entries before HAL pipeline compilation.
 - Reject unsupported combinations of index-buffer usages on downlevel adapters.
 - Reject non-finite viewport coordinates and dimensions.
 - Validate pipelines without panicking when inter-stage variable limits are zero or below built-in deductions.
@@ -185,6 +187,7 @@ Bottom level categories:
 
 #### Hal
 
+- Keep D3D11 FL9_1 timestamp query features unadvertised until cross-submission timestamp validity and interval-specific frequency can be represented reliably.
 - Allow opt-in D3D11 GPU copies between matching RGBA8/BGRA8 linear and sRGB formats while preserving the stored texel bits.
 - Allow allocation of storage-only D3D11 buffers while keeping FL9_1 shader storage bindings unavailable.
 - Stage and copy only the requested byte range during D3D11 buffer readback instead of allocating a staging buffer the size of the source.

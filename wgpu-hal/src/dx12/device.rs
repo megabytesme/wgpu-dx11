@@ -1502,6 +1502,7 @@ impl crate::Device for super::Device {
                 dynamic_storage_buffer_offsets_targets,
                 zero_initialize_workgroup_memory: true,
                 restrict_indexing: true,
+                signed_function_restrict_indexing: false,
                 sampler_heap_target,
                 direct_sampler_bindings: false,
                 fl9_texel_load_proof: None,

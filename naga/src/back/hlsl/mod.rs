@@ -619,6 +619,8 @@ pub struct Options {
     pub zero_initialize_workgroup_memory: bool,
     /// Should we restrict indexing of vectors, matrices and arrays?
     pub restrict_indexing: bool,
+    /// Use signed clamps for known-length dynamic accesses to function-local values.
+    pub signed_function_restrict_indexing: bool,
     /// If set, loops will have code injected into them, forcing the compiler
     /// to think the number of iterations is bounded.
     pub force_loop_bounding: bool,
@@ -662,6 +664,7 @@ impl Default for Options {
             external_texture_binding_map: ExternalTextureBindingMap::default(),
             zero_initialize_workgroup_memory: true,
             restrict_indexing: true,
+            signed_function_restrict_indexing: false,
             force_loop_bounding: true,
             task_dispatch_limits: None,
             mesh_shader_primitive_indices_clamp: true,

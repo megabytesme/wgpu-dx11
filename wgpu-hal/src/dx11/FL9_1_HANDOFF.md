@@ -1,14 +1,61 @@
 # FL9_1 handoff
 
+## Coordinator review — 2026-11-10
+
+The current result is a substantial, opt-in public wgpu subset, not a complete
+FL9_1 implementation or a drop-in choice for arbitrary wgpu applications. A
+public offscreen indexed textured depth-tested cube is verified on a physical
+RTX 3090 Ti forced to FL9_1, and a constrained desktop HWND presentation path
+is tested. The latest strict runs recorded in `FL9_1_PROGRESS.md` passed
+132/132 Core fixtures, 468/468 private HAL tests and 121/121 public DX11 tests;
+they do not establish historical-driver compatibility or complete API
+coverage.
+
+Recent independent audits found no new Core-valid-to-HAL failure in the
+reviewed queue/query, graphics/resource, shader and HAL trait paths, but the
+exhaustive contract audit remains open. Public CoreWindow is still withheld
+even though HAL plumbing exists; the current HAL, public `wgpu` libraries and
+offscreen/windowed examples cross-check for ARM32 UWP, but Lumia runtime
+testing is required before enabling CoreWindow. The Device Portal timed out on
+the latest probe.
+Ordinary texture arrays, compute/UAV, FL9_1 derivatives/gradients, occlusion
+queries and other documented profile/resource restrictions are not gaps to
+paper over. FXC probe results place basic derivatives and `SampleGrad` at
+FL9_3 rather than FL9_1. Public timestamp queries remain disabled because
+D3D11 disjoint intervals do not satisfy wgpu's cross-submission timestamp
+contract. The stale status paragraph was corrected in `STATUS.md`.
+
+Use agents for independent audits and feasibility probes, then integrate one
+Core/Naga/HAL vertical slice at a time. Do not treat every unsupported matrix
+row as a separate parallel implementation task: some are FL9_1 boundaries,
+some need external hardware, and others share validation and compiler code.
+
+## Current coordinator audit — 2026-11-10
+
+Default backend selection excludes DX11, but public enumeration is available
+when an application compiles the `dx11` feature and explicitly requests
+`Backends::DX11` or `Backends::all()`. HAL returns only physical adapters that
+create at the requested FL9_1 level and pass the restricted capability
+projection. Treat the default-isolation test narrowly; it does not mean the
+public adapter is globally disabled.
+
+The latest read-only audit found no confirmed Core-valid path reaching an
+unimplemented HAL panic in Device, CommandEncoder, Queue, resources, bindings or
+pipelines. The strict CTS `image_copy:origins_and_extents` case is not a valid
+downlevel transfer check because its generated cases include unsupported
+dimensions and array-layer shapes; details are in `TESTING.md` and
+`FL9_1_PROGRESS.md`. Continue the full contract and operation audit without
+changing truthful limits to make broad CTS selectors pass.
+
 ## Zero-input draw range boundary — 2026-11-10
 
-The HAL now normalizes its batch-planning range to zero for a draw with no
-per-vertex inputs and no `vertex_index` use when `first_vertex + count`
-overflows. Native replay already used start vertex zero for this unobservable
-case. A strict Core/HAL FL9_1 fixture passed a count-2 TriangleList at
-`u32::MAX` and verified all 64 pixels remained clear. Vertex-fetch and
-`vertex_index` checks remain intact. See `FL9_1_PROGRESS.md` for the exact
-command.
+The HAL normalizes the effective first vertex to zero only when a draw has no
+per-vertex inputs and no `vertex_index` use, covering generic and
+topology-specific replay. A strict Core/HAL FL9_1 fixture passed count-2
+TriangleList, LineList and LineStrip draws plus count-3 TriangleStrip draws at
+`u32::MAX`; each readback retained all 64 clear pixels. Negative controls keep
+real vertex-fetch and `vertex_index` overflow rejection. See
+`FL9_1_PROGRESS.md` for the exact command.
 
 ## Timestamped depth-Never draws — 2026-11-10
 
@@ -16,8 +63,7 @@ Raster depth `Never` now executes draws with color and depth writes disabled,
 so valid timestamped render passes no longer fail command encoding. A strict
 public test verified unchanged color, preserved depth with a farther probe,
 and ordered in-pass timestamps at forced FL9_1; the private HAL test also
-passed. The zero-input draw-range overflow remains under review. See
-`FL9_1_PROGRESS.md` and `TESTING.md` for exact commands.
+passed. See `FL9_1_PROGRESS.md` and `TESTING.md` for exact commands.
 
 ## Strict CTS operation slices — 2026-11-10
 
@@ -3250,7 +3296,20 @@ pairs during render-pass and render-bundle command validation. A strict forced-
 FL9_1 Core fixture rejects a two-mip view for a sampler limited to one mip
 before HAL draw execution, then continues the hardware suite successfully.
 See `FL9_1_PROGRESS.md` for full verification. Next continue the API/Core/HAL
-contract audit and select one bounded, user-visible FL9_1 workload. Ordinary
-D3D11 adapter enumeration remains disabled; historical FL9_1 devices, Lumia
-ARM32/CoreWindow execution, broad CTS coverage and device-removal recovery are
-still open.
+contract audit and select one bounded, user-visible FL9_1 workload. DX11
+adapter selection remains disabled by default; explicitly selecting
+`Backends::DX11` enumerates physical adapters and applies the restricted
+projection. Historical FL9_1 devices, Lumia ARM32/CoreWindow execution, broad
+CTS coverage and physical device-removal recovery are still open.
+
+## Timestamp query contract correction — 2026-11-10
+
+Public D3D11 FL9_1 timestamp features are now disabled. A startup disjoint
+probe does not guarantee timestamp validity/frequency for user query pairs that
+Core permits to cross submissions. The public queue period returns zero, and
+Core rejects feature requests and timestamp query-set creation. The native HAL
+query path remains diagnostic-only; a strict RTX 3090 Ti FL9_1 test verified
+two writes inside one valid disjoint interval. Strict public, Core and HAL
+suites passed 121/121, 132/132 and 468/468 respectively. See
+`FL9_1_PROGRESS.md` for exact commands. This closes a capability-reporting
+overclaim, not an FL9_1 implementation gap.

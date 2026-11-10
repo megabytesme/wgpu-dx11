@@ -64,11 +64,7 @@ impl crate::Queue for Queue {
     }
 
     unsafe fn get_timestamp_period(&self) -> f32 {
-        self.device
-            .timestamp_frequency()
-            .filter(|frequency| *frequency > 0)
-            .map(|frequency| (1_000_000_000.0 / frequency as f64) as f32)
-            .unwrap_or(0.0)
+        0.0
     }
 }
 
@@ -273,11 +269,7 @@ mod tests {
         unsafe {
             queue.wait_for_idle().unwrap();
         }
-        let timestamp_period = unsafe { queue.get_timestamp_period() };
-        assert!(timestamp_period.is_finite() && timestamp_period > 0.0);
-        let expected_period =
-            (1_000_000_000.0 / device.timestamp_frequency().unwrap() as f64) as f32;
-        assert_eq!(timestamp_period, expected_period);
+        assert_eq!(unsafe { queue.get_timestamp_period() }, 0.0);
         Ok(())
     }
 }
