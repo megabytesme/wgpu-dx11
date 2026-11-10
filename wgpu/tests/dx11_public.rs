@@ -6109,6 +6109,341 @@ fn public_dx11_depth_never_remaps_stencil_depth_fail_replace_at_fl91() {
 }
 
 #[test]
+fn public_dx11_d24s8_stencil_operations_all_branches_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 D24S8 stencil-operation matrix"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+
+    #[derive(Clone, Copy)]
+    enum Branch {
+        Pass,
+        StencilFail,
+        DepthFail,
+    }
+
+    #[derive(Clone, Copy)]
+    struct Case {
+        pipeline: usize,
+        initial: u32,
+        expected: u32,
+    }
+
+    const REFERENCE: u32 = 0x96;
+    const OPERATIONS: [(StencilOperation, u32, u32); 8] = [
+        (StencilOperation::Keep, 1, 1),
+        (StencilOperation::Zero, 1, 0),
+        (StencilOperation::Replace, 1, REFERENCE),
+        (StencilOperation::Invert, 1, 0xfe),
+        (StencilOperation::IncrementClamp, 1, 2),
+        (StencilOperation::DecrementClamp, 1, 0),
+        (StencilOperation::IncrementWrap, 1, 2),
+        (StencilOperation::DecrementWrap, 1, 0),
+    ];
+    const BOUNDARY_OPERATIONS: [(usize, u32, u32); 4] = [
+        (4, 0xff, 0xff),
+        (5, 0x00, 0x00),
+        (6, 0xff, 0x00),
+        (7, 0x00, 0xff),
+    ];
+    const BRANCHES: [Branch; 3] = [Branch::Pass, Branch::StencilFail, Branch::DepthFail];
+
+    let mut cases = Vec::with_capacity(36);
+    for branch_index in 0..BRANCHES.len() {
+        for (operation_index, &(_, initial, expected)) in OPERATIONS.iter().enumerate() {
+            cases.push(Case {
+                pipeline: branch_index * OPERATIONS.len() + operation_index,
+                initial,
+                expected,
+            });
+        }
+        for &(operation_index, initial, expected) in &BOUNDARY_OPERATIONS {
+            cases.push(Case {
+                pipeline: branch_index * OPERATIONS.len() + operation_index,
+                initial,
+                expected,
+            });
+        }
+    }
+    assert_eq!(cases.len(), 36);
+
+    let target_width = cases.len() as u32 * 8;
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 D24S8 stencil-operation color results"),
+        size: Extent3d {
+            width: target_width,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let depth = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 render-attachment-only D24S8 stencil matrix"),
+        size: Extent3d {
+            width: target_width,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Depth24PlusStencil8,
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        view_formats: &[],
+    });
+    let depth_view = depth.create_view(&TextureViewDescriptor::default());
+    let vertices: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 stencil-operation fullscreen triangle"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .get_mapped_range_mut(..)
+        .expect("map stencil-operation triangle vertices")
+        .copy_from_slice(&vertices);
+    vertex_buffer.unmap();
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 D24S8 stencil-operation matrix shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.25, 1.0); }\n\
+             @fragment fn red() -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 1.0); }\n\
+             @fragment fn green() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let create_pipeline = |entry_point, depth_compare, stencil_face, write_mask| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 D24S8 stencil-operation matrix pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &[VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    }],
+                })],
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: Some(DepthStencilState {
+                format: TextureFormat::Depth24PlusStencil8,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(depth_compare),
+                stencil: StencilState {
+                    front: stencil_face,
+                    back: stencil_face,
+                    read_mask: 0xff,
+                    write_mask,
+                },
+                bias: DepthBiasState::default(),
+            }),
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+
+    let mut operation_pipelines = Vec::with_capacity(BRANCHES.len() * OPERATIONS.len());
+    for branch in BRANCHES {
+        let depth_compare = match branch {
+            Branch::DepthFail => CompareFunction::Never,
+            Branch::Pass | Branch::StencilFail => CompareFunction::Always,
+        };
+        for &(operation, _, _) in &OPERATIONS {
+            let stencil_face = match branch {
+                Branch::Pass => StencilFaceState {
+                    pass_op: operation,
+                    ..StencilFaceState::IGNORE
+                },
+                Branch::StencilFail => StencilFaceState {
+                    compare: CompareFunction::Never,
+                    fail_op: operation,
+                    ..StencilFaceState::IGNORE
+                },
+                Branch::DepthFail => StencilFaceState {
+                    depth_fail_op: operation,
+                    ..StencilFaceState::IGNORE
+                },
+            };
+            operation_pipelines.push(create_pipeline("red", depth_compare, stencil_face, 0xff));
+        }
+    }
+    let verify_pipeline = create_pipeline(
+        "green",
+        CompareFunction::Always,
+        StencilFaceState {
+            compare: CompareFunction::Equal,
+            ..StencilFaceState::IGNORE
+        },
+        0,
+    );
+
+    let readback_row_pitch = target_width * 4;
+    let readback_row_pitch = readback_row_pitch.div_ceil(256) * 256;
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 D24S8 stencil-operation result readback"),
+        size: u64::from(readback_row_pitch) * 8,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 D24S8 stencil-operation matrix commands"),
+    });
+    for (index, case) in cases.iter().enumerate() {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 D24S8 stencil operation and result probe"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: if index == 0 {
+                        LoadOp::Clear(Color::BLACK)
+                    } else {
+                        LoadOp::Load
+                    },
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(0.5),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: Some(Operations {
+                    load: LoadOp::Clear(case.initial),
+                    store: StoreOp::Store,
+                }),
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_scissor_rect(index as u32 * 8, 0, 8, 8);
+        pass.set_stencil_reference(REFERENCE);
+        pass.set_pipeline(&operation_pipelines[case.pipeline]);
+        pass.draw(0..3, 0..1);
+        pass.set_stencil_reference(case.expected);
+        pass.set_pipeline(&verify_pipeline);
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(readback_row_pitch),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: target_width,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for public FL9_1 D24S8 stencil matrix");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("public D24S8 stencil matrix readback callback")
+        .expect("map public D24S8 stencil matrix readback");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped D24S8 stencil matrix output");
+        for (index, _) in cases.iter().enumerate() {
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * readback_row_pitch as usize + (index * 8 + x) * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        &[0, 255, 0, 255],
+                        "D24S8 stencil-operation case {index}, pixel ({x}, {y})"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!(
+        "PASS: public FL9_1 D24S8 pass/fail/depth-fail stencil operations, 8 boundary cases, and 4 clamp/wrap boundaries; 36 cases and 2304/2304 readback pixels matched"
+    );
+}
+
+#[test]
 fn public_dx11_d24s8_load_clear_discard_transitions_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

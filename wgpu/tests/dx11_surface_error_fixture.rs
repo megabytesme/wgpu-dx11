@@ -182,7 +182,9 @@ fn public_dx11_hwnd_present_device_loss_reaches_callback() {
         (24, 20)
     );
     queue.present(resized_frame);
-    println!("PASS: a derived view kept the discarded surface backbuffer alive, core rejected reconfiguration before ResizeBuffers, and retry succeeded after the view was dropped");
+    println!(
+        "PASS: a derived view kept the discarded surface backbuffer alive, core rejected reconfiguration before ResizeBuffers, and retry succeeded after the view was dropped"
+    );
 
     let hal_surface =
         unsafe { surface.as_hal::<wgpu_hal::api::Dx11>() }.expect("D3D11 HAL surface");
@@ -233,7 +235,169 @@ fn public_dx11_hwnd_present_device_loss_reaches_callback() {
     let reacquired = unsafe { hal_surface.acquire_texture(None, &fence) }
         .expect("failed Present must release the native acquisition reservation");
     unsafe { hal_surface.discard_texture(reacquired.texture) };
-    println!("PASS: injected DXGI_ERROR_DEVICE_REMOVED from Present reached the public device-lost callback exactly once, reentrant poll returned its expected presentation-guard timeout, and the HAL swapchain reacquired after the failed frame was consumed");
+    println!(
+        "PASS: injected DXGI_ERROR_DEVICE_REMOVED from Present reached the public device-lost callback exactly once, reentrant poll returned its expected presentation-guard timeout, and the HAL swapchain reacquired after the failed frame was consumed"
+    );
+}
+
+#[test]
+fn public_dx11_hwnd_resize_device_loss_reaches_callback_and_releases_reservation() {
+    use windows::{
+        core::w,
+        Win32::{
+            Foundation::HWND,
+            Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED,
+            UI::WindowsAndMessaging::{
+                CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_OVERLAPPED,
+            },
+        },
+    };
+
+    struct WindowGuard(HWND);
+
+    impl Drop for WindowGuard {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = DestroyWindow(self.0);
+            }
+        }
+    }
+
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let hwnd = match unsafe {
+        CreateWindowExW(
+            WINDOW_EX_STYLE::default(),
+            w!("STATIC"),
+            w!("wgpu D3D11 FL9_1 resize error fixture"),
+            WS_OVERLAPPED,
+            0,
+            0,
+            16,
+            16,
+            None,
+            None,
+            None,
+            None,
+        )
+    } {
+        Ok(hwnd) => hwnd,
+        Err(error) => {
+            assert!(!required, "strict mode requires a test HWND: {error}");
+            println!("SKIP: could not create a test HWND: {error}");
+            return;
+        }
+    };
+    let _window = WindowGuard(hwnd);
+
+    let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
+    instance_descriptor.backends = Backends::DX11;
+    let instance = Instance::new(instance_descriptor);
+    let surface = unsafe {
+        instance.create_surface_unsafe(SurfaceTargetUnsafe::RawHandle {
+            raw_display_handle: Some(rwh::WindowsDisplayHandle::new().into()),
+            raw_window_handle: rwh::Win32WindowHandle::new(
+                NonZeroIsize::new(hwnd.0 as isize).expect("non-null HWND"),
+            )
+            .into(),
+        })
+    }
+    .expect("create public D3D11 HWND surface");
+    let adapter = match poll_ready(instance.request_adapter(&RequestAdapterOptions {
+        power_preference: PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        compatible_surface: Some(&surface),
+        ..Default::default()
+    })) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            assert!(
+                !required,
+                "strict mode requires a physical FL9_1 adapter: {error}"
+            );
+            println!("SKIP: no physical D3D11 surface adapter: {error}");
+            return;
+        }
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=synthetic HWND ResizeBuffers device loss",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let (device, _queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public D3D11 FL9_1 ResizeBuffers error fixture"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the FL9_1 projection");
+    let config = SurfaceConfiguration {
+        usage: TextureUsages::RENDER_ATTACHMENT,
+        format: TextureFormat::Bgra8Unorm,
+        width: 16,
+        height: 16,
+        present_mode: PresentMode::Fifo,
+        desired_maximum_frame_latency: 1,
+        alpha_mode: CompositeAlphaMode::Opaque,
+        view_formats: vec![],
+        color_space: SurfaceColorSpace::Srgb,
+    };
+    surface.configure(&device, &config);
+
+    let hal_surface =
+        unsafe { surface.as_hal::<wgpu_hal::api::Dx11>() }.expect("configured D3D11 HAL surface");
+    assert!(hal_surface.test_fixture_fail_next_resize(DXGI_ERROR_DEVICE_REMOVED));
+    drop(hal_surface);
+
+    let callback_device = device.clone();
+    let (lost_sender, lost_receiver) = mpsc::channel();
+    device.set_device_lost_callback(move |reason, message| {
+        let reentrant_poll_succeeded = callback_device.poll(PollType::Poll).is_ok();
+        lost_sender
+            .send((reason, message, reentrant_poll_succeeded))
+            .expect("receive ResizeBuffers device-loss callback");
+    });
+
+    let mut resized_config = config.clone();
+    resized_config.width = 24;
+    surface.configure(&device, &resized_config);
+
+    let (reason, message, reentrant_poll_succeeded) = lost_receiver
+        .recv_timeout(Duration::from_secs(5))
+        .expect("synthetic ResizeBuffers device loss must invoke the public callback");
+    assert_eq!(reason, DeviceLostReason::Unknown);
+    assert!(
+        message.contains("Device is lost"),
+        "unexpected loss message: {message}"
+    );
+    assert!(
+        reentrant_poll_succeeded,
+        "polling from the configure loss callback must not deadlock"
+    );
+    assert!(
+        lost_receiver.try_recv().is_err(),
+        "device-lost callback fired more than once"
+    );
+    assert_eq!(
+        surface.get_configuration(),
+        Some(config),
+        "failed resize must preserve the last successful public configuration"
+    );
+
+    let hal_device = unsafe { device.as_hal::<wgpu_hal::api::Dx11>() }
+        .expect("D3D11 HAL device remains inspectable after synthetic loss");
+    let fence = unsafe { hal_device.create_fence() }.expect("create D3D11 fence");
+    let hal_surface = unsafe { surface.as_hal::<wgpu_hal::api::Dx11>() }
+        .expect("D3D11 HAL surface remains configured after synthetic loss");
+    let reacquired = unsafe { hal_surface.acquire_texture(None, &fence) }
+        .expect("failed ResizeBuffers must release the native reservation");
+    unsafe { hal_surface.discard_texture(reacquired.texture) };
+    println!(
+        "PASS: injected DXGI_ERROR_DEVICE_REMOVED from ResizeBuffers reached the public device-lost callback exactly once, reentrant poll completed, cached configuration stayed unchanged, and the HAL swapchain reacquired after the failed resize"
+    );
 }
 
 #[test]
@@ -414,7 +578,9 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
         result => panic!("surface acquisition after handing back to device A failed: {result:?}"),
     };
     queue_a.present(frame_b);
-    println!("PASS: failed configuration preserved the public cache, and an idle HWND surface handed off A→B→A with successful acquire/present");
+    println!(
+        "PASS: failed configuration preserved the public cache, and an idle HWND surface handed off A→B→A with successful acquire/present"
+    );
 
     let wrong_queue_frame = match surface_c.get_current_texture() {
         CurrentSurfaceTexture::Success(frame) | CurrentSurfaceTexture::Suboptimal(frame) => frame,
@@ -504,5 +670,7 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
         }
         result => panic!("surface did not reacquire after lost-device frame drop: {result:?}"),
     }
-    println!("PASS: wrong-device present, reentrant present after device loss, and dropping an unpresented frame after device loss all released their acquired frames for later reconfiguration and acquisition");
+    println!(
+        "PASS: wrong-device present, reentrant present after device loss, and dropping an unpresented frame after device loss all released their acquired frames for later reconfiguration and acquisition"
+    );
 }

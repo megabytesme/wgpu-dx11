@@ -7,9 +7,12 @@ component stores to local `matCx2<f32>` struct members; whole-matrix, dynamic,
 helper, nested and array-contained stores remain rejected. The selected-entry
 uniform-array, matrix-store, D24S8 depth-fail/stencil mapping and sRGB blend
 checks below all ran on the forced-FL9_1 RTX 3090 Ti. The strict public test
-suite passed 125/125 with zero skips. The backend remains opt-in through
-explicit DX11 selection; it is not a general or Core-WebGPU-compliant FL9_1
-implementation.
+suite now passes 126/126 with zero skips. A render-attachment-only D24S8 test
+covers all stencil operations on pass, stencil-fail and depth-fail branches,
+including clamp/wrap boundaries. A fixture-only `ResizeBuffers` error test
+also verifies public device-loss propagation and reservation cleanup. The
+backend remains opt-in through explicit DX11 selection; it is not a general
+or Core-WebGPU-compliant FL9_1 implementation.
 
 The D24S8 depth-fail CTS selector could not reach its intended operation
 because its helper requires unsupported D24S8 `COPY_DST`. A render-attachment-

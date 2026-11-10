@@ -15823,3 +15823,28 @@ One owner should integrate and validate each end-to-end feature slice. The
 next implementation should follow a reproduced workload or strict
 compiler/runtime boundary; do not add FL9_1-incompatible APIs merely to
 increase apparent feature coverage.
+
+## D24S8 stencil matrix and resize-loss fixture — 2026-11-10
+
+The strict public D24S8 matrix verifies all eight stencil operations in pass,
+stencil-fail and depth-fail branches, plus increment/decrement clamp and wrap
+boundaries. It uses only render-attachment usage, clears the stencil value,
+then verifies each result through an Equal stencil draw into RGBA8. The
+physical RTX 3090 Ti at requested/actual FL9_1 matched all 2,304/2,304 output
+pixels. The complete strict public target passed 126/126 with zero skips.
+
+A fixture-only `ResizeBuffers` error injection now checks public lifecycle
+handling without altering normal surface behavior. The strict HWND fixture
+passed 3/3 on the same device and feature level. The new case injected
+`DXGI_ERROR_DEVICE_REMOVED` before the native resize, observed one public
+device-lost callback, completed reentrant polling, retained the last
+successful public surface configuration, and reacquired/discarded through
+the HAL after reservation cleanup. The focused `fl91_core_` lifecycle run
+passed 9/9; an optional RG8 mip subcase logged one selected-device skip. The
+injected HRESULT does not simulate physical driver removal or recovery.
+
+Clippy passed for both public test targets with existing HAL
+`too_many_arguments` warnings only; workspace formatting and
+`git diff --check` passed. The D24S8 CTS helper remains unable to test these
+operations because it requests unsupported `COPY_DST`; no capability was
+broadened.

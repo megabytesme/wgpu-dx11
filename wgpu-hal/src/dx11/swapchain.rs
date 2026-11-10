@@ -68,6 +68,8 @@ struct Inner {
     state: Mutex<State>,
     #[cfg(feature = "dx11-test-fixture")]
     test_next_present: AtomicI32,
+    #[cfg(feature = "dx11-test-fixture")]
+    test_next_resize: AtomicI32,
 }
 
 /// Private-backend building block for a window swap chain.
@@ -148,6 +150,8 @@ impl CoreWindowSwapchain {
                 state: Mutex::new(State::default()),
                 #[cfg(feature = "dx11-test-fixture")]
                 test_next_present: AtomicI32::new(0),
+                #[cfg(feature = "dx11-test-fixture")]
+                test_next_resize: AtomicI32::new(0),
             }),
         })
     }
@@ -159,6 +163,17 @@ impl CoreWindowSwapchain {
         }
         self.inner
             .test_next_present
+            .store(error.0, Ordering::Release);
+        true
+    }
+
+    #[cfg(feature = "dx11-test-fixture")]
+    pub(super) fn test_fixture_fail_next_resize(&self, error: HRESULT) -> bool {
+        if error.0 >= 0 {
+            return false;
+        }
+        self.inner
+            .test_next_resize
             .store(error.0, Ordering::Release);
         true
     }
@@ -218,6 +233,12 @@ impl CoreWindowSwapchain {
         }
         let _reservation = Reservation::new(&self.inner.state)?;
         let context = self.inner.device.immediate_context();
+        #[cfg(feature = "dx11-test-fixture")]
+        let injected_status = self.inner.test_next_resize.swap(0, Ordering::AcqRel);
+        #[cfg(feature = "dx11-test-fixture")]
+        if injected_status != 0 {
+            return Err(Error::from_hresult(HRESULT(injected_status)));
+        }
         unsafe {
             context.OMSetRenderTargets(None, None::<&ID3D11DepthStencilView>);
             self.inner.swapchain.ResizeBuffers(

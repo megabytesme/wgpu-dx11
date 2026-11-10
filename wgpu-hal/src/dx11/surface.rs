@@ -125,6 +125,16 @@ impl Surface {
             .is_some_and(|configured| configured.swapchain.test_fixture_fail_next_present(error))
     }
 
+    #[cfg(feature = "dx11-test-fixture")]
+    #[doc(hidden)]
+    pub fn test_fixture_fail_next_resize(&self, error: windows::core::HRESULT) -> bool {
+        self.configured
+            .lock()
+            .current
+            .as_ref()
+            .is_some_and(|configured| configured.swapchain.test_fixture_fail_next_resize(error))
+    }
+
     pub(super) unsafe fn from_core_window(raw: *mut c_void) -> Result<Self, crate::InstanceError> {
         let unknown = unsafe { IUnknown::from_raw_borrowed(&raw) }
             .ok_or_else(|| crate::InstanceError::new("null CoreWindow".into()))?;

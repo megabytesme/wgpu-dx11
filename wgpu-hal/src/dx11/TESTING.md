@@ -4289,3 +4289,44 @@ bytes. Microsoft's D3D11 blend-state documentation warns that feature levels
 blend semantics. Treat this result as evidence for this modern NVIDIA driver
 only, not as proof for historical FL9_x hardware or a reason to broaden the
 public capability projection.
+
+### Public D24S8 stencil-operation matrix at FL9_1
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_d24s8_stencil_operations_all_branches_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+This render-attachment-only test covers all eight stencil operations in the
+pass, stencil-fail and depth-fail branches, plus increment/decrement
+clamp/wrap boundaries: 36 cases total. Each case initializes D24S8 through a
+pass clear, then exposes the resulting stencil value through an Equal test to
+an RGBA8 target. On the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at requested/actual FL9_1, all 2,304/2,304 readback pixels
+matched. The full strict `dx11_public` suite passed 126/126 with zero skips.
+
+### Injected HWND resize device-loss lifecycle
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11-test-fixture,std --test dx11_surface_error_fixture -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_ -- --nocapture --test-threads=1
+```
+
+The public surface fixture passed 3/3 on the RTX 3090 Ti at requested/actual
+FL9_1. Its new case injects `DXGI_ERROR_DEVICE_REMOVED` at `ResizeBuffers`
+before the native call, then verifies one public lost callback, reentrant
+polling, preservation of the prior configuration and HAL reacquisition after
+the reservation unwinds. The focused Core lifecycle fixture passed 9/9; one
+optional RG8 mip subcase logged a selected-device capability skip. These are
+error-propagation tests using a real D3D11 device with a synthetic HRESULT;
+they do not simulate physical driver removal or recovery.
+
+```powershell
+cargo +1.93.1 clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+cargo +1.93.1 clippy --offline -j16 -p wgpu --no-default-features --features dx11-test-fixture,std --test dx11_surface_error_fixture
+```
+
+Both Clippy targets passed with existing HAL `too_many_arguments` warnings
+only. Workspace formatting and `git diff --check` passed.
