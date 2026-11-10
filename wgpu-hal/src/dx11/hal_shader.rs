@@ -1402,6 +1402,67 @@ mod tests {
     }
 
     #[test]
+    fn fl9_2d_texture_load_and_dimensions_share_one_emulation() {
+        let source = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @fragment fn combined() -> @location(0) vec4f {
+                let dimensions = vec2f(textureDimensions(image));
+                return textureLoad(image, vec2i(1, 0), 0)
+                    + vec4f(dimensions / vec2f(8.0), 0.0, 0.0);
+            }
+        "#;
+        let module = naga::front::wgsl::parse_str(source).unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let proof =
+            fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "combined")
+                .unwrap()
+                .expect("combined 2D load and dimensions have a proof");
+        assert_eq!(
+            proof.binding,
+            naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            }
+        );
+        assert!(matches!(
+            proof.kind,
+            Fl9TextureEmulationKind::LoadDimensions
+        ));
+        assert!(!proof.has_implicit_sample);
+
+        let mismatched = naga::front::wgsl::parse_str(
+            r#"
+                @group(0) @binding(7) var image: texture_2d<f32>;
+                @group(0) @binding(42) var other: texture_2d<f32>;
+                @fragment fn combined() -> @location(0) vec4f {
+                    let dimensions = vec2f(textureDimensions(other));
+                    return textureLoad(image, vec2i(1, 0), 0)
+                        + vec4f(dimensions / vec2f(8.0), 0.0, 0.0);
+                }
+            "#,
+        )
+        .unwrap();
+        let mismatched_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&mismatched)
+        .unwrap();
+        assert!(fl9_texture_emulation_binding(
+            &mismatched,
+            &mismatched_info,
+            naga::ShaderStage::Fragment,
+            "combined",
+        )
+        .is_err());
+    }
+
+    #[test]
     fn fl9_texture_dimensions_requires_a_resolved_mip_level() {
         for (name, source, expected) in [
             (
@@ -3957,6 +4018,7 @@ fn fl9_texture_num_levels_helper(
 pub(super) enum Fl9TextureEmulationKind {
     Load,
     Load3D,
+    LoadDimensions,
     Dimensions,
     Dimensions3D,
     DimensionsCube,
@@ -4070,18 +4132,23 @@ fn fl9_texture_emulation_binding(
     if !uses_load && !uses_dimensions && !uses_num_levels && !uses_base_clamp {
         return Ok(None);
     }
-    if [uses_load, uses_dimensions, uses_num_levels, uses_base_clamp]
-        .into_iter()
-        .filter(|used| *used)
-        .count()
-        > 1
+    let combines_load_and_dimensions = uses_load && uses_dimensions;
+    if (combines_load_and_dimensions && (uses_num_levels || uses_base_clamp))
+        || (!combines_load_and_dimensions
+            && [uses_load, uses_dimensions, uses_num_levels, uses_base_clamp]
+                .into_iter()
+                .filter(|used| *used)
+                .count()
+                > 1)
     {
         return Err(crate::PipelineError::Linkage(
             stages,
             "D3D11 FL9 texture emulation operations cannot be combined".into(),
         ));
     }
-    let mut kind = if uses_load {
+    let mut kind = if combines_load_and_dimensions {
+        Fl9TextureEmulationKind::LoadDimensions
+    } else if uses_load {
         Fl9TextureEmulationKind::Load
     } else if uses_dimensions {
         Fl9TextureEmulationKind::Dimensions
@@ -4135,6 +4202,18 @@ fn fl9_texture_emulation_binding(
                     .expressions
                     .iter()
                     .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
+            }
+            Fl9TextureEmulationKind::LoadDimensions => {
+                !reachable_functions.is_empty()
+                    || function.body.iter().any(|statement| {
+                        !matches!(
+                            statement,
+                            naga::Statement::Emit(_) | naga::Statement::Return { .. }
+                        )
+                    })
+                    || function.expressions.iter().any(|(_, expression)| {
+                        matches!(expression, naga::Expression::Select { .. })
+                    })
             }
             Fl9TextureEmulationKind::Dimensions => {
                 if reachable_functions.is_empty() {
@@ -4195,6 +4274,8 @@ fn fl9_texture_emulation_binding(
     let mut binding = None;
     let mut sampler_binding = None;
     let mut sample_count = 0;
+    let mut load_count = 0;
+    let mut dimensions_query_count = 0;
     let mut mip_level = 0;
     let mut has_explicit_mip_level = false;
     let mut image_identity = None;
@@ -4226,7 +4307,9 @@ fn fl9_texture_emulation_binding(
                 ..
             } if matches!(
                 kind,
-                Fl9TextureEmulationKind::Load | Fl9TextureEmulationKind::Load3D
+                Fl9TextureEmulationKind::Load
+                    | Fl9TextureEmulationKind::Load3D
+                    | Fl9TextureEmulationKind::LoadDimensions
             ) =>
             {
                 if array_index.is_some() || sample.is_some() || level.is_none() {
@@ -4235,12 +4318,24 @@ fn fl9_texture_emulation_binding(
                         "D3D11 FL9 texture load shape is unsupported".into(),
                     ));
                 }
+                load_count += 1;
                 *image
             }
             naga::Expression::ImageQuery {
                 image,
                 query: naga::ImageQuery::Size { level },
-            } if matches!(kind, Fl9TextureEmulationKind::Dimensions) => {
+            } if matches!(
+                kind,
+                Fl9TextureEmulationKind::Dimensions | Fl9TextureEmulationKind::LoadDimensions
+            ) =>
+            {
+                dimensions_query_count += 1;
+                if matches!(kind, Fl9TextureEmulationKind::LoadDimensions) && level.is_some() {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 combined textureLoad and textureDimensions requires a level-less query".into(),
+                    ));
+                }
                 has_explicit_mip_level = level.is_some();
                 mip_level = match level {
                     Some(level) => fl9_texture_dimensions_level(module, function, *level)
@@ -4565,6 +4660,7 @@ fn fl9_texture_emulation_binding(
                 naga::ImageDimension::D2 | naga::ImageDimension::D3 | naga::ImageDimension::Cube,
             )
             | (Fl9TextureEmulationKind::Load, naga::ImageDimension::D2)
+            | (Fl9TextureEmulationKind::LoadDimensions, naga::ImageDimension::D2)
             | (Fl9TextureEmulationKind::BaseClamp, naga::ImageDimension::D2) => {}
             _ => {
                 return Err(crate::PipelineError::Linkage(
@@ -4592,9 +4688,19 @@ fn fl9_texture_emulation_binding(
             ));
         }
     }
+    if matches!(kind, Fl9TextureEmulationKind::LoadDimensions)
+        && (load_count != 1 || dimensions_query_count != 1)
+    {
+        return Err(crate::PipelineError::Linkage(
+            stages,
+            "D3D11 FL9 combined textureLoad and textureDimensions requires exactly one of each operation".into(),
+        ));
+    }
     if matches!(
         kind,
-        Fl9TextureEmulationKind::Load | Fl9TextureEmulationKind::Load3D
+        Fl9TextureEmulationKind::Load
+            | Fl9TextureEmulationKind::Load3D
+            | Fl9TextureEmulationKind::LoadDimensions
     ) && module.global_variables.iter().any(|(global, variable)| {
         Some(global) != image_identity
             && variable.binding.is_some()
@@ -5172,12 +5278,12 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
         }
     }
     let texture_query_conversion = input_options
-        .texel_load_binding
-        .map(|binding| (binding, false, None))
+        .texture_dimensions_binding
+        .map(|binding| (binding, false, Some(naga::VectorSize::Bi)))
         .or_else(|| {
             input_options
-                .texture_dimensions_binding
-                .map(|binding| (binding, false, Some(naga::VectorSize::Bi)))
+                .texel_load_binding
+                .map(|binding| (binding, false, None))
         })
         .or_else(|| {
             input_options
@@ -7334,8 +7440,13 @@ impl ShaderModule {
         let entry_info = info.get_entry_point(entry_index);
         if let Some(proof) = fl9_texture_emulation_binding(&module, &info, stage, entry)? {
             match proof.kind {
-                Fl9TextureEmulationKind::Load | Fl9TextureEmulationKind::Load3D => {
+                Fl9TextureEmulationKind::Load
+                | Fl9TextureEmulationKind::Load3D
+                | Fl9TextureEmulationKind::LoadDimensions => {
                     input_options.texel_load_binding = Some(proof.binding);
+                    if matches!(proof.kind, Fl9TextureEmulationKind::LoadDimensions) {
+                        input_options.texture_dimensions_binding = Some(proof.binding);
+                    }
                 }
                 Fl9TextureEmulationKind::Dimensions => {
                     input_options.texture_dimensions_binding = Some(proof.binding);

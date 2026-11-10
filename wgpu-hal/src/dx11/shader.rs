@@ -394,7 +394,16 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         input_options.texture_num_levels_binding,
         input_options.texture_base_clamp_binding,
     ];
-    if proof_bindings.into_iter().filter(Option::is_some).count() > 1 {
+    let combined_load_dimensions = matches!(
+        (
+            input_options.texel_load_binding,
+            input_options.texture_dimensions_binding
+        ),
+        (Some(load), Some(dimensions)) if load == dimensions
+    ) && input_options.texture_dimensions_3d_binding.is_none()
+        && input_options.texture_num_levels_binding.is_none()
+        && input_options.texture_base_clamp_binding.is_none();
+    if proof_bindings.into_iter().filter(Option::is_some).count() > 1 && !combined_load_dimensions {
         return Err(NagaCompileError::InvalidBindingMapping);
     }
     if let Some(binding) = input_options
@@ -3210,6 +3219,59 @@ mod tests {
         assert!(source.contains("int2(naga_fl9_load_size.xy)"), "{source}");
         compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
             panic!("FL9_1 texture-dimensions HLSL failed: {error:?}\n{source}")
+        });
+    }
+
+    #[test]
+    fn fl91_texture_load_and_dimensions_compile_with_the_level_9_1_profile() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(42) var image: texture_2d<f32>;
+            @fragment fn fs() -> @location(0) vec4f {
+                let dimensions = vec2f(textureDimensions(image));
+                let value = textureLoad(image, vec2i(1, 0), 0);
+                return value * vec4f(dimensions / vec2f(8.0, 4.0), 1.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let binding = naga::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let bindings = [ShaderBinding {
+            binding,
+            slot: 7,
+            kind: ShaderBindingKind::TextureFloat,
+        }];
+        let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "fs",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions {
+                texel_load_binding: Some(binding),
+                texture_dimensions_binding: Some(binding),
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("translate the combined FL9_1 texture operations");
+        assert!(source.contains("register(t0)"), "{source}");
+        assert!(source.contains("register(s15)"), "{source}");
+        assert!(source.contains("register(b13)"), "{source}");
+        assert!(source.contains("int2(naga_fl9_load_size.xy)"), "{source}");
+        assert!(source.contains("naga_fl9_load(float2("), "{source}");
+        compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+            panic!("combined FL9_1 texture HLSL failed: {error:?}\n{source}")
         });
     }
 

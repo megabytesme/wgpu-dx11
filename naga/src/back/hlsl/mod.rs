@@ -535,12 +535,18 @@ pub struct Options {
     /// bound view must contain exactly one mip and have nonzero FL9 dimensions.
     /// The caller must link a vertex shader with a matching location-0 varying.
     /// This restricted proof rejects other resources, inputs and control flow.
+    /// It may be combined with `fl9_texture_dimensions_proof` for the same
+    /// binding to prove one direct, level-less 2D dimensions query alongside
+    /// the texel load.
     pub fl9_texel_load_proof: Option<crate::ResourceBinding>,
 
     /// Experimental opt-in proof for one direct fragment `textureDimensions`
     /// query on a bound 2D or cube float texture. The host supplies the
     /// dimensions of the selected view-relative mip in the reserved b13
-    /// constant; cube dimensions report the face size.
+    /// constant; cube dimensions report the face size. For a 2D texture, this
+    /// proof may be combined with `fl9_texel_load_proof` for the same binding
+    /// to prove one direct, level-less dimensions query alongside the texel
+    /// load.
     pub fl9_texture_dimensions_proof: Option<crate::ResourceBinding>,
 
     /// Experimental opt-in proof for one direct fragment `textureDimensions`

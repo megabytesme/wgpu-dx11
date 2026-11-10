@@ -886,7 +886,8 @@ impl CommandBuffer {
                         mip_levels,
                     } => {
                         let constants = match kind {
-                            super::hal_shader::Fl9TextureEmulationKind::Load => [
+                            super::hal_shader::Fl9TextureEmulationKind::Load
+                            | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions => [
                                 *width as f32,
                                 *height as f32,
                                 1.0 / *width as f32,
@@ -933,6 +934,7 @@ impl CommandBuffer {
                             kind,
                             super::hal_shader::Fl9TextureEmulationKind::Load
                                 | super::hal_shader::Fl9TextureEmulationKind::Load3D
+                                | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions
                         ) {
                             context.PSSetSamplers(15, Some(&[Some(sampler.clone())]));
                         }

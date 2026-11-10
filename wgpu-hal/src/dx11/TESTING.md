@@ -3860,3 +3860,24 @@ emits, is rejected as a Core validation error before HAL. WGSL does not define
 an inverse builtin; this path covers GLSL and other Naga IR sources that
 contain the operation. The RTX result does not establish historical driver
 behavior.
+
+### Direct 2D `textureLoad` with `textureDimensions`
+
+```powershell
+cargo +1.93.1 test --offline -j2 -p naga --features hlsl-out --lib fl9_combined_2d_texel_load_and_dimensions_share_proven_binding -- --nocapture
+cargo +1.93.1 test --offline -j2 -p wgpu-core --no-default-features --features dx11,std,wgsl restricted_fl9_texture_load_and_dimensions_share_one_texture -- --nocapture
+cargo +1.93.1 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib texture_load_and_dimensions -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_load_and_dimensions_share_one_fl91_texture -- --exact --nocapture --test-threads=1
+```
+
+The selected entry must use one constant-coordinate `textureLoad` and one
+level-less dimensions query on the same group-zero single-mip 2D float texture;
+both existing downlevel limits are required. The public test uploads a
+4x2 RGBA8 texture and renders the queried width, queried height and selected
+texel into an 8x8 target. Strict forced-FL9_1 execution on the RTX 3090 Ti
+reported `0x10de:0x2203`, driver `32.0.16.2101`, and matched
+`[100, 60, 80, 255]` for all 64 pixels. The focused test is included in the
+strict public `dx11_public` suite. This does not enable general
+`texture_query`, dynamic texture-load coordinates in the combined proof,
+helper calls or other image-operation compositions.

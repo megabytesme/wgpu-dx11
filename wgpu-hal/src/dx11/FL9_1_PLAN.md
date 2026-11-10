@@ -1,5 +1,19 @@
 # FL9_1 completion plan
 
+## Current continuation — direct 2D load plus dimensions query — 2026-11-10
+
+The existing fragment `textureLoad` and `textureDimensions` emulations can now
+be used together for one direct, level-less query and one load from the same
+group-0 `texture_2d<f32>`. Core requires both existing downlevel limits and
+proves the selected entry shape; Naga and HAL independently require the same
+resource identity, one load, one query, constant coordinates, and no helpers,
+control flow, sampling or extra used resources. FXC accepts the combined
+shader at `ps_4_0_level_9_1`. Strict public rendering on the RTX 3090 Ti at
+requested/actual FL9_1 verified 64/64 pixels as `[100, 60, 80, 255]`. This
+adds no new reported capability and does not enable general texture queries.
+The public Core/HAL contract audit, broad shader/resource coverage, historical
+FL9_1 devices, Lumia runtime and physical device-removal recovery remain open.
+
 ## Current continuation — sample-bias compatibility validation — 2026-11-10
 
 Core now rejects DX11 FL9_1 `textureSampleBias` sampler combinations that the

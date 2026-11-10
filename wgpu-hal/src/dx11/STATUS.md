@@ -1344,6 +1344,16 @@ between 4x2 and 8x4 views with different texel colors; all 64 pixels matched
 the output that depends on both queried dimensions and sampled contents.
 General `texture_query` remains unavailable.
 
+The separate 2D fragment `textureLoad` and `textureDimensions` emulations may
+also be combined when both existing downlevel limits are enabled. Core, Naga
+and HAL require one direct level-less query and one load from the same
+group-0, single-sample `texture_2d<f32>`, with a constant integer coordinate,
+no helper/control flow, no sampling and no extra used resources. HAL reuses the
+RGBA8 single-mip point-sampling load path and supplies dimensions through the
+same reserved `b13` constants. Strict public forced-FL9_1 rendering verified
+64/64 output pixels as `[100, 60, 80, 255]`. This composition adds no new
+capability flag and general `texture_query` remains disabled.
+
 ## Optional timestamp query support
 
 ## Narrow FL9_1 fragment `textureNumLevels`

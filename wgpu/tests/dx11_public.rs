@@ -29683,6 +29683,262 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
     println!("PASS: direct and nested-helper FL9_1 fragment textureLoad produced green in-bounds texels and zero out-of-bounds/nonzero-mip texels across 256 readback pixels");
 }
 
+#[test]
+fn public_dx11_texture_load_and_dimensions_share_one_fl91_texture() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            required,
+            "strict mode requires physical FL9_1 D3D11 hardware"
+        );
+        println!("SKIP: no physical FL9_1 adapter for combined textureLoad/dimensions test");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(downlevel.limits.texture_load_2d_float_fragment);
+    assert!(downlevel.limits.texture_dimensions_2d_float_fragment);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=one direct fragment textureLoad plus textureDimensions on the same 2D float texture",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 textureLoad and dimensions device"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the FL9_1 capability projection");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 combined textureLoad and dimensions shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(42) var image: texture_2d<f32>;\n\
+             @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f {\n\
+                 let dimensions = vec2f(textureDimensions(image));\n\
+                 let value = textureLoad(image, vec2i(1, 0), 0);\n\
+                 return vec4f(value.r * dimensions.x / 8.0, value.g * dimensions.y / 4.0, value.b, value.a);\n\
+             }"
+                .into(),
+        ),
+    });
+    let vertices = [[-1.0_f32, -1.0], [3.0, -1.0], [-1.0, 3.0]];
+    let mut vertex_bytes = Vec::with_capacity(6 * std::mem::size_of::<f32>());
+    for component in vertices.into_iter().flatten() {
+        vertex_bytes.extend_from_slice(&component.to_ne_bytes());
+    }
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 combined texture operation fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex, 0, &vertex_bytes);
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 combined texture operation pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let input = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 combined texture operation input"),
+        size: Extent3d {
+            width: 4,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let input_view = input.create_view(&TextureViewDescriptor::default());
+    let mut input_bytes = Vec::with_capacity(4 * 2 * 4);
+    for pixel in [
+        [10, 20, 30, 255],
+        [200, 120, 80, 255],
+        [40, 50, 60, 255],
+        [70, 80, 90, 255],
+        [100, 110, 120, 255],
+        [130, 140, 150, 255],
+        [160, 170, 180, 255],
+        [190, 200, 210, 255],
+    ] {
+        input_bytes.extend_from_slice(&pixel);
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &input,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &input_bytes,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(16),
+            rows_per_image: Some(2),
+        },
+        Extent3d {
+            width: 4,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+    );
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 combined texture operation bind group"),
+        layout: &pipeline.get_bind_group_layout(0),
+        entries: &[BindGroupEntry {
+            binding: 42,
+            resource: BindingResource::TextureView(&input_view),
+        }],
+    });
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 combined texture operation output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 combined texture operation readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 combined texture operation render and readback"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 combined texture operation pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for combined texture operation rendering");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("combined texture operation map callback")
+        .expect("map combined texture operation readback");
+    {
+        let mapped = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped combined texture operation pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let pixel = &mapped[offset..offset + 4];
+                for (channel, expected) in [100u8, 60, 80, 255].into_iter().enumerate() {
+                    assert!(
+                        pixel[channel].abs_diff(expected) <= 1,
+                        "combined texture operation pixel ({x}, {y}) channel {channel}: actual={} expected={expected}",
+                        pixel[channel]
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: forced FL9_1 textureLoad and textureDimensions used the same bound texture; all 64 pixels matched [100, 60, 80, 255]");
+}
+
 #[cfg(feature = "glsl")]
 #[test]
 fn public_dx11_matrix_outer_product_renders_at_fl91() {

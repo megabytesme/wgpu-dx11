@@ -1681,3 +1681,21 @@ remains false. Strict forced-FL9_1 readback on the RTX 3090 Ti verified the
 existing 8x8-to-4x4 view transition and the new constant mip-1 query in an
 initialized mipmapped cube; all 64 pixels matched within one byte. Historical
 FL9_1 driver behavior is not established by the modern forced-level result.
+
+## Combined FL9_1 2D `textureLoad` and `textureDimensions`
+
+The existing `texture_load_2d_float_fragment` and
+`texture_dimensions_2d_float_fragment` limits can be used together for one
+selected fragment entry point that directly loads one texel and queries the
+level-less dimensions of the same group-zero `texture_2d<f32>`. The load
+coordinate must be a constant `vec2i`; the query must be directly converted
+from `vec2u` to `vec2f`. Helpers, control flow, sampling, extra used resources,
+other image operations and nonconstant integer operations remain unavailable.
+The bound view must satisfy the existing single-mip RGBA8 texture-load path.
+Core, Naga and HAL share the selected-entry and resource-identity proof. The
+query value and load dimensions reuse the existing `b13` host constant and
+`s15` point-sampling emulation; FXC compiles the combined pixel shader at
+`ps_4_0_level_9_1`. Strict public GPU readback on the RTX 3090 Ti matched all
+64 pixels. This is an intersection of two existing narrow emulations, not a
+new general texture-query capability, and historical FL9_1 driver behavior is
+unverified.

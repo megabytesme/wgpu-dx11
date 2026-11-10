@@ -214,12 +214,14 @@ impl RenderState {
             load.kind,
             super::hal_shader::Fl9TextureEmulationKind::Load
                 | super::hal_shader::Fl9TextureEmulationKind::Load3D
+                | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions
                 | super::hal_shader::Fl9TextureEmulationKind::BaseClamp
         );
         let rgba8_load = matches!(
             load.kind,
             super::hal_shader::Fl9TextureEmulationKind::Load
                 | super::hal_shader::Fl9TextureEmulationKind::Load3D
+                | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions
         );
         let expected_dimension = match load.dimension {
             naga::ImageDimension::D2 => wgt::TextureViewDimension::D2,
@@ -340,6 +342,7 @@ impl RenderState {
                 super::hal_shader::Fl9TextureEmulationKind::Dimensions
                     | super::hal_shader::Fl9TextureEmulationKind::Dimensions3D
                     | super::hal_shader::Fl9TextureEmulationKind::DimensionsCube
+                    | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions
             ) {
                 (
                     dimension_for_mip(info.size[0], load.mip_level),

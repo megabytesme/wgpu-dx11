@@ -1,5 +1,65 @@
 # FL9_1 progress
 
+## Direct 2D `textureLoad` plus `textureDimensions` — 2026-11-10
+
+The private/public FL9_1 path now accepts a deliberately narrow composition of
+the existing direct fragment texture-load and dimensions emulations: one
+single-sample group-0 `texture_2d<f32>`, exactly one in-bounds `textureLoad`
+with constant `vec2i` coordinates and one level-less `textureDimensions`
+query, directly converted from `vec2u` to `vec2f`. Both existing downlevel
+limits must be enabled. Core, Naga and HAL reject mismatched images, extra
+image operations/resources, helpers, control flow, nonconstant integer work
+and other proof combinations. The texture itself must satisfy the existing
+single-mip RGBA8 load path; host dimensions and point-sampling constants share
+the existing `b13`/`s15` emulation path. General `texture_query` remains
+disabled, and this composition does not change the reported capability model.
+
+The focused Naga, Core, HAL proof and FXC tests passed. Strict public hardware
+execution selected NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested and confirmed FL9_1, and matched
+`[100, 60, 80, 255]` for all 64 pixels in an 8x8 RGBA8 target.
+
+```text
+cargo +1.93.1 test --offline -j2 -p naga --features hlsl-out --lib fl9_combined_2d_texel_load_and_dimensions_share_proven_binding -- --nocapture
+# 1 passed.
+
+cargo +1.93.1 test --offline -j2 -p wgpu-core --no-default-features --features dx11,std,wgsl restricted_fl9_texture_load_and_dimensions_share_one_texture -- --nocapture
+# 1 passed; the test distinguishes both-enabled, load-only, dimensions-only and mismatched-image cases.
+
+cargo +1.93.1 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib texture_load_and_dimensions -- --nocapture
+# 2 passed, including FXC compilation at ps_4_0_level_9_1.
+
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_load_and_dimensions_share_one_fl91_texture -- --exact --nocapture --test-threads=1
+# 1 real GPU test passed; 64/64 pixels matched.
+
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 117 passed, 0 failed; includes default adapter-enumeration isolation.
+
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 467 passed, 0 failed.
+
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j2 -p wgpu-core --no-default-features --features dx11,std,wgsl --lib -- --test-threads=1
+# 117 passed, 0 failed.
+
+cargo +1.93.1 test --offline -j2 -p naga --features hlsl-out --lib
+# 157 passed, 0 failed.
+
+cargo +1.93.1 test --offline -j2 -p wgpu-core --no-default-features --features dx12,std,wgsl --lib -- --test-threads=1
+# 116 passed, 0 failed.
+```
+
+The full public suite contains one optional RG8 mip subcase skipped because
+the selected driver does not report that optional support; the combined-load
+hardware test itself ran. Clippy and formatting passed after fixing a new
+Core `collapsible_if` warning. Clippy still reports existing D3D11 HAL
+warnings, and the DX12-only Core test build reports existing unused-variable
+warnings in FL9 helper analysis. No commit has yet been created for this
+increment.
+
 ## Selected-entry texture-sample-bias sampler validation — 2026-11-10
 
 The public FL9_1 adapter previously let `textureSampleBias` reach HAL with
