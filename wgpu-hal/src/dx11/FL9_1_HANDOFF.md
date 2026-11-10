@@ -3343,6 +3343,8 @@ requested/actual FL9_1. Core passed 123/123, the strict private HAL suite
 1/1. DX12 HAL compilation, affected Clippy, formatting and `git diff --check`
 passed; two optional public-suite subcases were capability skips. Exact
 commands and outputs are in `FL9_1_PROGRESS.md`.
+Implementation checkpoint: `9fd21279b` (`dx11: allow two FL9_1 fragment
+uniform array reads`).
 
 This does not close the mission. Remaining software work is broad and
 application-facing: the selected WGSL subset is still constrained, several

@@ -20,9 +20,13 @@ valid public operations and shader/resource boundary cases.
 Historical FL9_1 hardware and physical device-removal recovery are external
 verification gaps.
 
-The latest verified commit is `6b1cff301`, which withholds sRGB blending
-through FL9_3 while preserving sRGB attachments and query-backed linear
-blending. A read-only RGBA8_SNORM audit confirmed the existing direct
+The latest implementation checkpoint is `9fd21279b`, which allows two
+direct fragment uniform-array reads from separate bindings under a narrow
+selected-entry proof. It passed the strict full HAL and public D3D11 suites
+and targeted Core/DX12 checks; details are in `FL9_1_PROGRESS.md`. The earlier
+capability correction `6b1cff301` withholds sRGB blending through FL9_3 while
+preserving sRGB attachments and query-backed linear blending. A read-only
+RGBA8_SNORM audit confirmed the existing direct
 GPU-to-staging readback rejection is required by the FL9_x SRV-only copy
 restriction. A separate shader audit confirmed arbitrary dynamic
 `textureSampleBias` must remain rejected because WGSL's legal bias range

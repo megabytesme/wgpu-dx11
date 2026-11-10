@@ -16038,3 +16038,8 @@ physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
 requested and actual FL9_1, `software=false`. Formatting and `git diff --check`
 passed. Clippy reported existing HAL warnings in unrelated code; no warning
 was introduced in the new validation or test code.
+
+Implementation checkpoint: `9fd21279b` (`dx11: allow two FL9_1 fragment
+uniform array reads`). The mission remains active; the checkpoint covers this
+narrow shader subset, not general fragment integer indexing or overall FL9_1
+completion.
