@@ -5,10 +5,11 @@
 Verified checkpoint `3577e23e1` includes the selected-entry 2D/3D textureLoad
 view guard, dynamic-coordinate 2D load, ordered CPU-shadow 3D readback, and
 WebGPU-correct per-pass blend-constant defaults. The following nonzero-group
-direct 2D textureDimensions slice is now implemented and verified: strict
-public tests 124/124, Core fixtures 134/134, private HAL baseline 473/473 and
-DX12 Core regression 123/123. The backend is opt-in through explicit DX11
-selection; it is not a general or Core-WebGPU-compliant FL9_1 implementation.
+direct 2D `textureDimensions` slice is committed as `9b3d1be06` and verified:
+strict public tests 124/124, Core fixtures 134/134, private HAL baseline
+473/473 and DX12 Core regression 123/123. The backend is opt-in through
+explicit DX11 selection; it is not a general or Core-WebGPU-compliant FL9_1
+implementation.
 
 Next bounded software slice: extend the existing bounded fragment
 uniform-array-index proof to nonzero groups, retaining all current structure,

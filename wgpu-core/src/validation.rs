@@ -1034,9 +1034,7 @@ fn fragment_uniform_array_indexing_proof(
             } if fragment_uniform_vec4_array_length(module, *array_ty).is_some()
         )
         || !is_fragment_uniform_array_of_vec4(module, array_uniform)
-        || module.global_variables[array_uniform]
-            .binding
-            .is_none_or(|binding| binding.group != 0)
+        || module.global_variables[array_uniform].binding.is_none()
         || block_uses_dynamic_access_as_pointer(
             module,
             function,
@@ -12697,6 +12695,7 @@ mod tests {
             r#"
             struct Params { index: u32, values: array<vec4f, 24> }
             @group(0) @binding(0) var<uniform> params: Params;
+            @group(1) @binding(17) var<uniform> grouped_uniform: Params;
             struct SmallParams { index: u32, values: array<vec4f, 2> }
             @group(0) @binding(1) var<uniform> small_uniform: SmallParams;
             struct MiddleParams { index: u32, values: array<vec4f, 3> }
@@ -12712,6 +12711,9 @@ mod tests {
 
             @fragment fn direct() -> @location(0) vec4f {
                 return params.values[params.index];
+            }
+            @fragment fn nonzero_group() -> @location(0) vec4f {
+                return grouped_uniform.values[grouped_uniform.index];
             }
             @fragment fn computed() -> @location(0) vec4f {
                 return params.values[params.index + 1u];
@@ -12775,6 +12777,28 @@ mod tests {
             .entry_point_uses_unsupported_runtime_integer_semantics(
                 naga::ShaderStage::Fragment,
                 "direct",
+                &disabled,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Fragment,
+                "nonzero_group",
+                &enabled,
+                true,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "nonzero_group",
+                &enabled,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "nonzero_group",
                 &disabled,
             )
             .unwrap());

@@ -48,7 +48,7 @@ fn public_dx11_fragment_uniform_array_indexing_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=fragment uniform array indices 0, 1 and 23",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=group-1/binding-17 fragment uniform array indices 0, 1 and 23",
         info.name, info.vendor, info.device, info.driver_info
     );
     let limits = adapter.limits();
@@ -69,7 +69,7 @@ fn public_dx11_fragment_uniform_array_indexing_at_fl91() {
     let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 fragment uniform array layout"),
         entries: &[BindGroupLayoutEntry {
-            binding: 0,
+            binding: 17,
             visibility: ShaderStages::FRAGMENT,
             ty: BindingType::Buffer {
                 ty: BufferBindingType::Uniform,
@@ -81,7 +81,7 @@ fn public_dx11_fragment_uniform_array_indexing_at_fl91() {
     });
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("FL9_1 fragment uniform array pipeline layout"),
-        bind_group_layouts: &[Some(&bind_group_layout)],
+        bind_group_layouts: &[None, Some(&bind_group_layout)],
         immediate_size: 0,
     });
     let shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -92,7 +92,7 @@ struct Params {
     index: u32,
     values: array<vec4f, 24>,
 }
-@group(0) @binding(0) var<uniform> params: Params;
+@group(1) @binding(17) var<uniform> params: Params;
 
 @vertex
 fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f {
@@ -189,7 +189,7 @@ fn fs() -> @location(0) vec4f {
         label: Some("FL9_1 fragment uniform array group"),
         layout: &bind_group_layout,
         entries: &[BindGroupEntry {
-            binding: 0,
+            binding: 17,
             resource: uniform_buffer.as_entire_binding(),
         }],
     });
@@ -235,7 +235,7 @@ fn fs() -> @location(0) vec4f {
                 multiview_mask: None,
             });
             pass.set_pipeline(&pipeline);
-            pass.set_bind_group(0, &bind_group, &[]);
+            pass.set_bind_group(1, &bind_group, &[]);
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             pass.draw(0..3, 0..1);
         }

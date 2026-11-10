@@ -15689,3 +15689,41 @@ passed 123/123. Core and public-target Clippy passed with only existing HAL
 private HAL suite was not rerun because no HAL implementation changed in this
 slice. The result verifies the modern RTX forced to FL9_1, not historical
 FL9_1 drivers.
+
+## Fragment uniform-array indexing from nonzero bind groups — 2026-11-10
+
+Started from checkpoint `9b3d1be06`. Removed only the group-zero predicate
+from the existing Core and HAL direct fragment uniform-array proofs; each
+proof still requires an actual resource binding and retains its current array
+shape, structure offsets/span/stride, single direct access, scalar `u32`
+index, selected-entry analysis, and rejection of helper, computed, side-use,
+and unsupported array forms. No capability limit changed. Core and HAL shader
+tests add `@group(1) @binding(17)` positive cases; the HAL test compiles the
+resource through the shared binding map to compact constant-buffer slot `b0`
+with FXC. The strict public test uses `[None, Some(&layout)]`, binds group 1,
+and confirms the indexed values with full-target readback.
+
+```text
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib restricted_fragment_uniform_array_indexing_is_selected_entry_aware
+# 1 passed.
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib dx11::hal_shader::tests::fl91_fragment_uniform_array_indexing_is_narrow_and_compiles_with_fxc -- --nocapture
+# 1 passed; four pre-existing unnecessary-qualification warnings in hal_queue.rs.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_fragment_uniform_array public_dx11_fragment_uniform_array_indexing_at_fl91 -- --nocapture --test-threads=1
+# 1 passed, 0 failed, 0 skipped on physical RTX 3090 Ti, requested/actual FL9_1.
+# Indices 0, 1 and 23 each matched the expected RGBA8 value across all 64 pixels.
+```
+
+The strict run reported NVIDIA vendor `0x10de`, device `0x2203`, driver
+`32.0.16.2101`, and `software=false`. It establishes this selected FL9_1 path
+on the modern driver, not behavior on historical FL9_1 devices.
+
+The coordinator then reran the strict public DX11 target (124/124), the focused
+uniform-array target (1/1), the Core DX11 fixture suite (134/134), the private
+HAL suite (473/473), and the Core DX12 regression (123/123). The public target
+includes the test that confirms ordinary DX11 adapter selection remains
+disabled. Strict mode required the physical adapter; optional query-gated
+cases in the broader target are not evidence for unsupported capabilities.
+Clippy passed for the Core library, HAL tests, and focused public test target;
+it reported existing HAL warnings in `hal_index.rs`, `texture.rs`,
+`hal_queue.rs`, `hal_device.rs`, `swapchain.rs`, and `fl9_texel_load.rs`.
+Workspace formatting and `git diff --check` passed.

@@ -1211,11 +1211,12 @@ vertex-stage indexing of fixed-size `vec3` and `vec4` uniform arrays using
 `vertex_index` or `instance_index`; other runtime integer indexing remains
 rejected. A separate `DownlevelLimits::fragment_uniform_array_indexing`
 exception permits one direct fragment-stage read from an `array<vec4<f32>, N>`
-field for `2 <= N <= 24`, in the same group-0 uniform structure as a scalar
-`u32` index at offset zero. The array begins at offset 16 with stride 16, and
-the structure span must be `16 + 16*N` bytes. The selected entry must use the
-index only for that access; computed indices, helper calls, additional integer
-uses/accesses and other shapes remain rejected. Naga emits a signed clamp for
+field for `2 <= N <= 24`, in the same uniform structure as a scalar `u32`
+index at offset zero. The uniform may be in a nonzero bind group. The array
+begins at offset 16 with stride 16, and the structure span must be
+`16 + 16*N` bytes. The selected entry must use the index only for that access;
+computed indices, helper calls, additional integer uses/accesses and other
+shapes remain rejected. Naga emits a signed clamp for
 `ps_4_0_level_9_1`. FXC accepts the 24-element case and rejects 25 elements;
 the 24-element shader uses 40 Level9 pixel-shader instruction slots. Strict
 public forced-FL9_1 readback checked all 64 pixels for indices zero, one and

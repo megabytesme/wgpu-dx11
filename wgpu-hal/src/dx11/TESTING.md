@@ -3616,7 +3616,8 @@ unsupported shapes in core and HAL.
 
 Core and HAL permit a separate fragment-only subset: one direct lookup of an
 `array<vec4f, N>` for `2 <= N <= 24`, using the scalar `u32` member of the
-same group-0 uniform structure. Its required layout is `16 + 16*N` bytes,
+same uniform structure, including a uniform in a nonzero bind group. Its
+required layout is `16 + 16*N` bytes,
 with the index at byte zero and the array at byte 16. The selected fragment
 entry must use that index only for the lookup; computed indices, helper calls,
 additional integer uses, and other array shapes remain rejected. FXC accepts
@@ -3634,11 +3635,12 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_fragment_uniform_array public_dx11_fragment_uniform_array_indexing_at_fl91 -- --nocapture --test-threads=1
 ```
 
-The public test renders with indices zero, one and 23, checks all 64 pixels
-for each distinct RGBA8 result, and requires a physical adapter in strict
-mode. This verifies both the compact and measured upper array-length cases.
-This is a narrow compiler/backend subset, not general fragment runtime integer
-support or a historical-driver guarantee.
+The public test uses `@group(1) @binding(17)` and a pipeline-layout hole at
+group zero. It renders with indices zero, one and 23, checks all 64 pixels for
+each distinct RGBA8 result, and requires a physical adapter in strict mode.
+This verifies nonzero-group binding for the upper tested array length. This is
+a narrow compiler/backend subset, not general fragment runtime integer support
+or a historical-driver guarantee.
 
 The hidden input also consumes one of the sixteen physical D3D input slots.
 Core mirrors HAL's FL9_1 overlap-allocation rules and rejects an exhausted

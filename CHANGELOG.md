@@ -103,7 +103,9 @@ Bottom level categories:
 - Lower f32 `mat2x2` matrix inverse in the HLSL backend behind the narrow downlevel limit.
 - Add downlevel limits for legacy vertex base-index inputs, vertex point size output, and fragment point coordinates.
 - Add `DownlevelLimits::vertex_uniform_array_indexing` to gate the narrow vertex-stage uniform-array indexing subset supported by a backend.
-- Add `DownlevelLimits::fragment_uniform_array_indexing` for a backend's separately validated fragment-stage uniform-array subset.
+- Add `DownlevelLimits::fragment_uniform_array_indexing` for a backend's
+  separately validated fragment-stage uniform-array subset, including its
+  supported nonzero bind-group placement.
 - Reject checked dynamic non-vector array accesses with selected-entry uniforms during core pipeline validation when the D3D11 downlevel contract requires it.
 - Add `DownlevelLimits::max_texture_to_buffer_copy_layers` so adapters can reject readback of layered source textures while retaining GPU-to-GPU copies.
 - Add `DownlevelLimits::shader_dynamic_loops` so downlevel backends can reject selected shader entry points with runtime-dependent loop exits while retaining support for statically bounded loops.

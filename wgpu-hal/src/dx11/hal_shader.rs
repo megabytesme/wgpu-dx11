@@ -2828,6 +2828,7 @@ mod tests {
             r#"
             struct Params { index: u32, values: array<vec4f, 24> }
             @group(0) @binding(0) var<uniform> params: Params;
+            @group(1) @binding(17) var<uniform> grouped_uniform: Params;
             struct SmallParams { index: u32, values: array<vec4f, 2> }
             @group(0) @binding(1) var<uniform> small_uniform: SmallParams;
             struct MiddleParams { index: u32, values: array<vec4f, 3> }
@@ -2842,6 +2843,9 @@ mod tests {
 
             @fragment fn direct() -> @location(0) vec4f {
                 return params.values[params.index];
+            }
+            @fragment fn nonzero_group() -> @location(0) vec4f {
+                return grouped_uniform.values[grouped_uniform.index];
             }
             @fragment fn computed() -> @location(0) vec4f {
                 return params.values[params.index + 1u];
@@ -2919,6 +2923,48 @@ mod tests {
                 binding: naga::ResourceBinding {
                     group: 0,
                     binding: 0,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Uniform,
+            }],
+        )
+        .is_ok());
+
+        let grouped = selected("nonzero_group");
+        let grouped_function = &module.entry_points[grouped].function;
+        let grouped_info = info.get_entry_point(grouped);
+        assert!(
+            supported_fragment_uniform_array_indexing(&module, grouped_function, grouped_info,)
+                .is_some()
+        );
+        assert!(!has_unsupported_dynamic_access(
+            &module,
+            &info,
+            grouped_function,
+            grouped_info,
+            mode,
+        ));
+        assert!(
+            !has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+                &module,
+                &info,
+                grouped_function,
+                grouped_info,
+                ShaderProfile::PixelLevel9_1,
+                Fl9ShaderInputOptions::default(),
+                &[],
+            )
+        );
+        assert!(compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "nonzero_group",
+            ShaderProfile::PixelLevel9_1,
+            &[ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 1,
+                    binding: 17,
                 },
                 slot: 0,
                 kind: ShaderBindingKind::Uniform,
@@ -7770,9 +7816,7 @@ fn supported_fragment_uniform_array_indexing(
                     && fragment_uniform_vec4_array_length(module, members[1].ty)
                         .is_some_and(|length| span == 16 + length * 16)
         )
-        || module.global_variables[array_uniform]
-            .binding
-            .is_none_or(|binding| binding.group != 0)
+        || module.global_variables[array_uniform].binding.is_none()
         || block_uses_dynamic_access_as_pointer(
             module,
             function,

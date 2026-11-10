@@ -1283,11 +1283,12 @@ space and is not a supported workaround.
 ## Direct fragment uniform-array indexing
 
 Core and HAL permit one direct fragment-stage read from `array<vec4f, N>` for
-`2 <= N <= 24`, in the same group-0 uniform structure as its scalar `u32`
-index. The structure span is `16 + 16*N`, with the index at offset zero and
-the array at offset 16. The selected entry must use the index only for this
-access; helper calls, computed indices, other integer uses or accesses, and
-different array shapes remain rejected. The selected FL9_1 projection reports
+`2 <= N <= 24`, in the same uniform structure as its scalar `u32` index. The
+uniform may be in a nonzero bind group. The structure span is `16 + 16*N`,
+with the index at offset zero and the array at offset 16. The selected entry
+must use the index only for this access; helper calls, computed indices, other
+integer uses or accesses, and different array shapes remain rejected. The
+selected FL9_1 projection reports
 the dedicated `DownlevelLimits::fragment_uniform_array_indexing` gate rather
 than reusing a vertex-only capability. Naga-generated HLSL compiles under FXC
 for lengths 2 and 24; FXC rejects length 25 with X5589 at constant register
