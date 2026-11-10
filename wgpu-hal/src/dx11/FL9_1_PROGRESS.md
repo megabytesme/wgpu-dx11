@@ -15875,3 +15875,33 @@ WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu --no-defa
 # 1 test passed on RTX 3090 Ti, requested/actual FL9_1; 7 positive GPU cases
 # (448/448 output pixels) and one expected full-result rejection.
 ```
+
+## Zero unsupported compute/storage limits — 2026-11-10
+
+The public FL9_1 projection now explicitly sets all compute workgroup limits,
+storage-buffer/storage-texture counts, dynamic storage-buffer count and
+storage-buffer binding size to zero. Before this change, generic downlevel
+defaults left nonzero values even though the D3D11 projection omits the
+compute and storage flags and Core rejects those operations. The existing
+negative Core cases remain unchanged. A strict public integration now asserts
+the adapter's reported values while retaining the existing compute/storage
+rejection coverage.
+
+The HAL capability projection test passed 1/1. The strict public
+`public_dx11_api_renders_offscreen_at_fl91` test passed 1/1 on the physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+requested/actual FL9_1, `software=false`. Its public limits diagnostic showed
+all ten compute/storage values at zero; it also completed its existing public
+render/readback and Core rejection checks. HAL and public-test Clippy passed
+with only pre-existing `too_many_arguments` warnings. Workspace formatting and
+`git diff --check` passed.
+
+Read-only audits found no confirmed Core-valid-to-HAL mismatch in the reviewed
+uniform, format, shader, pipeline, surface and fence paths. The public
+capability audit found a separate omitted feature: native CoreWindow
+swapchains exist, but public surface capability reporting currently accepts
+HWND only. Treat public CoreWindow enablement as a follow-up slice requiring a
+Core thread/lifecycle audit and Lumia/UWP runtime verification, not as
+currently supported public presentation. The uniform audit found no software
+gap; historical FL9_1 portability and executing all thirteen user constant
+buffer slots together remain verification gaps.

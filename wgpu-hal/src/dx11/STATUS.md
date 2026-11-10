@@ -1128,6 +1128,10 @@ representative application or a complete contract audit.
 review across every valid pipeline, texture, buffer, mapping, render-pass and
 error path. Current strict tests cover a broad subset but do not prove every
 request permitted by the limits.
+- The FL9_1 public limits explicitly report zero compute limits, storage
+  bindings, dynamic storage buffers and storage-buffer binding size. Compute
+  pipelines and storage binding layouts remain rejected by Core; a buffer's
+  `STORAGE` allocation usage alone does not expose shader storage.
 - Compute, storage access, queries, indirect draws, general multisampling (except optional query-gated
   2x/4x/8x RGBA8 render/resolve and matching D16/Depth24Plus/D24S8 depth attachments), arrays,
 general comparison samplers, several shader builtins and unrestricted WGSL remain

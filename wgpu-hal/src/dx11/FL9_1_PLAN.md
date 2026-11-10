@@ -1,6 +1,23 @@
 # FL9_1 completion plan
 
-## Current state and next queue — 2026-11-10
+## Latest current state and next queue — 2026-11-10
+
+The current branch is a substantial opt-in public FL9_1 implementation, but
+the practical-completion audit remains open. The Milestone 8 static uniform
+path has verified constant budgets, sparse/stage-specific bindings, ranges,
+updates and near-limit shaders; historical-device portability remains
+unverified. Core/HAL audits have not found a confirmed valid-public-request to
+unsupported-HAL mismatch in their reviewed paths. The latest capability
+projection correction explicitly zeros unused compute and storage limits; its
+HAL projection test and strict public readback/integration test passed on the
+RTX 3090 Ti forced to FL9_1. Public CoreWindow surface capabilities remain
+withheld even though the HAL has a CoreWindow swapchain path. Next, audit
+CoreWindow's public dispatcher-thread and lifecycle contract before deciding
+whether it can be enabled safely; continue the broader operation audit in
+parallel. Historical FL9_1 hardware, Lumia/CoreWindow runtime and physical
+device-removal recovery are external verification gaps.
+
+## Earlier current-state checkpoint — 2026-11-10
 
 Checkpoint `816b85fa1` permits direct, statically indexed column or scalar
 component stores to local `matCx2<f32>` struct members; whole-matrix, dynamic,

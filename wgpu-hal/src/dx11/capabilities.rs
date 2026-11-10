@@ -744,6 +744,16 @@ impl Capabilities {
         limits.max_sampled_textures_per_shader_stage = self.backend.sampled_textures_per_group;
         limits.max_samplers_per_shader_stage = self.backend.samplers_per_group;
         limits.max_uniform_buffers_per_shader_stage = uniform_buffers_per_stage;
+        limits.max_storage_buffers_per_shader_stage = 0;
+        limits.max_storage_textures_per_shader_stage = 0;
+        limits.max_dynamic_storage_buffers_per_pipeline_layout = 0;
+        limits.max_storage_buffer_binding_size = 0;
+        limits.max_compute_workgroup_storage_size = 0;
+        limits.max_compute_invocations_per_workgroup = 0;
+        limits.max_compute_workgroup_size_x = 0;
+        limits.max_compute_workgroup_size_y = 0;
+        limits.max_compute_workgroup_size_z = 0;
+        limits.max_compute_workgroups_per_dimension = 0;
         limits.max_uniform_buffer_binding_size = 255 * 16;
         limits.max_vertex_buffers = self.backend.vertex_buffers;
         limits.max_buffer_size = u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT;
@@ -2762,6 +2772,21 @@ mod tests {
         assert_eq!(exposed.limits.max_sampled_textures_per_shader_stage, 8);
         assert_eq!(exposed.limits.max_samplers_per_shader_stage, 16);
         assert_eq!(exposed.limits.max_uniform_buffers_per_shader_stage, 6);
+        assert_eq!(exposed.limits.max_storage_buffers_per_shader_stage, 0);
+        assert_eq!(exposed.limits.max_storage_textures_per_shader_stage, 0);
+        assert_eq!(
+            exposed
+                .limits
+                .max_dynamic_storage_buffers_per_pipeline_layout,
+            0
+        );
+        assert_eq!(exposed.limits.max_storage_buffer_binding_size, 0);
+        assert_eq!(exposed.limits.max_compute_workgroup_storage_size, 0);
+        assert_eq!(exposed.limits.max_compute_invocations_per_workgroup, 0);
+        assert_eq!(exposed.limits.max_compute_workgroup_size_x, 0);
+        assert_eq!(exposed.limits.max_compute_workgroup_size_y, 0);
+        assert_eq!(exposed.limits.max_compute_workgroup_size_z, 0);
+        assert_eq!(exposed.limits.max_compute_workgroups_per_dimension, 0);
         assert_eq!(
             exposed
                 .limits

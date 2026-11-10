@@ -1,5 +1,19 @@
 # Direct3D 11 validation plan
 
+## Storage-limit projection
+
+The HAL capability-model test checks that the FL9_1 projection reports zero
+compute limits, storage-buffer and storage-texture counts, dynamic storage
+buffers and storage-buffer binding size. The strict public integration checks
+the adapter's reported limits; its existing negative cases verify that Core
+rejects compute and storage operations before HAL.
+
+```powershell
+cargo +1.93.1 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib fl91_wgpu_projection_is_conservative_and_uses_only_implemented_paths
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
 ## Strict BC partial-initialization and matrix determinant checks
 
 Run from a Visual Studio developer shell with the DX11 strict hardware gate

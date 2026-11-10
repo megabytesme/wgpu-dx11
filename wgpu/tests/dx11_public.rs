@@ -2322,6 +2322,16 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     let limits = adapter.limits();
     let features = adapter.features();
     let downlevel = adapter.get_downlevel_capabilities();
+    assert_eq!(limits.max_storage_buffers_per_shader_stage, 0);
+    assert_eq!(limits.max_storage_textures_per_shader_stage, 0);
+    assert_eq!(limits.max_dynamic_storage_buffers_per_pipeline_layout, 0);
+    assert_eq!(limits.max_storage_buffer_binding_size, 0);
+    assert_eq!(limits.max_compute_workgroup_storage_size, 0);
+    assert_eq!(limits.max_compute_invocations_per_workgroup, 0);
+    assert_eq!(limits.max_compute_workgroup_size_x, 0);
+    assert_eq!(limits.max_compute_workgroup_size_y, 0);
+    assert_eq!(limits.max_compute_workgroup_size_z, 0);
+    assert_eq!(limits.max_compute_workgroups_per_dimension, 0);
     assert!(!downlevel.limits.texture_1d);
     assert!(downlevel.limits.vertex_index_local_array_indexing);
     println!(

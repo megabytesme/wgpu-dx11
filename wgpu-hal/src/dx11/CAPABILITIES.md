@@ -65,6 +65,16 @@ adapter enumeration is offscreen-only or that surface reporting is disabled
 describes an earlier checkpoint; the current public surface is limited to the
 HWND contract summarized above.
 
+## Storage limits
+
+Compute, storage buffers and storage textures are not implemented for this
+FL9_1 projection. The adapter reports zero compute limits, storage counts,
+dynamic storage buffers and storage-buffer binding size instead of inheriting
+the generic downlevel defaults. Core also omits the compute/storage downlevel
+flags and rejects those pipelines and binding layouts before HAL. Creating a
+buffer with the `STORAGE` usage bit remains distinct from binding it as a
+shader resource and does not enable storage access.
+
 ## WGSL fragment discard
 
 The ordinary WGSL fragment `discard` statement is translated by Naga's HLSL
