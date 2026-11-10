@@ -63,6 +63,22 @@ On the RTX 3090 Ti at requested and actual FL9_1, all pixels matched the
 expected red output. This is execution evidence for the tested shader and
 pipeline shape; it does not broaden the backend's advertised capabilities.
 
+## Independent RGBA/BGRA usage projection
+
+The CPU-only capability test supplies synthetic `CheckFormatSupport` results
+without `RENDER_TARGET` for RGBA8/BGRA8 linear and sRGB formats. It verifies
+that sampled plus copy-destination use stays projected while attachment and
+copy-source use remain absent, using the production texture checker.
+
+```powershell
+cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib color_format_projection_preserves_sampled_usage_without_attachment_support -- --nocapture
+```
+
+The synthetic test passed for all four formats. The RTX's positive query set
+does not reproduce this negative-query case; the complete strict public suite
+passed with its existing selected-device formats and reported no change to
+the RTX projection.
+
 The `dx11` feature enumerates only physical adapters that create the explicitly
 requested FL9_1 device and pass the selected-device capability projection.
 Only selected-device-gated features are exposed: the implemented 16-bit

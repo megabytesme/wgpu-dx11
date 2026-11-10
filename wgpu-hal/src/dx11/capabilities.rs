@@ -1767,9 +1767,7 @@ impl Capabilities {
             };
         }
 
-        if self.backend.color_attachments == 0
-            || (format == wgt::TextureFormat::Rgba8Unorm
-                && !self.backend.rgba8_single_mip_transfers)
+        if (format == wgt::TextureFormat::Rgba8Unorm && !self.backend.rgba8_single_mip_transfers)
             || (format == wgt::TextureFormat::Bgra8Unorm
                 && !self.backend.bgra8_single_mip_transfers)
             || (format == wgt::TextureFormat::Rgba8UnormSrgb
@@ -1786,28 +1784,6 @@ impl Capabilities {
         {
             return Caps::empty();
         }
-        let supported = self
-            .check_private_texture_2d(
-                format,
-                wgt::TextureUses::COLOR_TARGET
-                    | wgt::TextureUses::COPY_SRC
-                    | wgt::TextureUses::COPY_DST
-                    | wgt::TextureUses::RESOURCE,
-                [8, 8],
-                1,
-                1,
-                1,
-            )
-            .is_ok();
-        if !supported {
-            return Caps::empty();
-        }
-
-        let mut result = Caps::COLOR_ATTACHMENT
-            | Caps::COPY_SRC
-            | Caps::COPY_DST
-            | Caps::SAMPLED
-            | Caps::SAMPLED_LINEAR;
         let format_query = match format {
             wgt::TextureFormat::Rgba8Unorm => self.driver.rgba8,
             wgt::TextureFormat::Bgra8Unorm => self.driver.bgra8,
@@ -1815,6 +1791,42 @@ impl Capabilities {
             wgt::TextureFormat::Bgra8UnormSrgb => self.driver.bgra8_srgb,
             _ => unreachable!("the color format was checked above"),
         };
+        let mut result = Caps::empty();
+        if self
+            .check_private_texture_2d(format, wgt::TextureUses::RESOURCE, [8, 8], 1, 1, 1)
+            .is_ok()
+        {
+            result |= Caps::SAMPLED;
+            if matches!(
+                format_query,
+                Query::Value(bits)
+                    if bits & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32 != 0
+            ) {
+                result |= Caps::SAMPLED_LINEAR;
+            }
+        }
+        if self
+            .check_private_texture_2d(format, wgt::TextureUses::COPY_DST, [8, 8], 1, 1, 1)
+            .is_ok()
+        {
+            result |= Caps::COPY_DST;
+        }
+        if self
+            .check_private_texture_2d(format, wgt::TextureUses::COPY_SRC, [8, 8], 1, 1, 1)
+            .is_ok()
+        {
+            result |= Caps::COPY_SRC;
+        }
+        if self.backend.color_attachments != 0
+            && self
+                .check_private_texture_2d(format, wgt::TextureUses::COLOR_TARGET, [8, 8], 1, 1, 1)
+                .is_ok()
+        {
+            result |= Caps::COLOR_ATTACHMENT;
+        }
+        if result.is_empty() {
+            return result;
+        }
         if !matches!(format_query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0)
             || !self.backend.pot_copy_only_mip_chains
             || !self.backend.pot_full_chain_sampled_mips
@@ -1823,11 +1835,12 @@ impl Capabilities {
         {
             result |= Caps::SINGLE_MIP_ONLY;
         }
-        if matches!(format_query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0)
+        if result.contains(Caps::COLOR_ATTACHMENT)
+            && matches!(format_query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32 != 0)
         {
             result |= Caps::COLOR_ATTACHMENT_BLEND;
         }
-        if format == wgt::TextureFormat::Rgba8Unorm {
+        if result.contains(Caps::COLOR_ATTACHMENT) && format == wgt::TextureFormat::Rgba8Unorm {
             for sample_count in SampleCountQueries::COUNTS {
                 if self
                     .check_private_texture_2d(
@@ -4056,9 +4069,44 @@ mod tests {
             .is_empty());
         caps.backend.rgba8_single_mip_transfers = true;
         caps.backend.color_attachments = 0;
-        assert!(caps
-            .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
-            .is_empty());
+        let rgba_without_attachments =
+            caps.texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm);
+        assert!(rgba_without_attachments.contains(FormatCaps::SAMPLED | FormatCaps::COPY_DST));
+        assert!(!rgba_without_attachments.contains(FormatCaps::COLOR_ATTACHMENT));
+    }
+
+    #[test]
+    fn color_format_projection_preserves_sampled_usage_without_attachment_support() {
+        let sampled =
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+        for format in [
+            wgt::TextureFormat::Rgba8Unorm,
+            wgt::TextureFormat::Bgra8Unorm,
+            wgt::TextureFormat::Rgba8UnormSrgb,
+            wgt::TextureFormat::Bgra8UnormSrgb,
+        ] {
+            let mut caps = model(FeatureLevel::L9_1);
+            set_color_format_query(&mut caps, format, Query::Value(sampled));
+            let usage_caps = caps.texture_format_capabilities(format);
+            assert!(usage_caps
+                .contains(FormatCaps::SAMPLED | FormatCaps::SAMPLED_LINEAR | FormatCaps::COPY_DST));
+            assert!(!usage_caps.contains(FormatCaps::COLOR_ATTACHMENT));
+            assert!(!usage_caps.contains(FormatCaps::COPY_SRC));
+
+            assert!(caps
+                .check_private_texture_2d(
+                    format,
+                    wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                    [8, 8],
+                    1,
+                    1,
+                    1,
+                )
+                .is_ok());
+            assert!(caps
+                .check_private_texture_2d(format, wgt::TextureUses::COLOR_TARGET, [8, 8], 1, 1, 1,)
+                .is_err());
+        }
     }
 
     #[test]

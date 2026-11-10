@@ -38,6 +38,11 @@ produce the expected Core validation error. The render-bundle Core guard is
 present, but `RenderBundleEncoder::finish` reports failures through the Rust
 wrapper's fatal path rather than an error scope.
 
+RGBA8/BGRA8 linear and sRGB format capabilities are now projected per usage.
+If a selected-device query lacks render-target support, independently valid
+sampled and copy-destination usages remain visible to Core; the production HAL
+checker still rejects the unsupported attachment and copy-source requests.
+
 A strict public `@invariant @builtin(position)` regression also completed a
 depth-only prepass followed by an Equal-depth color draw; all 64 readback
 pixels matched. This verifies the tested shader and pipeline shape on the

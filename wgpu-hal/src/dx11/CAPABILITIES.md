@@ -42,6 +42,12 @@ predicate for the private RGBA8, BGRA8, D24S8, R8_UNORM, R8G8_UNORM, R8G8_SNORM,
 R16G16_SNORM, R8G8B8A8_SNORM, B5G6R5 and BC1/BC2/BC3 unorm and sRGB subsets;
 it is not a complete texture validation rule.
 
+For RGBA8/BGRA8 linear and sRGB formats, each reported usage is now projected
+from its own selected-device query and production usage check. Missing render-
+target support no longer hides independently valid sampled and copy-destination
+use. This changes capability reporting only; unsupported combinations remain
+rejected by the HAL checker.
+
 This file also retains historical audit notes. Any older statement below that
 adapter enumeration is offscreen-only or that surface reporting is disabled
 describes an earlier checkpoint; the current public surface is limited to the

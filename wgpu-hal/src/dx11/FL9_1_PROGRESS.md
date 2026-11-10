@@ -14026,3 +14026,38 @@ Checkpoint: `d509e98c58a342730df9c423ac2e0844653ec6ff`
 This is an additional public execution proof. The broad Core/HAL contract
 audit, unsupported-operation closure, historical FL9_1 hardware, Lumia ARM32/
 CoreWindow runtime and physical device-removal recovery remain open.
+
+## Independent color-format usage projection — 2026-11-10
+
+The RGBA8/BGRA8 linear and sRGB format-capability projection no longer
+requires sampled, copy-source, copy-destination and render-target checks to
+succeed as one combined texture descriptor. It now reports independently
+validated usages. A synthetic negative `CheckFormatSupport` test verifies that
+sampled plus copy-destination support remains visible when render-target
+support is absent, while the production checker still rejects attachment and
+copy-source requests. The RTX reports all of these support bits, so its public
+projection did not change.
+
+Verification:
+
+```text
+cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib format_projection -- --nocapture
+# 7 passed, including the new synthetic per-usage case.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 465 passed, 0 failed, 0 ignored; strict FL9_1 private HAL suite.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 115 passed, 0 failed, 0 ignored; includes default adapter-enumeration isolation.
+
+cargo +1.93 clippy --offline -j2 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93 check --offline -j2 -p wgpu-hal --no-default-features --features dx12
+rustfmt +1.93 --edition 2021 --check wgpu-hal/src/dx11/capabilities.rs
+git diff --check
+# passed; Clippy reported only existing D3D11 HAL warnings.
+```
+
+The hardware suites selected NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`) at requested/actual FL9_1 with `software=false`. The
+synthetic query-negative test is CPU-only and covers a driver case unavailable
+on this development adapter.

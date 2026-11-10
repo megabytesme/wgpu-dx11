@@ -12,6 +12,17 @@ See `FL9_1_PROGRESS.md` and `TESTING.md` for results. Broader Core/HAL contract
 auditing, shader/API coverage, historical hardware and Lumia runtime
 verification remain open.
 
+## Current capability-projection increment — per-usage color formats
+
+RGBA8/BGRA8 linear and sRGB format usages are now projected independently
+instead of requiring a single query to pass for sampled, copy, and attachment
+uses together. A synthetic negative-query test verifies sampled plus
+copy-destination support remains available when render-target support is
+absent; the production checker still rejects attachment and copy-source use.
+The strict RTX projection and public suite remain unchanged. This closes a
+conservative reporting gap, not a driver capability expansion. See
+`FL9_1_PROGRESS.md` for regression results.
+
 ## Latest execution evidence — 2026-11-09
 
 The strict public test matrix now includes BC1/BC2/BC3 partial initialization
