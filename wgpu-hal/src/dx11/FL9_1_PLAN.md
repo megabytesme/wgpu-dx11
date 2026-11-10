@@ -2368,3 +2368,22 @@ See `FL9_1_PROGRESS.md` for exact commands. Continue by selecting gaps from a
 real workload or a separately reproduced compiler/runtime boundary; do not
 expand general texture queries or infer historical-driver support from this
 modern adapter.
+
+## Coordinator continuation — bounded fragment uniform indexing — 2026-11-10
+
+A narrow selected-entry fragment uniform-indexing subset now has independent
+Core, HAL/Naga, and strict GPU evidence. It accepts only direct indexing of a
+two-element `vec4f` uniform array by a scalar `u32` field in the same
+group-0 structure; the separate downlevel limit defaults false elsewhere.
+Unsupported shapes remain rejected. The RTX 3090 Ti forced to FL9_1 rendered
+both array elements correctly. Core (134), private HAL (471), public D3D11
+(122), and DX12 Core (123) suites pass; see `FL9_1_PROGRESS.md` for exact
+commands. This is a concrete workload/compiler-boundary slice, not broad
+runtime-integer support.
+
+Continue agent-assisted work by delegating independent audits, selector
+triage, and compiler feasibility probes, then integrating one cross-layer
+Core/Naga/HAL change at a time. Do not split a single vertical shader feature
+among agents editing shared validation or capability files. The remaining
+implementation gaps and external historical-device/Lumia verification are
+still open.

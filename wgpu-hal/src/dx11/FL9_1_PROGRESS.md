@@ -15301,3 +15301,51 @@ WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-defau
 cargo +1.93.1 run --offline -j8 -p wgpu --example dx11_fl91_windowed --no-default-features --features dx11,wgsl,std -- --frames=60
 # Physical FL9_1 adapter; 60 frames presented successfully.
 ```
+
+## Restricted fragment uniform-array indexing — 2026-11-10
+
+Added a separate default-false downlevel limit for one narrowly proven
+fragment-stage operation: a direct `u32` index into a two-element
+`array<vec4f, 2>` field in the same group-0 uniform structure. The structure
+must be 48 bytes, with the index at byte zero and the array at byte 16. Core,
+HAL and Naga-side validation reject helper calls, computed or reused indices,
+other array shapes and extra runtime integer operations. Other integer-array
+indexing remains unavailable. The HLSL-to-FXC probe confirmed the generated
+signed clamp and two-element selection compile at `ps_4_0_level_9_1`; Level9
+disassembly used four `ps_2_0` instruction slots.
+
+The strict public test selected the physical NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested and confirmed
+FL9_1, and reported software/WARP false. Indices 0 and 1 each produced the
+expected uniform-selected RGBA value at all 64 pixels. The `u32::MAX` result
+is recorded only as observed FXC behavior, not a public out-of-bounds
+semantics guarantee.
+
+Verification on the final proof predicates:
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_fragment_uniform_array public_dx11_fragment_uniform_array_indexing_at_fl91 -- --nocapture --test-threads=1
+# 1/1 strict physical FL9_1 GPU test passed; all 192 checked pixels matched.
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib restricted_fragment_uniform_array_indexing_is_selected_entry_aware
+# 1/1 selected-entry Core validation test passed.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --test-threads=1
+# 134/134 passed.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 471/471 passed.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 122/122 passed. Optional IA/mip-format cases logged SKIP and are not counted
+# as hardware-executed feature tests.
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib --quiet
+# 123/123 passed.
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+# Both passed.
+```
+
+Targeted Clippy completed for wgpu-types, Core, HAL and the new public test.
+Existing warnings remain in serde-disabled type imports, Core fixture test
+style, HAL queue qualifications, argument counts, and older test code. No
+warnings remain on the new proof predicates. Default DX11 adapter selection
+is unchanged; this increment does not broaden advertised integer operations.
+The broader Core/HAL shader-contract audit, historical FL9_1 device checks and
+Lumia runtime verification remain open.

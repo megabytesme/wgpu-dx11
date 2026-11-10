@@ -1252,9 +1252,8 @@ green pixels on the 16×16 target.
 Core and HAL permit a selected vertex entry point to index a fixed-size uniform
 array of `vec3` or `vec4` with `vertex_index` or `instance_index`, including
 unchanged forwarding of that builtin through helper parameters when the value
-is used exclusively for the supported array access. Computed indices,
-fragment-stage accesses, nested arrays and other element types remain
-rejected. Naga emits a signed bounds clamp for the FL9_1 profiles because FXC
+is used exclusively for the supported array access. Computed indices, nested
+arrays and other element types remain rejected. Naga emits a signed bounds clamp for the FL9_1 profiles because FXC
 rejects its default unsigned clamp form. The strict public RTX 3090 Ti test at
 requested/actual FL9_1 read distinct entries through direct and two-helper
 paths and confirmed an index equal to the array length uses the final
@@ -1266,6 +1265,26 @@ Core and HAL reject other `vec2` array layouts; the public strict readback test
 verified four distinct values and the clamped final index on the RTX 3090 Ti.
 The unpadded `array<vec2<f32>, N>` form is invalid WGSL in uniform address
 space and is not a supported workaround.
+
+## Direct fragment uniform-array indexing
+
+Core and HAL permit one direct fragment-stage read from `array<vec4f, 2>` in
+the same group-0 uniform structure as its scalar `u32` index. The structure
+must be 48 bytes, with the index at offset zero and the array at offset 16.
+The selected entry must use the index only for this access; helper calls,
+computed indices, other integer uses or accesses, and different array shapes
+remain rejected. The selected FL9_1 projection reports the dedicated
+`DownlevelLimits::fragment_uniform_array_indexing` gate rather than reusing a
+vertex-only capability. The Naga HLSL compiler probe passed FXC for
+`ps_4_0_level_9_1`; Level9 disassembly showed a four-slot `ps_2_0` sequence
+for the signed clamp and two-element selection. The strict public RTX 3090 Ti
+test at requested/actual FL9_1 rendered both in-range indices and verified the
+complete 64-pixel target was red for index zero and green for index one. An
+additional `u32::MAX` out-of-bounds probe completed without an invalid access
+and observed the index-zero color after signed conversion/clamping; WGSL does
+not guarantee the value of an out-of-bounds uniform-array read, so this is not
+part of the supported contract. This does not enable general fragment integer
+operations or establish historical-driver behavior.
 
 ## Hidden `vertex_index` input-slot validation
 

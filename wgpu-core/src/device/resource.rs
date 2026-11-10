@@ -5789,7 +5789,15 @@ impl Device {
                                 vertex_shader_module.requests_runtime_checks(),
                             )
                             .map_err(stage_err)?,
-                        None => self.downlevel.limits.vertex_uniform_array_indexing,
+                        None => match stage.to_naga() {
+                            naga::ShaderStage::Vertex => {
+                                self.downlevel.limits.vertex_uniform_array_indexing
+                            }
+                            naga::ShaderStage::Fragment => {
+                                self.downlevel.limits.fragment_uniform_array_indexing
+                            }
+                            _ => false,
+                        },
                     } {
                         return Err(
                             pipeline::CreateRenderPipelineError::UnsupportedDynamicUniformArrayIndexing {
@@ -6321,7 +6329,15 @@ impl Device {
                             shader_module.requests_runtime_checks(),
                         )
                         .map_err(stage_err)?,
-                    None => self.downlevel.limits.vertex_uniform_array_indexing,
+                    None => match stage.to_naga() {
+                        naga::ShaderStage::Vertex => {
+                            self.downlevel.limits.vertex_uniform_array_indexing
+                        }
+                        naga::ShaderStage::Fragment => {
+                            self.downlevel.limits.fragment_uniform_array_indexing
+                        }
+                        _ => false,
+                    },
                 } {
                     return Err(
                         pipeline::CreateRenderPipelineError::UnsupportedDynamicUniformArrayIndexing {

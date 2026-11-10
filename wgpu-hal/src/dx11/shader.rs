@@ -1128,6 +1128,79 @@ mod tests {
     }
 
     #[test]
+    fn fl91_fragment_uniform_array_signed_clamp_fxc_probe() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct Uniforms {
+                index: u32,
+                values: array<vec4f, 2>,
+            }
+            @group(0) @binding(0) var<uniform> uniforms: Uniforms;
+
+            @fragment fn main() -> @location(0) vec4f {
+                return uniforms.values[uniforms.index];
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        for (handle, expression) in module.entry_points[0].function.expressions.iter() {
+            println!(
+                "Naga expression {}: {expression:?}, type={:?}, refs={}",
+                handle.index(),
+                info.get_entry_point(0)[handle].ty.inner_with(&module.types),
+                info.get_entry_point(0)[handle].ref_count
+            );
+        }
+        let bindings = [ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Uniform,
+        }];
+        let (hlsl, entry) = translate_naga_with_viewport_and_fl9_inputs(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions::default(),
+        )
+        .unwrap();
+
+        println!("Generated FL9_1 fragment HLSL:\n{hlsl}");
+        assert!(
+            hlsl.contains("min(max(int("),
+            "expected Naga's signed uniform-index clamp:\n{hlsl}"
+        );
+        assert!(hlsl.contains(", 0), 1)"), "{hlsl}");
+
+        let bytecode = compile_hlsl(&hlsl, &entry, ShaderProfile::PixelLevel9_1)
+            .unwrap_or_else(|error| panic!("FXC rejected Naga's signed clamp: {error:?}\n{hlsl}"));
+        let disassembly = unsafe {
+            windows::Win32::Graphics::Direct3D::Fxc::D3DDisassemble(
+                bytecode.as_ptr().cast(),
+                bytecode.len(),
+                0,
+                PCSTR::null(),
+            )
+        }
+        .expect("disassemble FL9_1 DXBC");
+        let disassembly = String::from_utf8_lossy(blob_bytes(&disassembly));
+        println!("FXC FL9_1 bytecode disassembly:\n{disassembly}");
+        assert!(disassembly.contains("ps_2_0"), "{disassembly}");
+        assert!(disassembly.contains("cmp"), "{disassembly}");
+    }
+
+    #[test]
     fn fl91_viewport_transform_compiles_with_fxc() {
         let module = naga::front::wgsl::parse_str(
             "struct Out { @builtin(position) pos: vec4f, @location(0) c: vec4f } @vertex fn main(@location(0) p: vec3f) -> Out { return Out(vec4f(p, 1.), vec4f(1.)); }",

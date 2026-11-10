@@ -381,6 +381,7 @@ pub(super) struct BackendCapabilities {
     pub vertex_index_topology_mask: u8,
     pub instance_index_input: bool,
     pub vertex_uniform_array_indexing: bool,
+    pub fragment_uniform_array_indexing: bool,
     pub vertex_index_local_array_indexing: bool,
     pub vertex_texture_sampling: bool,
     pub fragment_derivatives: bool,
@@ -531,6 +532,7 @@ impl BackendCapabilities {
         ),
         instance_index_input: true,
         vertex_uniform_array_indexing: true,
+        fragment_uniform_array_indexing: true,
         vertex_index_local_array_indexing: true,
         vertex_texture_sampling: false,
         fragment_derivatives: false,
@@ -824,6 +826,7 @@ impl Capabilities {
                 vertex_index_topology_mask: self.backend.vertex_index_topology_mask,
                 instance_index_input: self.backend.instance_index_input,
                 vertex_uniform_array_indexing: self.backend.vertex_uniform_array_indexing,
+                fragment_uniform_array_indexing: self.backend.fragment_uniform_array_indexing,
                 vertex_index_local_array_indexing: self.backend.vertex_index_local_array_indexing,
                 max_sampled_textures_per_vertex_stage: if self.backend.vertex_texture_sampling {
                     self.backend.sampled_textures_per_group
@@ -2845,6 +2848,7 @@ mod tests {
             .supports_vertex_index_topology(wgt::PrimitiveTopology::TriangleStrip));
         assert!(exposed.downlevel.limits.instance_index_input);
         assert!(exposed.downlevel.limits.vertex_uniform_array_indexing);
+        assert!(exposed.downlevel.limits.fragment_uniform_array_indexing);
         assert!(exposed.downlevel.limits.vertex_index_local_array_indexing);
         assert!(!exposed.downlevel.limits.texture_query);
         assert!(!exposed.downlevel.limits.texture_sample_base_clamp_to_edge);

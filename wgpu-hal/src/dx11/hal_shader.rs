@@ -2759,6 +2759,139 @@ mod tests {
     }
 
     #[test]
+    fn fl91_fragment_uniform_array_indexing_is_narrow_and_compiles_with_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct Params { index: u32, values: array<vec4f, 2> }
+            @group(0) @binding(0) var<uniform> params: Params;
+            struct LargerParams { index: u32, values: array<vec4f, 3> }
+            @group(0) @binding(1) var<uniform> larger: LargerParams;
+            fn read_helper() -> vec4f { return params.values[params.index]; }
+
+            @fragment fn direct() -> @location(0) vec4f {
+                return params.values[params.index];
+            }
+            @fragment fn computed() -> @location(0) vec4f {
+                return params.values[params.index + 1u];
+            }
+            @fragment fn helper() -> @location(0) vec4f { return read_helper(); }
+            @fragment fn side_use() -> @location(0) vec4f {
+                return params.values[params.index] + vec4f(f32(params.index));
+            }
+            @fragment fn wrong_array_length() -> @location(0) vec4f {
+                return larger.values[larger.index];
+            }
+            @fragment fn float_only() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let selected = |name: &str| {
+            module
+                .entry_points
+                .iter()
+                .position(|entry| entry.stage == naga::ShaderStage::Fragment && entry.name == name)
+                .unwrap()
+        };
+        let direct = selected("direct");
+        let direct_function = &module.entry_points[direct].function;
+        let direct_info = info.get_entry_point(direct);
+        let mode = DynamicAccessMode::new(
+            naga::ShaderStage::Fragment,
+            Fl9ShaderInputOptions::default(),
+            true,
+            true,
+        );
+        assert!(!has_unsupported_dynamic_access(
+            &module,
+            &info,
+            direct_function,
+            direct_info,
+            mode,
+        ));
+        assert!(
+            !has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+                &module,
+                &info,
+                direct_function,
+                direct_info,
+                ShaderProfile::PixelLevel9_1,
+                Fl9ShaderInputOptions::default(),
+                &[],
+            )
+        );
+        assert!(compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "direct",
+            ShaderProfile::PixelLevel9_1,
+            &[ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 0,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Uniform,
+            }],
+        )
+        .is_ok());
+
+        for name in ["computed", "helper", "wrong_array_length"] {
+            let index = selected(name);
+            let function = &module.entry_points[index].function;
+            let function_info = info.get_entry_point(index);
+            assert!(has_unsupported_dynamic_access(
+                &module,
+                &info,
+                function,
+                function_info,
+                mode,
+            ));
+            assert!(
+                has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+                    &module,
+                    &info,
+                    function,
+                    function_info,
+                    ShaderProfile::PixelLevel9_1,
+                    Fl9ShaderInputOptions::default(),
+                    &[],
+                )
+            );
+        }
+        let side_use = selected("side_use");
+        assert!(
+            has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+                &module,
+                &info,
+                &module.entry_points[side_use].function,
+                info.get_entry_point(side_use),
+                ShaderProfile::PixelLevel9_1,
+                Fl9ShaderInputOptions::default(),
+                &[],
+            )
+        );
+        let float_only = selected("float_only");
+        assert!(
+            !has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+                &module,
+                &info,
+                &module.entry_points[float_only].function,
+                info.get_entry_point(float_only),
+                ShaderProfile::PixelLevel9_1,
+                Fl9ShaderInputOptions::default(),
+                &[],
+            )
+        );
+    }
+
+    #[test]
     fn fl91_padded_vec2_uniform_array_shape_compiles_with_fxc() {
         let module = naga::front::wgsl::parse_str(
             r#"
@@ -5573,6 +5706,11 @@ fn has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
     input_options: Fl9ShaderInputOptions,
     uniform_index_arguments: &[(u32, u32)],
 ) -> bool {
+    let fragment_index_proof = if matches!(profile, ShaderProfile::PixelLevel9_1) {
+        supported_fragment_uniform_array_indexing(module, function, function_info)
+    } else {
+        None
+    };
     has_unsafe_integer_semantics_with_options_and_uniform_indices(
         module,
         info,
@@ -5582,6 +5720,7 @@ fn has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
         65536,
         input_options,
         uniform_index_arguments,
+        fragment_index_proof.as_ref(),
     )
 }
 
@@ -5604,6 +5743,7 @@ fn has_unsafe_integer_semantics_with_options(
         limit,
         input_options,
         &[],
+        None,
     )
 }
 
@@ -5617,6 +5757,7 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
     limit: usize,
     input_options: Fl9ShaderInputOptions,
     uniform_index_arguments: &[(u32, u32)],
+    fragment_index_proof: Option<&Fl9FragmentUniformArrayIndexingProof>,
 ) -> bool {
     if !matches!(
         profile,
@@ -5661,6 +5802,7 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
         if !function_info[handle].is_empty() {
             if global.space == naga::AddressSpace::Uniform
                 && type_may_contain_integer(module, &module.types[global.ty].inner, &budget)
+                && fragment_index_proof.is_none_or(|proof| proof.uniform != handle)
             {
                 return true;
             }
@@ -6062,7 +6204,9 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                         && texture_dimensions_helper_result != Some(handle)
                         && texture_num_levels_helper_result != Some(handle)
                         && !supported_texture_dimensions_query
-                        && !supported_texture_num_levels_query)
+                        && !supported_texture_num_levels_query
+                        && !fragment_index_proof
+                            .is_some_and(|proof| proof.integer_expressions.contains(&handle)))
             })
         },
     )
@@ -6458,6 +6602,7 @@ struct DynamicAccessFunctionMode<'a> {
     mode: DynamicAccessMode,
     supported_builtin_arguments: &'a [bool],
     allowed_local_access: Option<naga::Handle<naga::Expression>>,
+    allowed_fragment_access: Option<naga::Handle<naga::Expression>>,
 }
 
 impl DynamicAccessMode {
@@ -6496,6 +6641,12 @@ fn has_unsupported_dynamic_access(
         stage,
         input_options,
     );
+    let allowed_fragment_access = if stage == naga::ShaderStage::Fragment {
+        supported_fragment_uniform_array_indexing(module, function, function_info)
+            .map(|proof| proof.access)
+    } else {
+        None
+    };
     let mut pending = alloc::vec![(None, Vec::new())];
     let mut visited = Vec::new();
     while let Some((function_handle, parameter_origins)) = pending.pop() {
@@ -6526,6 +6677,11 @@ fn has_unsupported_dynamic_access(
                 supported_builtin_arguments: &parameter_origins,
                 allowed_local_access: if function_handle.is_none() {
                     allowed_local_access
+                } else {
+                    None
+                },
+                allowed_fragment_access: if function_handle.is_none() {
+                    allowed_fragment_access
                 } else {
                     None
                 },
@@ -6613,6 +6769,7 @@ fn fl9_uniform_index_helper_arguments(
                 mode,
                 supported_builtin_arguments: &parameter_origins,
                 allowed_local_access,
+                allowed_fragment_access: None,
             },
         ) {
             return None;
@@ -6954,13 +7111,14 @@ fn function_has_unsupported_dynamic_access(
             },
         supported_builtin_arguments,
         allowed_local_access,
+        allowed_fragment_access,
     } = function_mode;
     let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
     function.expressions.iter().any(|(handle, expression)| {
         let naga::Expression::Access { base, index } = *expression else {
             return false;
         };
-        if Some(handle) == allowed_local_access {
+        if Some(handle) == allowed_local_access || Some(handle) == allowed_fragment_access {
             return false;
         }
         if function_info[handle].ref_count == 0 || kinds.is_const(index) {
@@ -7309,6 +7467,173 @@ fn is_float_array_element(module: &naga::Module, ty: naga::Handle<naga::Type>) -
         }
         _ => false,
     }
+}
+
+struct Fl9FragmentUniformArrayIndexingProof {
+    uniform: naga::Handle<naga::GlobalVariable>,
+    access: naga::Handle<naga::Expression>,
+    integer_expressions: alloc::collections::BTreeSet<naga::Handle<naga::Expression>>,
+}
+
+fn direct_uniform_member_pointer(
+    function: &naga::Function,
+    pointer: naga::Handle<naga::Expression>,
+) -> Option<(
+    naga::Handle<naga::GlobalVariable>,
+    u32,
+    naga::Handle<naga::Expression>,
+)> {
+    let naga::Expression::AccessIndex { base, index } = function.expressions[pointer] else {
+        return None;
+    };
+    let naga::Expression::GlobalVariable(global) = function.expressions[base] else {
+        return None;
+    };
+    Some((global, index, base))
+}
+
+fn supported_fragment_uniform_array_indexing(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+) -> Option<Fl9FragmentUniformArrayIndexingProof> {
+    if !collect_dynamic_call_sites(&function.body)?.is_empty() {
+        return None;
+    }
+    let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+    let dynamic_accesses: Vec<_> = function
+        .expressions
+        .iter()
+        .filter_map(|(handle, expression)| match expression {
+            naga::Expression::Access { index, .. }
+                if function_info[handle].ref_count != 0 && !kinds.is_const(*index) =>
+            {
+                Some(handle)
+            }
+            _ => None,
+        })
+        .collect();
+    let [access] = dynamic_accesses.as_slice() else {
+        return None;
+    };
+    let naga::Expression::Access { base, index } = function.expressions[*access] else {
+        return None;
+    };
+    let (array_uniform, array_member, array_global_expression) =
+        direct_uniform_member_pointer(function, base)?;
+    let naga::Expression::Load {
+        pointer: index_pointer,
+    } = function.expressions[index]
+    else {
+        return None;
+    };
+    let (index_uniform, index_member, index_global_expression) =
+        direct_uniform_member_pointer(function, index_pointer)?;
+    if array_uniform != index_uniform
+        || array_member != 1
+        || index_member != 0
+        || function_info[index].ref_count != 1
+        || function_info[index_pointer].ref_count != 1
+        || function_info[array_global_expression].ref_count != 1
+        || function_info[index_global_expression].ref_count != 1
+        || !matches!(
+            function_info[index].ty.inner_with(&module.types),
+            naga::TypeInner::Scalar(naga::Scalar {
+                kind: naga::ScalarKind::Uint,
+                width: 4,
+            })
+        )
+        || !matches!(
+            function_info[base].ty.inner_with(&module.types),
+            naga::TypeInner::Pointer {
+                base,
+                space: naga::AddressSpace::Uniform,
+            } if matches!(
+                module.types[*base].inner,
+                naga::TypeInner::Array {
+                    base,
+                    size: naga::ArraySize::Constant(size),
+                    stride: 16,
+                } if size.get() == 2 && matches!(
+                    module.types[base].inner,
+                    naga::TypeInner::Vector {
+                        size: naga::VectorSize::Quad,
+                        scalar: naga::Scalar {
+                            kind: naga::ScalarKind::Float,
+                            width: 4,
+                        },
+                    }
+                )
+            )
+        )
+        || !matches!(
+            module.types[module.global_variables[array_uniform].ty].inner,
+            naga::TypeInner::Struct { ref members, span: 48 }
+                if members.len() == 2
+                    && members[0].offset == 0
+                    && matches!(
+                        module.types[members[0].ty].inner,
+                        naga::TypeInner::Scalar(naga::Scalar {
+                            kind: naga::ScalarKind::Uint,
+                            width: 4,
+                        })
+                    )
+                    && members[1].offset == 16
+                    && matches!(
+                        module.types[members[1].ty].inner,
+                        naga::TypeInner::Array {
+                            base,
+                            size: naga::ArraySize::Constant(size),
+                            stride: 16,
+                        } if size.get() == 2 && matches!(
+                            module.types[base].inner,
+                            naga::TypeInner::Vector {
+                                size: naga::VectorSize::Quad,
+                                scalar: naga::Scalar {
+                                    kind: naga::ScalarKind::Float,
+                                    width: 4,
+                                },
+                            }
+                        )
+                    )
+        )
+        || module.global_variables[array_uniform]
+            .binding
+            .is_none_or(|binding| binding.group != 0)
+        || block_uses_dynamic_access_as_pointer(
+            module,
+            function,
+            function_info,
+            &function.body,
+            *access,
+        )
+    {
+        return None;
+    }
+    let load_count = function
+        .expressions
+        .iter()
+        .filter(|(_, expression)| {
+            matches!(
+                expression,
+                naga::Expression::Load { pointer }
+                    if pointer_path_contains(function, *pointer, *access)
+            )
+        })
+        .count();
+    if load_count != 1 {
+        return None;
+    }
+    let mut integer_expressions = alloc::collections::BTreeSet::new();
+    integer_expressions.insert(array_global_expression);
+    integer_expressions.insert(index_global_expression);
+    integer_expressions.insert(index_pointer);
+    integer_expressions.insert(index);
+    Some(Fl9FragmentUniformArrayIndexingProof {
+        uniform: array_uniform,
+        access: *access,
+        integer_expressions,
+    })
 }
 
 #[derive(Clone, Copy)]

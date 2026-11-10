@@ -291,6 +291,7 @@ fn fl91_core_empty_unmap_and_mapped_write_flush_failure_cleans_up() {
                     vertex_index_topology_mask: 0,
                     instance_index_input: false,
                     vertex_uniform_array_indexing: true,
+                    fragment_uniform_array_indexing: true,
                     vertex_index_local_array_indexing: false,
                     max_sampled_textures_per_vertex_stage: 0,
                     max_sampled_texture_sampler_pairs_per_shader_stage: 16,

@@ -1199,12 +1199,27 @@ This establishes execution of those final tested registers on the RTX, not
 historical-driver behavior. A narrow public exception permits direct
 vertex-stage indexing of fixed-size `vec3` and `vec4` uniform arrays using
 `vertex_index` or `instance_index`; other runtime integer indexing remains
-rejected. It also accepts the WGSL-valid padded wrapper form where each array
-element is a 16-byte struct containing one `vec2<f32>` at offset zero. A plain
-uniform `array<vec2<f32>, N>` remains invalid WGSL due to its 8-byte stride.
-Core and HAL enforce the same wrapper shape, and strict FL9_1 GPU readback
-verified all four indexed values plus out-of-range clamping. The level-9 HLSL
-path emits a signed in-range clamp because FXC
+rejected. A separate `DownlevelLimits::fragment_uniform_array_indexing`
+exception permits one direct fragment-stage read from `array<vec4<f32>, 2>` in
+the same group-0 uniform structure as a scalar `u32` index at offset zero. The
+array begins at offset 16 with stride 16 in a 48-byte structure. The selected
+entry must use the index only for that access; computed indices, helper calls,
+additional integer uses/accesses and other shapes remain rejected. FXC accepts
+the signed clamp emitted for `ps_4_0_level_9_1` and lowers the two-element
+lookup to four `ps_2_0` instruction slots. A strict public forced-FL9_1 test
+renders indices zero and one and verifies all 64 pixels for each color. Its
+additional `u32::MAX` probe completed without an out-of-bounds access and
+observed the index-zero color after the signed conversion/clamp. WGSL does not
+guarantee an out-of-bounds uniform-array value, so this is an implementation
+observation rather than part of the supported in-range contract. This is
+compiler/backend evidence on the RTX 3090 Ti, not general fragment integer
+support or a historical-driver guarantee. The vertex path also accepts the
+WGSL-valid padded wrapper form where each array element is a 16-byte struct
+containing one `vec2<f32>` at offset zero. A plain uniform
+`array<vec2<f32>, N>` remains invalid WGSL due to its 8-byte stride. Core and
+HAL enforce the same wrapper shape, and strict FL9_1 GPU readback verified all
+four indexed values plus out-of-range clamping. The level-9 HLSL path emits a
+signed in-range clamp because FXC
 rejects the unsigned clamp form for these profiles. Instruction pressure and
 compiler packing can impose earlier limits on ordinary shaders. FXC errors
 fail pipeline creation. FL9_1's usable profile budget is 255 vertex float4 constants and 32
@@ -1300,10 +1315,11 @@ front end currently has no WGSL `outerProduct` builtin to expose. DX12 keeps
 the limit disabled pending its own capability decision and regression
 coverage. This is compiler/backend support, not a broader FL9_1 hardware
 guarantee.
-Computed indices, helper-mediated indexing, fragment-stage uniform indexing,
-integer or nested array elements and other general dynamic uniform indexing
-remain unsupported. `DownlevelLimits::vertex_uniform_array_indexing` enables
-only the direct vertex builtin subset described above. The RTX 3090 Ti at
+Computed indices, helper-mediated indexing, fragment-stage indexing outside
+the exact two-element subset above, integer or nested array elements and other
+general dynamic uniform indexing remain unsupported.
+`DownlevelLimits::vertex_uniform_array_indexing` enables only the direct vertex
+builtin subset described above. The RTX 3090 Ti at
 requested/actual FL9_1 rendered all four array elements and verified that an
 index equal to the array length selects the last element. This is selected
 device/compiler evidence, not a historical-driver guarantee. Broad public

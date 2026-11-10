@@ -3612,6 +3612,36 @@ opts in; other HLSL backends retain the existing unsigned output. Tests cover
 both emitted forms, FXC compilation for `vs_4_0_level_9_1`, and rejection of
 unsupported shapes in core and HAL.
 
+### Direct fragment uniform-array indexing
+
+Core and HAL permit a separate fragment-only subset: one direct lookup of a
+two-element `array<vec4f, 2>` using the scalar `u32` member of the same
+group-0 uniform structure. Its required layout is a 48-byte structure with
+the index at byte zero and the array at byte 16. The selected fragment entry
+must use that index only for the lookup; computed indices, helper calls,
+additional integer uses, and other array shapes remain rejected. FXC's
+`ps_4_0_level_9_1` proof shows a signed clamp lowered to four `ps_2_0`
+instruction slots.
+
+Run the CPU validation/compiler probes and the strict public GPU test from a
+Visual Studio x64 developer environment:
+
+```powershell
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib restricted_fragment_uniform_array_indexing_is_selected_entry_aware
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib dx11::hal_shader::tests::fl91_fragment_uniform_array_indexing_is_narrow_and_compiles_with_fxc -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_fragment_uniform_array public_dx11_fragment_uniform_array_indexing_at_fl91 -- --nocapture --test-threads=1
+```
+
+The public test renders with indices zero and one, checks all 64 pixels for
+each distinct RGBA8 result, and requires a physical adapter in strict mode. It
+also submits `u32::MAX`; the RTX test observed the index-zero color after the
+signed conversion/clamp and completed readback. That out-of-bounds value is
+not a WGSL guarantee and is only a bounds-safety implementation probe. The
+supported contract covers indices zero and one. This is a narrow
+compiler/backend subset, not general fragment runtime integer support or a
+historical-driver guarantee.
+
 The hidden input also consumes one of the sixteen physical D3D input slots.
 Core mirrors HAL's FL9_1 overlap-allocation rules and rejects an exhausted
 layout before HAL, only when the selected entry point uses `vertex_index`.

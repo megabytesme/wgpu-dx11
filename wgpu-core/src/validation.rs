@@ -291,6 +291,7 @@ struct EntryPoint {
     shader_dynamic_loops_used: bool,
     unsupported_dynamic_uniform_array_indexing: bool,
     dynamic_uniform_array_indexing_used: bool,
+    fragment_uniform_array_indexing_supported: bool,
     unsupported_checked_dynamic_access_with_uniform: bool,
     texture_load_used: bool,
     unsupported_fl9_texture_load: bool,
@@ -878,6 +879,192 @@ fn is_u32_scalar(module: &naga::Module, ty: naga::Handle<naga::Type>) -> bool {
     )
 }
 
+#[derive(Clone, Debug)]
+struct FragmentUniformArrayIndexingProof {
+    uniform: naga::Handle<naga::GlobalVariable>,
+    access: naga::Handle<naga::Expression>,
+    integer_expressions: FastHashSet<naga::Handle<naga::Expression>>,
+}
+
+fn direct_uniform_member_pointer(
+    function: &naga::Function,
+    pointer: naga::Handle<naga::Expression>,
+) -> Option<(
+    naga::Handle<naga::GlobalVariable>,
+    u32,
+    naga::Handle<naga::Expression>,
+)> {
+    let naga::Expression::AccessIndex { base, index } = function.expressions[pointer] else {
+        return None;
+    };
+    let naga::Expression::GlobalVariable(global) = function.expressions[base] else {
+        return None;
+    };
+    Some((global, index, base))
+}
+
+fn is_fragment_uniform_array_of_vec4(
+    module: &naga::Module,
+    uniform: naga::Handle<naga::GlobalVariable>,
+) -> bool {
+    let naga::TypeInner::Struct { ref members, span } =
+        module.types[module.global_variables[uniform].ty].inner
+    else {
+        return false;
+    };
+    if span != 48 || members.len() != 2 || members[0].offset != 0 || members[1].offset != 16 {
+        return false;
+    }
+    if !matches!(
+        module.types[members[0].ty].inner,
+        naga::TypeInner::Scalar(naga::Scalar {
+            kind: naga::ScalarKind::Uint,
+            width: 4,
+        })
+    ) {
+        return false;
+    }
+    matches!(
+        module.types[members[1].ty].inner,
+        naga::TypeInner::Array {
+            base,
+            size: naga::ArraySize::Constant(size),
+            stride: 16,
+        } if size.get() == 2 && matches!(
+            module.types[base].inner,
+            naga::TypeInner::Vector {
+                size: naga::VectorSize::Quad,
+                scalar: naga::Scalar {
+                    kind: naga::ScalarKind::Float,
+                    width: 4,
+                },
+            }
+        )
+    )
+}
+
+fn fragment_uniform_array_indexing_proof(
+    module: &naga::Module,
+    function_info: &naga::valid::FunctionInfo,
+    stage: naga::ShaderStage,
+    function: &naga::Function,
+) -> Option<FragmentUniformArrayIndexingProof> {
+    if stage != naga::ShaderStage::Fragment
+        || !collect_function_call_sites(&function.body)?.is_empty()
+    {
+        return None;
+    }
+
+    let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+    let dynamic_accesses: Vec<_> = function
+        .expressions
+        .iter()
+        .filter_map(|(handle, expression)| match expression {
+            naga::Expression::Access { index, .. }
+                if function_info[handle].ref_count != 0 && !kinds.is_const(*index) =>
+            {
+                Some(handle)
+            }
+            _ => None,
+        })
+        .collect();
+    let [access] = dynamic_accesses.as_slice() else {
+        return None;
+    };
+    let naga::Expression::Access { base, index } = function.expressions[*access] else {
+        return None;
+    };
+    let (array_uniform, array_member, array_global_expression) =
+        direct_uniform_member_pointer(function, base)?;
+    let (index_uniform, index_member, index_global_expression) = match function.expressions[index] {
+        naga::Expression::Load { pointer } => direct_uniform_member_pointer(function, pointer)?,
+        _ => return None,
+    };
+    let naga::Expression::Load {
+        pointer: index_pointer,
+    } = function.expressions[index]
+    else {
+        return None;
+    };
+    if array_uniform != index_uniform
+        || array_member != 1
+        || index_member != 0
+        || function_info[index].ref_count != 1
+        || function_info[index_pointer].ref_count != 1
+        || function_info[array_global_expression].ref_count != 1
+        || function_info[index_global_expression].ref_count != 1
+        || !matches!(
+            function_info[index].ty.inner_with(&module.types),
+            naga::TypeInner::Scalar(naga::Scalar {
+                kind: naga::ScalarKind::Uint,
+                width: 4,
+            })
+        )
+        || !matches!(
+            function_info[base].ty.inner_with(&module.types),
+            naga::TypeInner::Pointer {
+                base,
+                space: naga::AddressSpace::Uniform,
+            } if matches!(
+                module.types[*base].inner,
+                naga::TypeInner::Array {
+                    base,
+                    size: naga::ArraySize::Constant(size),
+                    stride: 16,
+                } if size.get() == 2 && matches!(
+                    module.types[base].inner,
+                    naga::TypeInner::Vector {
+                        size: naga::VectorSize::Quad,
+                        scalar: naga::Scalar {
+                            kind: naga::ScalarKind::Float,
+                            width: 4,
+                        },
+                    }
+                )
+            )
+        )
+        || !is_fragment_uniform_array_of_vec4(module, array_uniform)
+        || module.global_variables[array_uniform]
+            .binding
+            .is_none_or(|binding| binding.group != 0)
+        || block_uses_dynamic_access_as_pointer(
+            module,
+            function,
+            function_info,
+            &function.body,
+            *access,
+        )
+    {
+        return None;
+    }
+
+    let load_count = function
+        .expressions
+        .iter()
+        .filter(|(_, expression)| {
+            matches!(
+                expression,
+                naga::Expression::Load { pointer }
+                    if pointer_path_contains(function, *pointer, *access)
+            )
+        })
+        .count();
+    if load_count != 1 {
+        return None;
+    }
+
+    let mut integer_expressions = FastHashSet::default();
+    integer_expressions.insert(array_global_expression);
+    integer_expressions.insert(index_global_expression);
+    integer_expressions.insert(index_pointer);
+    integer_expressions.insert(index);
+    Some(FragmentUniformArrayIndexingProof {
+        uniform: array_uniform,
+        access: *access,
+        integer_expressions,
+    })
+}
+
 fn expression_is_supported_dynamic_uniform_index(
     module: &naga::Module,
     function: &naga::Function,
@@ -936,6 +1123,11 @@ fn dynamic_access_is_supported_builtin_read(
     is_entry_point: bool,
     parameter_origins: &[bool],
 ) -> bool {
+    if stage == naga::ShaderStage::Fragment {
+        return is_entry_point
+            && fragment_uniform_array_indexing_proof(module, function_info, stage, function)
+                .is_some_and(|proof| proof.access == access);
+    }
     if stage != naga::ShaderStage::Vertex
         || !is_fixed_float_uniform_array_pointer(module, function_info, base)
         || !expression_is_supported_dynamic_uniform_index(
@@ -2058,6 +2250,7 @@ fn function_uses_unsupported_integer_semantics(
     function_info: &naga::valid::FunctionInfo,
     vertex_entry: bool,
     supported_index_parameters: &[bool],
+    supported_fragment_index_expressions: Option<&FastHashSet<naga::Handle<naga::Expression>>>,
     budget: &mut usize,
 ) -> bool {
     if function.arguments.len() > *budget {
@@ -2166,7 +2359,9 @@ fn function_uses_unsupported_integer_semantics(
                         )
                         || expression_is_supported_vertex_index_argument(
                             module, function, handle,
-                        ))))
+                        )))
+                && !supported_fragment_index_expressions
+                    .is_some_and(|expressions| expressions.contains(&handle)))
     })
 }
 
@@ -2205,17 +2400,29 @@ fn entry_point_uses_unsupported_integer_semantics(
     entry_point_info: &naga::valid::FunctionInfo,
 ) -> bool {
     let vertex_entry = entry_point.stage == naga::ShaderStage::Vertex;
+    let fragment_index_proof = fragment_uniform_array_indexing_proof(
+        module,
+        entry_point_info,
+        entry_point.stage,
+        &entry_point.function,
+    );
     let mut budget = 65_536usize;
     if module.global_variables.iter().any(|(handle, global)| {
         !entry_point_info[handle].is_empty()
             && global.space == naga::AddressSpace::Uniform
             && type_may_contain_integer(module, &module.types[global.ty].inner, &mut budget)
+            && fragment_index_proof
+                .as_ref()
+                .is_none_or(|proof| proof.uniform != handle)
     }) || function_uses_unsupported_integer_semantics(
         module,
         &entry_point.function,
         entry_point_info,
         vertex_entry,
         &[],
+        fragment_index_proof
+            .as_ref()
+            .map(|proof| &proof.integer_expressions),
         &mut budget,
     ) || block_has_switch(&entry_point.function.body, &mut budget)
         || module.global_variables.iter().any(|(handle, global)| {
@@ -2285,6 +2492,7 @@ fn entry_point_uses_unsupported_integer_semantics(
                 info,
                 false,
                 &parameter_origins,
+                None,
                 &mut budget,
             )
         {
@@ -5872,6 +6080,15 @@ impl Interface {
                     entry_point,
                     info,
                 );
+            let fragment_uniform_array_indexing_supported = dynamic_uniform_array_indexing.used
+                && !dynamic_uniform_array_indexing.unsupported
+                && fragment_uniform_array_indexing_proof(
+                    module,
+                    info,
+                    entry_point.stage,
+                    &entry_point.function,
+                )
+                .is_some();
             let (unsupported_runtime_integer_indexing, vertex_index_local_array_indexing_used) =
                 entry_point_uses_unsupported_runtime_integer_indexing(
                     module,
@@ -5897,6 +6114,7 @@ impl Interface {
                     .unsupported,
                 dynamic_uniform_array_indexing_used: dynamic_uniform_array_indexing.used
                     && !dynamic_uniform_array_indexing.unsupported,
+                fragment_uniform_array_indexing_supported,
                 unsupported_checked_dynamic_access_with_uniform:
                     entry_point_uses_unsupported_checked_dynamic_access_with_uniform(
                         module,
@@ -6155,7 +6373,12 @@ impl Interface {
         let Some(entry_point) = self.entry_points.get(&key) else {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
-        Ok(limits.vertex_uniform_array_indexing
+        let enabled = match stage {
+            naga::ShaderStage::Vertex => limits.vertex_uniform_array_indexing,
+            naga::ShaderStage::Fragment => limits.fragment_uniform_array_indexing,
+            _ => false,
+        };
+        Ok(enabled
             && (entry_point.unsupported_dynamic_uniform_array_indexing
                 || (requests_checks
                     && entry_point.unsupported_checked_dynamic_access_with_uniform)))
@@ -6477,7 +6700,14 @@ impl Interface {
                     && !entry_point.fl9_texture_num_levels_3d_supported
                     && !entry_point.fl9_texture_num_levels_cube_supported)
                 || (entry_point.dynamic_uniform_array_indexing_used
-                    && !limits.vertex_uniform_array_indexing)
+                    && !match stage {
+                        naga::ShaderStage::Vertex => limits.vertex_uniform_array_indexing,
+                        naga::ShaderStage::Fragment => {
+                            limits.fragment_uniform_array_indexing
+                                && entry_point.fragment_uniform_array_indexing_supported
+                        }
+                        _ => false,
+                    })
                 || (entry_point.vertex_index_local_array_indexing_used
                     && !limits.vertex_index_local_array_indexing)))
     }
@@ -12130,12 +12360,23 @@ mod tests {
                 )
                 .unwrap());
         }
-        assert!(interface
+        let fragment_restricted = wgt::DownlevelLimits {
+            runtime_integer_shader_operations: false,
+            ..restricted.clone()
+        };
+        assert!(!interface
             .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
                 naga::ShaderStage::Fragment,
                 "fragment_index_rejected",
-                &restricted,
+                &fragment_restricted,
                 false,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "fragment_index_rejected",
+                &fragment_restricted,
             )
             .unwrap());
         assert!(!interface
@@ -12200,6 +12441,121 @@ mod tests {
                 "helper_local_array_with_uniform_rejected",
                 &restricted,
                 true,
+            )
+            .unwrap());
+    }
+
+    #[test]
+    fn restricted_fragment_uniform_array_indexing_is_selected_entry_aware() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct Params { index: u32, values: array<vec4f, 2> }
+            @group(0) @binding(0) var<uniform> params: Params;
+            struct LargerParams { index: u32, values: array<vec4f, 3> }
+            @group(0) @binding(1) var<uniform> larger: LargerParams;
+
+            fn read_helper() -> vec4f { return params.values[params.index]; }
+
+            @fragment fn direct() -> @location(0) vec4f {
+                return params.values[params.index];
+            }
+            @fragment fn computed() -> @location(0) vec4f {
+                return params.values[params.index + 1u];
+            }
+            @fragment fn helper() -> @location(0) vec4f { return read_helper(); }
+            @fragment fn side_use() -> @location(0) vec4f {
+                return params.values[params.index] + vec4f(f32(params.index));
+            }
+            @fragment fn wrong_array_length() -> @location(0) vec4f {
+                return larger.values[larger.index];
+            }
+            @fragment fn float_only() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let enabled = wgt::DownlevelLimits {
+            runtime_integer_shader_operations: false,
+            fragment_uniform_array_indexing: true,
+            ..Default::default()
+        };
+        let disabled = wgt::DownlevelLimits {
+            runtime_integer_shader_operations: false,
+            ..Default::default()
+        };
+
+        assert!(!interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Fragment,
+                "direct",
+                &enabled,
+                true,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "direct",
+                &enabled,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "direct",
+                &disabled,
+            )
+            .unwrap());
+
+        for entry in ["computed", "helper", "wrong_array_length"] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                        &enabled,
+                        true,
+                    )
+                    .unwrap(),
+                "{entry}"
+            );
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_runtime_integer_semantics(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                        &enabled,
+                    )
+                    .unwrap(),
+                "{entry}"
+            );
+        }
+        assert!(!interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Fragment,
+                "side_use",
+                &enabled,
+                true,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "side_use",
+                &enabled,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "float_only",
+                &enabled,
             )
             .unwrap());
     }
