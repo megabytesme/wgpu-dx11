@@ -2637,6 +2637,83 @@ fn matrix_store_provenance(
     MatrixStoreProvenance::Unknown
 }
 
+fn is_safe_static_local_matrix_component_store(
+    module: &naga::Module,
+    function: &naga::Function,
+    pointer: naga::Handle<naga::Expression>,
+    budget: &mut usize,
+) -> bool {
+    fn direct_matrix_member(
+        module: &naga::Module,
+        function: &naga::Function,
+        expression: naga::Handle<naga::Expression>,
+        budget: &mut usize,
+    ) -> Option<u32> {
+        if *budget < 2 {
+            *budget = 0;
+            return None;
+        }
+        *budget -= 2;
+        let naga::Expression::AccessIndex {
+            base,
+            index: member_index,
+        } = function.expressions[expression]
+        else {
+            return None;
+        };
+        let naga::Expression::LocalVariable(local) = function.expressions[base] else {
+            return None;
+        };
+        let naga::TypeInner::Struct { ref members, .. } =
+            module.types[function.local_variables[local].ty].inner
+        else {
+            return None;
+        };
+        let member = members.get(member_index as usize)?;
+        if member.binding.is_some() {
+            return None;
+        }
+        let naga::TypeInner::Matrix {
+            columns,
+            rows: naga::VectorSize::Bi,
+            scalar,
+        } = module.types[member.ty].inner
+        else {
+            return None;
+        };
+        (scalar.kind == naga::ScalarKind::Float && scalar.width == 4).then_some(columns as u32)
+    }
+
+    if *budget == 0 {
+        return false;
+    }
+    *budget -= 1;
+    let (column_access, component_index) = match function.expressions[pointer] {
+        naga::Expression::AccessIndex { base, index } => (base, index),
+        _ => return false,
+    };
+
+    if direct_matrix_member(module, function, column_access, budget)
+        .is_some_and(|columns| component_index < columns)
+    {
+        return true;
+    }
+
+    if *budget == 0 {
+        return false;
+    }
+    *budget -= 1;
+    let naga::Expression::AccessIndex {
+        base: matrix_access,
+        index: column_index,
+    } = function.expressions[column_access]
+    else {
+        return false;
+    };
+    direct_matrix_member(module, function, matrix_access, budget)
+        .is_some_and(|columns| column_index < columns && component_index < 2)
+}
+
 fn scan_matrix_store_block(
     module: &naga::Module,
     module_info: &naga::valid::ModuleInfo,
@@ -2653,10 +2730,13 @@ fn scan_matrix_store_block(
     }
     *budget -= block.len();
     block.iter().any(|statement| match statement {
-        naga::Statement::Store { pointer, .. } => !matches!(
-            matrix_store_provenance(module, function, *pointer, arguments, budget),
-            MatrixStoreProvenance::Ordinary
-        ),
+        naga::Statement::Store { pointer, .. } => {
+            !is_safe_static_local_matrix_component_store(module, function, *pointer, budget)
+                && !matches!(
+                    matrix_store_provenance(module, function, *pointer, arguments, budget),
+                    MatrixStoreProvenance::Ordinary
+                )
+        }
         naga::Statement::Block(block) => scan_matrix_store_block(
             module,
             module_info,
@@ -12961,6 +13041,9 @@ mod tests {
             r#"
             struct Aggregate { transform: mat3x2<f32>, value: f32 }
             fn write_scalar(value: ptr<function, Aggregate>) { (*value).value = 1.0; }
+            fn write_matrix_component(value: ptr<function, Aggregate>) {
+                (*value).transform[0] = vec2f(0.25, 0.5);
+            }
             @vertex fn bad_direct() -> @builtin(position) vec4f {
                 var value: Aggregate;
                 value.value = 1.0;
@@ -12970,6 +13053,27 @@ mod tests {
                 var value: Aggregate;
                 write_scalar(&value);
                 return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+            @vertex fn bad_helper_component() -> @builtin(position) vec4f {
+                var value: Aggregate;
+                write_matrix_component(&value);
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+            @vertex fn bad_dynamic_column(@location(0) index: u32) -> @builtin(position) vec4f {
+                var value: Aggregate;
+                value.transform[index] = vec2f(0.5);
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+            @vertex fn bad_dynamic_row(@location(0) index: u32) -> @builtin(position) vec4f {
+                var value: Aggregate;
+                value.transform[0][index] = 0.5;
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+            @vertex fn safe_static_components() -> @builtin(position) vec4f {
+                var value: Aggregate;
+                value.transform[0] = vec2f(0.25, 0.5);
+                value.transform[2][1] = 0.75;
+                return vec4f(value.transform[0], 0.0, 1.0);
             }
             @vertex fn safe_read() -> @builtin(position) vec4f {
                 let value = Aggregate(mat3x2<f32>(), 1.0);
@@ -12993,7 +13097,13 @@ mod tests {
             ..Default::default()
         };
 
-        for entry in ["bad_direct", "bad_helper"] {
+        for entry in [
+            "bad_direct",
+            "bad_helper",
+            "bad_helper_component",
+            "bad_dynamic_column",
+            "bad_dynamic_row",
+        ] {
             assert!(interface
                 .entry_point_uses_unsupported_matrix_aggregate_store(
                     naga::ShaderStage::Vertex,
@@ -13002,7 +13112,7 @@ mod tests {
                 )
                 .unwrap());
         }
-        for entry in ["safe_read", "safe_sibling"] {
+        for entry in ["safe_static_components", "safe_read", "safe_sibling"] {
             assert!(!interface
                 .entry_point_uses_unsupported_matrix_aggregate_store(
                     naga::ShaderStage::Vertex,

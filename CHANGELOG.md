@@ -91,6 +91,7 @@ Bottom level categories:
 - Support direct `vertex_index` reads from one initialized fixed-size local `array<vec2f, 3>` in the opt-in FL9_1 D3D11 backend.
 - Support direct fragment indexing of `array<vec4f, N>` uniform fields for `2 <= N <= 24` in the narrowly validated opt-in FL9_1 D3D11 subset.
 - Expose same-format RGBA8_SNORM GPU texture copies when the selected FL9_1 D3D11 device query supports them, without enabling CPU readback.
+- Permit direct, statically indexed column and scalar component stores to a local `matCx2<f32>` struct member in the opt-in FL9_1 D3D11 backend.
 
 ### Changes
 

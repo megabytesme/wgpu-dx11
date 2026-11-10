@@ -3167,6 +3167,9 @@ mod tests {
             fn store_matrix(p: ptr<function, State>) {
                 (*p).m = mat2x2f(vec2f(1.0, 0.0), vec2f(0.0, 1.0));
             }
+            fn store_static_component(p: ptr<function, State>) {
+                (*p).m[0] = vec2f(0.25, 0.5);
+            }
             fn store_component(p: ptr<function, State>, index: u32) {
                 (*p).m[0][index] = 0.5;
             }
@@ -3191,6 +3194,11 @@ mod tests {
             @vertex fn helper_matrix_store() -> @builtin(position) vec4f {
                 var s: State;
                 store_matrix(&s);
+                return vec4f(s.m[0], 0.0, 1.0);
+            }
+            @vertex fn helper_static_component_store() -> @builtin(position) vec4f {
+                var s: State;
+                store_static_component(&s);
                 return vec4f(s.m[0], 0.0, 1.0);
             }
             @vertex fn helper_component_store(@location(0) index: u32) -> @builtin(position) vec4f {
@@ -3254,6 +3262,23 @@ mod tests {
                 store_direct_matrix(&m);
                 return vec4f(m[0], 0.0, 1.0);
             }
+            @fragment fn static_component_store() -> @location(0) vec4f {
+                var s: State;
+                s.m[0] = vec2f(0.25, 0.5);
+                s.m[1][0] = 0.75;
+                s.m[1][1] = 1.0;
+                return vec4f(s.m[0], s.m[1]);
+            }
+            @vertex fn dynamic_column_store(@location(0) index: u32) -> @builtin(position) vec4f {
+                var s: State;
+                s.m[index] = vec2f(0.5);
+                return vec4f(s.m[0], 0.0, 1.0);
+            }
+            @vertex fn dynamic_row_store(@location(0) index: u32) -> @builtin(position) vec4f {
+                var s: State;
+                s.m[0][index] = 0.5;
+                return vec4f(s.m[0], 0.0, 1.0);
+            }
             "#,
         )
         .unwrap();
@@ -3269,8 +3294,19 @@ mod tests {
     #[test]
     fn checked_matrix_component_stores_require_safe_lowering() {
         let (module, info) = matrix_store_module();
-        for index in [0, 1, 4] {
-            let entry = &module.entry_points[index];
+        for name in [
+            "dynamic_with_uniform",
+            "dynamic_without_uniform",
+            "helper_component_store",
+            "dynamic_column_store",
+            "dynamic_row_store",
+        ] {
+            let (index, entry) = module
+                .entry_points
+                .iter()
+                .enumerate()
+                .find(|(_, entry)| entry.name == name)
+                .unwrap();
             assert!(
                 has_unsafe_matrix_store(
                     &module,
@@ -3278,8 +3314,7 @@ mod tests {
                     &entry.function,
                     info.get_entry_point(index)
                 ),
-                "{} must not bypass checked vector-store validation",
-                entry.name
+                "{name} must not bypass checked vector-store validation",
             );
         }
     }
@@ -3287,8 +3322,25 @@ mod tests {
     #[test]
     fn matrix_struct_stores_require_correct_lowering_even_unchecked() {
         let (module, info) = matrix_store_module();
-        for index in [2, 3, 5, 6, 7, 8, 11, 13, 14] {
-            let entry = &module.entry_points[index];
+        for name in [
+            "static_matrix_store",
+            "helper_matrix_store",
+            "helper_static_component_store",
+            "nested_matrix_store",
+            "nested_struct_store",
+            "private_matrix_store",
+            "direct_matrix_pointer",
+            "standalone_matrix_array_store",
+            "special_first_call_sites",
+            "dynamic_column_store",
+            "dynamic_row_store",
+        ] {
+            let (index, entry) = module
+                .entry_points
+                .iter()
+                .enumerate()
+                .find(|(_, entry)| entry.name == name)
+                .unwrap();
             assert!(
                 has_unsafe_matrix_store(
                     &module,
@@ -3296,12 +3348,22 @@ mod tests {
                     &entry.function,
                     info.get_entry_point(index)
                 ),
-                "{} must not silently drop matrix stores",
-                entry.name
+                "{name} must not silently drop matrix stores",
             );
         }
-        for index in [9, 10, 12, 15] {
-            let entry = &module.entry_points[index];
+        for name in [
+            "safe_vector_store",
+            "safe_matrix_read",
+            "standalone_matrix_store",
+            "standalone_matrix_pointer",
+            "static_component_store",
+        ] {
+            let (index, entry) = module
+                .entry_points
+                .iter()
+                .enumerate()
+                .find(|(_, entry)| entry.name == name)
+                .unwrap();
             assert!(
                 !has_unsafe_matrix_store(
                     &module,
@@ -3309,10 +3371,101 @@ mod tests {
                     &entry.function,
                     info.get_entry_point(index),
                 ),
-                "{} must remain valid",
-                entry.name
+                "{name} must remain valid",
             );
         }
+    }
+
+    #[test]
+    fn static_matrix_component_stores_use_direct_hlsl_members() {
+        let (module, info) = matrix_store_module();
+        let entry = module
+            .entry_points
+            .iter()
+            .find(|entry| entry.name == "static_component_store")
+            .unwrap();
+        let function_info = info.get_entry_point(
+            module
+                .entry_points
+                .iter()
+                .position(|candidate| candidate.name == entry.name)
+                .unwrap(),
+        );
+        assert!(!has_unsafe_matrix_store(
+            &module,
+            &info,
+            &entry.function,
+            function_info,
+        ));
+
+        let mut vector_stores = Vec::new();
+        let mut scalar_stores = Vec::new();
+        for statement in entry.function.body.iter() {
+            let naga::Statement::Store { pointer, .. } = statement else {
+                continue;
+            };
+            match entry.function.expressions[*pointer] {
+                naga::Expression::AccessIndex { base, index }
+                    if matches!(
+                        entry.function.expressions[base],
+                        naga::Expression::AccessIndex { base: root, index: 0 }
+                            if matches!(
+                                entry.function.expressions[root],
+                                naga::Expression::LocalVariable(_)
+                            )
+                    ) =>
+                {
+                    vector_stores.push(index)
+                }
+                naga::Expression::AccessIndex { base, index: row } => {
+                    let naga::Expression::AccessIndex {
+                        base: matrix,
+                        index: column,
+                    } = entry.function.expressions[base]
+                    else {
+                        panic!("matrix scalar store is not a static access chain");
+                    };
+                    assert!(matches!(
+                        entry.function.expressions[matrix],
+                        naga::Expression::AccessIndex { base: root, index: 0 }
+                            if matches!(
+                                entry.function.expressions[root],
+                                naga::Expression::LocalVariable(_)
+                            )
+                    ));
+                    scalar_stores.push((column, row));
+                }
+                _ => panic!("matrix component store is not a static access chain"),
+            }
+        }
+        assert_eq!(vector_stores, [0]);
+        assert_eq!(scalar_stores, [(1, 0), (1, 1)]);
+
+        let options = naga::back::hlsl::Options {
+            shader_model: naga::back::hlsl::ShaderModel::V5_0,
+            fake_missing_bindings: false,
+            direct_sampler_bindings: true,
+            restrict_indexing: true,
+            force_loop_bounding: false,
+            ..Default::default()
+        };
+        let pipeline = naga::back::hlsl::PipelineOptions {
+            entry_point: Some((naga::ShaderStage::Fragment, entry.name.clone().into())),
+        };
+        let mut source = alloc::string::String::new();
+        let reflection = naga::back::hlsl::Writer::new(&mut source, &options, &pipeline)
+            .write(&module, &info, None)
+            .unwrap();
+        let generated_name = reflection
+            .entry_point_names
+            .into_iter()
+            .next()
+            .unwrap()
+            .unwrap();
+        let entry_source = &source[source.find(&generated_name).unwrap()..];
+        assert!(entry_source.contains(".m_0 ="), "{entry_source}");
+        assert!(entry_source.contains(".m_1[0] ="), "{entry_source}");
+        assert!(entry_source.contains(".m_1[1] ="), "{entry_source}");
     }
 
     #[test]
@@ -3754,6 +3907,7 @@ mod tests {
             for entry in [
                 "static_matrix_store",
                 "helper_matrix_store",
+                "helper_static_component_store",
                 "pointer_call_sites",
                 "special_first_call_sites",
                 "standalone_matrix_array_store",
@@ -3765,12 +3919,18 @@ mod tests {
                             && message == "D3D11 matrix aggregate stores are not implemented safely"
                 ));
             }
+            for entry in ["dynamic_column_store", "dynamic_row_store"] {
+                assert!(shader.compile(naga::ShaderStage::Vertex, entry).is_err());
+            }
             for entry in ["standalone_matrix_store", "standalone_matrix_pointer"] {
                 assert!(
                     shader.compile(naga::ShaderStage::Vertex, entry).is_ok(),
                     "{entry}"
                 );
             }
+            assert!(shader
+                .compile(naga::ShaderStage::Fragment, "static_component_store")
+                .is_ok());
             let bindings = [ShaderBinding {
                 binding: naga::ResourceBinding {
                     group: 0,
@@ -8051,6 +8211,84 @@ fn has_unsafe_matrix_store_with_budget(
         Provenance::Unknown
     }
 
+    fn is_safe_static_local_matrix_component_store(
+        module: &naga::Module,
+        function: &naga::Function,
+        pointer: naga::Handle<naga::Expression>,
+        budget: &mut usize,
+    ) -> bool {
+        fn direct_matrix_member(
+            module: &naga::Module,
+            function: &naga::Function,
+            expression: naga::Handle<naga::Expression>,
+            budget: &mut usize,
+        ) -> Option<(naga::Handle<naga::Type>, u32)> {
+            if *budget < 2 {
+                *budget = 0;
+                return None;
+            }
+            *budget -= 2;
+            let naga::Expression::AccessIndex {
+                base,
+                index: member_index,
+            } = function.expressions[expression]
+            else {
+                return None;
+            };
+            let naga::Expression::LocalVariable(local) = function.expressions[base] else {
+                return None;
+            };
+            let naga::TypeInner::Struct { ref members, .. } =
+                module.types[function.local_variables[local].ty].inner
+            else {
+                return None;
+            };
+            let member = members.get(member_index as usize)?;
+            if member.binding.is_some() {
+                return None;
+            }
+            let naga::TypeInner::Matrix {
+                columns,
+                rows: naga::VectorSize::Bi,
+                scalar,
+            } = module.types[member.ty].inner
+            else {
+                return None;
+            };
+            (scalar.kind == naga::ScalarKind::Float && scalar.width == 4)
+                .then_some((member.ty, columns as u32))
+        }
+
+        if *budget == 0 {
+            return false;
+        }
+        *budget -= 1;
+        let (column_access, component_index) = match function.expressions[pointer] {
+            naga::Expression::AccessIndex { base, index } => (base, index),
+            _ => return false,
+        };
+
+        if direct_matrix_member(module, function, column_access, budget)
+            .is_some_and(|(_, columns)| component_index < columns)
+        {
+            return true;
+        }
+
+        if *budget == 0 {
+            return false;
+        }
+        *budget -= 1;
+        let naga::Expression::AccessIndex {
+            base: matrix_access,
+            index: column_index,
+        } = function.expressions[column_access]
+        else {
+            return false;
+        };
+        direct_matrix_member(module, function, matrix_access, budget)
+            .is_some_and(|(_, columns)| column_index < columns && component_index < 2)
+    }
+
     #[expect(
         clippy::too_many_arguments,
         reason = "The recursive scan carries its validated function context and shared limits"
@@ -8076,10 +8314,13 @@ fn has_unsafe_matrix_store_with_budget(
             }
             *budget -= 1;
             match statement {
-                naga::Statement::Store { pointer, .. } => !matches!(
-                    provenance(module, function, *pointer, arguments, cache, budget),
-                    Provenance::Ordinary
-                ),
+                naga::Statement::Store { pointer, .. } => {
+                    !is_safe_static_local_matrix_component_store(module, function, *pointer, budget)
+                        && !matches!(
+                            provenance(module, function, *pointer, arguments, cache, budget),
+                            Provenance::Ordinary
+                        )
+                }
                 naga::Statement::Block(block) => scan_block(
                     module,
                     module_info,

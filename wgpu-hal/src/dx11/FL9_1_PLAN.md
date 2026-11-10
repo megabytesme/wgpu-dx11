@@ -2,22 +2,21 @@
 
 ## Current state and next queue — 2026-11-10
 
-Verified checkpoint `3577e23e1` includes the selected-entry 2D/3D textureLoad
-view guard, dynamic-coordinate 2D load, ordered CPU-shadow 3D readback, and
-WebGPU-correct per-pass blend-constant defaults. The following nonzero-group
-direct 2D `textureDimensions` slice is committed as `9b3d1be06` and verified:
-strict public tests 124/124, Core fixtures 134/134, private HAL baseline
-473/473 and DX12 Core regression 123/123. The backend is opt-in through
-explicit DX11 selection; it is not a general or Core-WebGPU-compliant FL9_1
-implementation.
+Checkpoint `e3f437dff` extends the bounded fragment uniform-array-index proof
+to nonzero groups while preserving its shape and selected-entry restrictions.
+The current verified slice permits direct, statically indexed column or scalar
+component stores to local `matCx2<f32>` struct members; whole-matrix, dynamic,
+helper, nested and array-contained stores remain rejected. Strict forced-FL9_1
+readback, Core/HAL proof tests, full Core/HAL/public tests and DX12 Core
+regression all pass. The backend remains opt-in through explicit DX11
+selection; it is not a general or Core-WebGPU-compliant FL9_1 implementation.
 
-Next bounded software slice: extend the existing bounded fragment
-uniform-array-index proof to nonzero groups, retaining all current structure,
-index and entry-point restrictions and proving the full public binding path.
-After that, investigate the statically indexed local matrix-component store
-subset; do not relax the broad matrix-store gate until FXC and FL9_1 readback
-prove the direct member assignments correct. Continue the Core/HAL and curated
-CTS audits from public-API-valid operations.
+Next, run the strict D24S8 `stencil_depthFailOp_operation` CTS case for
+`depthFailOp="replace"`, then the 13-case D24S8 matrix if it passes. Follow
+with the audited D24S8 depth-comparison and sRGB blend selectors. These are
+coverage checks against already implemented paths, not capability expansion
+unless a concrete mismatch is found. Continue the Core/HAL contract audit from
+public-API-valid operations.
 
 Known external verification gaps are historical FL9_1 hardware, Lumia/CoreWindow
 runtime and physical device-removal/recovery behavior. Native compute/UAV,

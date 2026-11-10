@@ -15727,3 +15727,43 @@ Clippy passed for the Core library, HAL tests, and focused public test target;
 it reported existing HAL warnings in `hal_index.rs`, `texture.rs`,
 `hal_queue.rs`, `hal_device.rs`, `swapchain.rs`, and `fl9_texel_load.rs`.
 Workspace formatting and `git diff --check` passed.
+
+## Direct static local matrix-component stores — 2026-11-10
+
+Core and HAL now admit one direct access shape: a constant-index column or
+scalar component store into an ordinary `matCx2<f32>` member of a
+function-local struct. The proof requires the exact `AccessIndex` chain and
+checks column/row bounds. It does not admit whole-matrix stores, dynamic
+indices, pointer-helper writes, nested/array-contained matrices or private
+globals. `DownlevelLimits::matrix_aggregate_stores` remains false. A CPU test
+checks the pointer chain and verifies that Naga emits direct assignments to
+the split HLSL column members; existing broad matrix-store guards remain in
+place for all other forms.
+
+The strict public test ran on the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`) with requested and actual FL9_1 and `software=false`.
+Core accepted the pipeline, FXC compiled the shader, and all 64 pixels matched
+the expected `[64, 128, 191, 255]` within `[1, 1, 1, 0]` LSB tolerance; the
+observed first pixel was `[64, 127, 191, 255]`. The first exact comparison
+failed only on the 0.5 UNORM channel's one-code rounding; the bounded
+tolerance preserves exact alpha and checks every pixel.
+
+```text
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --test-threads=1
+# 134 passed.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_matrix_component_store -- --test-threads=1 --nocapture
+# 1 passed; 64/64 pixels matched within the documented tolerance.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1
+# 124 passed, including default DX11 adapter-enumeration isolation.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 474 passed, including private GPU and FXC cases.
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib --quiet
+# 123 passed.
+```
+
+Core, HAL-test and public-test Clippy checks passed. They emitted existing
+warnings in the DX11 queue, index, texture, device, swapchain and texel-load
+test code; no new warning referred to the matrix proof or public test.
+Workspace `cargo fmt --all -- --check` and `git diff --check` passed. The first
+focused Core link attempt lacked `link.exe`; rerunning under the VS Developer
+Command Prompt passed. No Naga writer change or capability flag was added.

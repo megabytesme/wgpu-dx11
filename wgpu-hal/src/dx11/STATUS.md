@@ -595,15 +595,17 @@ runtime integer shader operation. The forced-FL9_1 RTX test exercises all three
 formats in one draw and validates every pixel. The public selected-device
 projection reports this mask; other layout and draw restrictions remain.
 
-The public selected-FL9_1 projection also reports that runtime integer shader
-operations and stores through aggregates containing two-row matrices are
-unavailable. Core derives bounded per-entry summaries from validated Naga IR,
-follows helper calls, and rejects only the selected unsupported entry before
-HAL. It retains direct integer-vector-to-float vertex input conversion and
-safe sibling entries. Strict public validation confirms unsupported fragment
-integer arithmetic and vertex matrix aggregate stores fail through core, while
-the CPU analysis tests cover helper pointer stores, safe matrix reads and entry
-selection. These are backend/compiler restrictions, not hardware guarantees.
+The public selected-FL9_1 projection continues to report general stores through
+aggregates containing two-row matrices as unavailable. The bounded Core and HAL
+proofs allow one narrow exception: direct, statically indexed column or scalar
+component writes to an ordinary `matCx2<f32>` member of a function-local
+struct. Naga lowers this exact shape to direct writes of its split HLSL column
+members. Whole-matrix stores, dynamic indices, helper-mediated pointer writes,
+nested or array-contained matrices, and private globals remain rejected. Core
+follows helper calls and evaluates only the selected entry point. Strict public
+validation and readback verify the allowed case; CPU analysis tests retain the
+negative cases and safe sibling-entry behavior. These are compiler/backend
+restrictions, not hardware guarantees.
 
 Core now also models whether viewport rectangles may extend beyond the active
 render target with `DownlevelLimits::viewport_rectangles_outside_target`. The

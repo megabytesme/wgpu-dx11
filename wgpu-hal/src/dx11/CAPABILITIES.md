@@ -1286,23 +1286,22 @@ public readback verified a fullscreen triangle with all 64 pixels white;
 Core, Naga and HAL keep the exception synchronized. FXC rejects the tested
 dynamic `vertex_index` vector-index form with X3548. Proven static literal
 indices and the separately validated uniform-array subset remain available.
-Matrix-containing aggregate stores are rejected
-in checked and unchecked shaders because Naga's current HLSL special lowering
-can lose writes or omit an index clamp. The conservative guard also rejects
-unrelated stores to such aggregates and shaders exceeding its analysis budget.
-The public FL9_1 projection now represents these two backend restrictions with
-`DownlevelLimits::runtime_integer_shader_operations` and
-`DownlevelLimits::matrix_aggregate_stores`. Core repeats the bounded analysis
-for the selected vertex and fragment entry points, follows helper calls, and
-rejects unsupported pipelines before HAL; safe sibling entry points and direct
-integer-vector-to-float vertex input conversion remain usable. Matrix stores
-through an aggregate containing a two-row matrix remain unsupported, while
-float-only matrix reads are allowed. These are backend/compiler limits, not
-feature-level hardware guarantees. The strict public regression accepts the
-exact direct local-array form and rejects helper-reached or computed local
-indexing, dynamic vector indexing, fragment integer arithmetic and vertex
-aggregate stores on the forced-FL9_1 path; CPU tests cover helper pointer
-arguments and selected-entry boundaries.
+General matrix-containing aggregate stores remain rejected in checked and
+unchecked shaders because Naga's HLSL special lowering can lose writes or omit
+an index clamp. Core and HAL allow only direct, statically indexed column or
+scalar component writes to an ordinary `matCx2<f32>` member of a
+function-local struct. Naga emits direct assignments to the split HLSL column
+members for this exact access shape. Whole-matrix stores, dynamic column or row
+indices, helper-mediated pointer writes, nested or array-contained matrices,
+private globals and analysis-budget exhaustion remain rejected. The public
+FL9_1 projection keeps `DownlevelLimits::matrix_aggregate_stores` false; the
+exception is a bounded validation rule, not a general capability claim. Core
+repeats the analysis for selected vertex and fragment entries and follows
+helper calls. Float-only matrix reads and safe sibling entries remain usable.
+Strict forced-FL9_1 public rendering verified the narrow exception through
+Core, HAL, D3D11 and readback; CPU tests cover its pointer and index boundaries.
+These are backend/compiler restrictions, not feature-level hardware
+guarantees.
 Naga's HLSL writer lowers only f32 `mat2x2` inverse using scalar cofactors.
 DX11 exposes that subset through `DownlevelLimits::matrix_inverse_2x2` and
 keeps the general `matrix_inverse` limit false. Core validates selected

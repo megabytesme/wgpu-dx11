@@ -2869,6 +2869,32 @@ The physical validation run used the RTX 3090 Ti at requested and actual
 FL9_1. It does not establish historical-driver behavior or broader integer
 shader support.
 
+### Static local matrix-component stores
+
+The general `DownlevelLimits::matrix_aggregate_stores` capability remains
+false. Core and HAL permit only direct, statically indexed column or scalar
+component writes to an ordinary `matCx2<f32>` member of a function-local
+struct. Naga lowers this shape to direct assignments to split HLSL members;
+whole-matrix, dynamic-index, pointer-helper, nested and array-contained stores
+remain rejected. The CPU test checks the access-chain shape and generated
+member assignments, and the HAL FXC test compiles the accepted fragment entry.
+
+The public strict test exercises Core, HAL, D3D11 execution and readback:
+
+```powershell
+cargo +1.93.1 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl fl91_matrix_aggregate_store_gate_follows_pointer_helpers_and_entry_points -- --nocapture
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib static_matrix_component_stores_use_direct_hlsl_members -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib dx11::hal_shader::tests::hal_module_compiles_and_creates_level_9_shaders -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_matrix_component_store public_dx11_static_matrix_component_store_renders_at_fl91 -- --nocapture --test-threads=1
+```
+
+The RTX 3090 Ti run used driver `32.0.16.2101` (vendor/device
+`0x10de:0x2203`) with requested and actual FL9_1. All 64 pixels were within
+one LSB per RGB channel of `[64, 128, 191, 255]`, with exact alpha; the first
+observed pixel was `[64, 127, 191, 255]`. This does not establish behavior on
+historical FL9_1 drivers.
+
 ### FL9_1 depth attachments
 
 ```powershell
