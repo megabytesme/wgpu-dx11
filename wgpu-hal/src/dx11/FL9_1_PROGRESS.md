@@ -14061,3 +14061,6 @@ The hardware suites selected NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
 driver `32.0.16.2101`) at requested/actual FL9_1 with `software=false`. The
 synthetic query-negative test is CPU-only and covers a driver case unavailable
 on this development adapter.
+
+Checkpoint: `359d508228fe1dfa6f5754b8d278fb3e20719967`
+(`dx11: project color format usages independently`).
