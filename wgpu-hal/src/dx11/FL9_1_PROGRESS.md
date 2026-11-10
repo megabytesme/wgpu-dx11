@@ -14094,3 +14094,6 @@ git diff --check
 The broader matrix still has useful untested combinations and the selected
 modern driver does not substitute for historical FL9_1 hardware. See the
 platform and Core/HAL audit notes in this plan.
+
+Checkpoint: `a1287ff037358ab6d603e0f0b2ae02a1bbf0b6d2`
+(`dx11: verify FL9_1 multisample blend write masks`).
