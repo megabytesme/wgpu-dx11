@@ -16073,7 +16073,7 @@ Core/test Clippy pass identified one new boolean-expression warning and two
 `useless_vec` warnings, which were fixed and rechecked cleanly in Core and the
 public test target.
 
-The working changes are ready for the feature checkpoint after the final
-diff review. This slice extends only a narrow fragment shader subset; it does
+Feature checkpoint: `c75e82cef` (`dx11: bound FL9_1 fragment sample bias
+selection`). This slice extends only a narrow fragment shader subset; it does
 not make arbitrary WGSL bias expressions safe or establish historical-driver
 behavior.

@@ -20,10 +20,11 @@ valid public operations and shader/resource boundary cases.
 Historical FL9_1 hardware and physical device-removal recovery are external
 verification gaps.
 
-The latest implementation checkpoint is `9fd21279b`, which allows two
-direct fragment uniform-array reads from separate bindings under a narrow
-selected-entry proof. It passed the strict full HAL and public D3D11 suites
-and targeted Core/DX12 checks; details are in `FL9_1_PROGRESS.md`. The earlier
+The latest implementation checkpoint is `c75e82cef`, which allows a direct
+fragment `textureSampleBias` to select between two finite literal values
+within the FL9_1 range. It passed the strict full HAL and public D3D11 suites,
+the Core/types suites, FXC profile compilation and targeted DX12 checks;
+details are in `FL9_1_PROGRESS.md`. The earlier
 capability correction `6b1cff301` withholds sRGB blending through FL9_3 while
 preserving sRGB attachments and query-backed linear blending. A read-only
 RGBA8_SNORM audit confirmed the existing direct
@@ -34,15 +35,14 @@ matching Core/HAL proofs and strict GPU evidence. Arbitrary dynamic
 `textureSampleBias` remains rejected because WGSL's legal bias range exceeds
 the defined FL9_1 `texldb` range; clamping is not semantics preserving.
 
-The latest implementation slice extends the measured fragment uniform-array
-proof to two independent reads from distinct uniform bindings. It retains the
-existing array/structure shape, rejects a third or unsafe read, and verifies
-FXC compilation plus three strict public FL9_1 readbacks. The full strict
-private HAL suite passed 478/478 and the strict public D3D11 suite passed
-126/126, with two recognizable optional capability skips. The full Core unit
-suite passed 123/123, the DX12 HAL check passed, and affected Clippy and
-formatting checks passed. Exact commands and device output are in
-`FL9_1_PROGRESS.md`.
+The latest feature slice proves bounded fragment sample-bias selection in
+Core and HAL, retains rejection of arbitrary dynamic bias, and verifies FXC
+compilation plus 64 strict public FL9_1 readback pixels. The full strict
+private HAL suite passed 480/480 and the strict public D3D11 suite passed
+126/126, with two recognizable optional capability skips. The Core suite
+passed 123/123, wgpu-types passed 113/113 plus a serde compatibility test,
+the DX12 HAL check passed, and affected Clippy and formatting checks passed.
+Exact commands and device output are in `FL9_1_PROGRESS.md`.
 
 Next work remains a practical-completion audit, not a claim that the backend is
 finished. Use agents for separate read-only contract/compiler audits, then
