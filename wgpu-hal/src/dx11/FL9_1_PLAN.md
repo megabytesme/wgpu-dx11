@@ -18,6 +18,19 @@ Lumia/CoreWindow runtime and physical device-removal verification as external
 gaps; do not treat them as implementation tasks that more code agents can
 resolve.
 
+## Public float-builtin execution checkpoint — 2026-11-10
+
+Added a focused strict public test for runtime-uniform `modf`, `asinh`,
+`acosh`, and `atanh`; each produced the expected complete 8x8 readback at
+forced FL9_1 on the RTX 3090 Ti. The test also records `frexp` as a predictable
+Core rejection because its integer exponent is covered by the deliberate
+runtime-integer safety limit. No capability changed. Continue selecting work
+from reproduced public workloads and compiler/runtime evidence. Use agents for
+independent read-only audits and feasibility checks; keep any cross-layer
+implementation (Core validation, Naga lowering and HAL execution) under one
+integrating owner. Historical FL9_1 devices, Lumia/CoreWindow runtime,
+physical device-removal behavior, and exhaustive API/CTS coverage remain open.
+
 ## Optional `Rgba8Uint` texture candidate — 2026-11-10
 
 The strict integer vertex-format test now also queries

@@ -173,6 +173,18 @@ HAL shader compilation. Ordinary entry points in the same module remain
 eligible. This is a shader-profile implementation restriction; it does not
 change the feature-level guarantees or enable additional shader operations.
 
+## Selected FL9_1 floating-point built-ins
+
+The public forced-FL9_1 shader path has strict readback coverage for WGSL
+`modf`, `asinh`, `acosh`, and `atanh`, each driven by a runtime uniform and
+checked over a complete 8x8 RGBA8 target. This records support for those tested
+forms; it does not claim general WGSL builtin coverage. `frexp` remains
+rejected by the backend's runtime-integer validation because its result
+contains an `i32` exponent, even when a shader observes only the float
+fraction field. A narrower lowering would require a proof that the exponent
+cannot escape or affect observable behavior, followed by separate FXC and GPU
+validation. No capability flag changed.
+
 ## Feature-level and driver facts
 
 The selected device level, not the adapter's maximum, determines the guaranteed

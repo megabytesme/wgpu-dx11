@@ -4074,3 +4074,17 @@ Two exploratory selectors remain outside the published subset:
 D24S8 `COPY_DST`, and `rendering,draw:default_arguments:*` failed because the
 shader uses unsupported runtime integer operations. These are contract
 boundary results, not reasons to broaden the projection.
+
+### Public FL9_1 floating-point builtin execution
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_math -- --nocapture --test-threads=1
+```
+
+This strict public test requests and confirms the physical RTX 3090 Ti at
+FL9_1, then drives `modf`, `asinh`, `acosh`, and `atanh` from runtime uniforms
+and validates all 64 RGBA8 output pixels for each operation. `frexp` is a
+negative case: Core rejects its integer-bearing result with
+`UnsupportedRuntimeIntegerShaderOperations` before HAL or FXC. This is
+implementation-boundary evidence, not a feature-level capability claim.

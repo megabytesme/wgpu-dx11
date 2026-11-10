@@ -1,5 +1,31 @@
 # FL9_1 progress
 
+## Public floating-point builtin verification — 2026-11-10
+
+A new strict public-wgpu test drives WGSL `modf`, `asinh`, `acosh`, and
+`atanh` with a runtime uniform. On the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), the test requested and confirmed
+FL9_1 with software/WARP false and validated all 64 output pixels for each
+operation. The expected UNORM values were `[96,128,64,255]`,
+`[112,64,128,255]`, `[168,64,128,255]`, and `[140,64,128,255]` respectively.
+
+The same test treats `frexp` as an expected Core validation rejection. Its
+Naga result contains an `i32` exponent and therefore trips the existing
+runtime-integer safety guard before HAL/FXC. A read-only shader review
+confirmed that permitting only the fractional field would require a new
+selected-entry proof across Core, Naga and HAL; the global integer gate was
+left unchanged.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_math -- --nocapture --test-threads=1
+# 1 test passed: four 64-pixel GPU readbacks and one expected Core rejection.
+```
+
+No advertised capability changed. The first probe confirmed the four
+floating-point results, then failed on `frexp` with
+`UnsupportedRuntimeIntegerShaderOperations`; the finalized test asserts that
+boundary. This coverage does not establish historical-driver behavior.
+
 ## Optional `Rgba8Uint` texture query — 2026-11-10
 
 The strict integer vertex-format test now records the selected FL9_1 device's
