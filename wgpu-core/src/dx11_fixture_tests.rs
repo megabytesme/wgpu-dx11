@@ -5803,12 +5803,26 @@ fn render_triangle(
                 }
                 return i;
             }
+            fn uncalled_dynamic_loop(limit: f32) -> f32 {
+                var i = 0.0;
+                loop {
+                    if i >= limit { break; }
+                    i += 1.0;
+                }
+                return i;
+            }
             @vertex fn loop_vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> VertexOut {
                 let x = loop_count(abs(p.x));
                 return VertexOut(vec4f(x, p.y, p.z, 1.0), uv);
             }
+            @vertex fn safe_loop_vs(@location(0) p: vec3f, @location(1) uv: vec2f) -> VertexOut {
+                return VertexOut(vec4f(p, 1.0), uv);
+            }
             @fragment fn loop_fs(input: VertexOut) -> @location(0) vec4f {
                 return vec4f(loop_count(input.uv.x));
+            }
+            @fragment fn safe_loop_fs() -> @location(0) vec4f {
+                return vec4f(1.0);
             }
         "#;
         let (loop_shader, shader_error) = global.device_create_shader_module(
@@ -5824,6 +5838,21 @@ fn render_triangle(
             shader_error.is_none(),
             "loop shader creation: {shader_error:?}"
         );
+
+        let mut uncalled_loop_pipeline = pipeline_descriptor.clone();
+        uncalled_loop_pipeline.vertex.stage.module = loop_shader;
+        uncalled_loop_pipeline.vertex.stage.entry_point = Some(Cow::Borrowed("safe_loop_vs"));
+        let fragment = uncalled_loop_pipeline.fragment.as_mut().unwrap();
+        fragment.stage.module = loop_shader;
+        fragment.stage.entry_point = Some(Cow::Borrowed("safe_loop_fs"));
+        let (probe_pipeline, probe_error) =
+            global.device_create_render_pipeline(device, &uncalled_loop_pipeline, None);
+        assert!(
+            probe_error.is_none(),
+            "FXC/Core should accept a safe FL9_1 entry when dynamic-loop helpers are unreachable: {probe_error:?}"
+        );
+        global.render_pipeline_drop(probe_pipeline);
+        std::println!("PASS: FXC accepted a safe FL9_1 entry with uncalled dynamic-loop helpers");
 
         let mut loop_vertex_pipeline = pipeline_descriptor.clone();
         loop_vertex_pipeline.vertex.stage.module = loop_shader;

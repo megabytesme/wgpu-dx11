@@ -2092,3 +2092,15 @@ workload that expands useful FL9_1 rendering coverage. Do not enable ordinary
 adapter enumeration by default. Historical FL9_1 drivers, Lumia/CoreWindow
 runtime, physical device-removal recovery, broad API/CTS coverage and remaining
 unimplemented operations remain open.
+
+## Latest audit result — uncalled dynamic-loop helpers — 2026-11-10
+
+A strict FL9_1 fixture compiled a safe selected vertex/fragment entry while
+the Naga module contained uncalled regular functions with dynamic loops. FXC
+accepted the pipeline on the RTX 3090 Ti forced to FL9_1, so this shape does
+not require an added Core rejection. See `FL9_1_PROGRESS.md` for the command.
+The next targeted issue is an over-rejection in pipeline creation when an
+optional viewport-remapped vertex shader variant fails compilation even
+though the base variant is usable. Preserve the base pipeline and validate
+fractional-viewport draws against remap-variant availability before HAL
+execution; keep all existing integer viewport behavior intact.

@@ -14303,3 +14303,29 @@ git diff --check
 This closes one late-HAL validation path only. Sampler compatibility remains
 a narrow private contract; broad Core/HAL validation, historical FL9_1
 hardware and Lumia/CoreWindow verification remain open.
+
+## Uncalled dynamic-loop helper compiler probe — 2026-11-10
+
+The source audit found that Naga writes regular module functions even when
+they are unreachable from the selected entry point, while Core's FL9_1 loop
+gate is selected-entry aware. A strict fixture now selects safe vertex and
+fragment entries in a module that also contains uncalled regular functions
+with dynamic loops. On the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), requested FL9_1 selected L9_1 and FXC accepted
+the pipeline. The fixture passed 1/1 and continued through the existing GPU
+render/readback cases. This disproves the suspected Core-to-FXC rejection for
+this shape; no broader Core loop gate was added.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j12 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+# 1 passed; the fixture logged that FXC accepted the safe selected entries.
+```
+
+The first invocation from a plain PowerShell failed before linking because
+`link.exe` was not in that shell's PATH. Re-running from the installed Visual
+Studio 2022 Build Tools developer environment passed. The `VsDevCmd.bat`
+banner printed a non-fatal `Unknown error`, but the MSVC linker and compiler
+completed successfully. The next candidate is to avoid rejecting otherwise
+usable pipelines when only the optional fractional-viewport-remap shader
+variant exceeds FXC limits; that path needs Core/HAL metadata so only draws
+requiring the unavailable variant are rejected.
