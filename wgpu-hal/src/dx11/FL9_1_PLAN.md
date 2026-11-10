@@ -2066,3 +2066,21 @@ readback pixels correct. This covers one shader/pipeline shape and does not
 change the capability report. The full Core/HAL contract audit,
 unsupported-operation closure and historical-device/runtime checks remain
 incomplete; see `FL9_1_PROGRESS.md` for the exact command and hardware record.
+
+## Next contract-audit target — sampler LOD compatibility
+
+A read-only Core/HAL audit found a narrow mismatch worth evaluating before
+public adapter exposure: Core accepts some legal wgpu sampler descriptors
+that the FL9_1 HAL cannot translate faithfully. In particular, fractional
+`lod_min_clamp` with different minification and magnification filters reaches
+HAL and returns a device error. Multi-mip view compatibility for normalized
+LOD descriptors is also checked during draw preparation rather than represented
+in Core validation. The failure is safe, but Core has no downlevel capability
+to describe this restriction and the public DX11 suite has no boundary test.
+
+The next slice should add a focused public/Core test matrix for fractional and
+integral minimum LOD, equal and mixed filters, and single- versus multi-mip
+views. First determine whether descriptor normalization can preserve wgpu
+sampling semantics; otherwise document or add the narrowest downlevel
+validation hook. Do not broadly change sampler support. The audit found other
+reviewed unsupported operations gated by existing errors or downlevel flags.

@@ -14158,3 +14158,41 @@ platform and Core/HAL audit notes in this plan.
 
 Checkpoint: `a1287ff037358ab6d603e0f0b2ae02a1bbf0b6d2`
 (`dx11: verify FL9_1 multisample blend write masks`).
+
+## R8_UNORM mip-copy pair matrix — 2026-11-10
+
+The strict public `public_dx11_r8_multimip_texture_copy_at_fl91` test now
+executes all 16 source/destination mip-index pairs between two four-level
+R8_UNORM textures. Each copy uses a valid nonzero source and destination
+origin where possible, reads that copied region back before later commands can
+overwrite it, and compares it with the source. The test then reads back every
+complete destination mip to verify final contents and untouched texels. Both
+readback buffers use 256-byte rows initialized with `0xCD`; all copied bytes,
+all preserved texture texels and all row-padding sentinels matched.
+
+On NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false), the test requested and selected FL9_1. The focused test passed
+1/1. The complete strict public D3D11 target passed 117/117; three optional
+subcases logged SKIP because the selected device did not report R8G8 vertex
+input, Float16 vertex input or Rg8Unorm mip support. This completes selected-
+device evidence for every cross-level R8 mip pair; it does not establish
+historical-driver behavior.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_r8_multimip_texture_copy_at_fl91 -- --exact --nocapture --test-threads=1
+# 1 passed; all 16 pairs and four complete destination mips matched.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 117 passed, 0 failed; three optional subcases logged SKIP.
+
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+The next Core/HAL audit target is the FL9_1 sampler LOD contract: Core accepts
+some fractional-min-LOD descriptors that HAL cannot represent when min/mag
+filters differ, and multi-mip view compatibility is deferred to draw time.
+This currently fails safely but has no Core-visible capability or public
+regression test. See `FL9_1_PLAN.md` before deciding whether the narrow remedy
+belongs in Core or in a documented downlevel contract. Historical hardware,
+Lumia runtime and physical device-removal recovery remain open.

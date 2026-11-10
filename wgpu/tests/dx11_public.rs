@@ -9851,10 +9851,293 @@ fn public_dx11_r8_multimip_texture_copy_at_fl91() {
             }
         }
     }
+
+    let mut matrix_source = Vec::new();
+    let mut matrix_expected = Vec::new();
+    for mip_level in 0..4 {
+        let size = 8 >> mip_level;
+        let mut source_pixels = vec![0; (size * size) as usize];
+        let mut source_upload = vec![0xCD; (size * 256) as usize];
+        let mut destination_pixels = vec![0; (size * size) as usize];
+        let mut destination_upload = vec![0xCD; (size * 256) as usize];
+        for y in 0..size {
+            for x in 0..size {
+                let source_value = if mip_level == 1 {
+                    16 + y as u8 * 40 + x as u8 * 9
+                } else {
+                    32 + mip_level as u8 * 37 + y as u8 * 13 + x as u8 * 5
+                };
+                let destination_value = 200 - mip_level as u8 * 20 - y as u8 * 3 - x as u8;
+                source_pixels[(y * size + x) as usize] = source_value;
+                source_upload[(y * 256 + x) as usize] = source_value;
+                destination_pixels[(y * size + x) as usize] = destination_value;
+                destination_upload[(y * 256 + x) as usize] = destination_value;
+            }
+        }
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &source,
+                mip_level,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &source_upload,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(size),
+            },
+            Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+        );
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &destination,
+                mip_level,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &destination_upload,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(size),
+            },
+            Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+        );
+        matrix_source.push(source_pixels);
+        matrix_expected.push(destination_pixels);
+    }
+
+    let matrix_pair_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 R8 cross-level pair readback"),
+        size: 16 * 7 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: true,
+    });
+    matrix_pair_readback
+        .get_mapped_range_mut(..)
+        .expect("initialize R8 pair readback padding")
+        .copy_from_slice(&vec![0xCD; 16 * 7 * 256]);
+    matrix_pair_readback.unmap();
+    let matrix_final_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 R8 cross-level final mip readback"),
+        size: 15 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: true,
+    });
+    matrix_final_readback
+        .get_mapped_range_mut(..)
+        .expect("initialize R8 final mip readback padding")
+        .copy_from_slice(&vec![0xCD; 15 * 256]);
+    matrix_final_readback.unmap();
+
+    let mut matrix_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public FL9_1 R8 cross-level mip-pair matrix"),
+    });
+    for source_mip in 0..4 {
+        let source_size = 8 >> source_mip;
+        for destination_mip in 0..4 {
+            let destination_size = 8 >> destination_mip;
+            let source_x = u32::from(source_size > 1);
+            let source_y = u32::from(source_size > 1);
+            let destination_x = u32::from(destination_size > 1);
+            let destination_y = u32::from(destination_size > 1);
+            let width = (source_size - source_x).min(destination_size - destination_x);
+            let height = (source_size - source_y).min(destination_size - destination_y);
+            let extent = Extent3d {
+                width,
+                height,
+                depth_or_array_layers: 1,
+            };
+            matrix_encoder.copy_texture_to_texture(
+                TexelCopyTextureInfo {
+                    texture: &source,
+                    mip_level: source_mip,
+                    origin: Origin3d {
+                        x: source_x,
+                        y: source_y,
+                        z: 0,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyTextureInfo {
+                    texture: &destination,
+                    mip_level: destination_mip,
+                    origin: Origin3d {
+                        x: destination_x,
+                        y: destination_y,
+                        z: 0,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                extent,
+            );
+
+            let pair = (source_mip * 4 + destination_mip) as usize;
+            let pair_offset = (pair * 7 * 256) as u64;
+            matrix_encoder.copy_texture_to_buffer(
+                TexelCopyTextureInfo {
+                    texture: &destination,
+                    mip_level: destination_mip,
+                    origin: Origin3d {
+                        x: destination_x,
+                        y: destination_y,
+                        z: 0,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyBufferInfo {
+                    buffer: &matrix_pair_readback,
+                    layout: TexelCopyBufferLayout {
+                        offset: pair_offset,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(height),
+                    },
+                },
+                extent,
+            );
+
+            for y in 0..height {
+                for x in 0..width {
+                    let source_index = ((source_y + y) * source_size + source_x + x) as usize;
+                    let destination_index =
+                        ((destination_y + y) * destination_size + destination_x + x) as usize;
+                    matrix_expected[destination_mip as usize][destination_index] =
+                        matrix_source[source_mip as usize][source_index];
+                }
+            }
+        }
+    }
+    let mut row_offset = 0u64;
+    for mip_level in 0..4 {
+        let size = 8 >> mip_level;
+        matrix_encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &destination,
+                mip_level,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &matrix_final_readback,
+                layout: TexelCopyBufferLayout {
+                    offset: row_offset * 256,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(size),
+                },
+            },
+            Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+        );
+        row_offset += size as u64;
+    }
+    let matrix_submission = queue.submit([matrix_encoder.finish()]);
+    let (pair_sender, pair_receiver) = std::sync::mpsc::channel();
+    matrix_pair_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| {
+            pair_sender.send(result).unwrap()
+        });
+    let (final_sender, final_receiver) = std::sync::mpsc::channel();
+    matrix_final_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| {
+            final_sender.send(result).unwrap()
+        });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(matrix_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for all R8 mip-pair copies and readbacks");
+    pair_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("R8 mip-pair readback callback")
+        .expect("map R8 mip-pair readback");
+    final_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("R8 final mip readback callback")
+        .expect("map R8 final mip readback");
+    {
+        let data = matrix_pair_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped R8 mip-pair readback");
+        for source_mip in 0..4 {
+            let source_size = 8 >> source_mip;
+            let source_x = u32::from(source_size > 1);
+            let source_y = u32::from(source_size > 1);
+            for destination_mip in 0..4 {
+                let destination_size = 8 >> destination_mip;
+                let destination_x = u32::from(destination_size > 1);
+                let destination_y = u32::from(destination_size > 1);
+                let width = (source_size - source_x).min(destination_size - destination_x);
+                let height = (source_size - source_y).min(destination_size - destination_y);
+                let pair = (source_mip * 4 + destination_mip) as usize;
+                let offset = pair * 7 * 256;
+                for y in 0..height {
+                    for x in 0..width {
+                        let source_index = ((source_y + y) * source_size + source_x + x) as usize;
+                        let actual = data[offset + (y * 256 + x) as usize];
+                        assert_eq!(
+                            actual, matrix_source[source_mip as usize][source_index],
+                            "R8 mip pair {source_mip}->{destination_mip} pixel ({x}, {y})"
+                        );
+                    }
+                    let row = offset + (y * 256) as usize;
+                    assert!(data[row + width as usize..row + 256]
+                        .iter()
+                        .all(|&byte| byte == 0xCD));
+                }
+                for y in height..7 {
+                    let row = offset + (y * 256) as usize;
+                    assert!(data[row..row + 256].iter().all(|&byte| byte == 0xCD));
+                }
+            }
+        }
+    }
+    {
+        let data = matrix_final_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped final R8 mip readback");
+        let mut row_offset = 0usize;
+        for mip_level in 0..4 {
+            let size = 8 >> mip_level;
+            let mip_offset = row_offset * 256;
+            for y in 0..size {
+                let row = mip_offset + (y * 256) as usize;
+                for x in 0..size {
+                    assert_eq!(
+                        data[row + x as usize],
+                        matrix_expected[mip_level as usize][(y * size + x) as usize],
+                        "final R8 mip {mip_level} pixel ({x}, {y})"
+                    );
+                }
+                assert!(data[row + size as usize..row + 256]
+                    .iter()
+                    .all(|&byte| byte == 0xCD));
+            }
+            row_offset += size as usize;
+        }
+    }
     readback.unmap();
     readback_next_level.unmap();
+    matrix_pair_readback.unmap();
+    matrix_final_readback.unmap();
     println!(
-        "PASS: public FL9_1 partial R8 mip-1 copy preserved its destination border (16/16 texels); a mip-1 to mip-2 copy matched all 4 destination texels"
+        "PASS: public FL9_1 partial R8 mip-1 copy preserved its destination border (16/16 texels), mip-1->mip-2 copy matched all 4 texels, and all 16 offset cross-level mip pairs plus four final mip images matched with row-padding sentinels preserved"
     );
 }
 

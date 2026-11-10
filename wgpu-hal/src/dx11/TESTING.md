@@ -3341,16 +3341,13 @@ cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgs
 
 ### R8 mip-subresource copy follow-up
 
-The strict public forced-FL9_1 test now copies a partial 2x3 rectangle at mip 1
-between two four-level R8_UNORM textures, with a nonzero destination origin. It
-reads back the full 4x4 destination mip using padded rows and verifies all 16
-texels, including the unchanged cleared border. Copies between different R8
-mip indices remain unverified.
-
-The test also copies the top-left 2x2 region from source mip 1 into the full
-2x2 destination mip 2, then reads back and checks all four texels. Thus both a
-partial same-level copy and a full cross-level copy are covered; other R8 mip
-source/destination combinations are not exhaustively tested.
+The strict public forced-FL9_1 test copies a valid offset region for every one
+of the 16 source/destination mip-index pairs in two four-level R8_UNORM
+textures. Each pair is copied and read back before later copies can overwrite
+the destination. The test then reads every complete destination mip and checks
+copied texels, untouched texels, and row-padding sentinels. The RTX 3090 Ti
+passed at requested/actual FL9_1. The test also keeps the earlier explicit
+partial mip-1 border check and mip-1-to-mip-2 check.
 
 ### R8_UNORM NPOT mip-chain verification
 
