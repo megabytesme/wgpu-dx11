@@ -15,6 +15,7 @@ capability projection.
 The first texture-copy invocation used malformed shell quoting for the JSON
 selector parameters and failed before the CTS runner parsed a test. The command
 was corrected to pass quoted JSON values and the strict selector then passed.
+Documentation checkpoint: `af9e46e19` (`docs: record strict FL9_1 CTS copy coverage`).
 
 ## Public HAL panic reachability review — 2026-11-10
 
