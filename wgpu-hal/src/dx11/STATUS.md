@@ -38,6 +38,11 @@ produce the expected Core validation error. The render-bundle Core guard is
 present, but `RenderBundleEncoder::finish` reports failures through the Rust
 wrapper's fatal path rather than an error scope.
 
+A strict public `@invariant @builtin(position)` regression also completed a
+depth-only prepass followed by an Equal-depth color draw; all 64 readback
+pixels matched. This verifies the tested shader and pipeline shape on the
+development GPU without changing the capability projection.
+
 The opt-in `dx11` backend now enumerates physical adapters that can create an
 explicit FL9_1 device and exposes the selected-device capability projection
 for offscreen rendering and a constrained Win32 HWND surface through the public

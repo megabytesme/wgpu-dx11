@@ -3180,3 +3180,13 @@ gaps are restricted WGSL semantics and resource usages, historical FL9_1
 hardware, Lumia ARM32/CoreWindow runtime, and physical device removal/recovery.
 The current feature is still an opt-in experimental adapter, not general
 WebGPU-complete support.
+
+## Latest public execution proof — invariant position
+
+`dx11_invariant_position` verifies that the tested WGSL invariant position
+survives a depth-only prepass and matches a later Equal-depth color pass. The
+strict test passed on physical RTX 3090 Ti hardware at requested/actual FL9_1,
+with 64/64 expected pixels. This records evidence only; it does not expand the
+public feature report. The broad Core/HAL contract audit and historical
+FL9_1/Lumia runtime verification remain open. See `FL9_1_PROGRESS.md` for the
+exact command and device information.

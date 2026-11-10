@@ -47,6 +47,22 @@ render-bundle wrapper routes `finish` validation errors to a fatal handler, so
 the bundle check is present in Core but cannot be asserted through a public
 error scope. Other backends keep the default-false restriction field.
 
+## Strict invariant-position depth prepass
+
+The public test below checks WGSL `@invariant @builtin(position)` with a
+depth-only prepass followed by an Equal-depth color pass. It validates all 64
+pixels of an 8x8 RGBA8 target and requires a physical FL9_1 adapter in strict
+mode.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_invariant_position -- --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti at requested and actual FL9_1, all pixels matched the
+expected red output. This is execution evidence for the tested shader and
+pipeline shape; it does not broaden the backend's advertised capabilities.
+
 The `dx11` feature enumerates only physical adapters that create the explicitly
 requested FL9_1 device and pass the selected-device capability projection.
 Only selected-device-gated features are exposed: the implemented 16-bit

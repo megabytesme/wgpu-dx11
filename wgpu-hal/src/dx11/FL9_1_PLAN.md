@@ -2023,3 +2023,13 @@ publicly reachable gap. Do not enable ordinary adapter enumeration by default.
 Public exposure remains experimental; public CoreWindow on the Lumia,
 historical FL9_1 hardware, broad shader/API support and complete unsupported
 operation auditing remain open.
+
+## Latest public execution proof — invariant position
+
+The strict public test `dx11_invariant_position` verifies an invariant
+position through a depth-only prepass and Equal-depth color pass. It passed
+1/1 on the RTX 3090 Ti at explicitly requested/actual FL9_1, with all 64
+readback pixels correct. This covers one shader/pipeline shape and does not
+change the capability report. The full Core/HAL contract audit,
+unsupported-operation closure and historical-device/runtime checks remain
+incomplete; see `FL9_1_PROGRESS.md` for the exact command and hardware record.

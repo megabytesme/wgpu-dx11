@@ -13999,3 +13999,27 @@ git diff --check
 ```
 
 Microsoft reference: [D3D11_VIEWPORT feature-level behavior](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_viewport).
+
+## Invariant-position depth prepass — 2026-11-10
+
+A strict public test checks WGSL `@invariant @builtin(position)` through two
+draws: a depth-only prepass and an Equal-depth color pass. This tests that the
+shader preserves the position needed for depth equality; it does not add a
+capability or widen the shader contract.
+
+On the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false), explicitly requested and actual FL9_1, FXC
+accepted the shader and all 64 pixels in the 8x8 RGBA8 target matched the
+expected red output. The strict public test passed 1/1.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_invariant_position -- --nocapture --test-threads=1
+# 1 passed on physical RTX 3090 Ti at requested/actual FL9_1; 64/64 pixels matched.
+
+rustfmt +1.93 --edition 2021 --check wgpu/tests/dx11_invariant_position.rs
+git diff --check
+```
+
+This is an additional public execution proof. The broad Core/HAL contract
+audit, unsupported-operation closure, historical FL9_1 hardware, Lumia ARM32/
+CoreWindow runtime and physical device-removal recovery remain open.

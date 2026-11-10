@@ -21,6 +21,11 @@ filters and anisotropy 2 are rejected as Core validation errors. The Rust
 bundle guard is not exercised through a public error scope. This is a narrow
 validation contract, not broader bias or shader-profile support.
 
+A separate strict public regression verifies that `@invariant
+@builtin(position)` reproduces prepass depth: an Equal-depth color pass matched
+all 64 pixels on the RTX 3090 Ti at forced FL9_1. This is execution evidence
+for that shader/pipeline shape only, not a new capability claim.
+
 The opt-in `dx11` feature now enumerates physical DXGI adapters that can create
 the explicitly requested FL9_1 device and exposes the selected-device
 capability projection for public wgpu rendering. Its constrained Win32 HWND
