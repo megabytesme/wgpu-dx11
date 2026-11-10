@@ -15198,3 +15198,22 @@ Lumia/CoreWindow runtime verification remain external gaps.
 
 Code checkpoint: `fcfd47afcc14692c579fc592eb045a2ae2c05dc3` (`dx11: support
 selected 3D texture dimensions helper`).
+
+## Public scene and HWND revalidation — 2026-11-10
+
+Re-ran the end-to-end public wgpu perspective-cube test with strict hardware
+required. The physical RTX 3090 Ti was selected at requested/actual FL9_1;
+the depth-tested output matched all 1,024 pixels, while the no-depth,
+opposite-order control differed at 223 pixels. Also ran the visible HWND
+example for 60 frames. It reported the same physical adapter and completed
+60 indexed, textured, depth-tested presents. The windowed run verifies the
+presentation calls, while deterministic image validation remains in the
+offscreen test.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_scene -- --nocapture --test-threads=1
+# 1/1 passed; 1,024 offscreen pixels validated.
+
+cargo +1.93.1 run --offline -j8 -p wgpu --example dx11_fl91_windowed --no-default-features --features dx11,wgsl,std -- --frames=60
+# Physical FL9_1 adapter; 60 frames presented successfully.
+```
