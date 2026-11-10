@@ -15795,3 +15795,31 @@ The command
 passed after the new test, with only existing HAL `too_many_arguments`
 warnings. The test is isolated in `wgpu/tests/dx11_public.rs`; no capability
 or backend behavior changed in this coverage checkpoint.
+
+## Coordinator support inventory — 2026-11-10
+
+Three parallel read-only audits reviewed public/Core contracts, resource and
+transfer paths, and shader/render behavior. They confirm the tree has
+substantial opt-in graphics coverage beyond the original early milestones:
+constrained vertex/fragment execution, multiple draw topologies and resource
+bindings, selected 2D/3D/cube formats and transfers, one color target,
+depth/stencil and query-gated multisampling. Existing strict tests validate
+many paths on the RTX 3090 Ti forced to FL9_1; the curated tests are not an
+exhaustive FL9_1 API or CTS proof.
+
+The audits identify compute/UAV, geometry shaders, ordinary arrays/1D
+textures, indirect draws, MRT and broad shader operations as unavailable.
+Some are feature-level/profile limits; others are intentionally narrower
+compiler or backend implementations. No new concrete Core-valid operation
+reaching an unimplemented HAL panic was confirmed in the reviewed resource,
+command, device or pipeline paths. Surface/fence internals and portions of the
+shader/pipeline/capability contract still need audit. Historical FL9_1 GPUs,
+Lumia ARM32/CoreWindow, and physical device removal/recovery cannot be
+verified by additional code agents without that hardware/runtime.
+
+Coordinator decision: use agents for non-overlapping read-only audits and
+compiler feasibility probes, not for independent edits across Core/Naga/HAL.
+One owner should integrate and validate each end-to-end feature slice. The
+next implementation should follow a reproduced workload or strict
+compiler/runtime boundary; do not add FL9_1-incompatible APIs merely to
+increase apparent feature coverage.

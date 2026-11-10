@@ -2480,3 +2480,31 @@ unimplemented HAL operation in the audited areas; avoid speculative feature
 expansion until another concrete mismatch or useful application workload is
 reproduced. Historical FL9_1 driver behavior, Lumia ARM32/CoreWindow execution
 and device-removal recovery remain external verification requirements.
+
+## Coordinator synthesis — remaining FL9_1 support — 2026-11-10
+
+Three independent read-only audits covered public/Core contracts, resources
+and transfers, and shaders/render state. Together with the existing coverage,
+they describe a usable opt-in graphics subset: constrained vertex/fragment
+shaders, indexed and non-indexed drawing, a single color target, selected
+depth/stencil and multisample paths, multiple uniform/resource bindings,
+selected 2D/3D/cube formats and transfers, and query-gated optional features.
+Strict public tests exercise many paths on the RTX 3090 Ti explicitly forced
+to FL9_1; this is not a complete FL9_1 API/CTS proof.
+
+Compute/UAV, geometry shaders, ordinary texture arrays, 1D textures, indirect
+drawing, MRT, and broad shader operations remain unavailable. Some are
+feature-level/profile ceilings; others are deliberately narrow compiler,
+resource or validation subsets and require separate evidence before expansion.
+The audit found no new confirmed Core-valid request that reaches an
+unimplemented HAL operation in the reviewed device/command/resource/pipeline
+paths, but surface/fence, shader/pipeline and capability-assertion contracts
+are not exhaustively closed. Historical FL9_1 devices, Lumia ARM32/CoreWindow
+runtime and physical device-removal/recovery remain external verification.
+
+Use agents for independent, non-overlapping inventories or compiler probes.
+Keep each Core/Naga/HAL/test implementation slice under one integrating owner;
+do not assign agents to “finish” a broad hardware-limited feature family.
+Continue with a concrete public-valid mismatch or a reproducible shader/API
+workload, and report the unsupported surface separately from hardware
+portability evidence.
