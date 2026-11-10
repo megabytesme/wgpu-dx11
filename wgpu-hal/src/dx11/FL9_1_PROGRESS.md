@@ -1,5 +1,18 @@
 # FL9_1 progress
 
+## Public HAL panic reachability review — 2026-11-10
+
+An independent bounded audit of production `hal_device.rs`, `hal_encoder.rs`,
+`hal_queue.rs`, `hal_transfer.rs`, `buffer.rs`, `texture.rs`, and `command.rs`
+found no confirmed panic reachable through a safe public wgpu operation under
+the current FL9_1 projection. The compute, pipeline-cache, acceleration
+structure and timestamp query hooks are gated by capabilities the projection
+does not expose. Core mapping-state checks protect the HAL unmap invariant, and
+the encoder render-state unwraps are dominated by state checks in their
+exclusive methods. The audit did not cover `surface.rs`, `fence.rs`, shader or
+pipeline internals, or capability assertions; those remain in the broader
+contract review. No code changed and no test was run for this read-only audit.
+
 ## Public floating-point builtin verification — 2026-11-10
 
 A new strict public-wgpu test drives WGSL `modf`, `asinh`, `acosh`, and

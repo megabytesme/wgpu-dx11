@@ -1,5 +1,17 @@
 # FL9_1 handoff
 
+## HAL panic reachability review — 2026-11-10
+
+An independent bounded source review found no confirmed safe-public-wgpu-
+reachable production panic in the D3D11 device, encoder, queue, transfer,
+buffer, texture and command paths. Unsupported compute, pipeline-cache,
+ray-tracing and query hooks are gated by capabilities the FL9_1 projection
+omits. Core mapping-state checks protect HAL unmap, and render-pass state is
+checked before encoder state unwraps. This review did not cover `surface.rs`,
+`fence.rs`, shader/pipeline internals or capability assertions, so it does not
+close the full contract audit. No code changed and no tests were run for this
+review. See `FL9_1_PROGRESS.md` for the audit boundaries.
+
 ## Coordinator review — 2026-11-10
 
 The current result is a substantial, opt-in public wgpu subset, not a complete

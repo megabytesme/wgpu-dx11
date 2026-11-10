@@ -1,5 +1,15 @@
 # FL9_1 completion plan
 
+## HAL panic reachability audit — 2026-11-10
+
+An independent read-only review found no confirmed safe-public-wgpu-reachable
+production panic in the audited D3D11 device, encoder, queue, transfer,
+buffer, texture and command paths. The review traced compute, cache, ray-
+tracing and query panics to absent Core capability gates, and checked mapping
+and render-pass state invariants. Surface/fence internals, shader/pipeline
+internals and capability assertions remain outside this bounded audit; the
+overall Core/HAL contract audit remains incomplete.
+
 ## Selected FL9_1 3D `textureDimensions` helper — 2026-11-10
 
 The selected fragment-entry 3D `textureDimensions` emulation now accepts one
