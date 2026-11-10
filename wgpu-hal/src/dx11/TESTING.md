@@ -70,6 +70,14 @@ cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgs
 cargo +1.93 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_sampled_mip_chain_at_fl91 -- --exact --nocapture --test-threads=1
 ```
 
+The same strict `dx11_sample_bias_validation` target also checks a direct
+fragment bias of `select(-1.0, 1.0, uv.x >= 0.5)`. FXC compiles it for
+`ps_4_0_level_9_1`; the public FL9_1 path samples an 8x8 two-mip texture and
+matches the expected level-0 color on the left and level-1 color on the right
+for all 64 pixels. Core rejects out-of-range arms, computed arms and helper-
+contained selects in CPU-only entry-point tests. The select capability is a
+separate downlevel limit and is false by default for other backends.
+
 On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested and
 actual FL9_1, the negative test rejected both unsupported samplers before the
 HAL and the positive mip-bias test matched all 384 output pixels. The public
@@ -2166,6 +2174,9 @@ defines ps_2_0 bias values outside [-3, 3] as undefined. The backend currently
 uses FL9_1 shader profiles even on higher-level devices. It accepts finite
 literal biases in [-3, 3] without an offset, while requiring equal min/mag
 filters and anisotropy 1 for every sampling pair used by the selected entry.
+Direct fragment entries also accept an inline `select` of two finite literals
+within [-3, 3]; the negative, computed and helper-contained cases remain
+rejected.
 View and LOD compatibility checks still apply; general biased sampling and
 historical-driver behavior remain unverified.
 

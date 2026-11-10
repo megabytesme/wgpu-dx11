@@ -1132,6 +1132,15 @@ helper calls per call site, so a valid literal forwarded to a helper is not
 mistaken for a dynamic bias; mixed call sites are checked independently. All
 sampling pairs used by a selected entry containing bias must use equal min/mag
 filters and anisotropy 1; normal view and LOD checks still apply.
+One additional proven form is available to direct fragment-entry samples: the
+bias may be an inline `select` whose accept and reject values are finite
+literals within the reported maximum. This preserves the FL9_1 `texldb` range
+for either condition result without clamping WGSL values. A `select` stored in
+a local, used in a helper, containing a computed arm, or exceeding the bound is
+rejected. The new downlevel limit is backend-implementation gated and defaults
+to false for other backends. Strict forced-FL9_1 readback selected mip 0 for
+the negative arm and mip 1 for the positive arm, matching 64/64 pixels. This
+does not establish behavior on historical FL9_1 drivers.
 Unrelated entries remain usable. The tested FXC emitted an unclamped legacy
 `texldb`, for which Microsoft documents undefined behavior outside [-3, 3] at
 ps_2_0. Nine strict FL9_1 GPU executions checked 64 pixels each, including a

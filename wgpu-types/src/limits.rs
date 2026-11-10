@@ -1472,6 +1472,11 @@ pub struct DownlevelLimits {
     /// Whether `textureSampleBias` may use a dynamically computed bias.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_sample_bias_dynamic: bool,
+    /// Whether fragment shaders may use a direct `select` between finite literal
+    /// `textureSampleBias` values within `max_texture_sample_bias` when arbitrary
+    /// dynamic bias is unavailable.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub fragment_texture_sample_bias_literal_select: bool,
     /// Whether `textureSampleBias` may specify a constant texel offset.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_sample_bias_offset: bool,
@@ -1644,6 +1649,7 @@ impl Default for DownlevelLimits {
             matrix_aggregate_stores: true,
             max_texture_sample_bias: u32::MAX,
             texture_sample_bias_dynamic: true,
+            fragment_texture_sample_bias_literal_select: false,
             texture_sample_bias_offset: true,
             texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: true,
@@ -1926,6 +1932,8 @@ impl DownlevelLimits {
             && (!required.matrix_aggregate_stores || self.matrix_aggregate_stores)
             && self.max_texture_sample_bias >= required.max_texture_sample_bias
             && (!required.texture_sample_bias_dynamic || self.texture_sample_bias_dynamic)
+            && (!required.fragment_texture_sample_bias_literal_select
+                || self.fragment_texture_sample_bias_literal_select)
             && (!required.texture_sample_bias_offset || self.texture_sample_bias_offset)
             && (!self.texture_sample_bias_requires_compatible_sampler
                 || required.texture_sample_bias_requires_compatible_sampler)
@@ -2369,6 +2377,30 @@ mod tests {
     }
 
     #[test]
+    fn bounded_literal_select_bias_is_a_separate_downlevel_capability() {
+        let available = DownlevelLimits {
+            max_texture_sample_bias: 3,
+            texture_sample_bias_dynamic: false,
+            fragment_texture_sample_bias_literal_select: true,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            max_texture_sample_bias: 3,
+            texture_sample_bias_dynamic: false,
+            fragment_texture_sample_bias_literal_select: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            fragment_texture_sample_bias_literal_select: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!DownlevelLimits::default().check_limits(&DownlevelLimits {
+            fragment_texture_sample_bias_literal_select: true,
+            ..DownlevelLimits::default()
+        }));
+    }
+
+    #[test]
     fn comparison_only_border_addressing_is_a_downlevel_restriction() {
         let unrestricted = DownlevelLimits::default();
         let comparison_only = DownlevelLimits {
@@ -2654,6 +2686,7 @@ mod tests {
             matrix_aggregate_stores: false,
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
+            fragment_texture_sample_bias_literal_select: false,
             texture_sample_bias_offset: false,
             texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: false,
@@ -2736,6 +2769,7 @@ mod tests {
             matrix_aggregate_stores: false,
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
+            fragment_texture_sample_bias_literal_select: false,
             texture_sample_bias_offset: false,
             texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: false,
@@ -3270,6 +3304,7 @@ mod tests {
             "texture_sample_level",
             "max_texture_sample_bias",
             "texture_sample_bias_dynamic",
+            "fragment_texture_sample_bias_literal_select",
             "texture_sample_bias_offset",
             "fragment_derivatives",
         ] {
@@ -3326,6 +3361,7 @@ mod tests {
         assert!(limits.texture_sample_level);
         assert_eq!(limits.max_texture_sample_bias, u32::MAX);
         assert!(limits.texture_sample_bias_dynamic);
+        assert!(!limits.fragment_texture_sample_bias_literal_select);
         assert!(limits.texture_sample_bias_offset);
         assert!(limits.fragment_derivatives);
     }

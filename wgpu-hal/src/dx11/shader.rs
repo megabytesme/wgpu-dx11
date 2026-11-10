@@ -1760,6 +1760,52 @@ mod tests {
     }
 
     #[test]
+    fn level_9_1_compiles_bounded_literal_select_sample_bias() {
+        let module = naga::front::wgsl::parse_str(
+            "@group(0) @binding(0) var image: texture_2d<f32>;\n\
+             @group(0) @binding(1) var smp: sampler;\n\
+             @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {\n\
+                 return textureSampleBias(image, smp, uv, select(-1.0, 1.0, uv.x >= 0.5));\n\
+             }\n",
+        )
+        .expect("parse bounded literal select sample-bias shader");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate bounded literal select sample-bias shader");
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 0,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 1,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+
+        compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+        )
+        .expect("FXC accepts bounded literal select bias for ps_4_0_level_9_1");
+    }
+
+    #[test]
     fn texture_gather_is_rejected_by_level_9_1_fxc_profile() {
         let module = naga::front::wgsl::parse_str(
             "@group(0) @binding(0) var image: texture_2d<f32>;\n\

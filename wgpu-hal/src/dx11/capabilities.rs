@@ -337,6 +337,7 @@ pub(super) struct BackendCapabilities {
     pub fl91_fragment_texture_num_levels_cube_float: bool,
     pub fl91_fragment_texture_base_clamp_2d_float: bool,
     pub fl91_fragment_frexp_fraction_only: bool,
+    pub fragment_texture_sample_bias_literal_select: bool,
     pub texture_array_layers: u32,
     pub cube_texture_sampling: bool,
     pub cube_texture_mipmaps: bool,
@@ -479,6 +480,7 @@ impl BackendCapabilities {
         fl91_fragment_texture_num_levels_cube_float: true,
         fl91_fragment_texture_base_clamp_2d_float: true,
         fl91_fragment_frexp_fraction_only: true,
+        fragment_texture_sample_bias_literal_select: true,
         texture_array_layers: 1,
         cube_texture_sampling: true,
         cube_texture_mipmaps: true,
@@ -912,6 +914,9 @@ impl Capabilities {
                     .private_fl91_fragment_texture_base_clamp_2d_float(),
                 max_texture_sample_bias: 3,
                 texture_sample_bias_dynamic: false,
+                fragment_texture_sample_bias_literal_select: self
+                    .backend
+                    .fragment_texture_sample_bias_literal_select,
                 texture_sample_bias_offset: false,
                 texture_sample_bias_requires_compatible_sampler: true,
                 fragment_derivatives: self.hardware.fragment_derivatives
@@ -4070,6 +4075,31 @@ mod tests {
         assert_eq!(
             Query::<bool>::from_result(Err(error)),
             Query::Unavailable(windows::Win32::Foundation::E_INVALIDARG.0)
+        );
+    }
+
+    #[test]
+    fn bounded_fragment_sample_bias_projection_tracks_backend_support() {
+        let mut caps = model(FeatureLevel::L9_1);
+        assert!(caps.backend.fragment_texture_sample_bias_literal_select);
+        assert!(
+            caps.wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .fragment_texture_sample_bias_literal_select
+        );
+
+        caps.backend.fragment_texture_sample_bias_literal_select = false;
+        assert!(
+            !caps
+                .wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .fragment_texture_sample_bias_literal_select
         );
     }
 

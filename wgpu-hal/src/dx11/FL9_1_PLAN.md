@@ -28,11 +28,11 @@ capability correction `6b1cff301` withholds sRGB blending through FL9_3 while
 preserving sRGB attachments and query-backed linear blending. A read-only
 RGBA8_SNORM audit confirmed the existing direct
 GPU-to-staging readback rejection is required by the FL9_x SRV-only copy
-restriction. A separate shader audit confirmed arbitrary dynamic
-`textureSampleBias` must remain rejected because WGSL's legal bias range
-exceeds the defined FL9_1 `texldb` range; any future support requires a
-bounded-expression proof in both Core and HAL. These audits did not broaden
-the capability projection.
+restriction. A bounded fragment-bias subset now accepts a direct `select`
+between two finite literal values within the FL9_1 `texldb` range, with
+matching Core/HAL proofs and strict GPU evidence. Arbitrary dynamic
+`textureSampleBias` remains rejected because WGSL's legal bias range exceeds
+the defined FL9_1 `texldb` range; clamping is not semantics preserving.
 
 The latest implementation slice extends the measured fragment uniform-array
 proof to two independent reads from distinct uniform bindings. It retains the
@@ -47,11 +47,13 @@ formatting checks passed. Exact commands and device output are in
 Next work remains a practical-completion audit, not a claim that the backend is
 finished. Use agents for separate read-only contract/compiler audits, then
 select one concrete vertical feature gap for the coordinator to implement and
-test. Keep dynamic texture bias and SNORM readback gated: the current audits
-found that a clamp-only bias proof does not preserve WGSL NaN semantics and
-that FL9_x forbids the current SRV-to-staging SNORM copy path. Public adapter
-support and ordinary wgpu use are present but still opt-in and experimental;
-historical FL9_1 and Lumia runtime verification remain external.
+test. The bounded direct fragment sample-bias select is now verified; keep
+arbitrary dynamic bias and SNORM readback gated. The transfer audit found a
+potential BC texture readback implementation through an ordered CPU shadow,
+but that requires adding and testing authoritative 2D shadow updates at queue
+replay and copy time before advertising `COPY_SRC`. Public adapter support and
+ordinary wgpu use are present but still opt-in and experimental; historical
+FL9_1 and Lumia runtime verification remain external.
 
 ## Earlier current-state checkpoint — 2026-11-10
 

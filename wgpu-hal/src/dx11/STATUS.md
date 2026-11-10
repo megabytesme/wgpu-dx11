@@ -72,6 +72,14 @@ seven tests passed on the RTX 3090 Ti at explicitly requested/actual FL9_1.
 These checks add execution evidence for the current restricted projection;
 they do not broaden it. See `TESTING.md`.
 
+Core and HAL now permit a direct fragment `textureSampleBias` whose bias is an
+inline `select` between two finite literals within the FL9_1 `[-3, 3]` range.
+Out-of-range or computed arms and helper-contained selects remain rejected.
+FXC accepted the `ps_4_0_level_9_1` shader, and strict public readback on the
+RTX 3090 Ti selected mip 0 and mip 1 on opposite halves; all 64 pixels matched.
+The capability is a separate downlevel limit and remains false by default for
+other backends. Arbitrary dynamic bias is still unsupported.
+
 The selected-entry `textureSampleBias` path now validates sampler compatibility
 in Core before direct draw encoding. Only the DX11 projection requires matching
 min/mag filters and effective anisotropy 1; other backends default to no such

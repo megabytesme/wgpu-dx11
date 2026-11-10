@@ -62,6 +62,7 @@ Bottom level categories:
 - Allow one same-texture implicit sample alongside the restricted FL9_1 fragment `textureNumLevels` query, with the sampled texel and queried view mip count both observable.
 - Allow a selected 2D fragment `textureNumLevels` query through one narrowly validated helper in the opt-in FL9_1 D3D11 backend.
 - Emulate a single-mip 2D float fragment `textureSampleBaseClampToEdge` operation directly or through one restricted straight-line helper in the opt-in FL9_1 D3D11 backend.
+- Permit direct fragment `textureSampleBias` calls to select between two bounded literal biases in the opt-in FL9_1 D3D11 backend.
 - Allow the narrow FL9_1 fragment `textureDimensions` path to co-use one implicit sample of the same 2D float texture and one compatible sampler.
 - Allow the restricted FL9_1 2D `textureDimensions` helper path to co-use one implicit sample of the same texture.
 - Allow the restricted FL9_1 2D `textureNumLevels` helper path to co-use one implicit sample of the same texture.

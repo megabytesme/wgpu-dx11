@@ -16043,3 +16043,37 @@ Implementation checkpoint: `9fd21279b` (`dx11: allow two FL9_1 fragment
 uniform array reads`). The mission remains active; the checkpoint covers this
 narrow shader subset, not general fragment integer indexing or overall FL9_1
 completion.
+
+## Bounded fragment sample-bias selection — 2026-11-10
+
+Core and the private HAL now accept a direct fragment `textureSampleBias` whose
+bias expression is an inline `select` of two finite literal arms, each within
+the reported maximum (3 on FL9_1). The selected entry proof does not follow a
+helper-contained select; computed arms, out-of-range arms, offsets and
+arbitrary dynamic bias remain rejected. A new `DownlevelLimits` capability
+represents this subset separately from arbitrary dynamic bias, defaults false
+for other backends, and is projected from the DX11 backend implementation
+model. Existing serde data defaults the new field to false.
+
+Core selected-entry validation, HAL shader guards, capability projection,
+FXC compilation and strict GPU execution were tested. FXC accepted the shader
+at `ps_4_0_level_9_1`. The strict public test ran on NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), requested and actual FL9_1,
+`software=false`. The shader selected mip 0 for bias -1 on the left and mip 1
+for bias +1 on the right; all 64 pixels exactly matched `[240, 32, 16, 255]`
+or `[24, 64, 232, 255]`.
+
+Verification: wgpu-types 113/113 tests; serde compatibility test 1/1; Core
+123/123; strict private HAL 480/480; strict public D3D11 target 126/126 with
+two optional capability skips (R8G8 IA vertex format and RG8 mip support); the
+sample-bias target 2/2. The new positive hardware case ran in strict mode and
+passed. DX12 HAL check, affected Clippy, Rust formatting and `git diff --check`
+passed. Wgpu-types and HAL Clippy report pre-existing warnings; the first
+Core/test Clippy pass identified one new boolean-expression warning and two
+`useless_vec` warnings, which were fixed and rechecked cleanly in Core and the
+public test target.
+
+The working changes are ready for the feature checkpoint after the final
+diff review. This slice extends only a narrow fragment shader subset; it does
+not make arbitrary WGSL bias expressions safe or establish historical-driver
+behavior.

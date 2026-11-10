@@ -338,6 +338,7 @@ struct EntryPoint {
 #[derive(Clone, Copy, Debug)]
 struct TextureSampleBias {
     literal: Option<f32>,
+    literal_select: Option<(f32, f32)>,
     has_offset: bool,
     analysis_incomplete: bool,
 }
@@ -2990,6 +2991,18 @@ fn expression_literal_f32(
     }
 }
 
+fn expression_literal_select_f32(
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+) -> Option<(f32, f32)> {
+    let naga::Expression::Select { accept, reject, .. } = function.expressions[expression] else {
+        return None;
+    };
+    let accept = expression_literal_f32(function, accept, &[])?;
+    let reject = expression_literal_f32(function, reject, &[])?;
+    (accept.is_finite() && reject.is_finite()).then_some((accept, reject))
+}
+
 fn collect_function_texture_sample_biases(
     module: &naga::Module,
     function: &naga::Function,
@@ -3001,6 +3014,7 @@ fn collect_function_texture_sample_biases(
     if depth >= 256 || function.expressions.len() > *budget {
         biases.push(TextureSampleBias {
             literal: None,
+            literal_select: None,
             has_offset: false,
             analysis_incomplete: true,
         });
@@ -3018,6 +3032,9 @@ fn collect_function_texture_sample_biases(
         };
         biases.push(TextureSampleBias {
             literal: expression_literal_f32(function, bias, arguments),
+            literal_select: (depth == 0)
+                .then(|| expression_literal_select_f32(function, bias))
+                .flatten(),
             has_offset: offset.is_some(),
             analysis_incomplete: false,
         });
@@ -3045,6 +3062,7 @@ fn collect_texture_sample_biases_in_block(
     if depth >= 256 {
         biases.push(TextureSampleBias {
             literal: None,
+            literal_select: None,
             has_offset: false,
             analysis_incomplete: true,
         });
@@ -3054,6 +3072,7 @@ fn collect_texture_sample_biases_in_block(
         if *budget == 0 {
             biases.push(TextureSampleBias {
                 literal: None,
+                literal_select: None,
                 has_offset: false,
                 analysis_incomplete: true,
             });
@@ -7227,7 +7246,18 @@ impl Interface {
                             && (!value.is_finite()
                                 || value.abs() > limits.max_texture_sample_bias as f32)
                     }
-                    None => !limits.texture_sample_bias_dynamic,
+                    None => {
+                        let select_supported = stage == naga::ShaderStage::Fragment
+                            && limits.fragment_texture_sample_bias_literal_select
+                            && bias.literal_select.is_some_and(|(accept, reject)| {
+                                let within_limit = |value: f32| {
+                                    limits.max_texture_sample_bias == u32::MAX
+                                        || value.abs() <= limits.max_texture_sample_bias as f32
+                                };
+                                within_limit(accept) && within_limit(reject)
+                            });
+                        !(limits.texture_sample_bias_dynamic || select_supported)
+                    }
                 }
         }))
     }
@@ -8799,6 +8829,21 @@ mod tests {
             @fragment fn dynamic(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleBias(image, smp, uv, uv.x);
             }
+            @fragment fn literal_select(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, select(-1.0, 1.0, uv.x >= 0.5));
+            }
+            @fragment fn select_out_of_range(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, select(-1.0, 4.0, uv.x >= 0.5));
+            }
+            @fragment fn select_computed(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, select(-1.0, uv.x, uv.x >= 0.5));
+            }
+            fn helper_select(uv: vec2f) -> vec4f {
+                return textureSampleBias(image, smp, uv, select(-1.0, 1.0, uv.x >= 0.5));
+            }
+            @fragment fn selected_helper(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return helper_select(uv);
+            }
             @fragment fn offset(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleBias(image, smp, uv, 1.0, vec2i(0, 0));
             }
@@ -8834,6 +8879,7 @@ mod tests {
         let fl91 = wgt::DownlevelLimits {
             max_texture_sample_bias: 3,
             texture_sample_bias_dynamic: false,
+            fragment_texture_sample_bias_literal_select: true,
             texture_sample_bias_offset: false,
             ..Default::default()
         };
@@ -8842,6 +8888,7 @@ mod tests {
             "min_boundary",
             "max_boundary",
             "fractional",
+            "literal_select",
             "helper_constant",
             "helper_forwarded_constant",
             "safe",
@@ -8867,6 +8914,9 @@ mod tests {
         for entry in [
             "too_large",
             "dynamic",
+            "select_out_of_range",
+            "select_computed",
+            "selected_helper",
             "offset",
             "helper_offset",
             "helper_dynamic",
@@ -8890,6 +8940,25 @@ mod tests {
                 "{entry} reaches textureSampleBias"
             );
         }
+
+        let mut no_select = fl91.clone();
+        no_select.fragment_texture_sample_bias_literal_select = false;
+        assert!(interface
+            .entry_point_uses_unsupported_texture_sample_bias(
+                naga::ShaderStage::Fragment,
+                "literal_select",
+                &no_select,
+            )
+            .unwrap());
+        let mut narrower_bias = fl91.clone();
+        narrower_bias.max_texture_sample_bias = 0;
+        assert!(interface
+            .entry_point_uses_unsupported_texture_sample_bias(
+                naga::ShaderStage::Fragment,
+                "literal_select",
+                &narrower_bias,
+            )
+            .unwrap());
 
         for entry in [
             "too_large",

@@ -47,6 +47,11 @@ mod tests {
             @fragment fn min_bias() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), -3.0); }
             @fragment fn max_bias() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 3.0); }
             @fragment fn fractional() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 0.5); }
+            @fragment fn literal_select() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), select(-1.0, 1.0, value.x >= 0.0)); }
+            @fragment fn select_out_of_range() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), select(-1.0, 4.0, value.x >= 0.0)); }
+            @fragment fn select_computed() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), select(-1.0, value.x, value.x >= 0.0)); }
+            fn selected_helper() -> vec4f { return textureSampleBias(image, smp, vec2f(0.5), select(-1.0, 1.0, value.x >= 0.0)); }
+            @fragment fn helper_select() -> @location(0) vec4f { return selected_helper(); }
             @fragment fn too_small() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), -3.01); }
             @fragment fn too_large() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 3.01); }
             @fragment fn biased_offset() -> @location(0) vec4f { return textureSampleBias(image, smp, vec2f(0.5), 1.0, vec2i(1, 0)); }
@@ -384,6 +389,9 @@ mod tests {
                     | "dynamic"
                     | "helper"
                     | "helper_large"
+                    | "select_out_of_range"
+                    | "select_computed"
+                    | "helper_select"
                     | "too_small"
                     | "too_large"
                     | "biased_offset"
@@ -7224,14 +7232,33 @@ fn sample_bias_function_is_unsupported(
         else {
             continue;
         };
-        if offset.is_some()
-            || !sample_bias_literal(function, bias, arguments)
-                .is_some_and(|value| value.is_finite() && (-3.0..=3.0).contains(&value))
-        {
+        let literal = sample_bias_literal(function, bias, arguments)
+            .is_some_and(|value| value.is_finite() && (-3.0..=3.0).contains(&value));
+        let literal_select = depth == 0
+            && sample_bias_literal_select(function, bias).is_some_and(|(accept, reject)| {
+                accept.is_finite()
+                    && reject.is_finite()
+                    && (-3.0..=3.0).contains(&accept)
+                    && (-3.0..=3.0).contains(&reject)
+            });
+        if offset.is_some() || !(literal || literal_select) {
             return true;
         }
     }
     sample_bias_block_is_unsupported(module, function, &function.body, arguments, budget, depth)
+}
+
+fn sample_bias_literal_select(
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+) -> Option<(f32, f32)> {
+    let naga::Expression::Select { accept, reject, .. } = function.expressions[expression] else {
+        return None;
+    };
+    Some((
+        sample_bias_literal(function, accept, &[])?,
+        sample_bias_literal(function, reject, &[])?,
+    ))
 }
 
 fn has_unsupported_sample_bias(
