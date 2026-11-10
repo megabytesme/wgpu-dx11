@@ -1053,6 +1053,15 @@ and incorrectly marking the device lost. Same-filter isotropic normalization
 remains available with the existing one-mip view restriction. Non-finite LOD
 values are rejected by Core.
 
+HAL now returns the sampler translation's mip compatibility classification to
+Core. Bind groups retain each sampled view's selected mip count and each
+sampler's classification. At render-pass and render-bundle draw validation,
+Core checks only the `(texture, sampler)` pairs used by the selected pipeline
+against the currently bound groups. Rebinding a group therefore validates its
+actual view ranges without a stale cache. The strict Core fixture rejects a
+two-mip view paired with a sampler whose translated maximum is raised from
+0.5, before the HAL draw is issued; single-mip cases remain permitted.
+
 For normalized LOD ranges, patterned single-mip GPU tests cover both nearest
 and linear mipmap filters on the RTX 3090 Ti at FL9_1. Explicit-LOD sampling
 and historical FL9_1 driver behavior remain unverified. The current compiler

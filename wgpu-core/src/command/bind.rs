@@ -340,6 +340,19 @@ fn sample_bias_sampler_compatible(sampler_compatibility: &[bool]) -> bool {
     !sampler_compatibility.is_empty() && sampler_compatibility.iter().all(|&compatible| compatible)
 }
 
+fn sampler_mip_pair_compatible(
+    texture_mip_levels: &[u32],
+    sampler_compatibility: &[hal::SamplerMipCompatibility],
+) -> bool {
+    !texture_mip_levels.is_empty()
+        && !sampler_compatibility.is_empty()
+        && texture_mip_levels.iter().all(|&mip_levels| {
+            sampler_compatibility
+                .iter()
+                .all(|&compatibility| compatibility.is_compatible_with_view_mips(mip_levels))
+        })
+}
+
 #[derive(Debug)]
 pub(super) struct Binder {
     pub(super) pipeline_layout: Option<Arc<PipelineLayout>>,
@@ -597,6 +610,57 @@ impl Binder {
         Ok(())
     }
 
+    pub(super) fn check_sampler_mip_ranges(
+        &self,
+        pipeline: &RenderPipeline,
+    ) -> Result<(), DrawError> {
+        for pair in &pipeline.sampling_pairs {
+            let texture_group = self
+                .list_valid()
+                .find_map(|(index, group, _)| {
+                    (index == pair.texture_group as usize).then_some(group)
+                })
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.texture_group,
+                    binding: pair.texture_binding,
+                })?;
+            let sampler_group = self
+                .list_valid()
+                .find_map(|(index, group, _)| {
+                    (index == pair.sampler_group as usize).then_some(group)
+                })
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.sampler_group,
+                    binding: pair.sampler_binding,
+                })?;
+            let texture_mip_levels = texture_group
+                .sampled_texture_mip_levels
+                .get(&pair.texture_binding)
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.texture_group,
+                    binding: pair.texture_binding,
+                })?;
+            let sampler_compatibility = sampler_group
+                .sampler_mip_compatibility
+                .get(&pair.sampler_binding)
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.sampler_group,
+                    binding: pair.sampler_binding,
+                })?;
+
+            if !sampler_mip_pair_compatible(texture_mip_levels, sampler_compatibility) {
+                return Err(DrawError::IncompatibleSamplerMipRange {
+                    texture_group: pair.texture_group,
+                    texture_binding: pair.texture_binding,
+                    sampler_group: pair.sampler_group,
+                    sampler_binding: pair.sampler_binding,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
     /// Scan active buffer bindings corresponding to layouts without `min_binding_size` specified.
     pub(super) fn check_late_buffer_bindings(
         &self,
@@ -654,7 +718,9 @@ impl Binder {
 
 #[cfg(test)]
 mod tests {
-    use super::{npot_sampler_pair_compatible, sample_bias_sampler_compatible};
+    use super::{
+        npot_sampler_pair_compatible, sample_bias_sampler_compatible, sampler_mip_pair_compatible,
+    };
 
     #[test]
     fn npot_repeat_validation_uses_the_bound_relationship() {
@@ -674,5 +740,26 @@ mod tests {
         assert!(!sample_bias_sampler_compatible(&[]));
         assert!(!sample_bias_sampler_compatible(&[false]));
         assert!(!sample_bias_sampler_compatible(&[true, false]));
+    }
+
+    #[test]
+    fn sampler_mip_compatibility_checks_only_selected_pairs_and_current_views() {
+        use hal::SamplerMipCompatibility as Mip;
+
+        let restricted = Mip::RaisedMaximum {
+            original: 0.5,
+            anisotropic: false,
+        };
+        assert!(sampler_mip_pair_compatible(&[1], &[restricted]));
+        assert!(!sampler_mip_pair_compatible(&[2], &[restricted]));
+        assert!(sampler_mip_pair_compatible(&[2], &[Mip::Unrestricted]));
+        assert!(sampler_mip_pair_compatible(&[1], &[Mip::SingleMip]));
+        assert!(!sampler_mip_pair_compatible(&[2], &[Mip::SingleMip]));
+        assert!(!sampler_mip_pair_compatible(&[], &[Mip::Unrestricted]));
+        assert!(!sampler_mip_pair_compatible(&[1], &[]));
+        assert!(!sampler_mip_pair_compatible(
+            &[1, 2],
+            &[Mip::Unrestricted, restricted]
+        ));
     }
 }

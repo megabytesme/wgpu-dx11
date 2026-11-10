@@ -17,7 +17,11 @@ pub struct Sampler {
     lod: super::sampling::SamplerLod,
 }
 crate::impl_dyn_resource!(Sampler);
-impl crate::DynSampler for Sampler {}
+impl crate::DynSampler for Sampler {
+    fn mip_compatibility(&self) -> crate::SamplerMipCompatibility {
+        self.lod
+    }
+}
 
 #[cfg(test)]
 fn translate_sampler(
@@ -171,7 +175,7 @@ fn sampler_lod(
             anisotropic: desc.anisotropy_clamp > 1,
         }
     } else {
-        super::sampling::SamplerLod::Unchanged
+        super::sampling::SamplerLod::Unrestricted
     }
 }
 
@@ -540,30 +544,30 @@ mod tests {
         };
         desc.lod_clamp = 0.0..2.0;
         let (_, lod) = classify(&desc);
-        assert!(lod.compatible(1));
-        assert!(lod.compatible(3));
-        assert!(!lod.compatible(4));
-        assert!(!lod.compatible(0));
+        assert!(lod.is_compatible_with_view_mips(1));
+        assert!(lod.is_compatible_with_view_mips(3));
+        assert!(!lod.is_compatible_with_view_mips(4));
+        assert!(!lod.is_compatible_with_view_mips(0));
         desc.lod_clamp = 1.0..4.0;
         let (native, lod) = classify(&desc);
         assert_eq!(native.MinLOD, 1.0);
-        assert!(lod.compatible(5));
-        assert!(!lod.compatible(6));
+        assert!(lod.is_compatible_with_view_mips(5));
+        assert!(!lod.is_compatible_with_view_mips(6));
         desc.lod_clamp = 0.5..4.0;
         let (_, lod) = classify(&desc);
-        assert!(lod.compatible(1));
-        assert!(!lod.compatible(2));
+        assert!(lod.is_compatible_with_view_mips(1));
+        assert!(!lod.is_compatible_with_view_mips(2));
         desc.lod_clamp = 0.0..32.0;
         desc.anisotropy_clamp = 2;
         desc.min_filter = wgt::FilterMode::Linear;
         desc.mag_filter = wgt::FilterMode::Linear;
         desc.mipmap_filter = wgt::MipmapFilterMode::Linear;
         let (_, lod) = classify(&desc);
-        assert!(lod.compatible(1));
-        assert!(!lod.compatible(2));
+        assert!(lod.is_compatible_with_view_mips(1));
+        assert!(!lod.is_compatible_with_view_mips(2));
         desc.lod_clamp.end = f32::MAX;
         let (_, lod) = classify(&desc);
-        assert!(lod.compatible(2));
+        assert!(lod.is_compatible_with_view_mips(2));
     }
 
     #[test]
@@ -597,7 +601,7 @@ mod tests {
                             mip_levels: 1
                         }],
                         samplers_wrap: alloc::vec![requires_power_of_two(&modes)],
-                        samplers_lod: alloc::vec![SamplerLod::Unchanged],
+                        samplers_lod: alloc::vec![SamplerLod::Unrestricted],
                         samplers_bias_compatible: alloc::vec![true],
                     };
                     assert_eq!(
@@ -777,7 +781,7 @@ mod tests {
         let mut actual = D3D11_SAMPLER_DESC::default();
         unsafe { raw.GetDesc(&mut actual) };
         assert_eq!((actual.MinLOD, actual.MaxLOD), (0.0, f32::MAX));
-        assert!(default_lod.lod().compatible(2));
+        assert!(default_lod.lod().is_compatible_with_view_mips(2));
         assert!(default_lod.raw_for(&other).is_err());
         unsafe { device.destroy_sampler(default_lod) };
         desc.lod_clamp.end = 0.5;
@@ -794,7 +798,7 @@ mod tests {
         let mut actual = D3D11_SAMPLER_DESC::default();
         unsafe { raw.GetDesc(&mut actual) };
         assert_eq!((actual.MinLOD, actual.MaxLOD), (0.0, f32::MAX));
-        assert!(!normalized.lod().compatible(2));
+        assert!(!normalized.lod().is_compatible_with_view_mips(2));
         unsafe { device.destroy_sampler(normalized) };
         desc.lod_clamp.start = 0.0;
         desc.compare = Some(wgt::CompareFunction::Less);

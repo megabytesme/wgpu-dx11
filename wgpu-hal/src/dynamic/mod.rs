@@ -107,7 +107,42 @@ pub trait DynPipelineLayout: DynResource + fmt::Debug {}
 pub trait DynQuerySet: DynResource + fmt::Debug {}
 pub trait DynRenderPipeline: DynResource + fmt::Debug {}
 pub trait DynRayTracingPipeline: DynResource + fmt::Debug {}
-pub trait DynSampler: DynResource + fmt::Debug {}
+
+/// Texture-view mip requirements imposed by a backend sampler translation.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum SamplerMipCompatibility {
+    /// The sampler translation is compatible with any nonempty mip range.
+    Unrestricted,
+    /// The sampler translation is compatible only with a one-mip view.
+    SingleMip,
+    /// The native maximum was raised; multi-mip views require the original
+    /// maximum to reach their final mip and do not support anisotropy.
+    RaisedMaximum { original: f32, anisotropic: bool },
+}
+
+impl SamplerMipCompatibility {
+    /// Returns whether this sampler translation is compatible with a view's mip count.
+    pub fn is_compatible_with_view_mips(self, mip_levels: u32) -> bool {
+        if mip_levels == 0 {
+            return false;
+        }
+        match self {
+            Self::Unrestricted => true,
+            Self::SingleMip => mip_levels == 1,
+            Self::RaisedMaximum {
+                original,
+                anisotropic,
+            } => mip_levels == 1 || (!anisotropic && original >= (mip_levels - 1) as f32),
+        }
+    }
+}
+
+pub trait DynSampler: DynResource + fmt::Debug {
+    /// Reports mip-range restrictions introduced by the backend translation.
+    fn mip_compatibility(&self) -> SamplerMipCompatibility {
+        SamplerMipCompatibility::Unrestricted
+    }
+}
 pub trait DynShaderModule: DynResource + fmt::Debug {}
 pub trait DynSurfaceTexture:
     DynResource + core::borrow::Borrow<dyn DynTexture> + fmt::Debug

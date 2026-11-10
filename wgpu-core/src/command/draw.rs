@@ -83,6 +83,13 @@ pub enum DrawError {
         sampler_group: u32,
         sampler_binding: u32,
     },
+    #[error("Texture view group {texture_group} binding {texture_binding} has a mip range incompatible with sampler group {sampler_group} binding {sampler_binding}")]
+    IncompatibleSamplerMipRange {
+        texture_group: u32,
+        texture_binding: u32,
+        sampler_group: u32,
+        sampler_binding: u32,
+    },
     #[error("Sampler group {group} binding {binding} is incompatible with textureSampleBias; minification and magnification filters must match and effective anisotropy must be 1")]
     IncompatibleTextureSampleBiasSampler { group: u32, binding: u32 },
     #[error("Sampling binding metadata is missing for group {group} binding {binding}")]

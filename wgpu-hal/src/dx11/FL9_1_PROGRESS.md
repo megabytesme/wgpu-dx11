@@ -14237,3 +14237,69 @@ fixture and HAL. Clippy emitted existing warnings in serde-disabled wgpu-types,
 Core fixture code and unrelated D3D11 HAL code; no new warning points to the
 sampler LOD changes. Historical hardware, Lumia/CoreWindow runtime, physical
 removal/recreation, full CTS and public adapter enablement remain open.
+
+## Selected-view sampler LOD compatibility — 2026-11-10
+
+The previous LOD slice rejected unrepresentable descriptor combinations at
+sampler creation but left a view-dependent case to the D3D11 HAL draw path.
+Added `hal::SamplerMipCompatibility` metadata with a default unrestricted
+implementation for other backends; D3D11 returns the classification already
+computed during native sampler translation. Core stores this metadata with
+the sampler and records the selected mip count for each sampled texture view.
+Render-pass and render-bundle draw validation checks only the selected
+pipeline's sampling pairs against the currently bound bind-group resources.
+The check runs again after pipeline or bind-group changes and does not use a
+stale compatibility cache. Texture and sampler binding arrays are checked
+conservatively across their possible element pairs.
+
+CPU tests passed for unrestricted, single-mip and raised-maximum samplers,
+zero/multiple mip counts, anisotropic raised maxima and missing/empty metadata.
+The strict Core fixture passed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`, software=false), requesting and selecting FL9_1. Its
+new negative case used a sampler whose native maximum was raised from 0.5 and
+a selected two-mip view; Core returned
+`DrawError::IncompatibleSamplerMipRange` during command validation before HAL
+execution. The enclosing fixture continued through subsequent GPU rendering
+and readback cases, confirming the validation error did not lose the device.
+
+The first test attempt incorrectly expected an error directly from
+`render_pass_draw`; Core records draw commands and validates them when the
+encoder is finished. The test now asserts the command-finish validation error.
+
+Final verification for this selected-view compatibility change:
+
+- Full strict `wgpu-core` library tests: 129/129 passed. The forced-FL9_1
+  hardware fixture ran on the RTX 3090 Ti; one optional RG8_UNORM mip subcase
+  logged SKIP because the selected device did not report the required format
+  query.
+- Full strict private D3D11 HAL tests: 467/467 passed, including hardware
+  rendering and transfer tests.
+- Full strict public D3D11 integration target: 117/117 passed. Three optional
+  selected-device subcases logged SKIP (R8G8 vertex input, Float16 vertex
+  input and Rg8Unorm mip support).
+- Public default-enumeration isolation: 1/1 passed; ordinary D3D11 adapter
+  enumeration remains disabled.
+- DX12 Core and GLES HAL checks passed.
+- HAL and Core fixture Clippy passed. Existing warnings remain in unrelated
+  code; no new warning points to this change.
+- Rust formatting checks and `git diff --check` passed. Git emitted its
+  existing LF-to-CRLF working-copy notices.
+
+Commands:
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j12 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --nocapture --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j12 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93 test --offline -j12 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j12 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public experimental_dx11_is_not_enabled_by_default -- --exact --nocapture
+cargo +1.93 check --offline -j12 -p wgpu-core --no-default-features --features dx12,wgsl,std
+cargo +1.93 check --offline -j12 -p wgpu-hal --no-default-features --features gles
+cargo +1.93 clippy --offline -j12 -p wgpu-hal --no-default-features --features dx11 --tests
+cargo +1.93 clippy --offline -j12 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --tests
+rustfmt +1.93 --edition 2021 --check [changed Rust files]
+git diff --check
+```
+
+This closes one late-HAL validation path only. Sampler compatibility remains
+a narrow private contract; broad Core/HAL validation, historical FL9_1
+hardware and Lumia/CoreWindow verification remain open.

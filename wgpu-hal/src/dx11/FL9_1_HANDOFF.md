@@ -3190,3 +3190,17 @@ with 64/64 expected pixels. This records evidence only; it does not expand the
 public feature report. The broad Core/HAL contract audit and historical
 FL9_1/Lumia runtime verification remain open. See `FL9_1_PROGRESS.md` for the
 exact command and device information.
+
+## Selected-view sampler LOD validation — 2026-11-10
+
+HAL sampler translation metadata now reaches Core through the defaulted
+`DynSampler::mip_compatibility` method. Core records selected texture-view mip
+counts in bind groups and validates only the current pipeline's used sampling
+pairs during render-pass and render-bundle command validation. A strict forced-
+FL9_1 Core fixture rejects a two-mip view for a sampler limited to one mip
+before HAL draw execution, then continues the hardware suite successfully.
+See `FL9_1_PROGRESS.md` for full verification. Next continue the API/Core/HAL
+contract audit and select one bounded, user-visible FL9_1 workload. Ordinary
+D3D11 adapter enumeration remains disabled; historical FL9_1 devices, Lumia
+ARM32/CoreWindow execution, broad CTS coverage and device-removal recovery are
+still open.

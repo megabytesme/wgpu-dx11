@@ -2481,10 +2481,17 @@ confirming the rejected descriptors did not mark the device lost. CPU-only
 Core tests cover the capability predicate, same-filter normalization boundary,
 effective anisotropy, non-finite values and ordinary cross-backend defaults.
 
+The strict fixture also rejects a two-mip sampled view when the selected
+sampler's FL9_1 translation is compatible with one mip only. The error is
+reported while finishing the command encoder, before HAL execution. A
+CPU-only Binder test covers selected view mip counts, raised-maximum bounds,
+anisotropy and missing metadata.
+
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,std --lib sampler_lod_clamp_tests -- --nocapture
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib sampler_mip_compatibility_checks_only_selected_pairs_and_current_views -- --nocapture
 cargo +1.93 test --offline -j8 -p wgpu-types sampler_lod_clamp_limit_is_checked_and_affects_compliance
 ```
 

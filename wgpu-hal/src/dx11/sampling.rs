@@ -21,28 +21,7 @@ pub(super) struct TextureInfo {
     pub mip_levels: u32,
 }
 
-#[derive(Clone, Copy, Debug)]
-pub(super) enum SamplerLod {
-    Unchanged,
-    SingleMip,
-    RaisedMaximum { original: f32, anisotropic: bool },
-}
-
-impl SamplerLod {
-    pub(super) fn compatible(self, mip_levels: u32) -> bool {
-        if mip_levels == 0 {
-            return false;
-        }
-        match self {
-            Self::Unchanged => true,
-            Self::SingleMip => mip_levels == 1,
-            Self::RaisedMaximum {
-                original,
-                anisotropic,
-            } => mip_levels == 1 || (!anisotropic && original >= (mip_levels - 1) as f32),
-        }
-    }
-}
+pub(super) type SamplerLod = crate::SamplerMipCompatibility;
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct SamplingResources {
@@ -154,7 +133,7 @@ pub(super) fn compatible(
                     .max(texture.size[2])
                     .ilog2()
                     + 1
-            && lod.compatible(texture.mip_levels)
+            && lod.is_compatible_with_view_mips(texture.mip_levels)
             && (texture.mip_levels == 1
                 || level.as_raw() >= FeatureLevel::L10_0.as_raw()
                 || matches!(full_npot, Query::Value(true))
@@ -264,7 +243,7 @@ mod tests {
                 mip_levels: 1,
             }],
             samplers_wrap: alloc::vec![true],
-            samplers_lod: alloc::vec![SamplerLod::Unchanged],
+            samplers_lod: alloc::vec![SamplerLod::Unrestricted],
             samplers_bias_compatible: alloc::vec![true],
         };
         assert!(!compatible(
@@ -295,7 +274,7 @@ mod tests {
                 }
             ],
             samplers_wrap: alloc::vec![true, false],
-            samplers_lod: alloc::vec![SamplerLod::Unchanged; 2],
+            samplers_lod: alloc::vec![SamplerLod::Unrestricted; 2],
             samplers_bias_compatible: alloc::vec![true; 2],
         }
     }
@@ -485,13 +464,13 @@ mod tests {
             SamplingResources {
                 textures: alloc::vec![],
                 samplers_wrap: alloc::vec![true],
-                samplers_lod: alloc::vec![SamplerLod::Unchanged],
+                samplers_lod: alloc::vec![SamplerLod::Unrestricted],
                 samplers_bias_compatible: alloc::vec![true],
             },
             SamplingResources {
                 textures: alloc::vec![],
                 samplers_wrap: alloc::vec![false],
-                samplers_lod: alloc::vec![SamplerLod::Unchanged],
+                samplers_lod: alloc::vec![SamplerLod::Unrestricted],
                 samplers_bias_compatible: alloc::vec![true],
             },
         ] {
@@ -775,7 +754,7 @@ mod tests {
             FeatureLevel::L9_1,
             Query::Value(false)
         ));
-        actual.samplers_lod[0] = SamplerLod::Unchanged;
+        actual.samplers_lod[0] = SamplerLod::Unrestricted;
         assert!(compatible(
             &get("valid"),
             &actual,

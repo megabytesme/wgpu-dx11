@@ -1694,6 +1694,7 @@ impl State {
         if let Some(pipeline) = self.pipeline.as_ref() {
             self.binder.check_compatibility(pipeline.as_ref())?;
             self.binder.check_npot_sampling(pipeline.as_ref())?;
+            self.binder.check_sampler_mip_ranges(pipeline.as_ref())?;
             self.binder
                 .check_texture_sample_bias_samplers(pipeline.as_ref())?;
             self.binder.check_late_buffer_bindings()?;

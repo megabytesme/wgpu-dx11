@@ -1515,6 +1515,8 @@ projection sets it false so Core rejects mixed min/mag or anisotropic samplers
 with non-default LOD clamps before the HAL can classify them as unexpected
 device errors. Same-filter isotropic single-mip normalization remains
 available. Strict Core fixture validation and rendering passed on the RTX
-3090 Ti forced to FL9_1; the full strict public suite passed 117/117 and the
-private HAL suite passed 467/467. Multi-mip view compatibility remains checked
-at selected draw preparation. Public D3D11 enumeration remains disabled.
+3090 Ti forced to FL9_1. HAL reports translated sampler mip restrictions to
+Core, which checks the selected pipeline's sampled pairs against the currently
+bound view ranges during render-pass and bundle command validation. A strict
+Core case rejects a two-mip view for a single-mip-restricted sampler before
+HAL draw execution. Public D3D11 enumeration remains disabled.

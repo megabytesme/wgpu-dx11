@@ -2075,17 +2075,17 @@ with distinct min/mag filters or anisotropy before calling HAL, and rejects
 non-finite LOD values as validation errors. For same-filter isotropic
 single-mip cases the existing HAL normalization remains available. This avoids
 turning an unsupported sampler descriptor into an unexpected HAL device error
-and device loss. The HAL's selected-view mip compatibility check remains as a
-second line of defense; moving that relationship-dependent rule into Core
-requires retaining sampler metadata and validating it against the chosen view.
+and device loss. HAL now exposes translated mip compatibility metadata to
+Core. Bind groups retain actual selected-view mip counts, and both render-pass
+and render-bundle draw validation check only the sampler/texture relationships
+used by the selected pipeline. Rebinding rechecks current group metadata.
 
 CPU tests cover the capability comparison/compliance bit, capability
-projection at all seven feature-level identities, predicate boundaries and
-finite LOD validation. The Core fixture exercised two invalid requests and a
-valid mixed-filter sampler on the same forced-FL9_1 RTX 3090 Ti device. The
-full strict public D3D11 target passed 117/117 and the ordinary public
-enumeration isolation test passed. Exact results are recorded in
-`FL9_1_PROGRESS.md`.
+projection at all seven feature-level identities, predicate boundaries,
+finite LOD validation and selected-view compatibility. The strict Core fixture
+also rejects a two-mip view with a sampler translated as single-mip-only,
+before HAL draw execution, on the forced-FL9_1 RTX 3090 Ti. Exact results are
+recorded in `FL9_1_PROGRESS.md`.
 
 Next, continue the Core-valid-to-HAL contract audit and select a focused public
 workload that expands useful FL9_1 rendering coverage. Do not enable ordinary

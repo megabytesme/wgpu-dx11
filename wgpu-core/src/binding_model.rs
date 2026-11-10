@@ -1360,8 +1360,17 @@ pub struct BindGroup {
     /// specified in BGL. Listed in the order of iteration of `BGL.entries`.
     pub(crate) late_buffer_binding_infos: Vec<BindGroupLateBufferBindingInfo>,
     pub(crate) sampled_texture_npot: FastHashMap<u32, Vec<bool>>,
+    pub(crate) sampled_texture_mip_levels: FastHashMap<u32, Vec<u32>>,
     pub(crate) sampler_uses_repeat: FastHashMap<u32, Vec<bool>>,
+    pub(crate) sampler_mip_compatibility: FastHashMap<u32, Vec<hal::SamplerMipCompatibility>>,
     pub(crate) sampler_texture_sample_bias_compatible: FastHashMap<u32, Vec<bool>>,
+}
+
+pub(crate) fn sampled_view_mip_count(view: &TextureView) -> u32 {
+    view.selector
+        .mips
+        .end
+        .saturating_sub(view.selector.mips.start)
 }
 
 pub(crate) fn sampled_view_is_npot_2d(view: &TextureView) -> bool {

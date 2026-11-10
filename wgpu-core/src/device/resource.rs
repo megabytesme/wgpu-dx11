@@ -3211,6 +3211,7 @@ impl Device {
 
         let raw = unsafe { self.raw().create_sampler(&hal_desc) }
             .map_err(|e| self.handle_hal_error_with_nonfatal_oom(e))?;
+        let mip_compatibility = raw.mip_compatibility();
 
         let sampler = Sampler {
             raw: ManuallyDrop::new(raw),
@@ -3226,6 +3227,7 @@ impl Device {
                 desc.mag_filter,
                 anisotropy_clamp,
             ),
+            mip_compatibility,
             address_modes: desc.address_modes,
         };
 
@@ -4326,7 +4328,9 @@ impl Device {
         // Record binding info for dynamic offset validation
         let mut dynamic_binding_info = Vec::new();
         let mut sampled_texture_npot = FastHashMap::default();
+        let mut sampled_texture_mip_levels = FastHashMap::default();
         let mut sampler_uses_repeat = FastHashMap::default();
+        let mut sampler_mip_compatibility = FastHashMap::default();
         let mut sampler_texture_sample_bias_compatible = FastHashMap::default();
         // Map of binding -> shader reflected size
         //Note: we can't collect into a vector right away because
@@ -4391,6 +4395,7 @@ impl Device {
                 Br::Sampler(ref sampler) => {
                     let uses_repeat = sampler.address_modes.contains(&wgt::AddressMode::Repeat);
                     let bias_compatible = sampler.texture_sample_bias_compatible;
+                    sampler_mip_compatibility.insert(binding, vec![sampler.mip_compatibility]);
                     let sampler = self.create_sampler_binding(&mut used, binding, decl, sampler)?;
                     sampler_uses_repeat.insert(binding, vec![uses_repeat]);
                     sampler_texture_sample_bias_compatible.insert(binding, vec![bias_compatible]);
@@ -4417,6 +4422,13 @@ impl Device {
                         samplers
                             .iter()
                             .map(|sampler| sampler.texture_sample_bias_compatible)
+                            .collect(),
+                    );
+                    sampler_mip_compatibility.insert(
+                        binding,
+                        samplers
+                            .iter()
+                            .map(|sampler| sampler.mip_compatibility)
                             .collect(),
                     );
 
@@ -4449,6 +4461,8 @@ impl Device {
                                 binding,
                                 vec![binding_model::sampled_view_is_npot_2d(view)],
                             );
+                            sampled_texture_mip_levels
+                                .insert(binding, vec![binding_model::sampled_view_mip_count(view)]);
                         }
                         let tb = self.create_texture_binding(
                             binding,
@@ -4473,6 +4487,13 @@ impl Device {
                             views
                                 .iter()
                                 .map(|view| binding_model::sampled_view_is_npot_2d(view))
+                                .collect(),
+                        );
+                        sampled_texture_mip_levels.insert(
+                            binding,
+                            views
+                                .iter()
+                                .map(|view| binding_model::sampled_view_mip_count(view))
                                 .collect(),
                         );
                     }
@@ -4590,7 +4611,9 @@ impl Device {
             dynamic_binding_info,
             late_buffer_binding_infos,
             sampled_texture_npot,
+            sampled_texture_mip_levels,
             sampler_uses_repeat,
+            sampler_mip_compatibility,
             sampler_texture_sample_bias_compatible,
         };
 

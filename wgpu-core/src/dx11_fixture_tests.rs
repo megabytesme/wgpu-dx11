@@ -3328,6 +3328,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         VertexCase::TriangleStripIndexed(wgt::IndexFormat::Uint16),
         VertexCase::TriangleStripIndexed(wgt::IndexFormat::Uint32),
         VertexCase::FractionalSamplerLod,
+        VertexCase::SamplerMipIncompatibleView,
         VertexCase::Overlapping,
         VertexCase::NoopStencil,
         VertexCase::ActiveStencil,
@@ -4527,6 +4528,7 @@ enum VertexCase {
     LineStripIndexed(wgt::IndexFormat),
     TriangleStripIndexed(wgt::IndexFormat),
     FractionalSamplerLod,
+    SamplerMipIncompatibleView,
     SampledMips,
     SampledMipsBias,
     SampledMipSuffix,
@@ -4665,8 +4667,13 @@ fn render_triangle(
         || disjoint_format.is_some();
     let uninitialized_mip = case == VertexCase::SampledMipsNoCopySrcUninitialized;
     let no_copy_src = case == VertexCase::SampledMipsNoCopySrc || uninitialized_mip || non_suffix;
-    let sampled_mips = matches!(case, VertexCase::SampledMips | VertexCase::SampledMipsBias)
-        || sampled_mip_suffix
+    let sampler_mip_incompatible = case == VertexCase::SamplerMipIncompatibleView;
+    let sampled_mips = matches!(
+        case,
+        VertexCase::SampledMips
+            | VertexCase::SampledMipsBias
+            | VertexCase::SamplerMipIncompatibleView
+    ) || sampled_mip_suffix
         || no_copy_src;
     let uniform_size = match case {
         VertexCase::Uniform4 => Some(4),
@@ -5108,7 +5115,7 @@ fn render_triangle(
         } else {
             0.0
         },
-        lod_max_clamp: if case == VertexCase::FractionalSamplerLod {
+        lod_max_clamp: if case == VertexCase::FractionalSamplerLod || sampler_mip_incompatible {
             0.5
         } else {
             32.0
@@ -7003,7 +7010,11 @@ fn render_triangle(
             .unwrap();
     }
     let (instance_count, first_instance) = if instance_rate { (2, 1) } else { (1, 0) };
-    if let (Some(format), Some(indices)) = (index_format, index_buffer) {
+    if sampler_mip_incompatible {
+        global
+            .render_pass_draw(&mut pass, 6, instance_count, 0, first_instance)
+            .unwrap();
+    } else if let (Some(format), Some(indices)) = (index_format, index_buffer) {
         global
             .render_pass_set_index_buffer(
                 &mut pass,
@@ -7071,6 +7082,7 @@ fn render_triangle(
         && special_topology.is_none()
         && triangle_strip_index_format.is_none()
         && case != VertexCase::VertexFragmentUniformBindings
+        && !sampler_mip_incompatible
         && !dynamic_stage_uniforms
         && !fractional_viewport
     {
@@ -7113,13 +7125,24 @@ fn render_triangle(
         .unwrap();
     let (command, error) =
         global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
-    if viewport_outside_target {
+    if viewport_outside_target || sampler_mip_incompatible {
         let error = error.expect("out-of-target viewport must fail core validation");
+        let expected_error = if sampler_mip_incompatible {
+            "IncompatibleSamplerMipRange"
+        } else {
+            "ViewportOutsideRenderTarget"
+        };
         assert!(
-            std::format!("{error:?}").contains("ViewportOutsideRenderTarget"),
-            "out-of-target viewport must be rejected before HAL: {error:?}"
+            std::format!("{error:?}").contains(expected_error),
+            "command must be rejected by core before HAL execution as {expected_error}: {error:?}"
         );
-        std::println!("PASS: core rejected an out-of-target viewport before HAL execution");
+        if sampler_mip_incompatible {
+            std::println!(
+                "PASS: Core rejected the selected two-mip view for a sampler restricted to one mip before HAL execution"
+            );
+        } else {
+            std::println!("PASS: core rejected an out-of-target viewport before HAL execution");
+        }
         global.command_buffer_drop(command);
         global.command_encoder_drop(encoder);
         global.render_pipeline_drop(pipeline_id);
