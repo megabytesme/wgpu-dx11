@@ -2224,11 +2224,11 @@ A strict FL9_1 fixture compiled a safe selected vertex/fragment entry while
 the Naga module contained uncalled regular functions with dynamic loops. FXC
 accepted the pipeline on the RTX 3090 Ti forced to FL9_1, so this shape does
 not require an added Core rejection. See `FL9_1_PROGRESS.md` for the command.
-The next targeted issue is an over-rejection in pipeline creation when an
-optional viewport-remapped vertex shader variant fails compilation even
-though the base variant is usable. Preserve the base pipeline and validate
-fractional-viewport draws against remap-variant availability before HAL
-execution; keep all existing integer viewport behavior intact.
+The previously identified optional viewport-remap over-rejection was fixed in
+`173165df0`: pipeline creation retains a valid base shader when the optional
+remap variant fails, and fractional-viewport draws are checked before HAL
+execution. The next task should come from the remaining capability inventory
+or a reproduced application workload, rather than revisiting this closed case.
 
 ## Current audit checkpoint — 2026-11-10
 

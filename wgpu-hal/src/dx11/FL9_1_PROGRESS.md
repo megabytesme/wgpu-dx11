@@ -15088,4 +15088,5 @@ qualifications, single-range test slices, argument counts and test-module
 ordering; Naga Clippy was clean. Git reports existing working-copy LF-to-CRLF
 conversion notices. The RTX 3090 Ti remains the only physical GPU in this
 verification, so historical FL9_1 driver and Lumia runtime behavior remain
-unverified.
+unverified. The verified code and test checkpoint is commit
+`dc8f445d5377fa8ca151af3ee36f256c76f86b13`.
