@@ -446,7 +446,7 @@ fn public_dx11_rgba8_snorm_multimip_partial_copy_then_sample_at_fl91() {
     );
 
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; RGBA8_SNORM={format_caps:?}; workload=4-mip upload→partial mip-1 GPU copy→suffix-view sample→RGBA8 readback; texture_to_buffer=unsupported",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; RGBA8_SNORM={format_caps:?}; workload=4-mip upload→partial mip-1 GPU copy→raw mip-1 readback and suffix-view sample→RGBA8 readback",
         info.name, info.vendor, info.device, info.driver_info
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -467,6 +467,8 @@ fn public_dx11_rgba8_snorm_multimip_partial_copy_then_sample_at_fl91() {
         depth_or_array_layers: 1,
     };
     const ROW_PITCH: u32 = 256;
+    const RAW_READBACK_OFFSET: u64 = ROW_PITCH as u64 * 4 + 16;
+    const READBACK_SIZE: u64 = RAW_READBACK_OFFSET + ROW_PITCH as u64 * 4;
     let texture = |label| {
         device.create_texture(&TextureDescriptor {
             label: Some(label),
@@ -648,8 +650,8 @@ struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }
     });
     let target_view = target.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
-        label: Some("FL9_1 RGBA8_SNORM mip-copy output readback"),
-        size: 4 * ROW_PITCH as u64,
+        label: Some("FL9_1 RGBA8_SNORM mip-copy output and raw readback"),
+        size: READBACK_SIZE,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: true,
     });
@@ -657,7 +659,7 @@ struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }
         .slice(..)
         .get_mapped_range_mut()
         .expect("map mip-copy readback initialization")
-        .copy_from_slice(&vec![0xCD; 4 * ROW_PITCH as usize]);
+        .copy_from_slice(&vec![0xCD; READBACK_SIZE as usize]);
     readback.unmap();
 
     let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -709,6 +711,27 @@ struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }
             aspect: TextureAspect::All,
         },
         COPY_SIZE,
+    );
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 1,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: RAW_READBACK_OFFSET,
+                bytes_per_row: Some(ROW_PITCH),
+                rows_per_image: Some(4),
+            },
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
     );
     {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -806,10 +829,50 @@ struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }
                 "readback row {y} padding was modified"
             );
         }
+        let output_end = ROW_PITCH as usize * 4;
+        let raw_offset = RAW_READBACK_OFFSET as usize;
+        assert!(
+            pixels[output_end..raw_offset]
+                .iter()
+                .all(|&byte| byte == 0xCD),
+            "the gap before the raw mip readback was modified"
+        );
+        for y in 0u32..4 {
+            for x in 0u32..4 {
+                let copied = (DESTINATION_ORIGIN.x..DESTINATION_ORIGIN.x + COPY_SIZE.width)
+                    .contains(&x)
+                    && (DESTINATION_ORIGIN.y..DESTINATION_ORIGIN.y + COPY_SIZE.height).contains(&y);
+                let (texture_x, texture_y, seed) = if copied {
+                    (
+                        COPY_ORIGIN.x + x - DESTINATION_ORIGIN.x,
+                        COPY_ORIGIN.y + y - DESTINATION_ORIGIN.y,
+                        0usize,
+                    )
+                } else {
+                    (x, y, 4usize)
+                };
+                let expected = signed_texel(1, texture_x, texture_y, seed).map(|value| value as u8);
+                let offset = raw_offset + y as usize * ROW_PITCH as usize + x as usize * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    &expected,
+                    "raw mip-1 texel ({x}, {y})"
+                );
+            }
+            let row_start = raw_offset + y as usize * ROW_PITCH as usize;
+            let row_data_end = row_start + 4 * 4;
+            let row_end = row_start + ROW_PITCH as usize;
+            assert!(
+                pixels[row_data_end..row_end]
+                    .iter()
+                    .all(|&byte| byte == 0xCD),
+                "raw mip-1 readback row {y} padding was modified"
+            );
+        }
     }
     readback.unmap();
     println!(
-        "PASS: RGBA8_SNORM mip-1 2x2 region copied at nonzero source/destination origins; 16 sampled pixels verified, neighboring mip-1 texels preserved; no SNORM CPU texture readback was used"
+        "PASS: RGBA8_SNORM mip-1 2x2 region copied at nonzero source/destination origins; 16 sampled pixels and all 16 raw mip-1 texels verified, including untouched texels, nonzero readback offset and row padding"
     );
 }
 

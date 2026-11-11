@@ -2371,7 +2371,13 @@ verified 64 white pixels. It then uploaded matching mid-gray sRGB blocks,
 copied and sampled them, verifying 64 pixels near `[59, 57, 59, 255]`; raw
 unorm sampling would be around `[132, 130, 132]`. The same device did not
 advertise the full BC feature, and the test confirmed BC4 and BC3 3D texture
-descriptors are rejected. BC texture-to-buffer readback remains unavailable.
+descriptors are rejected. Queried BC1/BC2/BC3 copy-source formats support
+raw-byte texture-to-buffer readback through an ordered CPU shadow, including
+padded rows, offsets and BC1 unorm cube faces; this is not native staging
+readback. The selected RTX does not report cube support for BC2/BC3. The same
+strict test directly reads each BC1/BC2/BC3 sRGB source and checks the raw
+blocks, nonzero offset, row padding and sentinel bytes, as well as reading
+compatible unorm destinations after cross-family copies.
 
 Run the public strict execution test with:
 
@@ -2434,6 +2440,11 @@ destination dimensions and origins, a nonzero buffer offset, 256-byte row
 pitch and sentinel padding. It validates all 24 destination texels, including
 zero-initialized untouched texels, and checks that the leading bytes and row
 padding remain unchanged.
+
+A separate four-mip test verifies raw shadow readback from mip 1 after a
+partial GPU texture copy with nonzero source and destination origins. It checks
+all 16 raw destination texels, including unchanged texels, using a nonzero
+buffer offset and padded rows, alongside the existing sampled-output check.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'

@@ -197,9 +197,10 @@ all six faces. The downlevel texture-to-buffer layer limit is six for this
 cube shape; ordinary arrays remain disabled by the separate
 `TEXTURE_2D_ARRAYS` flag. The strict HAL test verifies all 384 texels from six
 asymmetric faces through a 256-byte-pitched buffer and checks all image, row,
-and buffer padding. BC cube readback remains unavailable because BC cube
-resources do not receive the render-target bind. Cube render-target views and
-single-face D2 views remain unsupported.
+and buffer padding. BC1/BC2/BC3 cube-face raw-byte readback uses the ordered CPU
+shadow rather than a render-target bind. The strict RTX test verifies all six
+BC1 unorm faces; it does not expose the queried cube capability for BC2/BC3.
+Cube render-target views and single-face D2 views remain unsupported.
 
 Microsoft references: [10Level9 device constraints](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device),
 [feature-level resource limits](https://learn.microsoft.com/en-us/windows/desktop/direct3d11/overviews-direct3d-11-resources-limits),
@@ -521,19 +522,29 @@ the format's 8-byte (BC1) or 16-byte (BC2/BC3) block size. Strict forced-FL9_1
 tests uploaded a patterned image, replaced one block at a nonzero origin,
 copied the result to a second resource and sampled all 256 output pixels. On
 the RTX 3090 Ti, BC2 and BC3 each returned support mask `0x000213a0` with
-linear-filter support. Texture-to-buffer readback, render targets, mip chains,
-non-block-aligned dimensions, UNORM/sRGB reinterpretation and cross-format BC
-copies remain unavailable. A separate native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB`
+linear-filter support. BC1/BC2/BC3 texture-to-buffer readback is available
+through the ordered CPU shadow for queried `COPY_SRC` formats; it is not a
+native staging read. Strict public tests check raw unorm bytes for 2D textures
+and all six BC1 unorm cube faces. They also directly read back all three BC
+sRGB source formats, checking raw blocks, offsets, row padding and sentinels.
+Compatible sRGB-to-unorm copies verify preserved raw blocks through the
+destination shadow. Render targets, mip chains,
+non-block-aligned dimensions and UNORM/sRGB view reinterpretation remain
+unavailable. Cross-family BC copies (such as BC1 to BC2) remain unavailable.
+A separate native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB`
 feature exposes the typed BC1/2/3 sRGB variants only when all three sRGB
 sampled-upload paths pass their own selected-device queries and backend checks.
 Their shader-resource views perform sRGB decoding; same-format GPU copies are
 supported when the per-format usage query allows them. The strict public test
 also sampled three compressed mid-gray sRGB textures after GPU copies and
 verified all 64 pixels near linear `[59, 57, 59, 255]`, distinguishing sRGB
-decode from unorm sampling. BC4 through BC7, CPU readback, mip chains and
-render-target use remain unavailable. UNORM↔sRGB reinterpretation and
-cross-format BC copies remain unavailable. Core's BC readback mask remains
-clear.
+decode from unorm sampling. BC4 through BC7, mip chains and render-target use
+remain unavailable. UNORM↔sRGB view reinterpretation and cross-family BC copies
+remain unavailable. Core's texture-to-buffer format mask includes queried
+BC1/BC2/BC3 copy-source formats only when the ordered shadow implementation is
+enabled. The strict RTX test directly reads all three BC sRGB formats at
+requested/actual FL9_1, in addition to checking a compatible unorm destination
+after an sRGB-to-unorm copy.
 
 On 2026-11-05, the same adapter returned `CheckFormatSupport` mask
 `0x112ef3e0` for both `R8G8B8A8_UNORM_SRGB` and

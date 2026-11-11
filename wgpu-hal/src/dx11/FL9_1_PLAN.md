@@ -12,6 +12,15 @@ nonzero destination offset and padded readback rows. The focused target passed
 129/129 test functions (one query-dependent subcase skipped internally).
 This is a software fallback for an SRV-only format and does not enable native
 staging readback or render-target use.
+Follow-up strict coverage also reads mip 1 after a partial multi-mip texture
+copy, validating all texels, unchanged regions, the nonzero destination offset
+and row padding through the same shadow path.
+
+Strict public BC coverage now also reads each BC1/BC2/BC3 sRGB source directly
+through the ordered CPU shadow and validates exact blocks, nonzero offsets,
+padded rows and sentinels. The RTX queried texture-to-buffer support for all
+three sRGB formats at requested/actual FL9_1. Its cube capability was reported
+only for BC1, so BC2/BC3 cube execution is not claimed.
 
 The recent independent contract reviews still found no new confirmed
 Core-valid request reaching an unsupported HAL path in the audited areas. The

@@ -16504,3 +16504,48 @@ four, the runner completed. Workspace compilation reported pre-existing
 warnings in `wgpu-types`, D3D11 HAL and Core test fixtures. Targeted Clippy for
 `wgpu-test --all-features --test wgpu-gpu`, formatting checks for the four
 changed Rust files, and `git diff --check` passed.
+
+## RGBA8_SNORM mip-1 shadow readback — 2026-11-11
+
+Extended the existing strict multi-mip texture-copy test to read the copied
+mip-1 destination through the ordered RGBA8_SNORM CPU shadow. The test checks
+all 16 raw texels, including untouched texels, with a nonzero destination
+buffer offset and 256-byte row pitch; sentinel checks prove the gap and row
+padding were not modified. Existing sampled-output checks remain in place.
+
+Rust 1.93.1 formatting passed, and the focused strict test ran on the physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested
+and actual FL9_1 (`software=false`). The complete `dx11_snorm_copy` target
+passed 3/3 with zero skips. The first launch failed before compilation because
+the `cmd set` syntax retained a trailing space in `CARGO_TARGET_DIR`; quoting
+the environment assignments fixed the command. The successful command was:
+
+```powershell
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set "WGPU_DX11_REQUIRE_HARDWARE=1" && set "CARGO_TARGET_DIR=E:\Temp\wgpu-mission-gpu-target" && set "CARGO_NET_OFFLINE=true" && set "CARGO_BUILD_JOBS=4" && cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_snorm_copy -- --nocapture --test-threads=1'
+```
+
+This adds multi-mip coverage for the existing shadow-readback path; it does not
+change the capability projection.
+
+## BC sRGB direct shadow readback — 2026-11-11
+
+Extended the existing strict BC format test with a direct texture-to-buffer
+copy from each BC1/BC2/BC3 sRGB source. The test checks the device's per-format
+`COPY_SRC` usage and downlevel readback-mask bit independently from sRGB
+sampled-upload support. It validates exact raw compressed blocks at a nonzero
+destination offset, two padded block rows and unchanged sentinels. Strict mode
+fails if the selected device lacks the prerequisite; non-strict mode emits an
+explicit skip.
+
+Rust 1.93.1 formatting and `git diff --check` passed. The strict public BC test
+ran on the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at
+requested/actual FL9_1 (`software=false`): `COPY_SRC` and texture-to-buffer
+support were true for the sRGB family, the direct raw readbacks passed for all
+three formats, and the full BC subset test passed 1/1 with zero skips. The same
+run verifies partial uploads, copies, BC1 cube faces, cross-family compatible
+copies and sampled output. The device reported cube support for BC1 only; no
+BC2/BC3 cube support is claimed. The exact command was:
+
+```powershell
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set "WGPU_DX11_REQUIRE_HARDWARE=1" && set "CARGO_TARGET_DIR=E:\Temp\wgpu-mission-gpu-target" && set "CARGO_NET_OFFLINE=true" && set "CARGO_BUILD_JOBS=4" && cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_subset -- --nocapture --test-threads=1'
+```

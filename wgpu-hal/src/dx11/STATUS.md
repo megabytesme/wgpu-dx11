@@ -156,7 +156,9 @@ readback copies the raw compressed block bytes into the requested destination
 layout. This avoids the FL9_x-prohibited GPU copy from shader-resource-only BC
 textures, but duplicates compressed storage on the CPU and depends on every
 future write path maintaining the mirror. Strict FL9_1 public tests cover
-padded readback, offsets, cube faces and compatible UNORM/sRGB copies.
+padded readback, offsets, BC1 unorm cube faces, all three BC sRGB source formats
+and compatible UNORM/sRGB copies. The sRGB direct-readback case checks raw
+blocks, row padding and sentinel bytes.
 
 Core and the private HAL also support the bounded direct fragment
 `textureSampleBias` texel-offset subset. The view must be 2D and expose one

@@ -962,6 +962,25 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
                 .allowed_usages
                 .contains(TextureUsages::COPY_SRC)
         });
+        let downlevel_limits = adapter.get_downlevel_capabilities().limits;
+        let srgb_readback_supported = srgb_formats.iter().all(|format| {
+            let caps = adapter.get_texture_format_features(*format);
+            let format_bit = DownlevelLimits::texture_to_buffer_copy_format_bit(*format);
+            caps.allowed_usages.contains(TextureUsages::COPY_SRC)
+                && downlevel_limits.texture_to_buffer_copy_format_mask & format_bit == format_bit
+        });
+        if !srgb_readback_supported {
+            assert!(
+                !required,
+                "strict mode requires queried BC1/BC2/BC3 sRGB texture-to-buffer support"
+            );
+            println!(
+                "SKIP: selected adapter lacks BC sRGB COPY_SRC usage or texture-to-buffer format support"
+            );
+        }
+        println!(
+            "BC sRGB transfer query: copy_src_usage={srgb_copy_supported} texture_to_buffer={srgb_readback_supported}"
+        );
         let mut srgb_usage = TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST;
         if srgb_copy_supported {
             srgb_usage |= TextureUsages::COPY_SRC;
@@ -983,6 +1002,15 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
             })
         });
         let srgb_blocks = srgb_formats.map(|format| bc_color_block(format, 0x8410));
+        let srgb_readbacks = srgb_readback_supported.then(|| {
+            srgb_formats.map(|format| {
+                sentinel_readback(
+                    &device,
+                    512,
+                    &format!("FL9_1 {format:?} direct sRGB block readback"),
+                )
+            })
+        });
         for ((texture, _format), block) in srgb_sources.iter().zip(srgb_formats).zip(&srgb_blocks) {
             let block_size = block.len();
             let bytes = block.repeat(4);
@@ -1027,6 +1055,31 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
         let mut srgb_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("FL9_1 BC sRGB encoding"),
         });
+        if let Some(readbacks) = &srgb_readbacks {
+            for (source, readback) in srgb_sources.iter().zip(readbacks) {
+                srgb_encoder.copy_texture_to_buffer(
+                    TexelCopyTextureInfo {
+                        texture: source,
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    TexelCopyBufferInfo {
+                        buffer: readback,
+                        layout: TexelCopyBufferLayout {
+                            offset: 16,
+                            bytes_per_row: Some(256),
+                            rows_per_image: Some(8),
+                        },
+                    },
+                    Extent3d {
+                        width: 8,
+                        height: 8,
+                        depth_or_array_layers: 1,
+                    },
+                );
+            }
+        }
         let cross_copy = (srgb_copy_supported && copy_supported).then(|| {
             formats.map(|format| {
                 device.create_texture(&TextureDescriptor {
@@ -1290,6 +1343,14 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
                     .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
             }
         }
+        if let Some(readbacks) = &srgb_readbacks {
+            for buffer in readbacks {
+                let sender = sender.clone();
+                buffer
+                    .slice(..)
+                    .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+            }
+        }
         if let Some(buffer) = &cross_pixel_readback {
             let sender = sender.clone();
             buffer
@@ -1312,6 +1373,14 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
                     .recv_timeout(Duration::from_secs(10))
                     .expect("BC cross-format readback callback")
                     .expect("map BC cross-format readback");
+            }
+        }
+        if let Some(readbacks) = &srgb_readbacks {
+            for _ in readbacks {
+                receiver
+                    .recv_timeout(Duration::from_secs(10))
+                    .expect("direct BC sRGB readback callback")
+                    .expect("map direct BC sRGB readback");
             }
         }
         if cross_pixel_readback.is_some() {
@@ -1341,6 +1410,21 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
             }
         }
         readback.unmap();
+        if let Some(readbacks) = &srgb_readbacks {
+            for (index, buffer) in readbacks.iter().enumerate() {
+                let expected_blocks = std::array::from_fn(|_| srgb_blocks[index].clone());
+                let bytes = buffer
+                    .slice(..)
+                    .get_mapped_range()
+                    .expect("mapped direct BC sRGB source readback");
+                assert_bc_readback(&bytes, &expected_blocks, srgb_blocks[index].len() * 2, 16);
+                drop(bytes);
+                buffer.unmap();
+            }
+            println!(
+                "PASS: BC1/BC2/BC3 sRGB sources returned exact raw blocks through direct texture-to-buffer copies with offset and row-padding sentinels"
+            );
+        }
         if let Some(readbacks) = &cross_readbacks {
             for (index, buffer) in readbacks.iter().enumerate() {
                 let block_size = source_blocks[index].len();
