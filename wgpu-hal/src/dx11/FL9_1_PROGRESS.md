@@ -16711,3 +16711,5 @@ depth/stencil, blend, culling, wireframe, MSAA resolve, bundles and pipeline
 transitions. The audit ran no Cargo tests. It found one stale capability-doc
 phrase implying the public adapter was not yet exposed; the wording now
 describes the actual explicit opt-in contract.
+
+Checkpoint: `5f579f4d9e4b5221bd318acb6124e821e909ec58` (`dx11: clarify FL9_1 pass exposure and audit`).
