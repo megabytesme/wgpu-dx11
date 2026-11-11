@@ -11,8 +11,8 @@ and side-use variants. Strict RTX 3090 Ti execution at requested/actual FL9_1
 verified all 64 output pixels for the helper-forwarded index 23. This is a
 small compiler-boundary expansion, not a general relaxation of runtime integer
 semantics. Core passed 140/140, private HAL 493/493 and the full public target
-129/129 before the final unused-float-input consistency edge was added; the
-final focused Core and HAL tests passed 1/1 and 2/2, respectively.
+129/129 after the final unused-float-input consistency edge was added. The
+dedicated strict uniform-array target also passed 1/1.
 
 Checkpoint `ab926004e` fixes a public Core/HAL mismatch for index buffer
 ranges: offsets remain index-width aligned, but an in-bounds byte size may

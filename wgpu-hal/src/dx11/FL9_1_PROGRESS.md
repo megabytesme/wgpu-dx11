@@ -16323,18 +16323,17 @@ cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,
 cargo +1.93.1 check --offline -j16 -p wgpu-hal --no-default-features --features dx12
 ```
 
-The full suites passed before the last unused-float-input parity adjustment:
-Core 140/140, private HAL 493/493, strict public `dx11_public` 129/129.
-After that adjustment the focused Core test passed 1/1 and HAL helper tests
-passed 2/2. The dedicated strict public uniform-array target passed 1/1 on
+After the unused-float-input parity adjustment, the full Core suite passed
+140/140, private HAL passed 493/493 and strict public `dx11_public` passed
+129/129. The dedicated strict public uniform-array target passed 1/1 on
 NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, physical
 hardware, software=false, requested/actual FL9_1. The helper index 23 output
 matched green in all 64 pixels. Two query-dependent subcases skipped within
-the earlier full public target (R8G8 vertex input and Rg8Unorm mip support);
-they were not counted as GPU execution evidence. The DX12 HAL check, Core/HAL
-Clippy and rustfmt passed; Clippy reports existing warnings in unrelated
-fixture and D3D11 helper code. `git diff --check` passed before documentation
-updates; it will be rerun for the final checkpoint.
+the full public target (R8G8_UNORM vertex input, R16G16_FLOAT vertex input,
+and Rg8Unorm mip support); they were not counted as GPU execution evidence.
+The DX12 HAL check, Core/HAL and focused public-target Clippy, rustfmt and
+`git diff --check` passed. Clippy reports existing warnings in unrelated
+fixture and D3D11 helper code.
 
 This is a bounded shader compiler/validation expansion and does not make the
 backend a general wgpu implementation. The broader Core/HAL contract audit,
