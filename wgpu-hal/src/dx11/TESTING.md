@@ -280,6 +280,10 @@ behavior remains unverified.
 
 ### Strict DX11 CTS selection
 
+The curated, DX11-specific list of executed selectors, known boundary results
+and proposed follow-up selectors is maintained in [FL9_1_CTS.md](FL9_1_CTS.md).
+It is intentionally separate from the backend-neutral CTS expectation lists.
+
 The xtask runner enables the experimental Deno DX11 feature only for an
 explicit DX11 backend request. Add `--require-dx11-hardware` for a strict run;
 the flag is accepted only with `--backend dx11`, and is forwarded to Deno as
@@ -4545,25 +4549,28 @@ volume with three levels; querying level 1 must produce 4x2x4, normalized to
 evidence for this case. A strict run must be reported as a skip or failure,
 never as a rendering pass, if the prerequisite is unavailable.
 
-### Narrow FL9_1 `mat2x2<f32>` matrix inverse
+### Narrow FL9_1 `mat2x2<f32>` and `mat3x3<f32>` matrix inverse
 
 ```powershell
-cargo +1.93 test --offline -j8 -p naga --features glsl-in --lib matrix_inverse_
-cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features "wgsl glsl spirv" --lib matrix_inverse
-cargo +1.93 test --offline -j8 -p wgpu-types matrix_inverse
+cargo +1.93.1 test --offline -j8 -p naga --features glsl-in --lib matrix_inverse_
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,glsl,std --lib matrix_inverse
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib matrix_inverse
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib matrix_inverse
+cargo +1.93.1 test --offline -j8 -p wgpu-types matrix_inverse
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
-cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_mat2_matrix_inverse_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_mat2_and_mat3_matrix_inverse_at_fl91 -- --exact --nocapture --test-threads=1
 ```
 
-The selected D3D11 projection permits only f32 `mat2x2` inverse; general
-`matrix_inverse` remains false. The public GLSL test executes inverse in both
-vertex and fragment stages at requested/actual FL9_1. Its asymmetric
-`mat2(1, 0, 1, 1)` case yields `[0, 255, 0, 255]` in all 64 pixels. It then
-confirms `mat3` inverse, including an unused regular helper that Naga still
-emits, is rejected as a Core validation error before HAL. WGSL does not define
-an inverse builtin; this path covers GLSL and other Naga IR sources that
-contain the operation. The RTX result does not establish historical driver
-behavior.
+The selected D3D11 projection permits f32 `mat2x2` and `mat3x3` inverse via
+independent narrow limits; general `matrix_inverse` remains false. Core checks
+the selected entry point and reachable helpers, and rejects mat4 inverse
+before HAL. The public GLSL test executes both supported sizes in vertex and
+fragment stages at requested/actual FL9_1. It checks all 64 pixels for the
+non-symmetric mat2 result `[0, 255, 0, 255]` and mat3 result
+`[64, 64, 64, 255]`, with vertex and fragment inverse outputs checked
+independently. WGSL does not define an inverse builtin; this path covers
+GLSL and other Naga IR sources that contain the operation. The RTX result does
+not establish historical driver behavior.
 
 ### Direct 2D `textureLoad` with `textureDimensions`
 

@@ -954,26 +954,18 @@ is recorded above; continue the selected shader/resource contract audit. Do
 not treat this helper increment as general
 3D texture-load support. Checkpoint: `ffafa8b2d`.
 
-## Latest bounded capability increment — f32 `mat2x2` inverse — 2026-11-09
+## Bounded f32 matrix inverse support
 
-The internal downlevel contract now has a separate `matrix_inverse_2x2`
-limit. Naga's HLSL writer lowers only f32 mat2 inverse; Core validates the
-selected entry point and every regular module function compiled for it by
-shape, leaving larger inverses rejected. Naga's HLSL writer emits regular
-module functions even when they are unreachable, so an unused unsupported
-inverse helper is rejected as well. The DX11 projection exposes the narrow
-limit while leaving general
-`matrix_inverse` false. WGSL has no inverse builtin, so this extends GLSL and
-other Naga IR inputs rather than WGSL.
-
-The strict public test exercised the operation in both shader stages on the
-RTX 3090 Ti at requested/actual FL9_1 and matched all 64 pixels to
-`[0,255,0,255]`; a `mat3` request was rejected by Core without an internal HAL
-error. Naga, Core and wgpu-types focused tests, full Naga/Core/D3D11 HAL/public
-D3D11 suites, and the DX12 Core suite passed. Formatting and diff checks
-passed; targeted Clippy remains the final gate. The public format/usage
-projection matrix was committed separately at `5e82974e9` and passed on the
-same physical device.
+The internal contract exposes separate `matrix_inverse_2x2` and
+`matrix_inverse_3x3` limits. Naga's HLSL writer lowers f32 mat2 and mat3
+inverse through scalar cofactors; Core tracks the shapes used by the selected
+entry point and reachable helpers and rejects mat4/other shapes before HAL.
+The general `matrix_inverse` limit stays false for the FL9_1 D3D11 projection.
+WGSL has no inverse builtin, so the path applies to GLSL and other Naga IR
+inputs. Strict RTX 3090 Ti readback at requested/actual FL9_1 exercises both
+shapes in VS and PS; separate stage results matched `[64, 64, 64, 255]` in all
+64 pixels, and mat4 was rejected as a Core validation error. The exact
+commands and full verification record are in `FL9_1_PROGRESS.md`.
 
 The broader mission remains incomplete. There are no confirmed mismatches in
 the recent texture-format/Core/HAL audit, but systematic coverage remains

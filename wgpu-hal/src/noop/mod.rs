@@ -262,6 +262,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 runtime_integer_shader_operations: true,
                 matrix_inverse: true,
                 matrix_inverse_2x2: false,
+                matrix_inverse_3x3: false,
                 matrix_outer_product: true,
                 matrix_aggregate_stores: true,
                 max_texture_sample_bias: u32::MAX,

@@ -17398,3 +17398,67 @@ while MSVC linking and the test run completed successfully.
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 & 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_supported_bgra8_sample_counts_at_fl91 -- --exact --nocapture --test-threads=1
 ```
+
+## Narrow f32 `mat3x3` inverse — 2026-11-11
+
+Extended the HLSL cofactor lowering from f32 mat2 to mat3 and added the
+independent `DownlevelLimits::matrix_inverse_3x3` capability. Core records
+inverse shapes used by the selected entry point and reachable helpers, so
+mat2 and mat3 can be enabled independently and mat4 remains rejected for the
+FL9_1 D3D11 profile. General `matrix_inverse` remains false. The Naga test
+checks all nine cofactor positions in HLSL constructor order and verifies the
+parentheses needed to preserve determinant precedence. A strict public test
+executes both mat3 shader stages on the RTX 3090 Ti and validates all 64
+readback pixels; using a non-symmetric matrix, separate vertex/fragment
+channels matched `[64, 64, 64, 255]`. The same test preserves mat2 readback
+and confirms mat4 fails at Core without an Internal error. The initial
+readback caught missing cofactor grouping in the denominator; the lowering
+was corrected before the passing run.
+
+The focused strict public run passed 1/1 on physical NVIDIA GeForce RTX 3090
+Ti (`0x10de:0x2203`), driver `32.0.16.2101`, requested/actual FL9_1,
+`software=false`. The public validation-matrix test passed 1/1. The complete
+strict public D3D11 target passed 139/139 test functions, including
+`experimental_dx11_is_not_enabled_by_default`. The final full run was repeated
+after the test-only change that makes the vertex-stage inverse directly
+observable in its own color channel; it completed in 87.14 seconds. No
+full-suite tests were ignored; the focused GPU case reported no skip.
+
+Pinned Rust 1.93.1, VS 2026 x64, offline, Cargo `-j8` focused results:
+
+- Naga HLSL inverse tests: 3/3.
+- wgpu-types matrix-inverse limit tests: 3/3.
+- Core matrix-inverse tests with DX11 features: 2/2.
+- Core matrix-inverse tests with DX12 features: 2/2.
+- Strict public inverse rendering: 1/1.
+- Strict public inverse/outer-product Core validation: 1/1.
+- Strict public D3D11 target: 139/139.
+
+Final `cargo +1.93.1 fmt --all` completed. Clippy passed for Naga, Core with
+DX11, wgpu-types, HAL with DX11 and the public D3D11 test target. Naga reported
+one pre-existing `parser_tests.rs:148` pattern-type warning. wgpu-types
+reported 16 existing serde-import/qualification warnings; HAL reported 21
+existing warnings across unrelated DX11 queue/index/transfer/texture/test,
+shader and swapchain paths. No new warning points to this change. The Visual
+Studio developer prompt continues to print its existing `vError: Unknown
+error` banner while MSVC and tests work. Direct Cargo without the VS developer
+environment fails to locate `link.exe`; use
+`E:\Temp\wgpu_mission_cargo.bat` on this host. Final workspace formatting and
+`git diff --check` both passed after the last source and documentation edits.
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p naga --features glsl-in --lib matrix_inverse_
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-types matrix_inverse
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib matrix_inverse
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib matrix_inverse
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_mat2_and_mat3_matrix_inverse_at_fl91 -- --exact --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_gates_matrix_inverse_shape_and_accepts_outer_product_at_fl91 -- --exact --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+```
+
+The final full strict public run after strengthening the stage-observable GPU
+assertion passed 139/139. The final targeted public Clippy run also passed;
+it reported six pre-existing HAL warnings in index, transfer and texture
+helpers, with none in the changed test.

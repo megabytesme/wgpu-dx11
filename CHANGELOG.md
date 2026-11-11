@@ -111,7 +111,8 @@ Bottom level categories:
 - Add `DownlevelLimits::texture_sample_bias_requires_compatible_sampler` for backends that require matching min/mag filters and anisotropy one when `textureSampleBias` is used.
 - Add `DownlevelLimits::matrix_inverse` so backends can reject selected shaders when their translator cannot lower matrix inverse.
 - Add `DownlevelLimits::matrix_inverse_2x2` for translators that lower only 2x2 matrix inverse operations.
-- Lower f32 `mat2x2` matrix inverse in the HLSL backend behind the narrow downlevel limit.
+- Add `DownlevelLimits::matrix_inverse_3x3` for translators that lower only 3x3 matrix inverse operations.
+- Lower f32 `mat2x2` and `mat3x3` matrix inverse in the HLSL backend behind narrow downlevel limits.
 - Add downlevel limits for legacy vertex base-index inputs, vertex point size output, and fragment point coordinates.
 - Add `DownlevelLimits::vertex_uniform_array_indexing` to gate the narrow vertex-stage uniform-array indexing subset supported by a backend.
 - Add `DownlevelLimits::fragment_uniform_array_indexing` for a backend's

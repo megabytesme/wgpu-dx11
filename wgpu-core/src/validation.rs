@@ -282,6 +282,13 @@ struct EntryPointMeshInfo {
     primitive_topology: wgt::PrimitiveTopology,
 }
 
+#[derive(Debug, Clone, Copy, Default)]
+struct MatrixInverseUsage {
+    mat2x2: bool,
+    mat3x3: bool,
+    other: bool,
+}
+
 #[derive(Debug, Default)]
 struct EntryPoint {
     inputs: Vec<Varying>,
@@ -308,8 +315,7 @@ struct EntryPoint {
     unsupported_runtime_integer_indexing: bool,
     vertex_index_local_array_indexing_used: bool,
     vertex_index_vector_indexing_used: bool,
-    matrix_inverse_used: bool,
-    unsupported_matrix_inverse_2x2: bool,
+    matrix_inverse_usage: MatrixInverseUsage,
     matrix_outer_product_used: bool,
     unsupported_matrix_aggregate_store: bool,
     texture_query_used: bool,
@@ -6341,78 +6347,47 @@ fn entry_point_supports_fl9_texture_num_levels_helper(
         )
 }
 
-fn function_uses_matrix_inverse(function: &naga::Function) -> bool {
-    function.expressions.iter().any(|(_, expression)| {
-        matches!(
-            *expression,
-            naga::Expression::Math {
-                fun: naga::MathFunction::Inverse,
-                ..
-            }
-        )
-    })
-}
-
-fn entry_point_uses_matrix_inverse(module: &naga::Module, entry_point: &naga::EntryPoint) -> bool {
-    if function_uses_matrix_inverse(&entry_point.function) {
-        return true;
-    }
-
-    let mut called_functions = Vec::new();
-    collect_called_functions(&entry_point.function.body, &mut called_functions);
-    let mut visited = FastHashSet::default();
-    while let Some(handle) = called_functions.pop() {
-        if !visited.insert(handle) {
-            continue;
-        }
-        let function = &module.functions[handle];
-        if function_uses_matrix_inverse(function) {
-            return true;
-        }
-        collect_called_functions(&function.body, &mut called_functions);
-    }
-    false
-}
-
-fn function_uses_unsupported_matrix_inverse_2x2(
+fn function_matrix_inverse_usage(
     function: &naga::Function,
     function_info: &naga::valid::FunctionInfo,
     types: &naga::UniqueArena<naga::Type>,
-) -> bool {
-    function.expressions.iter().any(|(_, expression)| {
+) -> MatrixInverseUsage {
+    let mut usage = MatrixInverseUsage::default();
+    for (_, expression) in function.expressions.iter() {
         let naga::Expression::Math {
             fun: naga::MathFunction::Inverse,
             arg,
             ..
         } = *expression
         else {
-            return false;
+            continue;
         };
 
-        !matches!(
-            function_info[arg].ty.inner_with(types),
+        match function_info[arg].ty.inner_with(types) {
             naga::TypeInner::Matrix {
                 columns: naga::VectorSize::Bi,
                 rows: naga::VectorSize::Bi,
                 scalar: naga::Scalar::F32,
-            }
-        )
-    })
+            } => usage.mat2x2 = true,
+            naga::TypeInner::Matrix {
+                columns: naga::VectorSize::Tri,
+                rows: naga::VectorSize::Tri,
+                scalar: naga::Scalar::F32,
+            } => usage.mat3x3 = true,
+            _ => usage.other = true,
+        }
+    }
+    usage
 }
 
-fn entry_point_uses_unsupported_matrix_inverse_2x2(
+fn entry_point_matrix_inverse_usage(
     module: &naga::Module,
     module_info: &naga::valid::ModuleInfo,
     entry_point: &naga::EntryPoint,
     entry_point_info: &naga::valid::FunctionInfo,
-) -> bool {
-    if function_uses_unsupported_matrix_inverse_2x2(
-        &entry_point.function,
-        entry_point_info,
-        &module.types,
-    ) {
-        return true;
-    }
+) -> MatrixInverseUsage {
+    let mut usage =
+        function_matrix_inverse_usage(&entry_point.function, entry_point_info, &module.types);
 
     let mut called_functions = Vec::new();
     collect_called_functions(&entry_point.function.body, &mut called_functions);
@@ -6422,16 +6397,14 @@ fn entry_point_uses_unsupported_matrix_inverse_2x2(
             continue;
         }
         let function = &module.functions[handle];
-        if function_uses_unsupported_matrix_inverse_2x2(
-            function,
-            &module_info[handle],
-            &module.types,
-        ) {
-            return true;
-        }
+        let function_usage =
+            function_matrix_inverse_usage(function, &module_info[handle], &module.types);
+        usage.mat2x2 |= function_usage.mat2x2;
+        usage.mat3x3 |= function_usage.mat3x3;
+        usage.other |= function_usage.other;
         collect_called_functions(&function.body, &mut called_functions);
     }
-    false
+    usage
 }
 
 fn function_uses_matrix_outer_product(function: &naga::Function) -> bool {
@@ -7996,8 +7969,7 @@ impl Interface {
                 unsupported_runtime_integer_indexing,
                 vertex_index_local_array_indexing_used,
                 vertex_index_vector_indexing_used,
-                matrix_inverse_used: entry_point_uses_matrix_inverse(module, entry_point),
-                unsupported_matrix_inverse_2x2: entry_point_uses_unsupported_matrix_inverse_2x2(
+                matrix_inverse_usage: entry_point_matrix_inverse_usage(
                     module,
                     module_info,
                     entry_point,
@@ -8627,13 +8599,11 @@ impl Interface {
         let Some(entry_point) = self.entry_points.get(&key) else {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
-        Ok(if limits.matrix_inverse {
-            false
-        } else if limits.matrix_inverse_2x2 {
-            entry_point.unsupported_matrix_inverse_2x2
-        } else {
-            entry_point.matrix_inverse_used
-        })
+        let usage = entry_point.matrix_inverse_usage;
+        Ok(!limits.matrix_inverse
+            && ((usage.mat2x2 && !limits.matrix_inverse_2x2)
+                || (usage.mat3x3 && !limits.matrix_inverse_3x3)
+                || usage.other))
     }
 
     pub(crate) fn entry_point_uses_unsupported_matrix_outer_product(
@@ -14195,6 +14165,17 @@ mod tests {
             matrix_inverse_2x2: true,
             ..Default::default()
         };
+        let mat3_limits = wgt::DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_3x3: true,
+            ..Default::default()
+        };
+        let combined_limits = wgt::DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_2x2: true,
+            matrix_inverse_3x3: true,
+            ..Default::default()
+        };
 
         assert!(!inverse_2x2_with_unused_3x3
             .entry_point_uses_unsupported_matrix_inverse(
@@ -14215,6 +14196,37 @@ mod tests {
                 naga::ShaderStage::Vertex,
                 "main",
                 &narrow_limits,
+            )
+            .unwrap());
+        assert!(!inverse_3x3
+            .entry_point_uses_unsupported_matrix_inverse(
+                naga::ShaderStage::Vertex,
+                "main",
+                &mat3_limits,
+            )
+            .unwrap());
+        assert!(inverse_2x2_only
+            .entry_point_uses_unsupported_matrix_inverse(
+                naga::ShaderStage::Vertex,
+                "main",
+                &mat3_limits,
+            )
+            .unwrap());
+        assert!(!inverse_3x3
+            .entry_point_uses_unsupported_matrix_inverse(
+                naga::ShaderStage::Vertex,
+                "main",
+                &combined_limits,
+            )
+            .unwrap());
+        let inverse_4x4 = interface(
+            "#version 450\nmat4 apply_inverse(mat4 m) { return inverse(m); }\nvoid main() { mat4 inv = apply_inverse(mat4(1.0)); gl_Position = inv[0]; }",
+        );
+        assert!(inverse_4x4
+            .entry_point_uses_unsupported_matrix_inverse(
+                naga::ShaderStage::Vertex,
+                "main",
+                &combined_limits,
             )
             .unwrap());
         assert!(inverse_2x2_only

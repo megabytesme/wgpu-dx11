@@ -5614,38 +5614,100 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
 
         if fun == Mf::Inverse {
             let TypeInner::Matrix {
-                columns: crate::VectorSize::Bi,
-                rows: crate::VectorSize::Bi,
+                columns,
+                rows,
                 scalar: Scalar::F32,
             } = *func_ctx.resolve_type(arg, &module.types)
             else {
                 return Err(Error::Unimplemented(String::from(
-                    "write_expr_math Inverse for matrices other than mat2x2<f32>",
+                    "write_expr_math Inverse for non-f32 matrices",
                 )));
             };
 
-            // HLSL rows represent Naga matrix columns, so lower the inverse in that orientation.
-            write!(self.out, "float2x2(")?;
-            for (index, (row, column)) in [(1, 1), (0, 1), (1, 0), (0, 0)].into_iter().enumerate() {
-                if index != 0 {
-                    write!(self.out, ", ")?;
+            match (columns, rows) {
+                (crate::VectorSize::Bi, crate::VectorSize::Bi) => {
+                    // HLSL rows represent Naga matrix columns, so lower the inverse in that orientation.
+                    write!(self.out, "float2x2(")?;
+                    for (index, (row, column)) in
+                        [(1, 1), (0, 1), (1, 0), (0, 0)].into_iter().enumerate()
+                    {
+                        if index != 0 {
+                            write!(self.out, ", ")?;
+                        }
+                        if index == 1 || index == 2 {
+                            write!(self.out, "-")?;
+                        }
+                        self.write_expr(module, arg, func_ctx)?;
+                        write!(self.out, "[{row}][{column}]")?;
+                    }
+                    write!(self.out, ") / (")?;
+                    self.write_expr(module, arg, func_ctx)?;
+                    write!(self.out, "[0][0] * ")?;
+                    self.write_expr(module, arg, func_ctx)?;
+                    write!(self.out, "[1][1] - ")?;
+                    self.write_expr(module, arg, func_ctx)?;
+                    write!(self.out, "[0][1] * ")?;
+                    self.write_expr(module, arg, func_ctx)?;
+                    write!(self.out, "[1][0])")?;
+                    return Ok(());
                 }
-                if index == 1 || index == 2 {
-                    write!(self.out, "-")?;
+                (crate::VectorSize::Tri, crate::VectorSize::Tri) => {
+                    // Naga indexes matrices as [column][row]. HLSL constructor rows
+                    // therefore contain the columns of Naga's cofactor matrix.
+                    let cofactor_terms = [
+                        [(1, 1), (2, 2), (2, 1), (1, 2)],
+                        [(2, 1), (0, 2), (0, 1), (2, 2)],
+                        [(0, 1), (1, 2), (1, 1), (0, 2)],
+                        [(2, 0), (1, 2), (1, 0), (2, 2)],
+                        [(0, 0), (2, 2), (2, 0), (0, 2)],
+                        [(1, 0), (0, 2), (0, 0), (1, 2)],
+                        [(1, 0), (2, 1), (2, 0), (1, 1)],
+                        [(2, 0), (0, 1), (0, 0), (2, 1)],
+                        [(0, 0), (1, 1), (1, 0), (0, 1)],
+                    ];
+                    write!(self.out, "float3x3(")?;
+                    for (index, terms) in cofactor_terms.into_iter().enumerate() {
+                        if index != 0 {
+                            write!(self.out, ", ")?;
+                        }
+                        self.write_inverse_cofactor(module, arg, func_ctx, terms)?;
+                    }
+                    write!(self.out, ") / (")?;
+                    self.write_expr(module, arg, func_ctx)?;
+                    write!(self.out, "[0][0] * ")?;
+                    self.write_inverse_cofactor(
+                        module,
+                        arg,
+                        func_ctx,
+                        [(1, 1), (2, 2), (2, 1), (1, 2)],
+                    )?;
+                    write!(self.out, " + ")?;
+                    self.write_expr(module, arg, func_ctx)?;
+                    write!(self.out, "[1][0] * ")?;
+                    self.write_inverse_cofactor(
+                        module,
+                        arg,
+                        func_ctx,
+                        [(2, 1), (0, 2), (0, 1), (2, 2)],
+                    )?;
+                    write!(self.out, " + ")?;
+                    self.write_expr(module, arg, func_ctx)?;
+                    write!(self.out, "[2][0] * ")?;
+                    self.write_inverse_cofactor(
+                        module,
+                        arg,
+                        func_ctx,
+                        [(0, 1), (1, 2), (1, 1), (0, 2)],
+                    )?;
+                    write!(self.out, ")")?;
+                    return Ok(());
                 }
-                self.write_expr(module, arg, func_ctx)?;
-                write!(self.out, "[{row}][{column}]")?;
+                _ => {
+                    return Err(Error::Unimplemented(String::from(
+                        "write_expr_math Inverse for matrices other than mat2x2<f32> or mat3x3<f32>",
+                    )));
+                }
             }
-            write!(self.out, ") / (")?;
-            self.write_expr(module, arg, func_ctx)?;
-            write!(self.out, "[0][0] * ")?;
-            self.write_expr(module, arg, func_ctx)?;
-            write!(self.out, "[1][1] - ")?;
-            self.write_expr(module, arg, func_ctx)?;
-            write!(self.out, "[0][1] * ")?;
-            self.write_expr(module, arg, func_ctx)?;
-            write!(self.out, "[1][0])")?;
-            return Ok(());
         }
 
         if fun == Mf::Outer {
@@ -6212,6 +6274,29 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             }
         }
 
+        Ok(())
+    }
+
+    fn write_inverse_cofactor(
+        &mut self,
+        module: &Module,
+        arg: Handle<crate::Expression>,
+        func_ctx: &back::FunctionCtx<'_>,
+        terms: [(usize, usize); 4],
+    ) -> BackendResult {
+        write!(self.out, "(")?;
+        for (index, (column, row)) in terms.into_iter().enumerate() {
+            if index == 1 {
+                write!(self.out, " * ")?;
+            } else if index == 2 {
+                write!(self.out, " - ")?;
+            } else if index == 3 {
+                write!(self.out, " * ")?;
+            }
+            self.write_expr(module, arg, func_ctx)?;
+            write!(self.out, "[{column}][{row}]")?;
+        }
+        write!(self.out, ")")?;
         Ok(())
     }
 
@@ -8041,8 +8126,68 @@ mod fl9_viewport_tests {
 
     #[cfg(feature = "glsl-in")]
     #[test]
+    fn matrix_inverse_emits_a_mat3_cofactor_lowering() {
+        let source = "#version 450\nmat3 invert(mat3 m) { return inverse(m); }\nvoid main() { mat3 m = mat3(1.0); gl_Position = vec4(invert(m)[0], 1.0); }";
+        let mut parser = crate::front::glsl::Frontend::default();
+        let module = parser
+            .parse(
+                &crate::front::glsl::Options::from(ShaderStage::Vertex),
+                source,
+            )
+            .unwrap();
+        let info = Validator::new(ValidationFlags::all(), Capabilities::empty())
+            .validate(&module)
+            .unwrap();
+        let pipeline = PipelineOptions {
+            entry_point: Some((ShaderStage::Vertex, "main".into())),
+        };
+        let mut output = String::new();
+        super::super::Writer::new(&mut output, &make_options(), &pipeline)
+            .write(&module, &info, None)
+            .unwrap();
+
+        assert!(output.contains("float3x3("), "{output}");
+        assert!(
+            output.contains("[1][1] * ") && output.contains("[2][2] - "),
+            "expected the first cofactor in:\n{output}"
+        );
+        assert!(
+            output.contains("[2][1] * ") && output.contains("[1][2]"),
+            "expected transposed cofactor terms in:\n{output}"
+        );
+        assert!(
+            output.contains("[0][0] * ")
+                && output.contains("[1][0] * ")
+                && output.contains("[2][0] * "),
+            "expected a three-term determinant in:\n{output}"
+        );
+        for cofactor in [
+            "[1][1] * _e2[2][2] - _e2[2][1] * _e2[1][2]",
+            "[2][1] * _e2[0][2] - _e2[0][1] * _e2[2][2]",
+            "[0][1] * _e2[1][2] - _e2[1][1] * _e2[0][2]",
+            "[2][0] * _e2[1][2] - _e2[1][0] * _e2[2][2]",
+            "[0][0] * _e2[2][2] - _e2[2][0] * _e2[0][2]",
+            "[1][0] * _e2[0][2] - _e2[0][0] * _e2[1][2]",
+            "[1][0] * _e2[2][1] - _e2[2][0] * _e2[1][1]",
+            "[2][0] * _e2[0][1] - _e2[0][0] * _e2[2][1]",
+            "[0][0] * _e2[1][1] - _e2[1][0] * _e2[0][1]",
+        ] {
+            assert!(
+                output.contains(cofactor),
+                "missing cofactor {cofactor} in:\n{output}"
+            );
+        }
+        assert!(
+            output.contains("[0][0] * (_e2[1][1] * _e2[2][2] -"),
+            "determinant cofactors must be parenthesized:\n{output}"
+        );
+        assert!(!output.contains("inverse("), "{output}");
+    }
+
+    #[cfg(feature = "glsl-in")]
+    #[test]
     fn matrix_inverse_rejects_larger_shapes() {
-        let source = "#version 450\nvoid main() { mat3 m = mat3(1.0); mat3 inv = inverse(m); gl_Position = vec4(inv[0], 1.0); }";
+        let source = "#version 450\nvoid main() { mat4 m = mat4(1.0); mat4 inv = inverse(m); gl_Position = inv[0]; }";
         let mut parser = crate::front::glsl::Frontend::default();
         let module = parser
             .parse(

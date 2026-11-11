@@ -2,32 +2,40 @@
 
 ## Current mission status — 2026-11-11
 
-The latest verified increment extends the strict public BGRA8 multisample
-resolve test to all query-advertised 2x, 4x and 8x counts. On the RTX 3090 Ti,
-each forced-FL9_1 case resolved and checked all 64 pixels within the stated
-UNORM rounding tolerance. The focused test passed 1/1; the complete strict
-public target passed 135/135 functions, including default-enumeration
-isolation. This adds verification coverage, not a new capability. Exact
-commands are recorded in `FL9_1_PROGRESS.md`.
+The latest shader increment adds narrow f32 mat3 inverse alongside the
+existing mat2 path. Strict public forced-FL9_1 execution on the RTX 3090 Ti
+used both matrix shapes in vertex and fragment stages and checked all 64
+pixels; separate mat3 stage outputs matched `[64, 64, 64, 255]`. Core
+independently permits mat2 and mat3 through separate `DownlevelLimits` fields
+and rejects mat4 before HAL. Focused Naga, wgpu-types, Core DX11/DX12 and
+public validation tests passed. The final complete strict public D3D11 target
+passed 139/139 after the strengthened stage-observable GPU assertion,
+including `experimental_dx11_is_not_enabled_by_default`. A final
+public-target Clippy run, formatting and `git diff --check` passed; only
+pre-existing HAL lint warnings were reported. Exact commands are recorded in
+`FL9_1_PROGRESS.md`.
 
 This is a substantial constrained opt-in graphics subset, not feature-complete
-FL9_1 wgpu. Recent separate reviews of public adapter/render, resource/transfer,
-and shader/error paths found no confirmed Core-valid request that reaches an
-unsupported HAL operation in their reviewed scopes; a complete API/CTS contract
-audit is still open. Remaining software breadth includes conservative shader
-subsets and 3D GPU copy/attachment paths. Compute/UAV, geometry shaders, MRT,
-indirect execution, occlusion queries, 1D textures and ordinary texture arrays
-are FL9_1/profile or native API exclusions, not a software backlog to bypass.
-The shared CTS lists do not track DX11-specific results; focused strict runs
-and the public backend suite provide the current evidence.
+FL9_1 wgpu. The explicit DX11 backend supports public wgpu adapter/device
+creation, offscreen rendering and desktop HWND presentation; default backend
+selection still excludes DX11. The public textured, depth-tested cube examples
+and strict GPU readback tests exercise the public path. Recent separate
+reviews found no confirmed Core-valid request that reaches an unsupported HAL
+operation in their reviewed scopes, but the complete API/CTS contract audit is
+still open. Remaining software breadth includes conservative shader subsets
+and 3D GPU copy/attachment paths. Compute/UAV, geometry shaders, MRT, indirect
+execution, occlusion queries, 1D textures and ordinary texture arrays are
+FL9_1/profile or native API exclusions, not a software backlog to bypass. The
+shared CTS lists do not track DX11-specific results; the curated inventory is
+in `FL9_1_CTS.md`.
 
 Historical FL9_1 drivers, Lumia ARM32/CoreWindow execution and physical
 device-removal recovery remain external verification gaps. Use agents for
 independent audits, CTS triage and compiler probes, but assign each coupled
 Core/Naga/HAL feature to one implementation owner and keep end-to-end GPU
-validation under the coordinator. A temporary FXC probe found that 3x3 f32
-matrix inverse cofactor code compiles in both level-9 shader profiles, making
-it a possible GLSL/Naga IR slice; it is not implemented or GPU-verified.
+validation under the coordinator. The current matrix-inverse increment has
+implemented and GPU-verified f32 mat2 and mat3 GLSL/Naga IR lowering;
+mat4/general matrix inverse remain rejected.
 
 ## Current coordinator checkpoint — query-gated Rg16Snorm texture load — 2026-11-11
 
@@ -623,14 +631,15 @@ Implementation checkpoint: `3a1cb5527` (`dx11: expose query-gated BC1-3 sRGB for
 
 The backend remains an opt-in, restricted FL9_1 renderer, not a complete or
 drop-in general-purpose wgpu implementation. Explicit DX11 selection is
-available; default backend selection remains unchanged. Remaining practical work includes the broader
-Core/HAL contract audit, unsupported shader operations and resource paths,
-public CoreWindow/UWP verification, historical FL9_1 hardware and real
-device-removal recovery. Read-only specialist audits recommend permitting a
-carefully proven helper-call subset of the existing `textureLoad` emulation as
-one next contained shader task; matrix inverse needs Naga HLSL lowering and
-strict numerical/instruction-boundary evidence. Do not implement FL9_1 3D
-texture copies because the existing 10Level9 audit records them as unavailable.
+available; default backend selection remains unchanged. Remaining practical
+work includes the broader Core/HAL contract audit, unsupported shader
+operations and resource paths, public CoreWindow/UWP verification, historical
+FL9_1 hardware and real device-removal recovery. Read-only specialist audits
+recommend permitting a carefully proven helper-call subset of the existing
+`textureLoad` emulation as one next contained shader task. Mat3 inverse has
+level-9 FXC probe, Naga lowering tests and strict public GPU output evidence;
+broader matrix shapes remain unavailable. Do not implement FL9_1 3D texture
+copies because the existing 10Level9 audit records them as unavailable.
 
 Use specialist agents for non-overlapping research and review, but keep
 cross-crate Core/Naga/HAL changes and capability integration under one

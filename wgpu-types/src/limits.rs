@@ -1463,6 +1463,13 @@ pub struct DownlevelLimits {
     /// but do not implement larger matrix shapes.
     #[cfg_attr(feature = "serde", serde(default))]
     pub matrix_inverse_2x2: bool,
+    /// Whether shader entry points may use floating-point 3x3 matrix inverse operations when
+    /// general floating-point matrix inverse operations are unavailable.
+    ///
+    /// This narrower capability is useful for shader translators that can lower 2x2 and 3x3
+    /// inverses but do not implement larger matrix shapes.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub matrix_inverse_3x3: bool,
     /// Whether shader entry points may use floating-point matrix outer-product operations.
     ///
     /// This can be unavailable when the selected shader translator has no implementation for
@@ -1672,6 +1679,7 @@ impl Default for DownlevelLimits {
             frexp_fraction_only_fragment: false,
             matrix_inverse: true,
             matrix_inverse_2x2: false,
+            matrix_inverse_3x3: false,
             matrix_outer_product: true,
             matrix_aggregate_stores: true,
             max_texture_sample_bias: u32::MAX,
@@ -1971,6 +1979,7 @@ impl DownlevelLimits {
             && (!required.frexp_fraction_only_fragment || self.frexp_fraction_only_fragment)
             && (!required.matrix_inverse || self.matrix_inverse)
             && (!required.matrix_inverse_2x2 || self.matrix_inverse || self.matrix_inverse_2x2)
+            && (!required.matrix_inverse_3x3 || self.matrix_inverse || self.matrix_inverse_3x3)
             && (!required.matrix_outer_product || self.matrix_outer_product)
             && (!required.matrix_aggregate_stores || self.matrix_aggregate_stores)
             && self.max_texture_sample_bias >= required.max_texture_sample_bias
@@ -2764,6 +2773,7 @@ mod tests {
             frexp_fraction_only_fragment: false,
             matrix_inverse: false,
             matrix_inverse_2x2: false,
+            matrix_inverse_3x3: false,
             matrix_outer_product: false,
             matrix_aggregate_stores: false,
             max_texture_sample_bias: 3,
@@ -2852,6 +2862,7 @@ mod tests {
             frexp_fraction_only_fragment: false,
             matrix_inverse: false,
             matrix_inverse_2x2: false,
+            matrix_inverse_3x3: false,
             matrix_outer_product: false,
             matrix_aggregate_stores: false,
             max_texture_sample_bias: 3,
@@ -3436,6 +3447,7 @@ mod tests {
             "frexp_fraction_only_fragment",
             "matrix_inverse",
             "matrix_inverse_2x2",
+            "matrix_inverse_3x3",
             "matrix_outer_product",
             "matrix_aggregate_stores",
             "texture_sample_level",
@@ -3496,6 +3508,7 @@ mod tests {
         assert!(!limits.frexp_fraction_only_fragment);
         assert!(limits.matrix_inverse);
         assert!(!limits.matrix_inverse_2x2);
+        assert!(!limits.matrix_inverse_3x3);
         assert!(limits.matrix_outer_product);
         assert!(limits.matrix_aggregate_stores);
         assert!(limits.texture_sample_level);
@@ -3814,6 +3827,44 @@ mod tests {
         assert!(!no_inverse.check_limits(&DownlevelLimits {
             matrix_inverse: false,
             matrix_inverse_2x2: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(narrow.check_limits(&narrow));
+    }
+
+    #[test]
+    fn matrix_inverse_3x3_is_an_independent_narrow_downlevel_capability() {
+        let narrow = DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_2x2: false,
+            matrix_inverse_3x3: true,
+            ..DownlevelLimits::default()
+        };
+        let no_inverse = DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_2x2: false,
+            matrix_inverse_3x3: false,
+            ..DownlevelLimits::default()
+        };
+
+        assert!(narrow.check_limits(&DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_3x3: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!narrow.check_limits(&DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_2x2: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(DownlevelLimits::default().check_limits(&DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_3x3: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!no_inverse.check_limits(&DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_3x3: true,
             ..DownlevelLimits::default()
         }));
         assert!(narrow.check_limits(&narrow));

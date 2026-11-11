@@ -5893,7 +5893,8 @@ impl Device {
                         );
                     }
                     if (!self.downlevel.limits.matrix_inverse
-                        || self.downlevel.limits.matrix_inverse_2x2)
+                        || self.downlevel.limits.matrix_inverse_2x2
+                        || self.downlevel.limits.matrix_inverse_3x3)
                         && match interface {
                             Some(interface) => interface
                                 .entry_point_uses_unsupported_matrix_inverse(
@@ -6547,7 +6548,8 @@ impl Device {
                 }
 
                 if (!self.downlevel.limits.matrix_inverse
-                    || self.downlevel.limits.matrix_inverse_2x2)
+                    || self.downlevel.limits.matrix_inverse_2x2
+                    || self.downlevel.limits.matrix_inverse_3x3)
                     && match shader_module.interface.interface() {
                         Some(interface) => interface
                             .entry_point_uses_unsupported_matrix_inverse(
