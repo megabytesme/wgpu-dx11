@@ -6,8 +6,10 @@ The latest verified software increment extends the narrow fragment 2D
 `textureLoad` path to query-gated `Rg8Snorm` and `Rgba8Snorm`; strict readback
 matched all 256 tested pixels at requested/actual FL9_1. The strict private
 HAL suite passed 509/509, the strict public target 134/134, and Core DX11/DX12
-passed 129/129 and 128/128. Exact commands and warnings are recorded in
-`FL9_1_PROGRESS.md`.
+passed 129/129 and 128/128. A Windows winit example also selected physical
+FL9_1 hardware, rendered 60 indexed textured depth-tested frames and verified
+surface reconfiguration after a resize. Exact commands and warnings are
+recorded in `FL9_1_PROGRESS.md`.
 
 This is useful constrained opt-in support, not feature-complete FL9_1 wgpu.
 Remaining software work is to close the public Core-to-HAL contract audit and

@@ -9,6 +9,17 @@ RTX 3090 Ti FL9_1 test verified all four input texels and out-of-bounds zero
 for both formats, 256 pixels total. Historical FL9_1 format support remains
 query-dependent and unverified.
 
+## Safe winit surface smoke — 2026-11-11
+
+The Windows-only `dx11_fl91_winit` example uses the safe public
+`Instance::create_surface(Arc<Window>)` path with winit 0.30. A strict run on
+the physical RTX 3090 Ti selected FL9_1, presented 60 indexed textured
+depth-tested frames and observed/reconfigured a 400x300 to 640x480 physical
+resize. The example bounds surface and depth extents to the adapter's
+downlevel limit. It supplements the offscreen readback example with a
+conventional window-toolkit integration proof; it does not verify historical
+drivers or Lumia/CoreWindow.
+
 ## Nonzero-group 2D `textureDimensions` helpers — 2026-11-11
 
 The selected-entry fragment 2D `textureDimensions` helper proof now accepts

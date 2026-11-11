@@ -283,6 +283,7 @@ portable-atomic.workspace = true
 bytemuck.workspace = true
 
 [target.'cfg(windows)'.dev-dependencies]
+winit.workspace = true
 windows = { workspace = true, features = [
     "Win32_Foundation",
     "Win32_Graphics_Gdi",

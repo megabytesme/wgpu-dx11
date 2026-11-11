@@ -696,6 +696,29 @@ and limit snapshot and reported 60 presented frames. It is not a
 pixel-readback test; use the offscreen example and strict integration suite
 for deterministic pixel validation.
 
+### Safe winit surface example
+
+`wgpu/examples/dx11_fl91_winit.rs` exercises the safe `Arc<Window>` surface
+creation path through winit 0.30. It explicitly checks that adapter selection
+returned physical DX11 FL9_1 hardware, then renders an indexed textured
+depth-tested quad through the public API. The event loop handles resize,
+surface retry/reconfigure and loss paths. Pass `--resize-once` to request a
+400x300 to 640x480 physical resize and fail unless a resize event was observed
+and both the surface and depth target were reconfigured; `--frames=N` bounds
+the run. Configured dimensions are capped to the adapter's 2D texture limit.
+This is presentation and consumer-integration coverage; use the offscreen
+example for pixel readback.
+
+```powershell
+cargo +1.93.1 check --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_winit
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 run --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_winit -- --frames=60 --resize-once
+```
+
+The strict run passed on the RTX 3090 Ti at requested/actual FL9_1, presenting
+60 frames and observing the requested resize. It does not validate historical
+FL9_1 adapters or Lumia/CoreWindow.
+
 The public test also draws fully overlapping near and far textured surfaces
 with the same depth-tested pipeline, in both far-then-near and near-then-far
 orders. Every readback pixel remains the nearer surface's tinted-red value in

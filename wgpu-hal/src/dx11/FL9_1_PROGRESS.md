@@ -32,6 +32,27 @@ Visual Studio x64 environment, with `-j8`:
   test; they were fixed, and the rerun reports none in the new test.
 - `cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed.
 
+## Safe winit surface smoke — 2026-11-11
+
+Added a Windows-only public API example using `winit` 0.30 and
+`Instance::create_surface(Arc<Window>)`. It explicitly verifies physical DX11
+FL9_1 selection, uploads a two-color texture, renders indexed textured
+depth-tested geometry, handles resize/surface results, and recreates the depth
+target on resize. `--resize-once` requires an observed resize and successful
+surface reconfiguration before exit. The selected display initially yielded
+a client size above the downlevel texture limit in one run; the example now
+caps its configured surface/depth dimensions to the adapter's reported 2D
+limit.
+
+The strict run used the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), requested/actual FL9_1, `software=false`. It observed a
+400x300 to 640x480 physical resize, reconfigured the surface/depth target,
+presented 60 indexed textured depth-tested frames, and exited successfully.
+`cargo check` and Clippy for the example passed; Clippy emitted only the six
+existing HAL warnings listed above. This is safe-window API/presentation
+integration evidence, not deterministic pixel readback; the strict offscreen
+test remains the readback evidence.
+
 ## Nonzero-group 2D `textureDimensions` helper — 2026-11-11
 
 Core, HAL and Naga now permit the proven query-only helper to reference a 2D

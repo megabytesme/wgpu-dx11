@@ -10,6 +10,15 @@ verified both formats, all four input texels and out-of-bounds zero at forced
 FL9_1. Core DX11/DX12, the strict private HAL suite and full strict public
 target passed; exact outcomes are in `FL9_1_PROGRESS.md`.
 
+## Recent continuation — safe winit surface integration — 2026-11-11
+
+The Windows-only `dx11_fl91_winit` example exercises safe public
+`Arc<Window>` surface creation, indexed textured depth-tested rendering,
+resize/reconfiguration and bounded presentation. Strict RTX 3090 Ti execution
+selected physical FL9_1 hardware, presented 60 frames and observed a
+400x300-to-640x480 physical resize. This improves consumer integration
+evidence; it does not establish historical-driver or Lumia behavior.
+
 ## Recent continuation — query-gated Rg16Snorm fragment `textureLoad` — 2026-11-11
 
 The narrow selected-entry fragment 2D texture-load subset now accepts

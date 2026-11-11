@@ -4637,6 +4637,7 @@ dependencies = [
  "wgpu-hal",
  "wgpu-types",
  "windows",
+ "winit",
 ]
 
 [[package]]
