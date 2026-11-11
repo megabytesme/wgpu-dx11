@@ -2139,6 +2139,22 @@ mod tests {
                 NonZeroU64::new(3),
                 wgt::IndexFormat::Uint16
             )
+            .is_ok());
+        assert!(native
+            .index_buffer(
+                index_native,
+                0,
+                NonZeroU64::new(13),
+                wgt::IndexFormat::Uint32
+            )
+            .is_ok());
+        assert!(native
+            .index_buffer(
+                index_native,
+                0,
+                NonZeroU64::new(17),
+                wgt::IndexFormat::Uint32
+            )
             .is_err());
         assert!(native
             .index_buffer(index_native, 16, None, wgt::IndexFormat::Uint16)

@@ -459,7 +459,6 @@ impl NativeDevice {
         if !buffer.usage.contains(wgt::BufferUses::INDEX)
             || !offset.is_multiple_of(alignment)
             || length == 0
-            || !length.is_multiple_of(alignment)
         {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
