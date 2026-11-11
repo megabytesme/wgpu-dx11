@@ -2389,9 +2389,12 @@ When the selected query positively reports `TEXTURE2D`, the same public test
 also creates an `Rg16Snorm` source with `COPY_SRC`, copies a 4×4 region into a
 zero-initialized sampled destination at a nonzero origin, and checks both the
 copied and untouched destination texels through point sampling and RGBA8
-readback. Core rejects `Rg16Snorm` texture-to-buffer copies because its
-separate downlevel readback-format mask remains clear. No CPU shadow or native
-staging readback is exposed for this format.
+readback. When the ordered-shadow backend path is enabled, the public
+texture-to-buffer mask also includes `Rg16Snorm`; the same command buffer reads
+the copied destination back at a nonzero buffer offset with padded rows. It
+checks all 64 exact raw texels, untouched zeroes, row padding and sentinels.
+This uses an execution-ordered CPU shadow rather than native staging readback
+and adds one raw CPU allocation per `COPY_SRC` texture.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

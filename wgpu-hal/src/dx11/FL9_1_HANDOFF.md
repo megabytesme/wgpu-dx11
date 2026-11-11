@@ -10,6 +10,11 @@ covers vec2/vec3/vec4 and the strict public RTX readback covers the vec3
 rendering case. Full-suite results and exact commands are recorded in
 `FL9_1_PROGRESS.md`.
 
+The current follow-up enables query-gated `Rg16Snorm` texture-to-buffer
+readback through the ordered CPU shadow. It verifies raw texels after a partial
+GPU copy, including padded rows and a nonzero destination offset. This is a
+CPU-memory-backed readback capability; it is not a native staging path.
+
 The strict BC readback and bounded fragment sample-bias offset slices are
 implemented and tested. BC readback uses an execution-ordered CPU shadow; it
 avoids a prohibited FL9_x staging copy but adds CPU memory and depends on every

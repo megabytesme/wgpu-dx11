@@ -675,6 +675,8 @@ impl crate::Device for Device {
                     | wgt::TextureFormat::Bc3RgbaUnormSrgb
             ) || desc.format == wgt::TextureFormat::Rg8Snorm
                 && capabilities.backend.rg8_snorm_shadow_copy_readback
+                || desc.format == wgt::TextureFormat::Rg16Snorm
+                    && capabilities.backend.rg16_snorm_shadow_copy_readback
                 || desc.format == wgt::TextureFormat::Rgba8Snorm
                     && capabilities.backend.rgba8_snorm_shadow_copy_readback)
         {

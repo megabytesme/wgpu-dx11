@@ -314,6 +314,7 @@ pub(super) struct BackendCapabilities {
     pub rgba8_snorm_texture_to_texture_copy: bool,
     pub rgba8_snorm_shadow_copy_readback: bool,
     pub rg16_snorm_texture_to_texture_copy: bool,
+    pub rg16_snorm_shadow_copy_readback: bool,
     pub rgb5551_texture_to_texture_copy: bool,
     pub rgba4444_texture_to_texture_copy: bool,
     pub rg8_snorm_sampled_upload: bool,
@@ -463,6 +464,7 @@ impl BackendCapabilities {
         rgba8_snorm_texture_to_texture_copy: true,
         rgba8_snorm_shadow_copy_readback: true,
         rg16_snorm_texture_to_texture_copy: true,
+        rg16_snorm_shadow_copy_readback: true,
         rgb5551_texture_to_texture_copy: true,
         rgba4444_texture_to_texture_copy: true,
         rg8_snorm_sampled_upload: true,
@@ -1127,6 +1129,7 @@ impl Capabilities {
             wgt::TextureFormat::R8Unorm,
             wgt::TextureFormat::Rg8Unorm,
             wgt::TextureFormat::Rg8Snorm,
+            wgt::TextureFormat::Rg16Snorm,
             wgt::TextureFormat::Rgba8Snorm,
             wgt::TextureFormat::Rgb5g6b5Unorm,
             wgt::TextureFormat::Bc1RgbaUnorm,
@@ -1150,6 +1153,7 @@ impl Capabilities {
                     | wgt::TextureFormat::Bc3RgbaUnormSrgb => {
                         self.backend.bc_texture_to_buffer_shadow_readback
                     }
+                    wgt::TextureFormat::Rg16Snorm => self.backend.rg16_snorm_shadow_copy_readback,
                     wgt::TextureFormat::Rgba8Snorm => self.backend.rgba8_snorm_shadow_copy_readback,
                     _ => true,
                 }
@@ -3502,7 +3506,7 @@ mod tests {
     }
 
     #[test]
-    fn rg16_snorm_gpu_copy_source_is_query_gated_without_readback() {
+    fn rg16_snorm_gpu_copy_source_remains_query_gated_with_shadow_readback() {
         use TextureRejection::*;
 
         let format = wgt::TextureFormat::Rg16Snorm;
@@ -3520,7 +3524,10 @@ mod tests {
             caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
             Ok(())
         );
-        assert_eq!(caps.texture_to_buffer_copy_format_mask() & readback_bit, 0);
+        assert_eq!(
+            caps.texture_to_buffer_copy_format_mask() & readback_bit,
+            readback_bit
+        );
 
         let mut backend_disabled = caps;
         backend_disabled.backend.rg16_snorm_texture_to_texture_copy = false;
@@ -3550,6 +3557,59 @@ mod tests {
         assert_eq!(
             missing_texture2d.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
             Err(DriverFormatUnsupported)
+        );
+    }
+
+    #[test]
+    fn rg16_snorm_shadow_readback_requires_backend_and_format_support() {
+        use TextureRejection::*;
+
+        let format = wgt::TextureFormat::Rg16Snorm;
+        let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_SRC;
+        let readback_bit = wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format);
+        let texture2d = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
+        let mut caps = model(FeatureLevel::L9_1);
+        caps.driver.rg16_snorm = Query::Value(texture2d);
+
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+            Ok(())
+        );
+        assert_eq!(
+            caps.texture_to_buffer_copy_format_mask() & readback_bit,
+            readback_bit
+        );
+
+        let mut no_shadow = caps;
+        no_shadow.backend.rg16_snorm_shadow_copy_readback = false;
+        assert!(no_shadow
+            .texture_format_capabilities(format)
+            .contains(crate::TextureFormatCapabilities::COPY_SRC));
+        assert_eq!(
+            no_shadow.texture_to_buffer_copy_format_mask() & readback_bit,
+            0
+        );
+
+        let mut unavailable = caps;
+        unavailable.driver.rg16_snorm = Query::Unavailable(-1);
+        assert_eq!(
+            unavailable.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+            Err(DriverQueryUnavailable)
+        );
+        assert_eq!(
+            unavailable.texture_to_buffer_copy_format_mask() & readback_bit,
+            0
+        );
+
+        let mut missing_texture2d = caps;
+        missing_texture2d.driver.rg16_snorm = Query::Value(0);
+        assert_eq!(
+            missing_texture2d.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+            Err(DriverFormatUnsupported)
+        );
+        assert_eq!(
+            missing_texture2d.texture_to_buffer_copy_format_mask() & readback_bit,
+            0
         );
     }
 

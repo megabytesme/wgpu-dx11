@@ -11960,14 +11960,14 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             .flags
             .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
         assert!(rg16_copy_src);
+        assert!(adapter
+            .get_downlevel_capabilities()
+            .limits
+            .supports_texture_to_buffer_copy(TextureFormat::Rg16Snorm));
     } else {
         assert!(rg16_features.allowed_usages.is_empty());
         assert!(rg16_features.flags.is_empty());
     }
-    assert!(!adapter
-        .get_downlevel_capabilities()
-        .limits
-        .supports_texture_to_buffer_copy(TextureFormat::Rg16Snorm));
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; Rg8Snorm={rg_features:?}; Rg16Snorm={rg16_features:?}; Rgba8Snorm={rgba_features:?}",
         info.name, info.vendor, info.device, info.driver_info
@@ -12153,7 +12153,9 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: TextureFormat::Rg16Snorm,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let zeroes = vec![0; 8 * 256];
@@ -12401,41 +12403,17 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    if rg16_sampled {
-        expect_validation_error(
-            &device,
-            "Rg16Snorm texture-to-buffer readback remains unavailable",
-            || {
-                let mut invalid_encoder =
-                    device.create_command_encoder(&CommandEncoderDescriptor {
-                        label: Some("invalid public FL9_1 Rg16Snorm readback"),
-                    });
-                invalid_encoder.copy_texture_to_buffer(
-                    TexelCopyTextureInfo {
-                        texture: rg16_texture.as_ref().expect("Rg16Snorm source texture"),
-                        mip_level: 0,
-                        origin: Origin3d::ZERO,
-                        aspect: TextureAspect::All,
-                    },
-                    TexelCopyBufferInfo {
-                        buffer: &readback,
-                        layout: TexelCopyBufferLayout {
-                            offset: 0,
-                            bytes_per_row: Some(256),
-                            rows_per_image: Some(8),
-                        },
-                    },
-                    Extent3d {
-                        width: 8,
-                        height: 8,
-                        depth_or_array_layers: 1,
-                    },
-                );
-                let _ = invalid_encoder.finish();
-            },
-        );
-        println!("PASS: Core kept Rg16Snorm texture-to-buffer readback unavailable");
-    }
+    let rg16_readback = rg16_sampled.then(|| {
+        let buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("public FL9_1 Rg16Snorm padded raw-byte readback"),
+            size: 16 + 8 * 256 + 16,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let sentinel = vec![0xcd; 16 + 8 * 256 + 16];
+        queue.write_buffer(&buffer, 0, &sentinel);
+        buffer
+    });
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("public FL9_1 SNORM commands"),
     });
@@ -12458,6 +12436,29 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             Extent3d {
                 width: 4,
                 height: 4,
+                depth_or_array_layers: 1,
+            },
+        );
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: rg16_copy_texture
+                    .as_ref()
+                    .expect("Rg16Snorm copy destination"),
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: rg16_readback.as_ref().expect("Rg16Snorm readback buffer"),
+                layout: TexelCopyBufferLayout {
+                    offset: 16,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
                 depth_or_array_layers: 1,
             },
         );
@@ -12510,6 +12511,14 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     readback
         .slice(..)
         .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    let (rg16_sender, rg16_receiver) = std::sync::mpsc::channel();
+    if let Some(rg16_readback) = &rg16_readback {
+        rg16_readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| {
+                rg16_sender.send(result).unwrap()
+            });
+    }
     device
         .poll(PollType::Wait {
             submission_index: Some(submission),
@@ -12520,6 +12529,39 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
         .recv_timeout(Duration::from_secs(10))
         .expect("SNORM readback callback")
         .expect("map SNORM readback");
+    if let (Some(rg16_readback), true) = (&rg16_readback, rg16_sampled) {
+        rg16_receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("Rg16Snorm readback callback")
+            .expect("map Rg16Snorm readback");
+        let data = rg16_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped Rg16Snorm data");
+        assert!(data[..16].iter().all(|byte| *byte == 0xcd));
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = 16 + y * 256 + x * 4;
+                let expected = if (2..6).contains(&x) && (2..6).contains(&y) {
+                    [0x00, 0xc0, 0x00, 0xe0]
+                } else {
+                    [0; 4]
+                };
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "Rg16Snorm raw pixel ({x}, {y})"
+                );
+            }
+            assert!(data[16 + y * 256 + 32..16 + (y + 1) * 256]
+                .iter()
+                .all(|byte| *byte == 0xcd));
+        }
+        assert!(data[16 + 8 * 256..].iter().all(|byte| *byte == 0xcd));
+        drop(data);
+        rg16_readback.unmap();
+        println!("PASS: Rg16Snorm partial GPU copy read back 64 exact raw texels; offset, row padding and trailing sentinel were preserved");
+    }
     {
         let data = readback.slice(..).get_mapped_range().expect("mapped data");
         for y in 0..8 {

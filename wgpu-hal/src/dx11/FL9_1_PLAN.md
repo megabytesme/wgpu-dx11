@@ -13,11 +13,19 @@ DX11 and 127/127 with DX12, Naga 163/163, and the focused wgpu-types test
 passed 1/1. Historical FL9_1 hardware remains unverified; commands and
 diagnostics are recorded in `FL9_1_PROGRESS.md`.
 
+`Rg16Snorm` texture-to-buffer readback now has a separately backend-gated,
+execution-ordered CPU-shadow path. The strict test validates all destination
+texels after a partial GPU copy, including the zeroed border, nonzero readback
+offset, padded rows and sentinels. The shadow duplicates each `COPY_SRC`
+texture's raw storage; it is not native staging readback. Historical-driver
+behavior remains unverified. The full strict private suite passed 505/505 and
+the public D3D11 target passed 129/129; Core DX12 passed 130/130. Three
+optional format/vertex-input subcases logged skips.
+
 Query-gated `Rg16Snorm` same-format texture-to-texture `COPY_SRC` is now
-implemented without render-target binding or a CPU shadow. The strict public
-test partially copies a 4×4 region at nonzero destination origin, samples both
-copied and untouched texels, and verifies that texture-to-buffer readback
-remains Core-rejected. RTX forced-FL9_1 execution passes; historical-driver
+implemented without render-target binding. The strict public test partially
+copies a 4×4 region at nonzero destination origin and samples both copied and
+untouched texels. RTX forced-FL9_1 execution passes; historical-driver
 behavior remains unverified. The full strict private suite passed 502/502 and
 the full strict public D3D11 target passed 129/129, with three optional
 format/vertex-input subcases reported as skips; exact commands are in

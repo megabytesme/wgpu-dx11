@@ -1,3 +1,36 @@
+## R16G16_SNORM ordered shadow readback — 2026-11-11
+
+Added a separately gated texture-to-buffer path for `Rg16Snorm`. The selected
+format query must report `TEXTURE2D`, and the backend shadow capability must be
+enabled. Texture-to-texture copies remain native; the ordered CPU shadow tracks
+zero initialization, direct and staged uploads, and queued texture copies. The
+strict public FL9_1 test reads the partially copied destination in the same
+submission, at a nonzero offset with padded rows. All 64 raw texels matched:
+the copied 4×4 region contained `[00 C0 00 E0]` and all other texels were zero.
+The prefix, row padding and trailing bytes retained their `0xCD` sentinels.
+The RTX 3090 Ti reported `Rg16Snorm` usages `COPY_SRC | COPY_DST |
+TEXTURE_BINDING`, `SINGLE_MIP_ONLY`, and no filtering support at requested and
+actual FL9_1 (`0x10de:0x2203`, driver `32.0.16.2101`, software=false). This uses
+one CPU allocation matching each `COPY_SRC` texture's raw subresources; it is
+not native staging readback and does not establish historical-driver behavior.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_snorm_sampled_uploads_at_fl91 -- --exact --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
+The focused Rg16 private tests passed 5/5, including the existing
+sampled-upload hardware case. The full strict HAL suite passed 505/505 and the
+full strict public D3D11 target passed 129/129 on the physical GPU. Three
+optional subcases logged skips (optional Rg8 mip support, Float16 vertex input,
+and Rg8 vertex input); strict-required rendering tests did not skip. Core's
+DX12 suite passed 130/130. HAL and public Clippy completed with existing
+warnings in unrelated D3D11 code; format and diff checks passed.
 # FL9_1 progress
 
 ## Query-gated Rg16Snorm GPU copies — 2026-11-11

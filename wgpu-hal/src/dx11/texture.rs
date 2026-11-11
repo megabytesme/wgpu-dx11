@@ -299,6 +299,7 @@ impl Texture2DShadow {
             || !matches!(
                 format,
                 DXGI_FORMAT_R8G8_SNORM
+                    | DXGI_FORMAT_R16G16_SNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_BC1_UNORM_SRGB
@@ -2625,6 +2626,54 @@ mod tests {
         assert!(source
             .copy_region_from(&source, 0, 0, [0, 0], 0, 0, [1, 0], [2, 2])
             .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn rg16_snorm_shadow_preserves_signed_words_and_padded_partial_copies() -> Result<()> {
+        let source = Texture2DShadow::zeroed(4, 3, 1, 1, DXGI_FORMAT_R16G16_SNORM)?;
+        let mut upload = alloc::vec![0xee; 24 * 3];
+        for row in 0..3usize {
+            for column in 0..4usize {
+                let texel = (row * 4 + column) as i16;
+                let offset = row * 24 + column * 4;
+                upload[offset..offset + 2].copy_from_slice(&(-30000 + texel * 1000).to_le_bytes());
+                upload[offset + 2..offset + 4]
+                    .copy_from_slice(&(28000 - texel * 900).to_le_bytes());
+            }
+        }
+        source.write_region(0, 0, [0, 0], [4, 3], 24, &upload)?;
+
+        let patch_words = [30000i16, -30000, 20000, -20000, -10000, 10000, -5000, 5000];
+        let mut patch = alloc::vec![0x5a; 24];
+        for row in 0..2usize {
+            for column in 0..2usize {
+                let word = (row * 2 + column) * 2;
+                let offset = row * 12 + column * 4;
+                patch[offset..offset + 2].copy_from_slice(&patch_words[word].to_le_bytes());
+                patch[offset + 2..offset + 4].copy_from_slice(&patch_words[word + 1].to_le_bytes());
+            }
+        }
+        source.write_region(0, 0, [1, 1], [2, 2], 12, &patch)?;
+
+        let destination = Texture2DShadow::zeroed(6, 4, 1, 1, DXGI_FORMAT_R16G16_SNORM)?;
+        destination.copy_region_from(&source, 0, 0, [1, 0], 0, 0, [2, 1], [2, 3])?;
+        let actual = destination.read_region(0, 0, [0, 0], [6, 4])?;
+        let mut expected = alloc::vec![0; 6 * 4 * 4];
+        for row in 0..3usize {
+            for column in 0..2usize {
+                let source_offset = row * 24 + (column + 1) * 4;
+                let destination_offset = ((row + 1) * 6 + column + 2) * 4;
+                expected[destination_offset..destination_offset + 4]
+                    .copy_from_slice(&upload[source_offset..source_offset + 4]);
+                if row > 0 {
+                    let patch_offset = (row - 1) * 12 + column * 4;
+                    expected[destination_offset..destination_offset + 4]
+                        .copy_from_slice(&patch[patch_offset..patch_offset + 4]);
+                }
+            }
+        }
+        assert_eq!(actual, expected);
         Ok(())
     }
 
