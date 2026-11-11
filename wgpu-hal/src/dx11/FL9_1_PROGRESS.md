@@ -8,7 +8,8 @@ readback; all 64 pixels matched `[64, 128, 191, 255]` on the physical RTX
 FL9_1. The focused test passed 1/1. The complete strict public D3D11 target
 passed 140/140 test functions. Targeted public Clippy passed with six existing
 HAL warnings; `cargo +1.93.1 fmt --all -- --check` and `git diff --check`
-passed.
+passed. Checkpoint: `0465028da` (`dx11: test public nonzero-group FL9_1
+uniforms`).
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'

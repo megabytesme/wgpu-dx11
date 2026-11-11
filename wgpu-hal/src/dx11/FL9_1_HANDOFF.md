@@ -7,7 +7,8 @@ uniform at group 2/binding 42. Strict forced-FL9_1 readback on the physical RTX
 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) matched all 64 pixels. The
 focused test passed 1/1 and the complete strict public D3D11 target passed
 140/140 test functions. Exact commands and existing Clippy warnings are in
-`FL9_1_PROGRESS.md`.
+`FL9_1_PROGRESS.md`. Checkpoint: `0465028da` (`dx11: test public nonzero-group
+FL9_1 uniforms`).
 
 The explicit `Backends::DX11` public path is available with a conservative
 FL9_1 projection; default backend selection excludes DX11. This supports

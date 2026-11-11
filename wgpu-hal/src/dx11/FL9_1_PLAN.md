@@ -2,6 +2,8 @@
 
 ## Current coordinator checkpoint — public nonzero-group uniform binding — 2026-11-11
 
+Checkpoint: `0465028da` (`dx11: test public nonzero-group FL9_1 uniforms`).
+
 The public GPU suite now covers a sparse fragment uniform at group 2/binding
 42, closing the public coverage gap found by the uniform audit. Strict
 forced-FL9_1 readback passed on the RTX 3090 Ti and all 64 pixels matched the
