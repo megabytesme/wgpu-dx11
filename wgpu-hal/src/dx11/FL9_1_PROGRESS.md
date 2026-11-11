@@ -16633,3 +16633,16 @@ cargo +1.93.1 test --offline -j4 -p wgpu-core --no-default-features --features d
 ```
 
 Checkpoint: `eb2ee4b0d2c54c9e92d38c1db2895ef1734bad20` (`dx11: verify helper LOD-zero and BC cube sampling`).
+
+## Public HWND example execution — 2026-11-11
+
+Ran the public `dx11_fl91_windowed` example with a three-frame limit. It
+selected the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+requested and verified FL9_1, reported `software=false`, and presented three
+textured, indexed, depth-tested frames through an HWND surface. This confirms
+the checked-in public example runs end-to-end in the current desktop session;
+it does not verify historical FL9_1 drivers or Lumia/CoreWindow presentation.
+
+```powershell
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set "WGPU_DX11_REQUIRE_HARDWARE=1" && set "CARGO_TARGET_DIR=E:\Temp\wgpu-mission-gpu-target" && set "CARGO_NET_OFFLINE=true" && set "CARGO_BUILD_JOBS=4" && cargo +1.93.1 run --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_windowed -- --frames=3'
+```

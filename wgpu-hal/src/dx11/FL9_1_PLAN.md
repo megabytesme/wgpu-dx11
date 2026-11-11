@@ -19,6 +19,11 @@ computation or control flow, dynamic or nonzero LOD, and incompatible
 resources. Strict public execution matched all 64 expected pixels through
 both direct and helper paths on the forced-FL9_1 RTX 3090 Ti.
 
+The public `dx11_fl91_windowed` example also ran in strict mode and presented
+three textured, indexed, depth-tested frames through an HWND surface. This
+adds desktop-example execution evidence, not historical-driver or Lumia
+CoreWindow evidence.
+
 ## Previous checkpoint — 2026-11-11
 
 RGBA8_SNORM now has ordered raw-byte texture-to-buffer readback through the
