@@ -16672,3 +16672,26 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_format_usage_projection_matches_core_creation_at_fl91 -- --nocapture --test-threads=1
 cargo +1.93.1 clippy --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
 ```
+
+Checkpoint: `261d90eef3e449a69100a0a090f09b6166a92ac3` (`dx11: verify advertised texture view usages`).
+
+## Coordinator contract-audit round — 2026-11-11
+
+Three independent read-only reviews covered shader/profile restrictions,
+public resource and view paths, and surface/submission/lifetime behavior. They
+found no confirmed Core-valid request reaching an unsupported HAL operation,
+no false capability report in the reviewed resource paths, and no confirmed
+surface or completion path that loses resources or reports failed presentation
+as successful. Shader restrictions such as general explicit LOD, derivatives,
+gather and dynamic loops remain explicitly gated at the tested Level 9
+profiles. The resource review found that the existing 21-format creation
+matrix lacked systematic view creation; this was addressed and tested in the
+preceding checkpoint. The surface review's suggested visible HWND example run
+was completed and recorded above.
+
+These audits were bounded source reviews, not proof that every valid operation
+has been audited. They did not run Cargo. Historical FL9_1 hardware, Lumia
+ARM32/CoreWindow execution and physical device-removal/recovery remain external
+verification gaps. Continue with one concrete, user-relevant Core/Naga/HAL
+vertical slice at a time; avoid assigning whole coupled feature families to
+separate implementers.
