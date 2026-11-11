@@ -8,13 +8,12 @@ have a trailing partial index. Core clamps draws to the complete indices.
 Strict public FL9_1 rendering verified a 13-byte Uint32 range draws three
 indices and rejects a four-index draw.
 
-The current uncommitted RG8_SNORM change adds an execution-ordered raw-byte
-shadow for partial texture copies and readback. It fixes a HAL format-query
-mask mismatch that incorrectly required an RTV despite the fallback. Strict
-FL9_1 public rendering verifies padded uploads, partial uploads/copies,
-preserved bytes and sampled output; the complete private and public suites
-passed after aligning their format expectations. This change still needs its
-verified checkpoint commit.
+Commit `0049e0705` adds an execution-ordered RG8_SNORM raw-byte shadow for
+partial texture copies and readback. It fixes a HAL format-query mask mismatch
+that incorrectly required an RTV despite the fallback. Strict FL9_1 public
+rendering verifies padded uploads, partial uploads/copies, preserved bytes
+and sampled output; the complete private and public suites passed after
+aligning their format expectations.
 
 The backend is a substantial opt-in public implementation for a bounded
 FL9_1 graphics subset, not a drop-in backend for arbitrary wgpu programs or a
@@ -41,10 +40,12 @@ Public HWND presentation and the desktop cube example have hardware evidence;
 historical FL9_1 drivers, real Lumia/ARM32 CoreWindow execution and physical
 device removal/recovery remain external verification gaps.
 
-Next: checkpoint the now verified RG8_SNORM fallback, then continue the
-remaining Core/HAL audit and choose a shader expansion from demonstrated
-application demand. Current format candidates R32_FLOAT sampling and packed
-format render targets are not supported by the RTX's relevant
+Next: continue the remaining Core/HAL audit and choose a shader expansion
+from demonstrated application demand. The direct fragment
+`textureSampleLevel` subset needs a concrete use case and full WGSL-semantic
+review before implementation; helper-mediated fragment uniform-array reads
+are a smaller implementation candidate. Current format candidates R32_FLOAT
+sampling and packed format render targets are not supported by the RTX's relevant
 `CheckFormatSupport` bits. Do not treat 1D/ordinary arrays, 3D GPU copies, MRT,
 compute/UAV, indirect drawing or occlusion queries as software backlog where
 FL9_1 forbids them.
