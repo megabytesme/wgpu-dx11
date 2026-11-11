@@ -1,5 +1,16 @@
 # FL9_1 completion plan
 
+## Latest continuation — helper-contained sample-bias offset — 2026-11-11
+
+The bounded fragment `textureSampleBias` constant-offset path now accepts one
+coordinate-forwarding helper in addition to its direct-entry form. Core, HAL
+and Naga independently prove the selected entry shape; Naga rewrites the
+sample using the bound view's dimensions. Nested calls, changed coordinates,
+multiple samples, and out-of-range offsets remain rejected. FXC accepted the
+helper at `ps_4_0_level_9_1`, and strict RTX readback verified all 64 pixels
+for each of the two tested view shapes. Exact commands and results are in
+`TESTING.md` and `FL9_1_PROGRESS.md`.
+
 ## Latest current state — 2026-11-11
 
 RGB5A1 and RGBA4 now also have query-gated sampled/upload mip chains. The

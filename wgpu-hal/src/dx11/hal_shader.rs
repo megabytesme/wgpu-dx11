@@ -2502,11 +2502,34 @@ mod tests {
             fn sample_image(uv: vec2f) -> vec4f {
                 return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0));
             }
+            fn nested_sample(uv: vec2f) -> vec4f { return sample_image(uv); }
+            fn multiple_sample(uv: vec2f) -> vec4f {
+                return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0))
+                    + textureSampleBias(image, smp, uv, 1.0, vec2i(0, 1));
+            }
+            fn changed_sample(uv: vec2f) -> vec4f {
+                return textureSampleBias(image, smp, uv + vec2f(0.1, 0.0), 1.0, vec2i(1, 0));
+            }
+            fn out_of_range_sample(uv: vec2f) -> vec4f {
+                return textureSampleBias(image, smp, uv, 1.0, vec2i(8, 0));
+            }
             @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0));
             }
             @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return sample_image(uv);
+            }
+            @fragment fn nested_helper(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return nested_sample(uv);
+            }
+            @fragment fn multiple_helper(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return multiple_sample(uv);
+            }
+            @fragment fn changed_coordinate(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return changed_sample(uv);
+            }
+            @fragment fn out_of_range(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return out_of_range_sample(uv);
             }
             @fragment fn multiple(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0))
@@ -2572,16 +2595,48 @@ mod tests {
                     ..Default::default()
                 },
                 &[],
-                proof.sample_expression,
+                Some((proof.sample_function, proof.sample_expression.unwrap())),
             )
         );
-        assert!(fl9_texture_emulation_binding(
-            &module,
-            &info,
-            naga::ShaderStage::Fragment,
-            "helper",
-        )
-        .is_err());
+        let helper_proof =
+            fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "helper")
+                .expect("analyze coordinate-forwarding sample-bias offset helper")
+                .expect("detect sample-bias offset helper");
+        let helper_index = helper_proof.sample_function.unwrap();
+        let helper_entry_index = module
+            .entry_points
+            .iter()
+            .position(|entry| entry.name == "helper")
+            .unwrap();
+        assert!(
+            !has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices_and_sample_offset(
+                &module,
+                &info,
+                &module.entry_points[helper_entry_index].function,
+                info.get_entry_point(helper_entry_index),
+                ShaderProfile::PixelLevel9_1,
+                Fl9ShaderInputOptions {
+                    texture_sample_bias_offset_binding: Some(helper_proof.binding),
+                    ..Default::default()
+                },
+                &[],
+                Some((Some(helper_index), helper_proof.sample_expression.unwrap(),)),
+            )
+        );
+        for entry in [
+            "nested_helper",
+            "multiple_helper",
+            "changed_coordinate",
+            "out_of_range",
+        ] {
+            assert!(fl9_texture_emulation_binding(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                entry,
+            )
+            .is_err());
+        }
         assert!(fl9_texture_emulation_binding(
             &module,
             &info,
@@ -2688,7 +2743,7 @@ mod tests {
                     ..Default::default()
                 },
                 &[],
-                proof.sample_expression,
+                Some((None, proof.sample_expression.unwrap())),
             )
         );
         for entry in [
@@ -6275,6 +6330,7 @@ pub(super) enum Fl9TextureEmulationKind {
 pub(super) struct Fl9TextureEmulation {
     pub binding: naga::ResourceBinding,
     pub kind: Fl9TextureEmulationKind,
+    pub sample_function: Option<naga::Handle<naga::Function>>,
     pub sample_expression: Option<naga::Handle<naga::Expression>>,
     pub coordinate_conversion: Option<naga::Handle<naga::Expression>>,
     pub dimension: naga::ImageDimension,
@@ -6283,19 +6339,120 @@ pub(super) struct Fl9TextureEmulation {
     pub has_helper: bool,
 }
 
+fn fl9_sample_bias_offset_helper(
+    module: &naga::Module,
+    entry: &naga::Function,
+) -> Option<naga::Handle<naga::Function>> {
+    let is_vec2f = |ty| {
+        matches!(
+            module.types[ty].inner,
+            naga::TypeInner::Vector {
+                size: naga::VectorSize::Bi,
+                scalar: naga::Scalar {
+                    kind: naga::ScalarKind::Float,
+                    width: 4,
+                },
+            }
+        )
+    };
+    let is_vec4f = |ty| {
+        matches!(
+            module.types[ty].inner,
+            naga::TypeInner::Vector {
+                size: naga::VectorSize::Quad,
+                scalar: naga::Scalar {
+                    kind: naga::ScalarKind::Float,
+                    width: 4,
+                },
+            }
+        )
+    };
+    if entry.body.iter().any(|statement| {
+        !matches!(
+            statement,
+            naga::Statement::Emit(_)
+                | naga::Statement::Call { .. }
+                | naga::Statement::Return { .. }
+        )
+    }) {
+        return None;
+    }
+    let calls = entry
+        .body
+        .iter()
+        .filter_map(|statement| match statement {
+            naga::Statement::Call {
+                function,
+                arguments,
+                result,
+            } => Some((*function, arguments, *result)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [(helper, arguments, Some(call_result))] = calls.as_slice() else {
+        return None;
+    };
+    if arguments.len() != 1
+        || !matches!(
+            entry.expressions[arguments[0]],
+            naga::Expression::FunctionArgument(0)
+        )
+        || !matches!(
+            entry.expressions[*call_result],
+            naga::Expression::CallResult(function) if function == *helper
+        )
+        || entry.expressions.iter().any(|(handle, expression)| {
+            (handle == *call_result
+                && !matches!(
+                    expression,
+                    naga::Expression::CallResult(function) if *function == *helper
+                ))
+                || (handle != *call_result
+                    && !matches!(expression, naga::Expression::FunctionArgument(0)))
+        })
+        || entry
+            .body
+            .iter()
+            .filter_map(|statement| match statement {
+                naga::Statement::Return { value } => Some(*value),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            != [Some(*call_result)]
+    {
+        return None;
+    }
+    let reachable = fl9_reachable_functions(module, entry);
+    if reachable.as_slice() != [*helper] {
+        return None;
+    }
+    let helper_function = &module.functions[*helper];
+    if !matches!(
+        helper_function.arguments.as_slice(),
+        [argument] if argument.binding.is_none() && is_vec2f(argument.ty)
+    ) || !helper_function
+        .result
+        .as_ref()
+        .is_some_and(|result| is_vec4f(result.ty))
+    {
+        return None;
+    }
+    Some(*helper)
+}
+
 fn fl9_sample_bias_offset_emulation(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,
     entry_index: usize,
 ) -> Result<Option<Fl9TextureEmulation>, crate::PipelineError> {
     let entry = &module.entry_points[entry_index];
-    let function_info = info.get_entry_point(entry_index);
-    let has_offset_sample = entry
+    let entry_info = info.get_entry_point(entry_index);
+    let has_entry_sample = entry
         .function
         .expressions
         .iter()
         .any(|(handle, expression)| {
-            function_info[handle].ref_count != 0
+            entry_info[handle].ref_count != 0
                 && matches!(
                     expression,
                     naga::Expression::ImageSample {
@@ -6305,6 +6462,30 @@ fn fl9_sample_bias_offset_emulation(
                     }
                 )
         });
+    let sample_function = if has_entry_sample {
+        None
+    } else {
+        Some(fl9_sample_bias_offset_helper(module, &entry.function).ok_or_else(|| {
+            crate::PipelineError::Linkage(
+                wgt::ShaderStages::FRAGMENT,
+                "D3D11 FL9 textureSampleBias offset requires one direct sample or one coordinate-forwarding helper"
+                    .into(),
+            )
+        })?)
+    };
+    let function = sample_function.map_or(&entry.function, |handle| &module.functions[handle]);
+    let function_info = sample_function.map_or(entry_info, |handle| &info[handle]);
+    let has_offset_sample = function.expressions.iter().any(|(handle, expression)| {
+        function_info[handle].ref_count != 0
+            && matches!(
+                expression,
+                naga::Expression::ImageSample {
+                    level: naga::SampleLevel::Bias(_),
+                    offset: Some(_),
+                    ..
+                }
+            )
+    });
     if !has_offset_sample {
         return Ok(None);
     }
@@ -6313,7 +6494,7 @@ fn fl9_sample_bias_offset_emulation(
     let invalid = || {
         crate::PipelineError::Linkage(
             stages,
-            "D3D11 FL9 textureSampleBias offset requires one direct fragment sample with a constant offset"
+                "D3D11 FL9 textureSampleBias offset requires one direct fragment sample with a constant offset"
                 .into(),
         )
     };
@@ -6335,12 +6516,13 @@ fn fl9_sample_bias_offset_emulation(
                     }
                 )
         )
-        || entry.function.body.iter().any(|statement| {
-            !matches!(
-                statement,
-                naga::Statement::Emit(_) | naga::Statement::Return { .. }
-            )
-        })
+        || (sample_function.is_none()
+            && entry.function.body.iter().any(|statement| {
+                !matches!(
+                    statement,
+                    naga::Statement::Emit(_) | naga::Statement::Return { .. }
+                )
+            }))
     {
         return Err(invalid());
     }
@@ -6349,7 +6531,7 @@ fn fl9_sample_bias_offset_emulation(
     let mut selected_sampler = None;
     let mut sample_expression = None;
     let mut sample_count = 0;
-    for (handle, expression) in entry.function.expressions.iter() {
+    for (handle, expression) in function.expressions.iter() {
         if function_info[handle].ref_count == 0 {
             continue;
         }
@@ -6367,19 +6549,18 @@ fn fl9_sample_bias_offset_emulation(
             } => {
                 sample_count += 1;
                 if sample_count != 1
-                    || !fl9_sample_offset_in_range(module, &entry.function, offset)
+                    || !fl9_sample_offset_in_range(module, function, offset)
                     || !matches!(
-                        entry.function.expressions[coordinate],
+                        function.expressions[coordinate],
                         naga::Expression::FunctionArgument(0)
                     )
                 {
                     return Err(invalid());
                 }
-                let naga::Expression::GlobalVariable(image) = entry.function.expressions[image]
-                else {
+                let naga::Expression::GlobalVariable(image) = function.expressions[image] else {
                     return Err(invalid());
                 };
-                let naga::Expression::GlobalVariable(sampler) = entry.function.expressions[sampler]
+                let naga::Expression::GlobalVariable(sampler) = function.expressions[sampler]
                 else {
                     return Err(invalid());
                 };
@@ -6416,8 +6597,13 @@ fn fl9_sample_bias_offset_emulation(
             global.binding.is_some()
                 && handle != image
                 && handle != sampler
-                && !function_info[handle].is_empty()
+                && !entry_info[handle].is_empty()
         })
+        || entry_info.sampling_set.len() != 1
+        || entry_info
+            .sampling_set
+            .iter()
+            .any(|pair| pair.image != image || pair.sampler != sampler)
     {
         return Err(invalid());
     }
@@ -6429,12 +6615,13 @@ fn fl9_sample_bias_offset_emulation(
     Ok(Some(Fl9TextureEmulation {
         binding,
         kind: Fl9TextureEmulationKind::SampleBiasOffset,
+        sample_function,
         sample_expression,
         coordinate_conversion: None,
         dimension: naga::ImageDimension::D2,
         mip_level: 0,
         has_implicit_sample: false,
-        has_helper: false,
+        has_helper: sample_function.is_some(),
     }))
 }
 
@@ -6674,6 +6861,7 @@ fn fl9_sample_compare_offset_emulation(
     Ok(Some(Fl9TextureEmulation {
         binding,
         kind: Fl9TextureEmulationKind::SampleCompareOffset,
+        sample_function: None,
         sample_expression,
         coordinate_conversion: None,
         dimension: naga::ImageDimension::D2,
@@ -7665,6 +7853,7 @@ fn fl9_texture_emulation_binding(
             Ok(Some(Fl9TextureEmulation {
                 binding,
                 kind,
+                sample_function: None,
                 sample_expression,
                 coordinate_conversion,
                 dimension: dim,
@@ -8281,7 +8470,10 @@ fn has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices_and_sample_o
     profile: ShaderProfile,
     input_options: Fl9ShaderInputOptions,
     uniform_index_arguments: &[(u32, u32)],
-    supported_fragment_sample_bias_offset: Option<naga::Handle<naga::Expression>>,
+    supported_fragment_sample_bias_offset: Option<(
+        Option<naga::Handle<naga::Function>>,
+        naga::Handle<naga::Expression>,
+    )>,
 ) -> bool {
     let fragment_index_proof = if matches!(profile, ShaderProfile::PixelLevel9_1) {
         supported_fragment_uniform_array_indexing(module, info, function, function_info)
@@ -8350,7 +8542,10 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
     uniform_index_arguments: &[(u32, u32)],
     fragment_index_proof: Option<&Fl9FragmentUniformArrayIndexingProof>,
     frexp_fraction_only_result: Option<naga::Handle<naga::Expression>>,
-    supported_fragment_sample_bias_offset: Option<naga::Handle<naga::Expression>>,
+    supported_fragment_sample_bias_offset: Option<(
+        Option<naga::Handle<naga::Function>>,
+        naga::Handle<naga::Expression>,
+    )>,
 ) -> bool {
     if !matches!(
         profile,
@@ -8797,8 +8992,9 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                         offset: Some(offset),
                         ..
                     } => {
-                        supported_fragment_sample_bias_offset != Some(handle)
-                            && !global_initializer_is_simple(module, offset, &budget)
+                        !supported_fragment_sample_bias_offset.is_some_and(|(owner, expression)| {
+                            owner == function_handle && expression == handle
+                        }) && !global_initializer_is_simple(module, offset, &budget)
                     }
                     naga::Expression::Access { base, index } => {
                         function_info[handle].ref_count != 0
@@ -11660,7 +11856,9 @@ impl ShaderModule {
                 }
                 Fl9TextureEmulationKind::SampleBiasOffset => {
                     input_options.texture_sample_bias_offset_binding = Some(proof.binding);
-                    sample_bias_offset_expression = proof.sample_expression;
+                    sample_bias_offset_expression = proof
+                        .sample_expression
+                        .map(|expression| (proof.sample_function, expression));
                 }
                 Fl9TextureEmulationKind::SampleCompareOffset => {
                     if !super::capabilities::Capabilities::query(&self.owner)
@@ -11673,7 +11871,8 @@ impl ShaderModule {
                         ));
                     }
                     input_options.texture_sample_compare_offset_binding = Some(proof.binding);
-                    sample_bias_offset_expression = proof.sample_expression;
+                    sample_bias_offset_expression =
+                        proof.sample_expression.map(|expression| (None, expression));
                 }
             }
         }

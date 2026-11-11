@@ -24,11 +24,13 @@ future write path for these resources to keep the mirror current. The same
 strict suite verifies partial BC initialization and sampling.
 
 The backend also implements a narrowly proven fragment `textureSampleBias`
-offset subset: one direct sample from a 2D single-mip view, with a constant
-`i32x2` offset in the FL9_1-supported range. The selected view may be mip 1 of
-a multi-mip parent; the view itself must expose one mip. HLSL emulates the
-texel offset using the selected view dimensions. This does not enable general
-sample offsets, helper-contained operations, or arbitrary dynamic bias.
+offset subset: one direct sample or one sample inside a single coordinate-
+forwarding helper, from a 2D single-mip view, with a constant `i32x2` offset in
+the FL9_1-supported range. The selected view may be mip 1 of a multi-mip
+parent; the view itself must expose one mip. HLSL emulates the texel offset
+using the selected view dimensions. Nested helpers, modified coordinates,
+multiple samples, other texture shapes and arbitrary dynamic bias remain
+unsupported.
 
 Strict hardware verification used NVIDIA GeForce RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`), requested and actual FL9_1,

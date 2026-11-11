@@ -205,9 +205,18 @@ fn vs(@location(0) position: vec2f) -> VertexOutput {
     );
 }
 
+fn sample_offset_helper(uv: vec2f) -> vec4f {
+    return textureSampleBias(image, image_sampler, uv, 0.0, vec2i(1, 0));
+}
+
 @fragment
 fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     return textureSampleBias(image, image_sampler, uv, 0.0, vec2i(1, 0));
+}
+
+@fragment
+fn fs_helper(@location(0) uv: vec2f) -> @location(0) vec4f {
+    return sample_offset_helper(uv);
 }
 "#
             .into(),
@@ -228,27 +237,30 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
         blend: None,
         write_mask: ColorWrites::ALL,
     })];
-    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 sample-bias offset pipeline"),
-        layout: Some(&pipeline_layout),
-        vertex: VertexState {
-            module: &shader,
-            entry_point: Some("vs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            buffers: &vertex_buffers,
-        },
-        primitive: PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: MultisampleState::default(),
-        fragment: Some(FragmentState {
-            module: &shader,
-            entry_point: Some("fs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            targets: &targets,
-        }),
-        multiview_mask: None,
-        cache: None,
-    });
+    let create_pipeline = |fragment_entry| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 sample-bias offset pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_buffers,
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let pipelines = [create_pipeline("fs"), create_pipeline("fs_helper")];
 
     let target = device.create_texture(&TextureDescriptor {
         label: Some("sample-bias offset output"),
@@ -266,9 +278,10 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     });
     let target_view = target.create_view(&TextureViewDescriptor::default());
     let image_bytes: usize = 8 * 256;
+    let image_count = 4;
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("sample-bias offset readback"),
-        size: (image_bytes * 2) as u64,
+        size: (image_bytes * image_count) as u64,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -289,7 +302,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("render sample-bias offset with changing views"),
     });
-    for (index, group) in groups.iter().enumerate() {
+    for index in 0..image_count {
         {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some("sample-bias offset rendering pass"),
@@ -307,8 +320,8 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
                 occlusion_query_set: None,
                 multiview_mask: None,
             });
-            pass.set_pipeline(&pipeline);
-            pass.set_bind_group(1, group, &[]);
+            pass.set_pipeline(&pipelines[index / 2]);
+            pass.set_bind_group(1, &groups[index % 2], &[]);
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             pass.draw(0..3, 0..1);
         }
@@ -354,7 +367,8 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
             .slice(..)
             .get_mapped_range()
             .expect("mapped sample-bias offset readback");
-        for (image_index, (_, _, source, width, height)) in textures.iter().enumerate() {
+        for image_index in 0..image_count {
+            let (_, _, source, width, height) = &textures[image_index % 2];
             let width = *width;
             for y in 0..8u32 {
                 for x in 0..8 {
@@ -425,7 +439,7 @@ fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
             occlusion_query_set: None,
             multiview_mask: None,
         });
-        pass.set_pipeline(&pipeline);
+        pass.set_pipeline(&pipelines[0]);
         pass.set_bind_group(1, &incompatible_group, &[]);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.draw(0..3, 0..1);

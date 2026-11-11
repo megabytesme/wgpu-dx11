@@ -50,6 +50,30 @@ hardware passes. Core, Naga and wgpu-types suites passed 124/124, 162/162 and
 113/113 respectively; the DX12 HAL check passed. See `FL9_1_PROGRESS.md` for
 the full commands and diagnostics.
 
+The sample-bias offset test also exercises a single coordinate-forwarding
+helper. Naga, Core and HAL each prove that the selected entry point contains
+exactly one helper call and that the helper returns one offset sample using
+its unmodified coordinate argument. Strict RTX readback checks both direct
+and helper shaders against standalone and selected-mip views. The proof does
+not accept nested helpers, coordinate transformations, multiple samples or
+unsupported view shapes.
+
+```powershell
+cargo +1.93.1 test --offline -j4 -p naga --lib fl9_sample_bias_offset_uses_host_view_dimensions
+cargo +1.93.1 test --offline -j4 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_sample_bias_offset_proof_is_entry_point_specific
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_sample_bias_offset_is_direct_and_entry_point_specific
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --no-default-features --features dx11 --lib naga_fl91_pixel_profile_compiles_constant_bias_forwarded_to_helper
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_sample_bias_offset -- --nocapture --test-threads=1
+```
+
+On 2026-11-11, the four focused CPU/compiler tests passed 1/1 each. The strict
+public test passed 1/1 on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), requested and actual FL9_1, `software=false`. Direct and
+helper sampling each matched all 64 pixels for both the standalone 8x8 view
+and selected 4x8 mip-1 view. The test executed one physical GPU workload; its
+256 pixel comparisons are validation samples, not separate tests.
+
 ## Storage-limit projection
 
 The HAL capability-model test checks that the FL9_1 projection reports zero

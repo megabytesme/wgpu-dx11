@@ -109,6 +109,158 @@ fn reachable_regular_functions(
     reachable
 }
 
+fn fl9_texture_sample_bias_offset_helper(
+    module: &Module,
+    entry: &crate::EntryPoint,
+) -> Option<Handle<crate::Function>> {
+    let is_vec2f = |ty| {
+        matches!(
+            module.types[ty].inner,
+            TypeInner::Vector {
+                size: crate::VectorSize::Bi,
+                scalar: Scalar {
+                    kind: ScalarKind::Float,
+                    width: 4,
+                },
+            }
+        )
+    };
+    let is_vec4f = |ty| {
+        matches!(
+            module.types[ty].inner,
+            TypeInner::Vector {
+                size: crate::VectorSize::Quad,
+                scalar: Scalar {
+                    kind: ScalarKind::Float,
+                    width: 4,
+                },
+            }
+        )
+    };
+    if entry.function.body.iter().any(|statement| {
+        !matches!(
+            statement,
+            crate::Statement::Emit(_)
+                | crate::Statement::Call { .. }
+                | crate::Statement::Return { .. }
+        )
+    }) {
+        return None;
+    }
+    let calls = entry
+        .function
+        .body
+        .iter()
+        .filter_map(|statement| match statement {
+            &crate::Statement::Call {
+                function,
+                ref arguments,
+                result,
+            } => Some((function, arguments, result)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let &[(helper, arguments, Some(call_result))] = calls.as_slice() else {
+        return None;
+    };
+    if arguments.len() != 1
+        || !matches!(
+            entry.function.expressions[arguments[0]],
+            crate::Expression::FunctionArgument(0)
+        )
+        || !matches!(
+            entry.function.expressions[call_result],
+            crate::Expression::CallResult(function) if function == helper
+        )
+        || entry
+            .function
+            .expressions
+            .iter()
+            .any(|(handle, expression)| {
+                (handle == call_result
+                    && !matches!(
+                        expression,
+                        crate::Expression::CallResult(function) if *function == helper
+                    ))
+                    || (handle != call_result
+                        && !matches!(expression, crate::Expression::FunctionArgument(0)))
+            })
+        || entry
+            .function
+            .body
+            .iter()
+            .filter_map(|statement| match statement {
+                &crate::Statement::Return { value } => Some(value),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            != [Some(call_result)]
+        || reachable_regular_functions(module, &entry.function).as_slice() != [helper]
+    {
+        return None;
+    }
+    let helper_function = &module.functions[helper];
+    if !matches!(
+        helper_function.arguments.as_slice(),
+        [argument] if argument.binding.is_none() && is_vec2f(argument.ty)
+    ) || !helper_function
+        .result
+        .as_ref()
+        .is_some_and(|result| is_vec4f(result.ty))
+        || helper_function.body.iter().any(|statement| {
+            !matches!(
+                statement,
+                crate::Statement::Emit(_) | crate::Statement::Return { .. }
+            )
+        })
+    {
+        return None;
+    }
+    let returns = helper_function
+        .body
+        .iter()
+        .filter_map(|statement| match statement {
+            &crate::Statement::Return { value } => Some(value),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let &[Some(sample)] = returns.as_slice() else {
+        return None;
+    };
+    if !matches!(
+        helper_function.expressions[sample],
+        crate::Expression::ImageSample {
+            image,
+            sampler,
+            coordinate,
+            level: crate::SampleLevel::Bias(_),
+            gather: None,
+            array_index: None,
+            offset: Some(_),
+            depth_ref: None,
+            clamp_to_edge: false,
+        } if matches!(helper_function.expressions[coordinate], crate::Expression::FunctionArgument(0))
+            && matches!(helper_function.expressions[image], crate::Expression::GlobalVariable(_))
+            && matches!(helper_function.expressions[sampler], crate::Expression::GlobalVariable(_))
+    ) || helper_function
+        .expressions
+        .iter()
+        .filter(|&(_, expression)| {
+            matches!(
+                expression,
+                crate::Expression::ImageSample { .. }
+                    | crate::Expression::ImageLoad { .. }
+                    | crate::Expression::ImageQuery { .. }
+            )
+        })
+        .count()
+        != 1
+    {
+        return None;
+    }
+    Some(helper)
+}
+
 fn fl9_has_resource_handle_type(module: &Module, ty: Handle<crate::Type>) -> bool {
     matches!(
         module.types[ty].inner,
@@ -1733,7 +1885,39 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             };
             let entry = &module.entry_points[entry_index];
             let entry_info = module_info.get_entry_point(entry_index);
-            if (self.options.fl9_texture_sample_bias_offset_proof.is_some() || compare_offset_proof)
+            let has_direct_sample_bias_offset =
+                entry
+                    .function
+                    .expressions
+                    .iter()
+                    .any(|(handle, expression)| {
+                        entry_info[handle].ref_count != 0
+                            && matches!(
+                                expression,
+                                crate::Expression::ImageSample {
+                                    level: crate::SampleLevel::Bias(_),
+                                    offset: Some(_),
+                                    ..
+                                }
+                            )
+                    });
+            let sample_bias_offset_helper = if self
+                .options
+                .fl9_texture_sample_bias_offset_proof
+                .is_some()
+                && !has_direct_sample_bias_offset
+            {
+                Some(
+                    fl9_texture_sample_bias_offset_helper(module, entry).ok_or_else(|| {
+                        Error::Custom(
+                            "FL9 sample-bias offset proof requires one direct sample or one coordinate-forwarding helper".into(),
+                        )
+                    })?,
+                )
+            } else {
+                None
+            };
+            if compare_offset_proof
                 && (!reachable_regular_functions(module, &entry.function).is_empty()
                     || entry.function.body.iter().any(|statement| {
                         !matches!(
@@ -1743,7 +1927,22 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     }))
             {
                 return Err(Error::Custom(
-                    "FL9 sample-bias offset proof rejects helper functions and control flow".into(),
+                    "FL9 comparison-offset proof rejects helper functions and control flow".into(),
+                ));
+            }
+            if self.options.fl9_texture_sample_bias_offset_proof.is_some()
+                && sample_bias_offset_helper.is_none()
+                && (!reachable_regular_functions(module, &entry.function).is_empty()
+                    || entry.function.body.iter().any(|statement| {
+                        !matches!(
+                            statement,
+                            crate::Statement::Emit(_) | crate::Statement::Return { .. }
+                        )
+                    }))
+            {
+                return Err(Error::Custom(
+                    "FL9 sample-bias offset proof rejects unsupported helpers and control flow"
+                        .into(),
                 ));
             }
             if combined_texel_load_dimensions_proof
@@ -1892,6 +2091,13 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             let mut implicit_sample_count = 0;
             let mut texel_load_count = 0;
             let mut functions_to_check = vec![(&entry.function, entry_info, None)];
+            if let Some(helper) = sample_bias_offset_helper {
+                functions_to_check.push((
+                    &module.functions[helper],
+                    &module_info[helper],
+                    Some(helper),
+                ));
+            }
             if self.options.fl9_texture_dimensions_proof.is_some()
                 || self.options.fl9_texture_dimensions_3d_proof.is_some()
                 || self.options.fl9_texture_num_levels_proof.is_some()
@@ -8037,7 +8243,41 @@ mod fl9_viewport_tests {
             "@fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0)); }",
             "fn sample_image(uv: vec2f) -> vec4f { return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0)); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_image(uv); }",
         );
-        assert!(translate(&helper, &options, ShaderStage::Fragment).is_err());
+        let helper_output = translate(&helper, &options, ShaderStage::Fragment)
+            .expect("rewrite one coordinate-forwarding helper sample offset");
+        assert!(
+            helper_output.contains("naga_fl9_load_size.zw"),
+            "{helper_output}"
+        );
+        assert!(
+            helper_output.contains(".SampleBias(smp,"),
+            "{helper_output}"
+        );
+        assert!(
+            !helper_output.contains(", 1.0, int2("),
+            "the helper must not retain the unsupported native offset: {helper_output}"
+        );
+
+        for unsupported in [
+            source.replace(
+                "@fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0)); }",
+                "fn inner(uv: vec2f) -> vec4f { return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0)); } fn sample_image(uv: vec2f) -> vec4f { return inner(uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_image(uv); }",
+            ),
+            source.replace(
+                "@fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0)); }",
+                "fn sample_image(uv: vec2f) -> vec4f { if uv.x > 0.0 { return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0)); } return vec4f(0.0); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_image(uv); }",
+            ),
+            source.replace(
+                "@fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0)); }",
+                "fn sample_image(uv: vec2f) -> vec4f { return textureSampleBias(image, smp, uv + vec2f(0.1, 0.0), 1.0, vec2i(1, 0)); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_image(uv); }",
+            ),
+            source.replace(
+                "@fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0)); }",
+                "fn sample_image(uv: vec2f) -> vec4f { return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0)) + textureSampleBias(image, smp, uv, 1.0, vec2i(0, 1)); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_image(uv); }",
+            ),
+        ] {
+            assert!(translate(&unsupported, &options, ShaderStage::Fragment).is_err());
+        }
 
         let multiple = source.replace(
             "return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0));",

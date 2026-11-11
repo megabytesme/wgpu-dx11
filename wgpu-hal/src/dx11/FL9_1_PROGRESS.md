@@ -17020,3 +17020,24 @@ Verification used Rust 1.93.1, MSVC, offline Cargo and bounded `-j4` builds:
 This is compiler and RTX evidence for a narrowly enabled path, not proof for
 historical FL9_1 drivers. The backend remains opt-in; ordinary default backend
 selection is unchanged.
+
+## Coordinate-forwarding helper for sample-bias offsets — 2026-11-11
+
+The FL9_1 fragment `textureSampleBias` constant-offset emulation now accepts either the existing direct sample or one straight-line helper that receives the entry point's `vec2f` coordinate unchanged and returns exactly one matching sample. Core derives the proof from the selected entry point's validated Naga `FunctionInfo::sampling_set`; Core, HAL, and Naga separately validate the helper structure and resource types. The sampling expression is paired with its owning function handle so arena-local expression handles cannot accidentally authorize an expression in another function. Naga applies the texel offset using the selected view's dimensions, preserving the existing shader profile and capability limit.
+
+The HAL and Core tests reject nested helpers, multiple samples, modified coordinates, out-of-range offsets, and unrelated entry-point paths. An FXC probe compiles the transformed helper under `ps_4_0_level_9_1`; an untransformed helper-offset source retains the expected profile rejection. The strict public test renders both direct and helper forms through a standalone 8x8 view and a selected 4x8 mip-1 view, validating every pixel.
+
+Strict GPU evidence: NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, requested/actual FL9_1, physical adapter, `software=false`. The focused public test passed 1/1 and validated 256 pixels across the four output images. This does not establish behavior on historical FL9_1 drivers.
+
+Verification used Rust 1.93.1, MSVC and bounded `-j4` Cargo jobs:
+
+- `cargo +1.93.1 test --offline -j4 -p naga --lib`: 163/163 passed.
+- `cargo +1.93.1 test --offline -j4 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib`: 128/128 passed.
+- `cargo +1.93.1 test --offline -j4 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib`: 127/127 passed.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 -- --test-threads=1`: strict private HAL suite 508/508 passed. It ran before the final Naga helper-proof pattern cleanup; the focused FXC and public strict cases below recompiled and exercised the final code.
+- `cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 naga_fl91_pixel_profile_compiles_constant_bias_forwarded_to_helper -- --test-threads=1`: 1/1 passed after the final Naga changes.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_sample_bias_offset -- --nocapture --test-threads=1`: 1/1 strict hardware test passed after the final Naga changes.
+- `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1`: 131/131 passed before the final Naga helper-proof pattern cleanup; the focused strict test recompiles and exercises that helper path afterward. `experimental_dx11_is_not_enabled_by_default` passed.
+- Naga Clippy and Core Clippy passed. HAL and public-target Clippy passed with existing warnings in unrelated D3D11 queue, transfer, index and texture code; no warning points at the new helper proof. `cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed.
+
+The Visual Studio developer shell continues to print `vError: Unknown error` in its banner while successfully exposing MSVC `link.exe`; all listed Cargo commands completed. The bounded helper subset is an extension of the existing private FL9_1 feature, not a broader sample-offset capability.

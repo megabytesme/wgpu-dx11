@@ -222,12 +222,14 @@ padded readback, offsets, BC1 unorm cube faces, all three BC sRGB source formats
 and compatible UNORM/sRGB copies. The sRGB direct-readback case checks raw
 blocks, row padding and sentinel bytes.
 
-Core and the private HAL also support the bounded direct fragment
-`textureSampleBias` texel-offset subset. The view must be 2D and expose one
-mip, but may select one mip from a multi-mip parent texture. HLSL applies the
-constant offset using that selected view's dimensions. Strict public readback
-passed for standalone 8x8 and selected 4x8 mip-1 views. Arbitrary offsets,
-helper-contained offsets and other texture shapes remain rejected.
+Core and the private HAL also support the bounded fragment
+`textureSampleBias` texel-offset subset through either a direct sample or one
+coordinate-forwarding helper. The view must be 2D and expose one mip, but may
+select one mip from a multi-mip parent texture. HLSL applies the constant
+offset using that selected view's dimensions. Strict public readback passed
+for standalone 8x8 and selected 4x8 mip-1 views through both direct and helper
+forms. Nested helpers, modified coordinates, multiple samples, arbitrary
+offsets and other texture shapes remain rejected.
 
 The sample-bias audit found and fixed a Core/HAL mismatch: Core's legal
 single-mip view of a multi-mip parent was previously rejected because the HAL

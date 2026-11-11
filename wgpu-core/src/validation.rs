@@ -367,6 +367,7 @@ pub(crate) struct TextureLoadBinding {
 pub(crate) struct TextureSampleBiasOffsetBinding {
     pub group: u32,
     pub binding: u32,
+    pub sample_function: Option<naga::Handle<naga::Function>>,
     pub sample_expression: naga::Handle<naga::Expression>,
 }
 
@@ -2955,7 +2956,10 @@ fn entry_point_uses_unsupported_integer_semantics(
     entry_point: &naga::EntryPoint,
     entry_point_info: &naga::valid::FunctionInfo,
     supported_fragment_frexp_result: Option<naga::Handle<naga::Expression>>,
-    supported_fragment_sample_bias_offset: Option<naga::Handle<naga::Expression>>,
+    supported_fragment_sample_bias_offset: Option<(
+        Option<naga::Handle<naga::Function>>,
+        naga::Handle<naga::Expression>,
+    )>,
 ) -> bool {
     if let Some(proof) = fragment_uniform_array_helper_indexing_proof(
         module,
@@ -3000,7 +3004,8 @@ fn entry_point_uses_unsupported_integer_semantics(
             .as_ref()
             .map(|proof| &proof.integer_expressions),
         supported_fragment_frexp_result,
-        supported_fragment_sample_bias_offset,
+        supported_fragment_sample_bias_offset
+            .and_then(|(owner, expression)| owner.is_none().then_some(expression)),
         &mut budget,
     ) || block_has_switch(&entry_point.function.body, &mut budget)
         || module.global_variables.iter().any(|(handle, global)| {
@@ -3073,7 +3078,8 @@ fn entry_point_uses_unsupported_integer_semantics(
                 &parameter_origins,
                 None,
                 None,
-                None,
+                supported_fragment_sample_bias_offset
+                    .and_then(|(owner, expression)| (owner == Some(handle)).then_some(expression)),
                 &mut budget,
             )
         {
@@ -4222,14 +4228,109 @@ fn entry_point_fl9_texture_load_support(
     }
 }
 
+fn fl9_texture_sample_bias_offset_operation(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+) -> Option<(
+    naga::Handle<naga::GlobalVariable>,
+    naga::Handle<naga::GlobalVariable>,
+    naga::Handle<naga::Expression>,
+)> {
+    if function.body.iter().any(|statement| {
+        !matches!(
+            statement,
+            naga::Statement::Emit(_) | naga::Statement::Return { .. }
+        )
+    }) {
+        return None;
+    }
+    let returns = function
+        .body
+        .iter()
+        .filter_map(|statement| match statement {
+            naga::Statement::Return { value } => Some(*value),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let [Some(sample_expression)] = returns.as_slice() else {
+        return None;
+    };
+    let naga::Expression::ImageSample {
+        image,
+        sampler,
+        coordinate,
+        level: naga::SampleLevel::Bias(_),
+        gather: None,
+        array_index: None,
+        offset: Some(offset),
+        depth_ref: None,
+        clamp_to_edge: false,
+    } = function.expressions[*sample_expression]
+    else {
+        return None;
+    };
+    let image_operation_count = function
+        .expressions
+        .iter()
+        .filter(|(_, expression)| {
+            matches!(
+                expression,
+                naga::Expression::ImageSample { .. }
+                    | naga::Expression::ImageLoad { .. }
+                    | naga::Expression::ImageQuery { .. }
+            )
+        })
+        .count();
+    if function_info[*sample_expression].ref_count == 0
+        || image_operation_count != 1
+        || function.expressions.iter().any(|(handle, expression)| {
+            matches!(expression, naga::Expression::ImageSample { .. })
+                && handle != *sample_expression
+        })
+        || !fl9_sample_offset_in_range(module, function, offset)
+        || !matches!(
+            function.expressions[coordinate],
+            naga::Expression::FunctionArgument(0)
+        )
+    {
+        return None;
+    }
+    let naga::Expression::GlobalVariable(image) = function.expressions[image] else {
+        return None;
+    };
+    let naga::Expression::GlobalVariable(sampler) = function.expressions[sampler] else {
+        return None;
+    };
+    if !matches!(
+        module.types[module.global_variables[image].ty].inner,
+        naga::TypeInner::Image {
+            dim: naga::ImageDimension::D2,
+            arrayed: false,
+            class: naga::ImageClass::Sampled {
+                kind: naga::ScalarKind::Float,
+                multi: false,
+            },
+        }
+    ) || !matches!(
+        module.types[module.global_variables[sampler].ty].inner,
+        naga::TypeInner::Sampler { comparison: false }
+    ) {
+        return None;
+    }
+    Some((image, sampler, *sample_expression))
+}
+
 fn entry_point_fl9_texture_sample_bias_offset_binding(
     module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
     entry_point: &naga::EntryPoint,
     entry_point_info: &naga::valid::FunctionInfo,
 ) -> Option<TextureSampleBiasOffsetBinding> {
+    let entry = &entry_point.function;
     if entry_point.stage != naga::ShaderStage::Fragment
         || !matches!(
-            entry_point.function.arguments.as_slice(),
+            entry.arguments.as_slice(),
             [argument]
                 if matches!(
                     argument.binding,
@@ -4245,89 +4346,123 @@ fn entry_point_fl9_texture_sample_bias_offset_binding(
                     }
                 )
         )
-        || entry_point.function.body.iter().any(|statement| {
-            !matches!(
-                statement,
-                naga::Statement::Emit(_) | naga::Statement::Return { .. }
-            )
-        })
     {
         return None;
     }
 
-    let mut sampled_image = None;
-    let mut sampled_sampler = None;
-    let mut sample_expression = None;
-    let mut sample_count = 0;
-    for (handle, expression) in entry_point.function.expressions.iter() {
-        match *expression {
-            naga::Expression::ImageSample {
-                image,
-                sampler,
-                coordinate,
-                level: naga::SampleLevel::Bias(_),
-                gather: None,
-                array_index: None,
-                offset: Some(offset),
-                depth_ref: None,
-                clamp_to_edge: false,
-            } => {
-                sample_count += 1;
-                if sample_count != 1
-                    || entry_point_info[handle].ref_count == 0
-                    || !fl9_sample_offset_in_range(module, &entry_point.function, offset)
-                    || !matches!(
-                        entry_point.function.expressions[coordinate],
-                        naga::Expression::FunctionArgument(0)
-                    )
-                {
-                    return None;
-                }
-                let naga::Expression::GlobalVariable(image) =
-                    entry_point.function.expressions[image]
-                else {
-                    return None;
-                };
-                let naga::Expression::GlobalVariable(sampler) =
-                    entry_point.function.expressions[sampler]
-                else {
-                    return None;
-                };
-                if !matches!(
-                    module.types[module.global_variables[image].ty].inner,
-                    naga::TypeInner::Image {
-                        dim: naga::ImageDimension::D2,
-                        arrayed: false,
-                        class: naga::ImageClass::Sampled {
-                            kind: naga::ScalarKind::Float,
-                            multi: false,
-                        },
-                    }
-                ) || !matches!(
-                    module.types[module.global_variables[sampler].ty].inner,
-                    naga::TypeInner::Sampler { comparison: false }
-                ) {
-                    return None;
-                }
-                sampled_image = Some(image);
-                sampled_sampler = Some(sampler);
-                sample_expression = Some(handle);
-            }
-            naga::Expression::ImageSample { .. }
-            | naga::Expression::ImageLoad { .. }
-            | naga::Expression::ImageQuery { .. } => return None,
-            _ => {}
+    let (sample_function, sample) = if let Some((image, sampler, sample)) =
+        fl9_texture_sample_bias_offset_operation(module, entry, entry_point_info)
+    {
+        (None, (image, sampler, sample))
+    } else {
+        if entry.body.iter().any(|statement| {
+            !matches!(
+                statement,
+                naga::Statement::Emit(_)
+                    | naga::Statement::Call { .. }
+                    | naga::Statement::Return { .. }
+            )
+        }) {
+            return None;
         }
-    }
+        let calls = entry
+            .body
+            .iter()
+            .filter_map(|statement| match statement {
+                naga::Statement::Call {
+                    function,
+                    arguments,
+                    result,
+                } => Some((*function, arguments, *result)),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let [(helper, arguments, Some(call_result))] = calls.as_slice() else {
+            return None;
+        };
+        if arguments.len() != 1
+            || !matches!(
+                entry.expressions[arguments[0]],
+                naga::Expression::FunctionArgument(0)
+            )
+            || !matches!(
+                entry.expressions[*call_result],
+                naga::Expression::CallResult(function) if function == *helper
+            )
+            || entry.expressions.iter().any(|(handle, expression)| {
+                !matches!(
+                    expression,
+                    naga::Expression::FunctionArgument(0)
+                        if handle != *call_result
+                ) && handle != *call_result
+            })
+            || entry
+                .body
+                .iter()
+                .filter_map(|statement| match statement {
+                    naga::Statement::Return { value } => Some(*value),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+                != [Some(*call_result)]
+        {
+            return None;
+        }
+        let helper_function = &module.functions[*helper];
+        let is_vec2f = |ty| {
+            matches!(
+                module.types[ty].inner,
+                naga::TypeInner::Vector {
+                    size: naga::VectorSize::Bi,
+                    scalar: naga::Scalar {
+                        kind: naga::ScalarKind::Float,
+                        width: 4,
+                    },
+                }
+            )
+        };
+        let is_vec4f = |ty| {
+            matches!(
+                module.types[ty].inner,
+                naga::TypeInner::Vector {
+                    size: naga::VectorSize::Quad,
+                    scalar: naga::Scalar {
+                        kind: naga::ScalarKind::Float,
+                        width: 4,
+                    },
+                }
+            )
+        };
+        if !matches!(
+            helper_function.arguments.as_slice(),
+            [argument] if argument.binding.is_none() && is_vec2f(argument.ty)
+        ) || !helper_function
+            .result
+            .as_ref()
+            .is_some_and(|result| is_vec4f(result.ty))
+        {
+            return None;
+        }
+        let (image, sampler, sample) = fl9_texture_sample_bias_offset_operation(
+            module,
+            helper_function,
+            &module_info[*helper],
+        )?;
+        (Some(*helper), (image, sampler, sample))
+    };
 
-    let image = sampled_image?;
-    let sampler = sampled_sampler?;
+    let (image, sampler, sample_expression) = sample;
     if module.global_variables.iter().any(|(handle, global)| {
         global.binding.is_some()
             && handle != image
             && handle != sampler
             && !entry_point_info[handle].is_empty()
-    }) {
+    }) || entry_point_info.sampling_set.len() != 1
+        || !entry_point_info
+            .sampling_set
+            .iter()
+            .any(|pair| pair.image == image && pair.sampler == sampler)
+    {
         return None;
     }
     let binding = module.global_variables[image].binding?;
@@ -4335,7 +4470,8 @@ fn entry_point_fl9_texture_sample_bias_offset_binding(
     Some(TextureSampleBiasOffsetBinding {
         group: binding.group,
         binding: binding.binding,
-        sample_expression: sample_expression?,
+        sample_function,
+        sample_expression,
     })
 }
 
@@ -7781,14 +7917,19 @@ impl Interface {
                 entry_point.stage,
             );
             let fl9_texture_sample_bias_offset_binding =
-                entry_point_fl9_texture_sample_bias_offset_binding(module, entry_point, info);
+                entry_point_fl9_texture_sample_bias_offset_binding(
+                    module,
+                    module_info,
+                    entry_point,
+                    info,
+                );
             let fl9_texture_sample_compare_offset_binding =
                 entry_point_fl9_texture_sample_compare_offset_binding(module, entry_point, info);
-            let fl9_texture_sample_offset_expression = fl9_texture_sample_bias_offset_binding
-                .map(|binding| binding.sample_expression)
+            let fl9_texture_sample_offset_proof = fl9_texture_sample_bias_offset_binding
+                .map(|binding| (binding.sample_function, binding.sample_expression))
                 .or_else(|| {
                     fl9_texture_sample_compare_offset_binding
-                        .map(|binding| binding.sample_expression)
+                        .map(|binding| (None, binding.sample_expression))
                 });
             let texture_sample_compare_offset_used =
                 entry_point_uses_texture_sample_compare_offset(module, entry_point);
@@ -7799,7 +7940,7 @@ impl Interface {
                     entry_point,
                     info,
                     None,
-                    fl9_texture_sample_offset_expression,
+                    fl9_texture_sample_offset_proof,
                 );
             let frexp_fraction_only_runtime_integer_semantics =
                 unsupported_runtime_integer_semantics
@@ -7810,7 +7951,7 @@ impl Interface {
                             entry_point,
                             info,
                             Some(result),
-                            fl9_texture_sample_offset_expression,
+                            fl9_texture_sample_offset_proof,
                         )
                     });
             let mut ep = EntryPoint {
@@ -10450,11 +10591,36 @@ mod tests {
             fn offset_helper(uv: vec2f) -> vec4f {
                 return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0));
             }
+            fn nested_offset_helper(uv: vec2f) -> vec4f {
+                return offset_helper(uv);
+            }
+            fn multiple_offset_helper(uv: vec2f) -> vec4f {
+                return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0))
+                    + textureSampleBias(image, smp, uv, 1.0, vec2i(0, 1));
+            }
+            fn changed_coordinate_helper(uv: vec2f) -> vec4f {
+                return textureSampleBias(image, smp, uv + vec2f(0.1, 0.0), 1.0, vec2i(1, 0));
+            }
+            fn out_of_range_helper(uv: vec2f) -> vec4f {
+                return textureSampleBias(image, smp, uv, 1.0, vec2i(8, 0));
+            }
             @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0));
             }
             @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return offset_helper(uv);
+            }
+            @fragment fn nested_helper(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return nested_offset_helper(uv);
+            }
+            @fragment fn multiple_helper(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return multiple_offset_helper(uv);
+            }
+            @fragment fn changed_coordinate(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return changed_coordinate_helper(uv);
+            }
+            @fragment fn out_of_range(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return out_of_range_helper(uv);
             }
             @fragment fn multiple(@location(0) uv: vec2f) -> @location(0) vec4f {
                 let first = textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0));
@@ -10496,6 +10662,7 @@ mod tests {
             .unwrap()
             .unwrap();
         assert_eq!((proof.group, proof.binding), (1, 17));
+        assert_eq!(proof.sample_function, None);
         assert!(matches!(
             module.entry_points[0].function.expressions[proof.sample_expression],
             naga::Expression::ImageSample {
@@ -10536,6 +10703,47 @@ mod tests {
                 &limits,
             )
             .unwrap());
+        let helper_proof = interface
+            .fl9_texture_sample_bias_offset_binding_used(naga::ShaderStage::Fragment, "helper")
+            .unwrap()
+            .unwrap();
+        let helper_function = helper_proof.sample_function.unwrap();
+        assert!(matches!(
+            module.functions[helper_function].expressions[helper_proof.sample_expression],
+            naga::Expression::ImageSample {
+                level: naga::SampleLevel::Bias(_),
+                offset: Some(_),
+                ..
+            }
+        ));
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "helper",
+                &restricted_integer_limits,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_bias(
+                naga::ShaderStage::Fragment,
+                "helper",
+                &limits,
+            )
+            .unwrap());
+        for entry in [
+            "nested_helper",
+            "multiple_helper",
+            "changed_coordinate",
+            "out_of_range",
+        ] {
+            assert!(interface
+                .entry_point_uses_unsupported_texture_sample_bias(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &limits,
+                )
+                .unwrap());
+        }
         for entry in ["offset_too_positive", "offset_too_negative"] {
             assert!(interface
                 .entry_point_uses_unsupported_texture_sample_bias(
@@ -10545,7 +10753,7 @@ mod tests {
                 )
                 .unwrap());
         }
-        assert!(interface
+        assert!(!interface
             .entry_point_uses_unsupported_texture_sample_bias(
                 naga::ShaderStage::Fragment,
                 "helper",

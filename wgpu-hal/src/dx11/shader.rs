@@ -1895,6 +1895,67 @@ mod tests {
         )
         .expect("FXC compiles the emulated sample-bias offset at FL9_1");
         assert!(code.starts_with(b"DXBC"));
+
+        let helper_module = naga::front::wgsl::parse_str(
+            "@group(0) @binding(0) var image: texture_2d<f32>;\n\
+             @group(0) @binding(1) var smp: sampler;\n\
+             fn sample_image(uv: vec2f) -> vec4f {\n\
+                 return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0));\n\
+             }\n\
+             @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {\n\
+                 return sample_image(uv);\n\
+             }\n",
+        )
+        .unwrap();
+        let helper_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&helper_module)
+        .unwrap();
+        let error = compile_naga_with_bindings(
+            &helper_module,
+            &helper_info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+        )
+        .expect_err("native helper sample-bias offsets remain unsupported at FL9_1");
+        let NagaCompileError::Compilation(error) = error else {
+            panic!("expected FXC rejection for native helper offset: {error:?}");
+        };
+        std::println!(
+            "FL9_1 helper textureSampleBias offset FXC diagnostic: {}",
+            error.message
+        );
+        assert!(error.message.contains("X4532"), "{}", error.message);
+        let (translated, _) = translate_naga_with_viewport_and_fl9_inputs(
+            &helper_module,
+            &helper_info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            input_options,
+        )
+        .expect("rewrite helper offset into normalized coordinates");
+        assert!(translated.contains("naga_fl9_load_size.zw"), "{translated}");
+        assert!(
+            !translated.contains(", 1.0, int2("),
+            "the helper must not retain the native offset: {translated}"
+        );
+        let code = compile_naga_with_viewport_and_fl9_inputs(
+            &helper_module,
+            &helper_info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            input_options,
+        )
+        .expect("FXC compiles the emulated helper offset at FL9_1");
+        assert!(code.starts_with(b"DXBC"));
     }
 
     #[test]

@@ -9961,7 +9961,6 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         "bias_helper_out_of_range",
         "bias_out_of_range",
         "bias_offset",
-        "bias_offset_helper",
         "derivative_direct",
         "derivative_helper",
         "gradient_direct",
