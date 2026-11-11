@@ -15,8 +15,15 @@ and actual FL9_1, `software=false`.
 Targeted checks passed: Naga 1/1, Core 1/1, HAL helper/proof tests 4/4, HAL
 FXC compilation 1/1, and strict public GPU rendering 1/1. The HAL unit-test
 build reported four pre-existing unnecessary-qualification warnings in
-`hal_queue.rs`. Full D3D11 suites, DX12 Core regression, Clippy and final diff
-checks remain pending.
+`hal_queue.rs`. Full validation then completed with the strict private HAL
+suite at 509/509, strict public `dx11_public` at 132/132, Core DX11 fixtures at
+139/139, Core DX12 regression at 128/128, and HLSL-enabled Naga at 163/163.
+The strict public suite ran against the physical RTX 3090 Ti at requested and
+actual FL9_1; optional test subcases may still report capability skips. Clippy
+passed for Naga, Core, HAL and the public test target. HAL Clippy reported six
+pre-existing warnings in index/transfer/texture code. `cargo fmt --all
+-- --check` and `git diff --check` passed. The verified implementation
+checkpoint is `19322e6e1`.
 
 ## Query-gated Rg8 fragment `textureLoad` — 2026-11-11
 

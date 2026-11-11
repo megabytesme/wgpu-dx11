@@ -1,15 +1,28 @@
 # FL9_1 handoff
 
-## Current coordinator progress — nonzero-group 2D query helper — 2026-11-11
+## Current coordinator checkpoint — nonzero-group 2D query helper — 2026-11-11
 
 The current working change widens only the narrow 2D `textureDimensions`
 helper proof to allow any texture bind group. Core, HAL and Naga still require
 one argument-free, straight-line query helper with no other used resources;
-3D/cube helper paths and associated samplers remain group-0-restricted. Naga,
-Core, HAL proof, FXC and the strict public RTX test passed. The GPU test used
-group 7/binding 42, transitioned a 16x8 view to an 8x4 view, and matched all
-64 pixels. Full private/public and DX12 regressions remain to be run before
-this worktree slice is checkpointed.
+3D/cube helper paths and associated samplers remain group-0-restricted. The
+GPU test used group 7/binding 42, transitioned a 16x8 view to an 8x4 view,
+and matched all 64 pixels. Strict private HAL passed 509/509, strict public
+`dx11_public` 132/132, Core DX11 fixtures 139/139, Core DX12 128/128, and
+HLSL-enabled Naga 163/163. Clippy passed for all affected targets with six
+pre-existing HAL warnings; formatting and diff checks passed. Commit
+`19322e6e1` checkpoints the implementation. Historical FL9_1 drivers remain
+unverified.
+
+The overall mission remains PARTIALLY COMPLETE. Highest-impact open work is
+not another isolated query helper: the final public wgpu end-to-end example
+must demonstrate adapter/device selection, a textured indexed depth-tested
+3D scene, offscreen verification and HWND presentation. In parallel, the
+public Core/HAL contract audit, shader-subset expansion, dynamic uniform
+offsets/multiple groups, broader graphics/resource validation, device loss,
+historical FL9_1 and Lumia/CoreWindow runtime verification remain open. Keep
+agents on independent audits/probes and keep each implementation slice under
+the coordinator.
 
 ## Current coordinator checkpoint — 2026-11-11
 
