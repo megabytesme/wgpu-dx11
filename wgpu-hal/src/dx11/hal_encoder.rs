@@ -1162,6 +1162,18 @@ impl crate::CommandEncoder for CommandEncoder {
                     return Err(DeviceError::Unexpected);
                 }
             };
+            let native_resolve_format = match resolve_format {
+                wgt::TextureFormat::Rgba8Unorm => {
+                    windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM
+                }
+                wgt::TextureFormat::Bgra8Unorm => {
+                    windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM
+                }
+                _ => {
+                    self.reject();
+                    return Err(DeviceError::Unexpected);
+                }
+            };
             if target_sample_count <= 1
                 || resolve_samples != 1
                 || (attachment.usage != wgt::TextureUses::COLOR_TARGET
@@ -1169,7 +1181,6 @@ impl crate::CommandEncoder for CommandEncoder {
                         != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
                 || format != Some(resolve_format)
                 || resolve_size != extent
-                || resolve_format != wgt::TextureFormat::Rgba8Unorm
             {
                 self.reject();
                 return Err(DeviceError::Unexpected);
@@ -1197,7 +1208,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 destination,
                 source_subresource: color.map(|color| color.target.view.mip_base()).unwrap_or(0),
                 destination_subresource: attachment.view.mip_base(),
-                format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
+                format: native_resolve_format,
             })
         } else {
             None

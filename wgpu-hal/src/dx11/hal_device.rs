@@ -436,11 +436,12 @@ impl crate::Device for Device {
                     || if depth {
                         !depth_stencil_usage_valid(desc.usage)
                     } else {
-                        desc.format != wgt::TextureFormat::Rgba8Unorm
-                            || (desc.usage != wgt::TextureUses::COLOR_TARGET
-                                && desc.usage
-                                    != (wgt::TextureUses::COLOR_TARGET
-                                        | wgt::TextureUses::TRANSIENT))
+                        !matches!(
+                            desc.format,
+                            wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+                        ) || (desc.usage != wgt::TextureUses::COLOR_TARGET
+                            && desc.usage
+                                != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
                     }))
             || desc.size.width == 0
             || desc.size.height == 0
@@ -902,7 +903,10 @@ impl crate::Device for Device {
             1 => true,
             sample_count @ (2 | 4 | 8 | 16) if native.MipLevels == 1 && !resource => {
                 let color_msaa = !depth
-                    && format == wgt::TextureFormat::Rgba8Unorm
+                    && matches!(
+                        format,
+                        wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+                    )
                     && target
                     && (desc.usage == wgt::TextureUses::COLOR_TARGET
                         || desc.usage

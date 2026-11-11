@@ -17327,3 +17327,48 @@ mission Cargo wrapper at `E:\Temp\wgpu_mission_cargo.bat`:
 
 The selected modern NVIDIA driver verifies only this query-enabled path under
 forced FL9_1. Historical FL9_1 optional-format behavior remains unverified.
+
+## Query-gated BGRA8 multisample resolve — 2026-11-11
+
+BGRA8 now has a separate selected-device sample-count query and backend gate
+for multisample rendering and same-format resolve. Capability projection
+requires a positive quality-level query plus `TEXTURE2D`, `RENDER_TARGET`,
+`MULTISAMPLE_RENDERTARGET` and `MULTISAMPLE_RESOLVE` support. HAL texture/view
+creation and resolve commands use BGRA8's native DXGI format. Unsupported
+queries, missing format bits, disabled backend support and copy/sample usage
+combinations remain rejected by production validation.
+
+Strict execution used Rust 1.93.1, the Visual Studio x64 environment and
+`E:\Temp\wgpu_mission_cargo.bat` on NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`), driver `32.0.16.2101`, physical adapter, `software=false`,
+with requested and actual FL9_1. The selected device reported BGRA8 format
+support `0x312ef3e0` and 2x/4x/8x/16x quality counts `1, 1, 1, 0`. A BGRA8
+4x clear, same-format resolve, GPU readback and all-64-pixel check passed; the
+observed bytes were `[191, 127, 64, 255]` for expected
+`[191, 128, 64, 255]` with one-byte per-channel tolerance for UNORM rounding.
+The resolve-focused strict public group passed 4/4 (including RGBA8 and
+sample-count/depth regressions), the complete strict private HAL suite passed
+510/510, the complete strict public D3D11 target passed 135/135, and Core
+DX12 passed 128/128. `experimental_dx11_is_not_enabled_by_default` passed as
+part of the public suite. The HAL test build reported four existing
+unnecessary-qualification warnings in `hal_queue.rs`; the Visual Studio
+developer banner printed `vError: Unknown error` while Cargo and MSVC worked.
+
+An initial diagnostic test omitted the actual resolve and was not counted as
+render/resolve evidence. The first full resolve readback showed a one-byte
+rounding difference in the 0.5 green channel; the final test uses the narrow
+one-byte tolerance above. A first Cargo invocation selected no tests because
+it omitted the explicit `dx11,wgsl,std` feature set; the corrected commands
+below ran the intended tests.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public resolve -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib
+```
+
+This only verifies the selected modern driver while its device is restricted
+to FL9_1. BGRA8 multisample support remains optional, and historical FL9_1
+drivers remain unverified.

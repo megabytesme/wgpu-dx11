@@ -3484,7 +3484,7 @@ suites passed 121/121, 132/132 and 468/468 respectively. See
 `FL9_1_PROGRESS.md` for exact commands. This closes a capability-reporting
 overclaim, not an FL9_1 implementation gap.
 
-## Current mission state — two direct fragment uniform-array reads
+## Recent continuation — two direct fragment uniform-array reads
 
 Core and HAL now permit at most two selected-entry direct fragment reads from
 distinct uniform bindings, preserving the existing `u32` index plus
@@ -3498,6 +3498,16 @@ passed; two optional public-suite subcases were capability skips. Exact
 commands and outputs are in `FL9_1_PROGRESS.md`.
 Implementation checkpoint: `9fd21279b` (`dx11: allow two FL9_1 fragment
 uniform array reads`).
+
+## Current mission state — query-gated BGRA8 multisample resolve — 2026-11-11
+
+BGRA8 now uses independent device format/sample-count queries for multisample
+render-and-resolve. The strict RTX 3090 Ti FL9_1 path checked all 64 pixels;
+the complete HAL, public D3D11 and Core DX12 suites passed 510/510, 135/135
+and 128/128. The one-byte UNORM rounding tolerance is documented in
+`TESTING.md` and exact evidence is in `FL9_1_PROGRESS.md`. The current
+uncommitted BGRA8 work still needs final lint, formatting and diff checks
+before its feature checkpoint.
 
 This does not close the mission. Remaining software work is broad and
 application-facing: the selected WGSL subset is still constrained, several

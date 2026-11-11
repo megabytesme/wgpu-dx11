@@ -3579,30 +3579,46 @@ multisampled sampling, other formats and alpha-to-coverage remain unsupported. S
 [OMSetBlendState FL9_1 restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context)
 and [WebGPU multisample validation](https://www.w3.org/TR/webgpu/#validating-gpumultisamplestate).
 
-### Query-gated RGBA8 multisample render and resolve
+### Query-gated RGBA8 and BGRA8 multisample render and resolve
 
 The FL9_1 feature level does not guarantee multisampling. For each supported
 count (2, 4, 8 or 16), the selected device must report a positive
-`CheckMultisampleQualityLevels(RGBA8_UNORM, count)` result and
+For RGBA8 and BGRA8 independently, the selected device must return a positive
+`CheckMultisampleQualityLevels(format, count)` result and
 `CheckFormatSupport` must include `TEXTURE2D`, `RENDER_TARGET`,
 `MULTISAMPLE_RENDERTARGET` and `MULTISAMPLE_RESOLVE`. A failed or zero query
 omits only the corresponding sample-count flag, and core rejects that count.
-The HAL supports query-backed single-mip, single-layer RGBA8 color attachments
-and same-sized single-sample resolve destinations. D16_UNORM and
+The HAL supports query-backed single-mip, single-layer RGBA8 or BGRA8 color
+attachments and same-sized, same-format single-sample resolve destinations.
+D16_UNORM and
 D24_UNORM_S8_UINT depth attachments are enabled independently for each
 positively queried count; depth must match the color target and pipeline sample
 count. Depth resolve, multisampled sampling, other formats and alpha-to-coverage
 remain unsupported.
 
-On the RTX 3090 Ti forced to FL9_1, RGBA8 quality-level queries for 2x, 4x, 8x
-and 16x returned 1, 1, 1 and 0; D16 and D24S8 are queried independently. The
-RGBA8 format mask was `0x312ef3e2`. Strict public fullscreen draws at 2x and 8x
+On the RTX 3090 Ti forced to FL9_1, RGBA8 and BGRA8 quality-level queries for
+2x, 4x, 8x and 16x each returned 1, 1, 1 and 0; D16 and D24S8 are queried
+independently. The RGBA8 and BGRA8 format masks were `0x312ef3e2` and
+`0x312ef3e0`. Strict public fullscreen draws at 2x and 8x
 resolved to green and matched all 64 pixels at each count. The existing strict
 4x triangle resolved to a
 single-sample texture, and readback checked all 64 pixels: 28 full red triangle,
 8 partial-coverage red/blue resolve values and 28 clear blue pixels.
 This is optional selected-device evidence from a modern GPU, not a FL9_1
 hardware guarantee.
+
+`public_dx11_resolves_four_sample_bgra8_at_fl91` clears a four-sample BGRA8
+render target to a non-symmetric color, resolves it to a same-format texture,
+and reads back all 64 BGRA pixels. Expected bytes are `[191, 128, 64, 255]`
+with one-byte per-channel tolerance for UNORM rounding; the RTX returned
+`[191, 127, 64, 255]`.
+Strict mode fails if the selected physical FL9_1 device lacks the queried
+BGRA8 4x render and resolve support; a normal run reports `SKIP`.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_four_sample_bgra8_at_fl91 -- --nocapture --test-threads=1
+```
 
 The same strict test selected D24PlusStencil8 after a positive 4x query,
 created the matching multisampled depth view and drew near red geometry before

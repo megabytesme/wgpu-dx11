@@ -1,5 +1,16 @@
 # FL9_1 completion plan
 
+## Recent continuation — query-gated BGRA8 multisample resolve — 2026-11-11
+
+BGRA8 now uses its own selected-device format-support and per-sample-count
+queries for the implemented 2x/4x/8x render-and-resolve path. The strict RTX
+3090 Ti test explicitly requested FL9_1, resolved a non-symmetric BGRA clear,
+and checked all 64 readback pixels with one-byte UNORM rounding tolerance.
+The full private HAL suite passed 510/510, the strict public D3D11 suite
+135/135, and Core DX12 passed 128/128. This remains optional device support,
+not a FL9_1 guarantee; query-negative devices continue to omit the sample
+count capability. Detailed commands are in `FL9_1_PROGRESS.md`.
+
 ## Recent continuation — query-gated 8-bit SNORM fragment `textureLoad` — 2026-11-11
 
 The selected-entry fragment 2D `textureLoad` subset now accepts queried

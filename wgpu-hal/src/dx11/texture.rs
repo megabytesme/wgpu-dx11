@@ -18,14 +18,16 @@ use windows::{
                 D3D11_BOX, D3D11_CLEAR_DEPTH, D3D11_CLEAR_STENCIL, D3D11_CPU_ACCESS_READ,
                 D3D11_DEPTH_STENCIL_VIEW_DESC, D3D11_DEPTH_STENCIL_VIEW_DESC_0,
                 D3D11_DSV_DIMENSION_TEXTURE2D, D3D11_DSV_DIMENSION_TEXTURE2DMS,
-                D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
-                D3D11_RENDER_TARGET_VIEW_DESC, D3D11_RENDER_TARGET_VIEW_DESC_0,
-                D3D11_RESOURCE_MISC_TEXTURECUBE, D3D11_RTV_DIMENSION_TEXTURE2D,
-                D3D11_RTV_DIMENSION_TEXTURE2DMS, D3D11_SHADER_RESOURCE_VIEW_DESC,
-                D3D11_SHADER_RESOURCE_VIEW_DESC_0, D3D11_TEX2DMS_DSV, D3D11_TEX2DMS_RTV,
-                D3D11_TEX2D_DSV, D3D11_TEX2D_RTV, D3D11_TEX2D_SRV, D3D11_TEX3D_SRV,
-                D3D11_TEXCUBE_SRV, D3D11_TEXTURE2D_DESC, D3D11_TEXTURE3D_DESC, D3D11_USAGE_DEFAULT,
-                D3D11_USAGE_STAGING,
+                D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET,
+                D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
+                D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
+                D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_RENDER_TARGET_VIEW_DESC,
+                D3D11_RENDER_TARGET_VIEW_DESC_0, D3D11_RESOURCE_MISC_TEXTURECUBE,
+                D3D11_RTV_DIMENSION_TEXTURE2D, D3D11_RTV_DIMENSION_TEXTURE2DMS,
+                D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
+                D3D11_TEX2DMS_DSV, D3D11_TEX2DMS_RTV, D3D11_TEX2D_DSV, D3D11_TEX2D_RTV,
+                D3D11_TEX2D_SRV, D3D11_TEX3D_SRV, D3D11_TEXCUBE_SRV, D3D11_TEXTURE2D_DESC,
+                D3D11_TEXTURE3D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM,
@@ -1354,10 +1356,12 @@ impl NativeDevice {
             || desc.ArraySize != 1
             || !matches!(desc.SampleDesc.Count, 1 | 2 | 4 | 8 | 16)
             || (desc.SampleDesc.Count > 1
-                && (format != wgt::TextureFormat::Rgba8Unorm
-                    || (view.usage != wgt::TextureUses::COLOR_TARGET
-                        && view.usage
-                            != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
+                && (!matches!(
+                    format,
+                    wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+                ) || (view.usage != wgt::TextureUses::COLOR_TARGET
+                    && view.usage
+                        != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
                     || desc.MipLevels != 1))
         {
             return Err(invalid());
@@ -1579,11 +1583,26 @@ impl NativeDevice {
                     && mip_levels == 1
                     && layers == 1
                     && render_target
-                    && format == DXGI_FORMAT_R8G8B8A8_UNORM
+                    && matches!(
+                        format,
+                        DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
+                    )
                     && unsafe {
                         self.raw_device()
                             .CheckMultisampleQualityLevels(format, sample_count)
                             .is_ok_and(|levels| levels > 0)
+                    }
+                    && unsafe {
+                        self.raw_device()
+                            .CheckFormatSupport(format)
+                            .is_ok_and(|bits| {
+                                let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+                                    | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+                                    | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0
+                                    | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0)
+                                    as u32;
+                                bits & required == required
+                            })
                     }))
         {
             return Err(invalid());
@@ -1674,8 +1693,10 @@ impl NativeDevice {
         self.check_texture_owner(texture)?;
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { texture.raw.as_2d()?.GetDesc(&mut desc) };
-        if desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
-            || desc.SampleDesc.Count == 1
+        if !matches!(
+            desc.Format,
+            DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
+        ) || desc.SampleDesc.Count == 1
             || desc.MipLevels != 1
             || desc.ArraySize != 1
             || desc.BindFlags & D3D11_BIND_RENDER_TARGET.0 as u32 == 0

@@ -235,6 +235,7 @@ pub(super) struct DriverCapabilities {
     pub depth24_stencil8_samples: SampleCountQueries,
     pub depth16_unorm_samples: SampleCountQueries,
     pub rgba8_samples: SampleCountQueries,
+    pub bgra8_samples: SampleCountQueries,
     pub wireframe_rasterizer: Query<bool>,
     pub full_npot: Query<bool>,
     pub comparison_shadow: Query<bool>,
@@ -352,6 +353,7 @@ pub(super) struct BackendCapabilities {
     pub cube_texture_sampling: bool,
     pub cube_texture_mipmaps: bool,
     pub rgba8_multisample_resolve: bool,
+    pub bgra8_multisample_resolve: bool,
     pub texture_3d_sampling: bool,
     pub texture_3d_upload: bool,
     pub texture_3d_mipmaps: bool,
@@ -505,6 +507,7 @@ impl BackendCapabilities {
         cube_texture_sampling: true,
         cube_texture_mipmaps: true,
         rgba8_multisample_resolve: true,
+        bgra8_multisample_resolve: true,
         texture_3d_sampling: true,
         texture_3d_upload: true,
         texture_3d_mipmaps: true,
@@ -1204,6 +1207,33 @@ impl Capabilities {
         self.backend.npot_mipmapped_textures && self.unrestricted_npot_texture_sampling()
     }
 
+    fn color_multisample_resolve_supported(
+        &self,
+        format: wgt::TextureFormat,
+        sample_count: u32,
+    ) -> bool {
+        let (backend, samples, format_query) = match format {
+            wgt::TextureFormat::Rgba8Unorm => (
+                self.backend.rgba8_multisample_resolve,
+                self.driver.rgba8_samples,
+                self.driver.rgba8,
+            ),
+            wgt::TextureFormat::Bgra8Unorm => (
+                self.backend.bgra8_multisample_resolve,
+                self.driver.bgra8_samples,
+                self.driver.bgra8,
+            ),
+            _ => return false,
+        };
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+            | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0
+            | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0) as u32;
+        backend
+            && samples.supported(sample_count)
+            && matches!(format_query, Query::Value(bits) if bits & required == required)
+    }
+
     pub fn query(device: &NativeDevice) -> Self {
         let raw = device.raw_device();
         let format =
@@ -1270,6 +1300,7 @@ impl Capabilities {
                 depth24_stencil8_samples: sample_counts(DXGI_FORMAT_D24_UNORM_S8_UINT),
                 depth16_unorm_samples: sample_counts(DXGI_FORMAT_D16_UNORM),
                 rgba8_samples: sample_counts(DXGI_FORMAT_R8G8B8A8_UNORM),
+                bgra8_samples: sample_counts(DXGI_FORMAT_B8G8R8A8_UNORM),
                 wireframe_rasterizer,
                 full_npot: query_full_npot(device),
                 comparison_shadow: Query::from_result(comparison_shadow),
@@ -1351,25 +1382,11 @@ impl Capabilities {
         let samples_supported = match samples {
             1 => true,
             2 | 4 | 8 | 16 => {
-                format == wgt::TextureFormat::Rgba8Unorm
+                self.color_multisample_resolve_supported(format, samples)
                     && (usage == wgt::TextureUses::COLOR_TARGET
                         || usage == (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
                     && layers == 1
                     && mips == 1
-                    && self.backend.rgba8_multisample_resolve
-                    && self.driver.rgba8_samples.supported(samples)
-                    && matches!(
-                        self.driver.rgba8,
-                        Query::Value(bits)
-                            if bits & (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
-                                | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
-                                | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0
-                                | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0) as u32
-                                == (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
-                                    | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
-                                    | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0
-                                    | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0) as u32
-                    )
             }
             _ => false,
         };
@@ -1990,7 +2007,12 @@ impl Capabilities {
         {
             result |= Caps::COLOR_ATTACHMENT_BLEND;
         }
-        if result.contains(Caps::COLOR_ATTACHMENT) && format == wgt::TextureFormat::Rgba8Unorm {
+        if result.contains(Caps::COLOR_ATTACHMENT)
+            && matches!(
+                format,
+                wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+            )
+        {
             for sample_count in SampleCountQueries::COUNTS {
                 if self
                     .check_private_texture_2d(
@@ -2106,6 +2128,12 @@ mod tests {
                 depth24_stencil8_samples: SampleCountQueries([Query::Value(0); 4]),
                 depth16_unorm_samples: SampleCountQueries([Query::Value(0); 4]),
                 rgba8_samples: SampleCountQueries([
+                    Query::Value(1),
+                    Query::Value(1),
+                    Query::Value(1),
+                    Query::Value(0),
+                ]),
+                bgra8_samples: SampleCountQueries([
                     Query::Value(1),
                     Query::Value(1),
                     Query::Value(1),
@@ -2862,6 +2890,61 @@ mod tests {
                 )
                 .is_err());
         }
+    }
+
+    #[test]
+    fn bgra8_multisample_resolve_requires_all_optional_evidence() {
+        let usage = wgt::TextureUses::COLOR_TARGET;
+        let supported = model(FeatureLevel::L9_1);
+        assert!(supported
+            .check_private_texture_2d(wgt::TextureFormat::Bgra8Unorm, usage, [8, 8], 1, 1, 4,)
+            .is_ok());
+        assert!(supported
+            .texture_format_capabilities(wgt::TextureFormat::Bgra8Unorm)
+            .contains(FormatCaps::MULTISAMPLE_X4 | FormatCaps::MULTISAMPLE_RESOLVE));
+
+        for query in [Query::Unavailable(-1), Query::Value(0)] {
+            let mut caps = supported;
+            caps.driver.bgra8_samples.0[1] = query;
+            assert!(caps
+                .check_private_texture_2d(wgt::TextureFormat::Bgra8Unorm, usage, [8, 8], 1, 1, 4,)
+                .is_err());
+            assert!(!caps
+                .texture_format_capabilities(wgt::TextureFormat::Bgra8Unorm)
+                .contains(FormatCaps::MULTISAMPLE_X4 | FormatCaps::MULTISAMPLE_RESOLVE));
+        }
+
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+            | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0
+            | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0) as u32;
+        for missing in [
+            D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0 as u32,
+            D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0 as u32,
+        ] {
+            let mut caps = supported;
+            caps.driver.bgra8 = Query::Value(required & !missing);
+            assert!(caps
+                .check_private_texture_2d(wgt::TextureFormat::Bgra8Unorm, usage, [8, 8], 1, 1, 4,)
+                .is_err());
+        }
+
+        let mut backend_disabled = supported;
+        backend_disabled.backend.bgra8_multisample_resolve = false;
+        assert!(backend_disabled
+            .texture_format_capabilities(wgt::TextureFormat::Bgra8Unorm)
+            .intersection(FormatCaps::MULTISAMPLE_X4 | FormatCaps::MULTISAMPLE_RESOLVE)
+            .is_empty());
+        assert!(supported
+            .check_private_texture_2d(
+                wgt::TextureFormat::Bgra8Unorm,
+                wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
+                [8, 8],
+                1,
+                1,
+                4,
+            )
+            .is_err());
     }
 
     #[test]
@@ -4081,6 +4164,12 @@ mod tests {
                 caps.driver.rgba8_samples.query(sample_count).unwrap(),
             )
         });
+        let bgra8_sample_counts = SampleCountQueries::COUNTS.map(|sample_count| {
+            (
+                sample_count,
+                caps.driver.bgra8_samples.query(sample_count).unwrap(),
+            )
+        });
         std::println!(
             "FL9_1 RGBA8 sample-count quality queries: {rgba8_sample_counts:?}; format_support={:?}; projected={:?}; multisample_texture_bindings={}",
             caps.driver.rgba8,
@@ -4090,6 +4179,10 @@ mod tests {
                 .downlevel
                 .limits
                 .multisampled_texture_bindings
+        );
+        std::println!(
+            "FL9_1 BGRA8 sample-count quality queries: {bgra8_sample_counts:?}; format_support={:?}",
+            caps.driver.bgra8
         );
         std::println!(
             "FL9_1 limits: texture2d={} cube_dimension={} cube_format_mask={:#x} sampled_textures={} samplers={} uniforms_per_stage={} color_attachments={} max_sampler_anisotropy={}; downlevel_flags={:?}; unrestricted_npot={:?}; RG8_UNORM={:?}; RG16_SNORM={:?}; BC1={:?}; BC2={:?}; BC3={:?}; D16_UNORM={:?} projected={:?}",

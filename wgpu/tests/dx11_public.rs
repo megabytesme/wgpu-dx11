@@ -30509,6 +30509,213 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
 }
 
 #[test]
+fn public_dx11_resolves_four_sample_bgra8_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters
+        .into_iter()
+        .find(|adapter| adapter.get_info().device_type != DeviceType::Cpu)
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical D3D11 adapter for FL9_1 BGRA8 multisample resolve");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let format_features = adapter.get_texture_format_features(TextureFormat::Bgra8Unorm);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; BGRA8 features={:?}",
+        info.name, info.vendor, info.device, info.driver_info, format_features
+    );
+    if !format_features.flags.contains(
+        TextureFormatFeatureFlags::MULTISAMPLE_X4 | TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE,
+    ) {
+        assert!(
+            !required,
+            "strict mode requires the physical FL9_1 device to support BGRA8 4x render and resolve"
+        );
+        println!("SKIP: selected FL9_1 device does not report BGRA8 4x render and resolve support");
+        return;
+    }
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public D3D11 FL9_1 BGRA8 multisample resolve"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+    let command_internal_scope = device.push_error_scope(ErrorFilter::Internal);
+    let command_validation_scope = device.push_error_scope(ErrorFilter::Validation);
+    let source = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 four-sample BGRA8 source"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 4,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Bgra8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT,
+        view_formats: &[],
+    });
+    let resolved = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 single-sample BGRA8 resolve target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Bgra8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let source_view = source.create_view(&TextureViewDescriptor::default());
+    let resolved_view = resolved.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 BGRA8 resolve readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    device
+        .poll(PollType::Poll)
+        .expect("BGRA8 resources leave the device healthy");
+    let mut render_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 BGRA8 multisample resolve"),
+    });
+    {
+        let _pass = render_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 BGRA8 multisample clear and resolve"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &source_view,
+                depth_slice: None,
+                resolve_target: Some(&resolved_view),
+                ops: Operations {
+                    load: LoadOp::Clear(Color {
+                        r: 0.25,
+                        g: 0.5,
+                        b: 0.75,
+                        a: 1.0,
+                    }),
+                    store: StoreOp::Discard,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+    }
+    let render_commands = render_encoder.finish();
+    if let Some(error) = poll_ready(command_validation_scope.pop()) {
+        panic!("FL9_1 BGRA8 resolve command validation failed: {error:?}");
+    }
+    if let Some(error) = poll_ready(command_internal_scope.pop()) {
+        panic!("FL9_1 BGRA8 resolve command failed internally: {error:?}");
+    }
+    let submit_internal_scope = device.push_error_scope(ErrorFilter::Internal);
+    let submit_validation_scope = device.push_error_scope(ErrorFilter::Validation);
+    let render_submission = queue.submit([render_commands]);
+    if let Some(error) = poll_ready(submit_validation_scope.pop()) {
+        panic!("FL9_1 BGRA8 resolve submission validation failed: {error:?}");
+    }
+    if let Some(error) = poll_ready(submit_internal_scope.pop()) {
+        panic!("FL9_1 BGRA8 resolve submission failed internally: {error:?}");
+    }
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(render_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for BGRA8 multisample clear and resolve");
+    let mut copy_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 BGRA8 resolve readback"),
+    });
+    copy_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &resolved,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submit_validation_scope = device.push_error_scope(ErrorFilter::Validation);
+    let submission = queue.submit([copy_encoder.finish()]);
+    if let Some(error) = poll_ready(submit_validation_scope.pop()) {
+        panic!("FL9_1 BGRA8 readback submission validation failed: {error:?}");
+    }
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for BGRA8 multisample resolve submission");
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: None,
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for BGRA8 resolve readback map");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("BGRA8 resolve map callback")
+        .expect("map BGRA8 resolve readback");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped readback");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                for (channel, expected) in [191, 128, 64, 255].into_iter().enumerate() {
+                    assert!(
+                        data[offset + channel].abs_diff(expected) <= 1,
+                        "FL9_1 BGRA8 resolve pixel ({x}, {y}) channel {channel}: expected {expected} ±1, got {}",
+                        data[offset + channel]
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!(
+        "PASS: FL9_1 BGRA8 4x resolve matched 64 BGRA pixels [191, 128, 64, 255] within one byte"
+    );
+}
+
+#[test]
 fn public_dx11_cube_texture_sampling_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

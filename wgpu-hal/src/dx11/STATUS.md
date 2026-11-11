@@ -413,10 +413,15 @@ invalid-surface validation error rather than panicking on the stale ID. The
 strict test verifies this does not consume or disturb a frame acquired from a
 second active HWND surface.
 
-The optional RGBA8 2x/4x/8x paths are restricted through
+The optional RGBA8 and BGRA8 2x/4x/8x paths are restricted through
 `DownlevelLimits::multisampled_texture_usage_mask` to color attachment and
 transient attachment usages. Core rejects sampled and copy usages before the
 HAL even when the selected format reports multisample render/resolve support.
+Each format uses its own `CheckFormatSupport` and per-count
+`CheckMultisampleQualityLevels` results, and resolve commands preserve the
+selected native format. A strict RTX 3090 Ti FL9_1 BGRA8 clear/resolve test
+checks 64 readback pixels; this optional result does not establish historical
+device support.
 
 The selected FL9_1 projection exposes sampled RGBA8 3D textures only when the
 device reports `TEXTURE3D | SHADER_SAMPLE`. The tested subset is POT,
