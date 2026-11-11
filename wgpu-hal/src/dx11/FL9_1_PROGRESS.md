@@ -16646,3 +16646,5 @@ it does not verify historical FL9_1 drivers or Lumia/CoreWindow presentation.
 ```powershell
 cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set "WGPU_DX11_REQUIRE_HARDWARE=1" && set "CARGO_TARGET_DIR=E:\Temp\wgpu-mission-gpu-target" && set "CARGO_NET_OFFLINE=true" && set "CARGO_BUILD_JOBS=4" && cargo +1.93.1 run --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_windowed -- --frames=3'
 ```
+
+Checkpoint: `65c423bdf63e14f1249275a8f1604d1b42e75004` (`dx11: record public FL9_1 HWND example run`).
