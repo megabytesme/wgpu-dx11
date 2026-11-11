@@ -2222,6 +2222,19 @@ hardware evidence, verify the adapter and feature level printed by the strict
 path, and record passed, failed, skipped and unrun cases separately. A
 selected subset is not a conformance claim.
 
+A strict probe of `webgpu:api,operation,rendering,depth:*` ran 130 subcases:
+72 passed, 24 skipped and 34 failed. Source triage accounted for all failures:
+eight tests requested the unused `COPY_DST` usage on `Depth24PlusStencil8`,
+and 26 requested unsupported `Depth32Float` attachment/sampling usages. Core
+rejected those texture creations, so subsequent zero-pixel comparisons do
+not establish a depth-state or HAL execution defect. The 72 passing depth
+comparison cases cover D16, `Depth24Plus` and `Depth24PlusStencil8`; the 24
+`Depth32FloatStencil8` cases correctly skipped. `reverse_depth` also uses
+dynamic local-array indexing outside the current FL9_1 shader subset, though
+its unsupported format request masks that issue in this run. This probe does
+not establish broad depth conformance. Full output is in
+`E:\Temp\wgpu_dx11_depth_cts.log`.
+
 ## Hardware and validation matrix
 
 For each applicable phase, exercise native D3D feature levels 9_1, 9_3 and

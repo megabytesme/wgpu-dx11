@@ -14,15 +14,19 @@ pre-existing HAL warnings; formatting and diff checks passed. Commit
 `19322e6e1` checkpoints the implementation. Historical FL9_1 drivers remain
 unverified.
 
-The overall mission remains PARTIALLY COMPLETE. Highest-impact open work is
-not another isolated query helper: the final public wgpu end-to-end example
-must demonstrate adapter/device selection, a textured indexed depth-tested
-3D scene, offscreen verification and HWND presentation. In parallel, the
-public Core/HAL contract audit, shader-subset expansion, dynamic uniform
-offsets/multiple groups, broader graphics/resource validation, device loss,
-historical FL9_1 and Lumia/CoreWindow runtime verification remain open. Keep
-agents on independent audits/probes and keep each implementation slice under
-the coordinator.
+The public offscreen and HWND examples also build and run in this checkout.
+The offscreen run validated all 1,024 pixels of a textured indexed,
+depth-tested cube. The visible HWND run presented 60 frames. Both used the
+physical RTX 3090 Ti at requested/actual FL9_1; exact commands and results are
+in `FL9_1_PROGRESS.md`.
+
+The overall mission remains PARTIALLY COMPLETE. Remaining work is the broad
+public Core/HAL contract audit, useful shader/resource subsets where evidence
+supports expansion, the desktop/HWND lifecycle edge audit, and external
+historical FL9_1, Lumia/CoreWindow and physical device-removal verification.
+Compute/UAV, geometry shaders, MRT, 1D textures and ordinary texture arrays
+remain feature-level restrictions. Keep agents on independent audits/probes
+and each implementation slice under the coordinator.
 
 ## Current coordinator checkpoint — 2026-11-11
 

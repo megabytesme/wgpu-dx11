@@ -25,6 +25,16 @@ pre-existing warnings in index/transfer/texture code. `cargo fmt --all
 -- --check` and `git diff --check` passed. The verified implementation
 checkpoint is `19322e6e1`.
 
+The public examples were also rebuilt and executed in this checkout:
+
+- `cargo +1.93.1 check --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_offscreen`: passed.
+- The matching `cargo check` for `dx11_fl91_windowed`: passed.
+- Strict `cargo run` of `dx11_fl91_offscreen` produced a PPM after public wgpu adapter/device creation and offscreen indexed textured depth-tested rendering. RTX 3090 Ti, `0x10de:0x2203`, driver `32.0.16.2101`, requested/actual FL9_1, software=false; readback validated all 1,024 pixels (112 red, 277 green, 635 blue clear background).
+- Strict `cargo run` of `dx11_fl91_windowed -- --frames=60` presented 60 visible HWND frames of the indexed textured depth-tested cube on the same physical adapter and feature level.
+
+These verify the sample applications on this desktop and driver; CoreWindow on
+Lumia/ARM32 and historical FL9_1 hardware remain external checks.
+
 ## Query-gated Rg8 fragment `textureLoad` — 2026-11-11
 
 The restricted fragment 2D `textureLoad` path now accepts `Rg8Unorm` as well
@@ -16749,6 +16759,28 @@ attempt outside the Visual Studio developer environment could not find
 `link.exe`; rerunning with `VsDevCmd.bat` built the runner and executed the
 test. This result updates the earlier historical failure entry; the relevant
 support is the current narrow local-array path.
+
+## Strict depth CTS probe — 2026-11-11
+
+The strict `webgpu:api,operation,rendering,depth:*` probe executed 130
+subcases: 72 passed, 24 skipped and 34 failed. Source triage accounted for all
+failures: eight cases requested unused `COPY_DST` on `Depth24PlusStencil8`,
+and 26 requested unsupported `Depth32Float` attachment/sampling usages. Core
+rejected these texture creations; following readback assertions saw the zero
+target, so those failures do not establish a depth-state or HAL execution
+defect. The 72 passing depth comparison cases cover D16, `Depth24Plus` and
+`Depth24PlusStencil8`; 24 `Depth32FloatStencil8` cases correctly skipped.
+`reverse_depth` also uses dynamic local-array indexing outside the current
+FL9_1 shader subset, but the invalid format request masks that issue here.
+This probe does not establish broad depth conformance. Full output is in
+`E:\Temp\wgpu_dx11_depth_cts.log`.
+
+The probe used the repository CTS runner from the MSVC developer environment:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cmd.exe /d /c "E:\Temp\wgpu_mission_cargo.bat xtask cts --skip-checkout --backend dx11 --require-dx11-hardware webgpu:api,operation,rendering,depth:*"
+```
 
 ## RGBA8_SNORM shadow readback — 2026-11-11
 
