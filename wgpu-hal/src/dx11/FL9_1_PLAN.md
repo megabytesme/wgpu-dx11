@@ -2,24 +2,31 @@
 
 ## Current coordinator checkpoint — 3D RGBA8 region copy — 2026-11-11
 
+Checkpoint: `74c011a50` (`dx11: add ordered FL9_1 3D texture copies`).
+
 The public/Core/HAL path supports same-format 3D RGBA8 region copies through
 execution-ordered CPU shadows and native `UpdateSubresource`, avoiding the
 10Level9 native 3D GPU-copy restrictions. The strict RTX 3090 Ti test passed at
 requested and actual FL9_1 with nonzero source/destination origins, a
 destination seeded with nonzero voxels, bounds rejection, padded readback,
-sampling verification and query-supported mip-1 coverage. The strengthened
-copy test passed 1/1, followed by the full strict public target at 139/139 with
-no skips. The private HAL suite passed 510/510, Core fixture 142/142, and Core
-DX12 131/131 on the same implementation before the final public-test-only
-assertions.
+sampling verification and query-supported mip-1 coverage. A follow-up test
+records two dependent copies, drops texture/view/bind-group wrappers before
+submit, then verifies full-volume readback and sampling. The full strict public
+target passed 139/139 with no skips after this was added. The private HAL suite
+passed 510/510, Core fixture 142/142, and Core DX12 131/131 on the same
+implementation.
 
 This is CPU work and a packed region allocation per copy, not native GPU-to-GPU
 transfer; it cannot consume GPU-written 3D resources. 3D rendering, storage
 and native copies remain unavailable. The physical Lumia CoreWindow check was
 retried but Device Portal timed out; historical hardware, ARM32 execution and
-physical device-removal recovery remain external gaps. The next software step
-should come from the updated remaining-gap audit rather than assuming hard
-FL9_1 exclusions need emulation.
+physical device-removal recovery remain external gaps. Independent pipeline,
+resource and public-path reviews found no confirmed Core-valid request reaching
+an unsupported HAL path in their scopes. The next bounded verification is a
+strict public GPU test with a uniform binding in a nonzero bind group; private
+HAL coverage already exercises this shape. Keep arbitrary `textureSampleLevel`
+LOD rejected until the single-mip view and sampler-clamp ordering is proven
+from the API contract. The exhaustive public API/CTS audit remains open.
 
 ## Recent continuation — BGRA8 multisample resolve counts — 2026-11-11
 

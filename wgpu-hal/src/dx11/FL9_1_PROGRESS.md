@@ -1,5 +1,7 @@
 ## Same-format 3D RGBA8 region copies — 2026-11-11
 
+Checkpoint: `74c011a50` (`dx11: add ordered FL9_1 3D texture copies`).
+
 Core now permits compatible 3D-to-3D texture copies behind the explicit
 `texture_3d_texture_copies` downlevel limit. Mixed 2D/3D copies and same-mip
 self-copy are rejected. The HAL replays the copy from the source's ordered CPU
@@ -17,10 +19,14 @@ source region, and sampled the destination; all 64 output pixels matched. The
 device also reported the optional 3D mip support used by the mip-1 copy case,
 which preserved untouched voxels.
 
-The final strengthened strict public target passed 139/139 with no skips. The
-focused copy test also passed 1/1. The full private HAL suite passed 510/510,
-Core DX11 fixtures 142/142, and Core DX12 131/131 on the same implementation
-before the final public-test-only assertions were added. Rust 1.93.1 formatting,
+The strict test also records two dependent copies, readback and a sample in one
+submission, then drops the source, intermediate, destination, view and bind
+group wrappers before submission. Full-volume readback verified preserved
+nonzero voxels and padding; all 64 sampled pixels matched. The focused copy
+test passed 1/1, and the full strict public target passed 139/139 with no skips
+after this lifetime/order coverage was added. The full private HAL suite passed
+510/510, Core DX11 fixtures 142/142, and Core DX12 131/131 on the same implementation.
+Rust 1.93.1 formatting,
 `git diff --check`, and Clippy passed. Clippy reported six existing HAL
 warnings (including `too_many_arguments` and an `unnecessary_unwrap`) and three
 existing Core fixture warnings (`nonminimal_bool`, `single_element_loop` and
@@ -36,6 +42,14 @@ $env:WGPU_DX11_REQUIRE_HARDWARE='1'
 The 3D path adds a source-volume shadow when `COPY_SRC` is requested and CPU
 region allocation/copy work per command; 3D render attachments and storage
 remain unavailable.
+
+Independent render/pipeline and texture/resource audits found no confirmed
+Core-valid request reaching an unsupported HAL path in the reviewed areas. The
+uniform review likewise found no static-range correctness mismatch, but public
+GPU tests do not yet place a uniform in a nonzero bind group; private HAL
+coverage does. This is the next bounded end-to-end test. Shader triage found no
+normative proof for arbitrary explicit LOD on the restricted one-mip path, so
+the existing literal `+0.0` gate remains unchanged.
 
 ## Query-gated 8-bit SNORM fragment `textureLoad` — 2026-11-11
 

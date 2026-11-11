@@ -4723,7 +4723,11 @@ offset; all destination bytes, including padding, matched. The strict public
 3D copy case seeds a differently sized destination with nonzero values, copies
 a partial region between volumes at nonzero XYZ origins, verifies every
 destination voxel and padded readback byte, rejects an out-of-bounds request,
-and samples the copied volume. The selected RTX 3090 Ti also passed queried
+and samples the copied volume. It also records two dependent 3D copies in one
+submission, then drops the source, intermediate, destination, view and bind
+group wrappers before submission. Full-volume readback, preserved destination
+texels and sampled output confirm copy ordering and command-buffer resource
+retention. The selected RTX 3090 Ti also passed queried
 mip-1 copy coverage. The result is an ordered CPU-shadow fallback followed by
 `UpdateSubresource`, not native GPU-to-GPU copy. It does not establish copying
 from GPU-written volume data or historical FL9_1 driver behavior.

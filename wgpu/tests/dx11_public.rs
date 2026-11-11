@@ -32982,6 +32982,258 @@ fn public_dx11_texture_3d_cpu_shadow_readback_at_fl91() {
     drop(sampled_pixels);
     sample_readback.unmap();
 
+    let chained_destination = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 chained 3D copy destination"),
+        size: Extent3d {
+            width: 8,
+            height: 4,
+            depth_or_array_layers: 8,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let chained_initial = [3u8, 5, 7, 255].repeat(8 * 4 * 8);
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &chained_destination,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &chained_initial,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(8 * 4),
+            rows_per_image: Some(4),
+        },
+        Extent3d {
+            width: 8,
+            height: 4,
+            depth_or_array_layers: 8,
+        },
+    );
+    queue.write_buffer(&copied_readback, 0, &[0x5A; 8192]);
+
+    let chained_view = chained_destination.create_view(&TextureViewDescriptor {
+        dimension: Some(TextureViewDimension::D3),
+        ..Default::default()
+    });
+    let chained_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 chained 3D copy bindings"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&chained_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let mut chained_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 chained 3D copies in one submission"),
+    });
+    chained_encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &volume,
+            mip_level: 0,
+            origin: Origin3d { x: 1, y: 1, z: 1 },
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d { x: 3, y: 1, z: 4 },
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+    );
+    chained_encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d { x: 3, y: 1, z: 4 },
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &chained_destination,
+            mip_level: 0,
+            origin: Origin3d { x: 3, y: 1, z: 4 },
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+    );
+    chained_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &chained_destination,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &copied_readback,
+            layout: TexelCopyBufferLayout {
+                offset: copied_readback_offset as u64,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(4),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 4,
+            depth_or_array_layers: 8,
+        },
+    );
+    {
+        let mut pass = chained_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 sample chained 3D copy"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &chained_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    chained_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &sample_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let chained_commands = chained_encoder.finish();
+    drop(chained_group);
+    drop(chained_view);
+    drop(destination_view);
+    drop(group);
+    drop(volume);
+    drop(destination);
+    drop(chained_destination);
+    let chained_submission = queue.submit([chained_commands]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    copied_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(chained_submission.clone()),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for chained 3D copies and readback");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("chained 3D copy readback callback")
+        .expect("map chained 3D copy readback");
+    let chained_pixels = copied_readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped chained 3D copy readback");
+    for z in 0..8usize {
+        for y in 0..4usize {
+            for x in 0..8usize {
+                let expected =
+                    if (3..=4).contains(&x) && (1..=2).contains(&y) && (4..=5).contains(&z) {
+                        [
+                            40 + (z - 4) as u8 * 80,
+                            20 + (y - 1) as u8 * 90,
+                            30 + (x - 3) as u8 * 60,
+                            255,
+                        ]
+                    } else {
+                        [3, 5, 7, 255]
+                    };
+                let offset = copied_readback_offset + z * 1024 + y * 256 + x * 4;
+                assert_eq!(
+                    &chained_pixels[offset..offset + 4],
+                    expected,
+                    "chained 3D copy voxel ({x}, {y}, {z})"
+                );
+            }
+            if z != 7 || y != 3 {
+                let padding = copied_readback_offset + z * 1024 + y * 256 + 32;
+                assert!(
+                    chained_pixels[padding..copied_readback_offset + z * 1024 + y * 256 + 256]
+                        .iter()
+                        .all(|byte| *byte == 0x5A),
+                    "chained copy row padding ({y}, {z})"
+                );
+            }
+        }
+    }
+    drop(chained_pixels);
+    copied_readback.unmap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    sample_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(chained_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for chained 3D GPU sample");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("chained 3D sample callback")
+        .expect("map chained 3D sample output");
+    let chained_sample = sample_readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped chained 3D sample output");
+    for y in 0..8usize {
+        for x in 0..8usize {
+            let offset = y * 256 + x * 4;
+            assert_eq!(
+                &chained_sample[offset..offset + 4],
+                [40, 20, 30, 255],
+                "chained 3D copy sampled pixel ({x}, {y})"
+            );
+        }
+    }
+    drop(chained_sample);
+    sample_readback.unmap();
+    println!("PASS: two ordered 3D copies in one submission propagated source data through a dropped intermediate texture and matched full-volume readback plus 64 sampled pixels");
+
     if downlevel.limits.texture_3d_mipmaps {
         let mip_source = device.create_texture(&TextureDescriptor {
             label: Some("FL9_1 mipmapped 3D copy source"),

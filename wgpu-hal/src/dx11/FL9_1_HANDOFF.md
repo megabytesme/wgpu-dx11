@@ -10,11 +10,13 @@ verified preserved destination voxels and padded readback, rejected an
 out-of-bounds request, and sampled the copied volume with 64/64 pixels
 matching. Query-supported mip-1 coverage also passed. This fallback uses
 `UpdateSubresource`; native 3D GPU copies and GPU-written 3D source resources
-remain unavailable. The strengthened focused test passed 1/1, then the full
+remain unavailable. The test also chains two copies, drops source/intermediate/
+destination and bind-group wrappers before submit, and verifies full-volume
+readback plus sampling. The strengthened focused test passed 1/1, and the full
 strict public target passed 139/139 with no skips. The full private HAL suite
-passed 510/510, Core fixture 142/142, and Core DX12 131/131 on the same
-implementation before the final public-test-only assertions. Exact commands
+passed 510/510, Core fixture 142/142, and Core DX12 131/131. Exact commands
 and Clippy results are recorded in `FL9_1_PROGRESS.md`.
+Checkpoint: `74c011a50` (`dx11: add ordered FL9_1 3D texture copies`).
 
 This is a substantial constrained opt-in graphics subset, not feature-complete
 FL9_1 wgpu. The explicit DX11 backend supports public wgpu adapter/device
@@ -35,7 +37,7 @@ Historical FL9_1 drivers, Lumia ARM32/CoreWindow execution and physical
 device-removal recovery remain external verification gaps. Use agents for
 independent audits, CTS triage and compiler probes, but assign each coupled
 Core/Naga/HAL feature to one implementation owner and keep end-to-end GPU
-validation under the coordinator. The current matrix-inverse increment has
+validation under the coordinator. An earlier matrix-inverse increment
 implemented and GPU-verified f32 mat2 and mat3 GLSL/Naga IR lowering;
 mat4/general matrix inverse remain rejected.
 
