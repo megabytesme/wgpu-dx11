@@ -697,6 +697,9 @@ impl<'scope, 'snatch_guard, 'cmd_enc> State<'scope, 'snatch_guard, 'cmd_enc> {
                 .check_sampler_mip_ranges(pipeline.as_ref())?;
             self.pass
                 .binder
+                .check_fl9_texture_sample_level_zero_bindings(pipeline.as_ref())?;
+            self.pass
+                .binder
                 .check_texture_sample_bias_samplers(pipeline.as_ref())?;
             self.pass.binder.check_late_buffer_bindings()?;
 

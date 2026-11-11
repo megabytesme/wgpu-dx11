@@ -330,6 +330,7 @@ struct EntryPoint {
     texture_sample_biases: Vec<TextureSampleBias>,
     fragment_derivatives_used: bool,
     texture_sample_level_used: bool,
+    fl9_texture_sample_level_zero_pairs: Option<Vec<SamplingPair>>,
     texture_gather_used: bool,
     workgroup_size: [u32; 3],
     dual_source_blending: bool,
@@ -3602,6 +3603,106 @@ fn entry_point_uses_texture_sample_level(
         collect_called_functions(&function.body, &mut called_functions);
     }
     false
+}
+
+fn entry_point_fl9_texture_sample_level_zero_pairs(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+) -> Option<Vec<SamplingPair>> {
+    if entry_point.stage != naga::ShaderStage::Fragment
+        || entry_point.function.body.iter().any(|statement| {
+            !matches!(
+                statement,
+                naga::Statement::Emit(_) | naga::Statement::Return { .. }
+            )
+        })
+        || entry_point
+            .function
+            .expressions
+            .iter()
+            .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
+    {
+        return None;
+    }
+
+    let mut pairs = Vec::new();
+    for (_, expression) in entry_point.function.expressions.iter() {
+        if !matches!(
+            expression,
+            naga::Expression::ImageSample {
+                level: naga::SampleLevel::Exact(_),
+                ..
+            }
+        ) {
+            continue;
+        }
+        let naga::Expression::ImageSample {
+            image,
+            sampler,
+            gather: None,
+            coordinate: _,
+            array_index: None,
+            offset: None,
+            level: naga::SampleLevel::Exact(level),
+            depth_ref: None,
+            clamp_to_edge: false,
+        } = expression
+        else {
+            return None;
+        };
+
+        if !matches!(
+            entry_point.function.expressions[*level],
+            naga::Expression::Literal(naga::Literal::F32(value)) if value.to_bits() == 0
+        ) {
+            return None;
+        }
+        let naga::Expression::GlobalVariable(image) = entry_point.function.expressions[*image]
+        else {
+            return None;
+        };
+        let naga::Expression::GlobalVariable(sampler) = entry_point.function.expressions[*sampler]
+        else {
+            return None;
+        };
+        let image_global = &module.global_variables[image];
+        let sampler_global = &module.global_variables[sampler];
+        if image_global.space != naga::AddressSpace::Handle
+            || sampler_global.space != naga::AddressSpace::Handle
+            || !matches!(
+                module.types[image_global.ty].inner,
+                naga::TypeInner::Image {
+                    dim: naga::ImageDimension::D2,
+                    arrayed: false,
+                    class: naga::ImageClass::Sampled {
+                        kind: naga::ScalarKind::Float,
+                        multi: false,
+                    },
+                }
+            )
+            || !matches!(
+                module.types[sampler_global.ty].inner,
+                naga::TypeInner::Sampler { comparison: false }
+            )
+        {
+            return None;
+        }
+        let image = image_global.binding.as_ref()?;
+        let sampler = sampler_global.binding.as_ref()?;
+        pairs.push(SamplingPair {
+            texture_group: image.group,
+            texture_binding: image.binding,
+            sampler_group: sampler.group,
+            sampler_binding: sampler.binding,
+        });
+    }
+
+    if pairs.is_empty() {
+        return None;
+    }
+    pairs.sort_unstable();
+    pairs.dedup();
+    Some(pairs)
 }
 
 fn function_uses_texture_gather(function: &naga::Function) -> bool {
@@ -7350,6 +7451,8 @@ impl Interface {
                     module,
                     entry_point,
                 ),
+                fl9_texture_sample_level_zero_pairs:
+                    entry_point_fl9_texture_sample_level_zero_pairs(module, entry_point),
                 texture_gather_used: entry_point_uses_texture_gather(module, entry_point),
                 ..Default::default()
             };
@@ -8073,7 +8176,29 @@ impl Interface {
         let Some(entry_point) = self.entry_points.get(&key) else {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
-        Ok(entry_point.texture_sample_level_used && !limits.texture_sample_level)
+        let restricted_zero_supported = limits.texture_sample_level_zero_2d_float_fragment
+            && entry_point
+                .fl9_texture_sample_level_zero_pairs
+                .as_ref()
+                .is_some_and(|pairs| !pairs.is_empty());
+        Ok(entry_point.texture_sample_level_used
+            && !limits.texture_sample_level
+            && !restricted_zero_supported)
+    }
+
+    pub(crate) fn entry_point_fl9_texture_sample_level_zero_pairs(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<Vec<SamplingPair>, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point
+            .fl9_texture_sample_level_zero_pairs
+            .clone()
+            .unwrap_or_default())
     }
 
     pub(crate) fn entry_point_uses_unsupported_texture_gather(
@@ -10229,6 +10354,124 @@ mod tests {
                 &fl91,
             )
             .is_err());
+    }
+
+    #[test]
+    fn fl9_level_zero_sampling_requires_a_proven_direct_fragment_shape() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(2) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            fn exact_helper(uv: vec2f) -> vec4f {
+                return textureSampleLevel(image, smp, uv, 0.0);
+            }
+            @fragment fn level_zero(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleLevel(image, smp, uv, 0.0);
+            }
+            @fragment fn level_zero_negative(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleLevel(image, smp, uv, -0.0);
+            }
+            @fragment fn level_nonzero(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleLevel(image, smp, uv, 0.5);
+            }
+            @fragment fn level_dynamic(@location(0) uv: vec2f, @location(1) lod: f32) -> @location(0) vec4f {
+                return textureSampleLevel(image, smp, uv, lod);
+            }
+            @fragment fn level_zero_with_offset(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let base = textureSampleLevel(image, smp, uv, 0.0);
+                return base + textureSampleLevel(image, smp, uv, 0.0, vec2i(1, 0));
+            }
+            @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return exact_helper(uv);
+            }
+            @fragment fn control_flow(@location(0) uv: vec2f) -> @location(0) vec4f {
+                if uv.x > 0.5 {
+                    return textureSampleLevel(image, smp, uv, 0.0);
+                }
+                return vec4f(0.0);
+            }
+            @fragment fn implicit(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSample(image, smp, uv);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let restricted = wgt::DownlevelLimits {
+            texture_sample_level: false,
+            texture_sample_level_zero_2d_float_fragment: true,
+            ..Default::default()
+        };
+
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_level(
+                naga::ShaderStage::Fragment,
+                "level_zero",
+                &restricted,
+            )
+            .unwrap());
+        assert_eq!(
+            interface
+                .entry_point_fl9_texture_sample_level_zero_pairs(
+                    naga::ShaderStage::Fragment,
+                    "level_zero",
+                )
+                .unwrap(),
+            alloc::vec![SamplingPair {
+                texture_group: 2,
+                texture_binding: 7,
+                sampler_group: 2,
+                sampler_binding: 42,
+            }]
+        );
+
+        for entry in [
+            "level_zero_negative",
+            "level_nonzero",
+            "level_dynamic",
+            "level_zero_with_offset",
+            "helper",
+            "control_flow",
+        ] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_texture_sample_level(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                        &restricted,
+                    )
+                    .unwrap(),
+                "{entry} must not enter the lowering subset"
+            );
+            assert!(
+                interface
+                    .entry_point_fl9_texture_sample_level_zero_pairs(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                    )
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_level(
+                naga::ShaderStage::Fragment,
+                "implicit",
+                &restricted,
+            )
+            .unwrap());
+        assert!(
+            !wgt::DownlevelLimits::default().check_limits(&wgt::DownlevelLimits {
+                texture_sample_level_zero_2d_float_fragment: true,
+                ..Default::default()
+            })
+        );
     }
 
     #[test]

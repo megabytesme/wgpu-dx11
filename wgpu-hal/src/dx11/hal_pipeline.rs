@@ -890,6 +890,7 @@ mod tests {
             texture_slot: 0,
             sampler_slot: 0,
             requires_bias_compatible: false,
+            requires_single_mip: false,
         };
         for stage in [wgt::ShaderStages::VERTEX, wgt::ShaderStages::FRAGMENT] {
             assert!(matches!(
@@ -3062,6 +3063,23 @@ impl RenderPipeline {
                 fragment.entry_point,
                 &fragment_bindings,
             )?;
+            for level_zero_pair in fragment.module.texture_sample_level_zero_pairs(
+                naga::ShaderStage::Fragment,
+                fragment.entry_point,
+            )? {
+                let Some(pair) = fragment_pairs.iter_mut().find(|pair| {
+                    pair.texture == level_zero_pair.texture
+                        && pair.sampler == level_zero_pair.sampler
+                }) else {
+                    return Err(crate::PipelineError::Linkage(
+                        wgt::ShaderStages::FRAGMENT,
+                        "FL9_1 exact-LOD sampling relationship is missing from the native binding map"
+                            .into(),
+                    ));
+                };
+                pair.requires_bias_compatible = true;
+                pair.requires_single_mip = true;
+            }
             validate_sampling_pairs(
                 &desc.layout.bindings,
                 &fragment_pairs,

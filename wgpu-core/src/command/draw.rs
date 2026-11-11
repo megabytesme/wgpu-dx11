@@ -88,6 +88,10 @@ pub enum DrawError {
         sampler_group: u32,
         sampler_binding: u32,
     },
+    #[error("The restricted FL9_1 textureSampleLevel path requires a single-mip view at group {group} binding {binding}")]
+    IncompatibleTextureSampleLevelView { group: u32, binding: u32 },
+    #[error("The restricted FL9_1 textureSampleLevel path requires a regular sampler with matching min/mag filters and anisotropy 1 at group {group} binding {binding}")]
+    IncompatibleTextureSampleLevelSampler { group: u32, binding: u32 },
     #[error("Sampler group {group} binding {binding} is incompatible with textureSampleBias; minification and magnification filters must match and effective anisotropy must be 1")]
     IncompatibleTextureSampleBiasSampler { group: u32, binding: u32 },
     #[error("FL9_1 viewport remapping is unavailable for the selected render pipeline")]

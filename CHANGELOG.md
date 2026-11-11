@@ -53,6 +53,7 @@ Bottom level categories:
 - Emulate the proven single-mip 2D float fragment `textureLoad` subset in the opt-in FL9_1 D3D11 backend.
 - Permit selected-entry straight-line helpers to directly reference the same texture in the restricted FL9_1 fragment `textureLoad` emulation.
 - Permit selected-entry straight-line helpers to load the same 3D float texture in the restricted FL9_1 fragment `textureLoad` emulation.
+- Permit a separately gated direct fragment `textureSampleLevel(..., 0.0)` subset on one-mip 2D float views in the opt-in FL9_1 D3D11 backend.
 - Expose a narrowly validated fragment `textureDimensions` subset for one bound 2D float texture, including constant mip levels relative to a view, in the opt-in FL9_1 D3D11 backend.
 - Permit the direct fragment 2D `textureDimensions` subset to query a texture in any valid bind group in the opt-in FL9_1 D3D11 backend.
 - Expose a separate, narrowly validated fragment `textureDimensions` subset for one bound 3D float texture in the opt-in FL9_1 D3D11 backend.
@@ -155,6 +156,7 @@ Bottom level categories:
 - Add downlevel limits for the maximum literal texture sample bias, dynamic bias and texel offsets so backends can reject unsupported sampling forms before HAL compilation.
 - Add a downlevel fragment-derivatives limit so backends can reject unsupported `dpdx`, `dpdy` and explicit texture-gradient operations before HAL compilation.
 - Add `DownlevelLimits::texture_sample_level` so backends can reject unsupported explicit `textureSampleLevel` operations in selected shader entry points.
+- Add a separate `DownlevelLimits::texture_sample_level_zero_2d_float_fragment` for the directly validated literal-zero FL9_1 fragment subset.
 - Add `DownlevelLimits::texture_query` so backends can reject texture dimension and mip-count queries unsupported by their shader profile.
 - Add `DownlevelLimits::texture_sample_base_clamp_to_edge` so backends can reject base-clamp sampling when its generated shader operations are unsupported.
 - Add `DownlevelLimits::frexp_fraction_only_fragment` for the narrowly validated direct scalar fragment `frexp(value).fract` subset in the opt-in FL9_1 D3D11 backend.

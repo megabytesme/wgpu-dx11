@@ -1,5 +1,53 @@
 # FL9_1 progress
 
+## Restricted fragment explicit LOD zero — 2026-11-11
+
+Added a distinct `DownlevelLimits::texture_sample_level_zero_2d_float_fragment`
+capability without enabling general `texture_sample_level`. Core proves a
+selected fragment entry uses only direct, unconditional, positive-literal-zero
+`textureSampleLevel` calls on bound `texture_2d<f32>` resources and records the
+actual logical texture/sampler pairs. The HAL repeats the proof and changes
+only those selected Naga `SampleLevel::Exact` expressions to implicit samples
+before HLSL generation; FXC rejects unlowered exact LOD with X4532 at the 9_1
+profile. At draw time Core checks the currently bound view has exactly one mip
+and the associated regular sampler has equal min/mag filters and anisotropy 1.
+This keeps the one available mip and spatial filter behavior equivalent.
+Dynamic, negative-zero, nonzero/fractional LOD, offsets, helpers, control flow,
+other texture shapes and incompatible bindings remain rejected.
+
+The strict public GPU test used a 2x2 two-color texture, interpolated
+coordinates and an 8x8 target. The RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) created the requested and actual FL9_1 device with software
+adapter false; all 32 pixels in each half matched the distinct expected
+sampled colors (64 total). Core rejected a two-mip view and a sampler with
+mismatched min/mag filters before HAL draw execution. No historical FL9_1
+driver behavior is inferred from this modern GPU.
+
+```text
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
+# 1 passed; 128 filtered. Patterned sample readback and both draw-time rejects passed on physical FL9_1.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 498 passed, 0 failed. Strict mode prevented a missing adapter from being accepted as hardware success.
+
+cargo +1.93.1 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl -- --test-threads=1
+# 128 passed, including mixed valid/unsupported explicit-sample proof rejection.
+
+cargo +1.93.1 test --offline -j8 -p wgpu-types --lib
+# 114 passed.
+
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 129 passed on physical hardware; optional format subcases logged capability SKIP where queries were negative.
+
+cargo +1.93.1 check --offline -j8 -p wgpu-hal
+cargo +1.93.1 check --offline -j8 -p wgpu-core --no-default-features --features dx12,std,wgsl
+# Both passed, including the default GLES/DX12 HAL build and targeted Core DX12 build.
+
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+# Both passed. Clippy passed for wgpu-hal (DX11), wgpu-core (DX11), wgpu (public DX11 test), and wgpu-types; existing HAL warnings remain in unrelated lines.
+```
+
 ## Public render-state CTS slice — 2026-11-10
 
 The strict DX11 CTS `color_write_mask,channel_work:*` selector passed all

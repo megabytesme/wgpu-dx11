@@ -5754,6 +5754,7 @@ impl Device {
         let mut _mesh_entry_point_name = String::new();
         let mut immediate_slots_required = naga::valid::ImmediateSlots::default();
         let mut sampling_pairs = Vec::new();
+        let mut fl9_texture_sample_level_zero_pairs = Vec::new();
         let mut fl9_texture_load_binding = None;
         let mut fl9_texture_sample_bias_offset_binding = None;
         let mut fl9_texture_sample_compare_offset_binding = None;
@@ -6454,6 +6455,24 @@ impl Device {
                     );
                 }
 
+                if !self.downlevel.limits.texture_sample_level
+                    && self
+                        .downlevel
+                        .limits
+                        .texture_sample_level_zero_2d_float_fragment
+                {
+                    if let Some(interface) = shader_module.interface.interface() {
+                        fl9_texture_sample_level_zero_pairs.extend(
+                            interface
+                                .entry_point_fl9_texture_sample_level_zero_pairs(
+                                    stage.to_naga(),
+                                    &fragment_entry_point_name,
+                                )
+                                .map_err(stage_err)?,
+                        );
+                    }
+                }
+
                 if match shader_module.interface.interface() {
                     Some(interface) => interface
                         .entry_point_uses_unsupported_texture_gather(
@@ -7076,6 +7095,7 @@ impl Device {
             late_sized_buffer_groups,
             immediate_slots_required,
             sampling_pairs,
+            fl9_texture_sample_level_zero_pairs,
             fl9_texture_load_binding,
             fl9_texture_sample_bias_offset_binding,
             fl9_texture_sample_compare_offset_binding,

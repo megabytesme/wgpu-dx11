@@ -339,7 +339,7 @@ pub(super) fn compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
 }
 
 #[cfg(test)]
-fn translate_naga_with_viewport_and_fl9_inputs(
+pub(super) fn translate_naga_with_viewport_and_fl9_inputs(
     module: &naga::Module,
     info: &naga::valid::ModuleInfo,
     stage: naga::ShaderStage,

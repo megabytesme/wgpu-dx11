@@ -1401,6 +1401,14 @@ pub struct DownlevelLimits {
     /// sampling and `textureSampleBias` are reported separately.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_sample_level: bool,
+    /// Whether fragment shaders may use the restricted `textureSampleLevel` subset that samples
+    /// literal level zero from a single-mip `texture_2d<f32>` view with a regular sampler whose
+    /// minification and magnification filters match and whose anisotropy is one.
+    ///
+    /// This is reported separately from [`Self::texture_sample_level`] because it does not enable
+    /// general explicit-LOD sampling. The selected view and sampler are checked at draw time.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub texture_sample_level_zero_2d_float_fragment: bool,
     /// Whether shader entry points may use `textureGather` operations.
     ///
     /// This applies to every shader stage and can be unavailable when a selected shader profile
@@ -1650,6 +1658,7 @@ impl Default for DownlevelLimits {
             texture_sample_base_clamp_to_edge: true,
             texture_sample_base_clamp_to_edge_2d_float_fragment: false,
             texture_sample_level: true,
+            texture_sample_level_zero_2d_float_fragment: false,
             texture_gather: true,
             texture_load: true,
             texture_load_2d_float_fragment: false,
@@ -1936,6 +1945,8 @@ impl DownlevelLimits {
                 || self.texture_sample_base_clamp_to_edge
                 || self.texture_sample_base_clamp_to_edge_2d_float_fragment)
             && (!required.texture_sample_level || self.texture_sample_level)
+            && (!required.texture_sample_level_zero_2d_float_fragment
+                || self.texture_sample_level_zero_2d_float_fragment)
             && (!required.texture_gather || self.texture_gather)
             && (!required.texture_load || self.texture_load)
             && (!required.texture_load_2d_float_fragment
@@ -2701,6 +2712,7 @@ mod tests {
             texture_sample_base_clamp_to_edge: false,
             texture_sample_base_clamp_to_edge_2d_float_fragment: false,
             texture_sample_level: false,
+            texture_sample_level_zero_2d_float_fragment: true,
             texture_gather: false,
             texture_load: true,
             texture_load_2d_float_fragment: true,
@@ -2787,6 +2799,7 @@ mod tests {
             texture_sample_base_clamp_to_edge: false,
             texture_sample_base_clamp_to_edge_2d_float_fragment: false,
             texture_sample_level: false,
+            texture_sample_level_zero_2d_float_fragment: true,
             texture_gather: false,
             texture_load: true,
             texture_load_2d_float_fragment: true,
@@ -3083,6 +3096,28 @@ mod tests {
             ..DownlevelCapabilities::default()
         }
         .is_webgpu_compliant());
+    }
+
+    #[test]
+    fn restricted_level_zero_sampling_is_a_separate_downlevel_capability() {
+        let available = DownlevelLimits {
+            texture_sample_level: false,
+            texture_sample_level_zero_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        };
+        assert!(available.check_limits(&DownlevelLimits {
+            texture_sample_level: false,
+            texture_sample_level_zero_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            texture_sample_level: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!DownlevelLimits::default().check_limits(&DownlevelLimits {
+            texture_sample_level_zero_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
     }
 
     #[test]

@@ -19,6 +19,17 @@ pub struct ShaderModule {
     checks: wgt::ShaderRuntimeChecks,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct TextureSampleLevelZeroPair {
+    pub(super) texture: naga::ResourceBinding,
+    pub(super) sampler: naga::ResourceBinding,
+}
+
+struct TextureSampleLevelZeroProof {
+    expressions: Vec<naga::Handle<naga::Expression>>,
+    pairs: Vec<TextureSampleLevelZeroPair>,
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4848,6 +4859,200 @@ mod tests {
         );
         Ok(())
     }
+
+    #[test]
+    fn fl91_explicit_lod_zero_proof_lowers_only_selected_direct_samples() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(2) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            @fragment fn eligible(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let first = textureSampleLevel(image, smp, uv, 0.0);
+                return first + textureSampleLevel(image, smp, uv.yx, 0.0);
+            }
+            @fragment fn sibling(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleLevel(image, smp, uv, 1.0);
+            }
+            "#,
+        )
+        .expect("parse explicit-LOD shader");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate explicit-LOD shader");
+        let proof = fl9_texture_sample_level_zero_proof(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "eligible",
+        )
+        .expect("analyze eligible entry")
+        .expect("find explicit level-zero samples");
+        assert_eq!(proof.expressions.len(), 2);
+        assert_eq!(
+            proof.pairs,
+            [TextureSampleLevelZeroPair {
+                texture: naga::ResourceBinding {
+                    group: 2,
+                    binding: 7,
+                },
+                sampler: naga::ResourceBinding {
+                    group: 2,
+                    binding: 42,
+                },
+            }]
+        );
+
+        let mut lowered = module.clone();
+        let eligible_index = lowered
+            .entry_points
+            .iter()
+            .position(|entry| {
+                entry.stage == naga::ShaderStage::Fragment && entry.name == "eligible"
+            })
+            .unwrap();
+        lower_fl9_texture_sample_level_zero(&mut lowered, eligible_index, &proof)
+            .expect("lower proven sample expressions");
+        for expression in &proof.expressions {
+            assert!(matches!(
+                lowered.entry_points[eligible_index].function.expressions[*expression],
+                naga::Expression::ImageSample {
+                    level: naga::SampleLevel::Auto,
+                    ..
+                }
+            ));
+        }
+        let sibling_index = lowered
+            .entry_points
+            .iter()
+            .position(|entry| entry.stage == naga::ShaderStage::Fragment && entry.name == "sibling")
+            .unwrap();
+        assert!(lowered.entry_points[sibling_index]
+            .function
+            .expressions
+            .iter()
+            .any(|(_, expression)| matches!(
+                expression,
+                naga::Expression::ImageSample {
+                    level: naga::SampleLevel::Exact(_),
+                    ..
+                }
+            )));
+
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 2,
+                    binding: 7,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 2,
+                    binding: 42,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        let (hlsl, generated_entry) =
+            super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+                &lowered,
+                &info,
+                naga::ShaderStage::Fragment,
+                "eligible",
+                ShaderProfile::PixelLevel9_1,
+                &bindings,
+                Fl9ShaderInputOptions::default(),
+            )
+            .expect("translate lowered shader");
+        assert!(hlsl.contains(".Sample("), "{hlsl}");
+        assert!(!hlsl.contains("SampleLevel"), "{hlsl}");
+        let bytecode = super::super::shader::compile_hlsl(
+            &hlsl,
+            &generated_entry,
+            ShaderProfile::PixelLevel9_1,
+        )
+        .expect("FXC accepts the lowered pixel shader at FL9_1");
+        assert!(!bytecode.is_empty());
+    }
+
+    #[test]
+    fn fl91_explicit_lod_zero_proof_rejects_unsafe_shapes() {
+        let sources = [
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, uv.x); }"#,
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, 1.0); }"#,
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, 0.5); }"#,
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { let level = uv.x * 0.0; return textureSampleLevel(image, smp, uv, level); }"#,
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, -0.0); }"#,
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, 0.0, vec2i(1, 0)); }"#,
+            r#"@group(0) @binding(0) var image: texture_3d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, vec3f(uv, 0.5), 0.0); }"#,
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { if uv.x > 0.0 { return textureSampleLevel(image, smp, uv, 0.0); } return vec4f(0.0); }"#,
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return select(vec4f(0.0), textureSampleLevel(image, smp, uv, 0.0), uv.x > 0.0); }"#,
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; fn helper(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, uv, 0.0); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return helper(uv); }"#,
+        ];
+        for source in sources {
+            let module = naga::front::wgsl::parse_str(source)
+                .unwrap_or_else(|error| panic!("invalid negative-test WGSL: {error}\n{source}"));
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap_or_else(|error| panic!("invalid negative-test module: {error}\n{source}"));
+            assert!(
+                fl9_texture_sample_level_zero_proof(
+                    &module,
+                    &info,
+                    naga::ShaderStage::Fragment,
+                    "main",
+                )
+                .is_err(),
+                "accepted unsupported shape: {source}"
+            );
+        }
+    }
+
+    #[test]
+    fn fl91_explicit_lod_zero_proof_is_selected_entry_specific() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var smp: sampler;
+            @fragment fn safe() -> @location(0) vec4f { return vec4f(1.0); }
+            @fragment fn lod_entry(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleLevel(image, smp, uv, 0.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        assert!(fl9_texture_sample_level_zero_proof(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "safe",
+        )
+        .unwrap()
+        .is_none());
+        assert!(fl9_texture_sample_level_zero_proof(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "lod_entry",
+        )
+        .unwrap()
+        .is_some());
+    }
 }
 
 crate::impl_dyn_resource!(ShaderModule);
@@ -4894,6 +5099,182 @@ where
                 .any(|(_, expression)| predicate(module, function, info, expression))
         },
     )
+}
+
+fn fl9_flat_block(block: &naga::Block) -> Option<bool> {
+    let mut returns = false;
+    for statement in block.iter() {
+        if returns {
+            return None;
+        }
+        match statement {
+            naga::Statement::Emit(_) | naga::Statement::Store { .. } => {}
+            naga::Statement::Return { .. } => returns = true,
+            naga::Statement::Block(block) => returns = fl9_flat_block(block)?,
+            _ => return None,
+        }
+    }
+    Some(returns)
+}
+
+fn fl9_texture_sample_level_zero_proof(
+    module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
+    stage: naga::ShaderStage,
+    entry: &str,
+) -> Result<Option<TextureSampleLevelZeroProof>, crate::PipelineError> {
+    let stage_flags = if stage == naga::ShaderStage::Fragment {
+        wgt::ShaderStages::FRAGMENT
+    } else {
+        wgt::ShaderStages::VERTEX
+    };
+    let entry_index = module
+        .entry_points
+        .iter()
+        .position(|candidate| candidate.stage == stage && candidate.name == entry)
+        .ok_or(crate::PipelineError::EntryPoint(stage))?;
+    let function = &module.entry_points[entry_index].function;
+    let info = module_info.get_entry_point(entry_index);
+    let uses_exact_level = reachable_expression(
+        module,
+        module_info,
+        function,
+        info,
+        |_, _, _, expression| {
+            matches!(
+                expression,
+                naga::Expression::ImageSample {
+                    level: naga::SampleLevel::Exact(_),
+                    ..
+                }
+            )
+        },
+    );
+    if !uses_exact_level {
+        return Ok(None);
+    }
+
+    let invalid = || {
+        crate::PipelineError::Linkage(
+            stage_flags,
+            "D3D11 FL9_1 only supports direct, unconditional textureSampleLevel(..., 0.0) on texture_2d<f32> with a regular sampler".into(),
+        )
+    };
+    if stage != naga::ShaderStage::Fragment
+        || fl9_flat_block(&function.body).is_none()
+        || function
+            .expressions
+            .iter()
+            .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
+    {
+        return Err(invalid());
+    }
+
+    let mut expressions = Vec::new();
+    let mut pairs = Vec::new();
+    for (handle, expression) in function.expressions.iter() {
+        if info[handle].ref_count == 0 {
+            continue;
+        }
+        let naga::Expression::ImageSample {
+            image,
+            sampler,
+            array_index,
+            offset,
+            level: naga::SampleLevel::Exact(level),
+            depth_ref,
+            gather,
+            clamp_to_edge,
+            ..
+        } = *expression
+        else {
+            continue;
+        };
+        if !matches!(
+            function.expressions[level],
+            naga::Expression::Literal(naga::Literal::F32(value)) if value.to_bits() == 0
+        ) || array_index.is_some()
+            || offset.is_some()
+            || depth_ref.is_some()
+            || gather.is_some()
+            || clamp_to_edge
+        {
+            return Err(invalid());
+        }
+
+        let naga::Expression::GlobalVariable(texture) = function.expressions[image] else {
+            return Err(invalid());
+        };
+        let naga::Expression::GlobalVariable(sampler) = function.expressions[sampler] else {
+            return Err(invalid());
+        };
+        let texture = &module.global_variables[texture];
+        let sampler = &module.global_variables[sampler];
+        let valid_texture = texture.space == naga::AddressSpace::Handle
+            && texture.binding.is_some()
+            && matches!(
+                module.types[texture.ty].inner,
+                naga::TypeInner::Image {
+                    dim: naga::ImageDimension::D2,
+                    arrayed: false,
+                    class: naga::ImageClass::Sampled {
+                        kind: naga::ScalarKind::Float,
+                        multi: false,
+                    },
+                }
+            );
+        let valid_sampler = sampler.space == naga::AddressSpace::Handle
+            && sampler.binding.is_some()
+            && matches!(
+                module.types[sampler.ty].inner,
+                naga::TypeInner::Sampler { comparison: false }
+            );
+        let (Some(texture_binding), Some(sampler_binding)) = (texture.binding, sampler.binding)
+        else {
+            return Err(invalid());
+        };
+        if !valid_texture || !valid_sampler {
+            return Err(invalid());
+        }
+        expressions.push(handle);
+        pairs.push(TextureSampleLevelZeroPair {
+            texture: texture_binding,
+            sampler: sampler_binding,
+        });
+    }
+
+    if expressions.is_empty() {
+        return Err(invalid());
+    }
+    pairs.sort_unstable_by_key(|pair| {
+        (
+            pair.texture.group,
+            pair.texture.binding,
+            pair.sampler.group,
+            pair.sampler.binding,
+        )
+    });
+    pairs.dedup();
+    Ok(Some(TextureSampleLevelZeroProof { expressions, pairs }))
+}
+
+fn lower_fl9_texture_sample_level_zero(
+    module: &mut naga::Module,
+    entry_index: usize,
+    proof: &TextureSampleLevelZeroProof,
+) -> Result<(), ()> {
+    let function = &mut module.entry_points[entry_index].function;
+    for expression in &proof.expressions {
+        let naga::Expression::ImageSample { level, .. } = &mut function.expressions[*expression]
+        else {
+            return Err(());
+        };
+        if !matches!(level, naga::SampleLevel::Exact(_)) {
+            return Err(());
+        }
+        *level = naga::SampleLevel::Auto;
+    }
+    Ok(())
 }
 
 fn fl9_collect_called_functions(
@@ -10453,6 +10834,20 @@ impl ShaderModule {
         })
     }
 
+    pub(super) fn texture_sample_level_zero_pairs(
+        &self,
+        stage: naga::ShaderStage,
+        entry: &str,
+    ) -> Result<Vec<TextureSampleLevelZeroPair>, crate::PipelineError> {
+        let proof = fl9_texture_sample_level_zero_proof(
+            &self.shader.module,
+            &self.shader.info,
+            stage,
+            entry,
+        )?;
+        Ok(proof.map_or_else(Vec::new, |proof| proof.pairs))
+    }
+
     pub(super) fn uses_sample_bias(
         &self,
         stage: naga::ShaderStage,
@@ -10561,6 +10956,7 @@ impl ShaderModule {
             constants,
         )
         .map_err(|error| crate::PipelineError::PipelineConstants(stages, error.to_string()))?;
+        let mut module = module.into_owned();
         let requests_checks = self.checks.bounds_checks
             || self.checks.force_loop_bounding
             || self.checks.ray_query_initialization_tracking
@@ -10572,6 +10968,28 @@ impl ShaderModule {
             .iter()
             .position(|candidate| candidate.stage == stage && candidate.name == entry)
             .ok_or(crate::PipelineError::EntryPoint(stage))?;
+        let profile =
+            selected_shader_profile(stage).ok_or(crate::PipelineError::EntryPoint(stage))?;
+        if matches!(
+            profile,
+            ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
+        ) {
+            if let Some(proof) = fl9_texture_sample_level_zero_proof(&module, &info, stage, entry)?
+            {
+                lower_fl9_texture_sample_level_zero(&mut module, entry_index, &proof).map_err(
+                    |_| {
+                        crate::PipelineError::Linkage(
+                            if stage == naga::ShaderStage::Fragment {
+                                wgt::ShaderStages::FRAGMENT
+                            } else {
+                                wgt::ShaderStages::VERTEX
+                            },
+                            "D3D11 FL9_1 textureSampleLevel lowering proof became invalid".into(),
+                        )
+                    },
+                )?;
+            }
+        }
         let entry_info = info.get_entry_point(entry_index);
         let mut sample_bias_offset_expression = None;
         if let Some(proof) = fl9_texture_emulation_binding(&module, &info, stage, entry)? {
@@ -10623,8 +11041,6 @@ impl ShaderModule {
                 }
             }
         }
-        let profile =
-            selected_shader_profile(stage).ok_or(crate::PipelineError::EntryPoint(stage))?;
         if stage == naga::ShaderStage::Fragment
             && entry_has_builtin(
                 &module,

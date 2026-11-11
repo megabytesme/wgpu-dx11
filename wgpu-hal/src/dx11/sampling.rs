@@ -13,6 +13,7 @@ pub(super) struct SamplingPair {
     pub texture_slot: usize,
     pub sampler_slot: usize,
     pub requires_bias_compatible: bool,
+    pub requires_single_mip: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -97,6 +98,7 @@ pub(super) fn relationships(
             texture_slot: find(texture, texture_kind.ok_or(())?)?,
             sampler_slot: find(sampler, sampler_kind.ok_or(())?)?,
             requires_bias_compatible: false,
+            requires_single_mip: false,
         });
     }
     pairs.sort_unstable_by_key(|pair| {
@@ -127,6 +129,7 @@ pub(super) fn compatible(
         };
         texture.size.iter().all(|dimension| *dimension != 0)
             && (!pair.requires_bias_compatible || bias_compatible)
+            && (!pair.requires_single_mip || texture.mip_levels == 1)
             && texture.mip_levels
                 <= texture.size[0]
                     .max(texture.size[1])
@@ -806,6 +809,48 @@ mod tests {
     }
 
     #[test]
+    fn explicit_lod_zero_pair_requires_one_mip_and_compatible_filtering() {
+        let (module, info, bindings) = fixture();
+        let mut pairs = relationships(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "valid",
+            &bindings,
+        )
+        .unwrap();
+        for pair in &mut pairs {
+            pair.requires_bias_compatible = true;
+            pair.requires_single_mip = true;
+        }
+
+        let mut actual = resources();
+        assert!(compatible(
+            &pairs,
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(true)
+        ));
+
+        actual.textures[0].mip_levels = 2;
+        assert!(!compatible(
+            &pairs,
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(true)
+        ));
+
+        actual.textures[0].mip_levels = 1;
+        actual.samplers_bias_compatible[0] = false;
+        assert!(!compatible(
+            &pairs,
+            &actual,
+            FeatureLevel::L9_1,
+            Query::Value(true)
+        ));
+    }
+
+    #[test]
     fn sampling_relationships_fail_closed_on_missing_or_invalid_bindings() {
         let (module, info, mut bindings) = fixture();
         assert!(relationships(
@@ -878,6 +923,7 @@ mod tests {
             texture_slot: 100,
             sampler_slot: 0,
             requires_bias_compatible: false,
+            requires_single_mip: false,
         };
         assert!(!compatible(
             &[pair],

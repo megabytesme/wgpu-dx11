@@ -588,6 +588,7 @@ mod tests {
             texture_slot: 0,
             sampler_slot: 0,
             requires_bias_compatible: false,
+            requires_single_mip: false,
         };
         for size in [[3, 4, 1], [4, 3, 1]] {
             for mode in [wgt::AddressMode::Repeat, wgt::AddressMode::MirrorRepeat] {

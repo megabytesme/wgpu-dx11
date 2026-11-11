@@ -769,6 +769,61 @@ impl Binder {
         Ok(())
     }
 
+    pub(super) fn check_fl9_texture_sample_level_zero_bindings(
+        &self,
+        pipeline: &RenderPipeline,
+    ) -> Result<(), DrawError> {
+        for pair in &pipeline.fl9_texture_sample_level_zero_pairs {
+            let texture_group = self
+                .list_valid()
+                .find_map(|(index, group, _)| {
+                    (index == pair.texture_group as usize).then_some(group)
+                })
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.texture_group,
+                    binding: pair.texture_binding,
+                })?;
+            let sampler_group = self
+                .list_valid()
+                .find_map(|(index, group, _)| {
+                    (index == pair.sampler_group as usize).then_some(group)
+                })
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.sampler_group,
+                    binding: pair.sampler_binding,
+                })?;
+            let mip_levels = texture_group
+                .sampled_texture_mip_levels
+                .get(&pair.texture_binding)
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.texture_group,
+                    binding: pair.texture_binding,
+                })?;
+            if mip_levels.len() != 1 || mip_levels[0] != 1 {
+                return Err(DrawError::IncompatibleTextureSampleLevelView {
+                    group: pair.texture_group,
+                    binding: pair.texture_binding,
+                });
+            }
+
+            let sampler_compatible = sampler_group
+                .sampler_texture_sample_bias_compatible
+                .get(&pair.sampler_binding)
+                .ok_or(DrawError::MissingSamplingBindingMetadata {
+                    group: pair.sampler_group,
+                    binding: pair.sampler_binding,
+                })?;
+            if sampler_compatible.len() != 1 || !sampler_compatible[0] {
+                return Err(DrawError::IncompatibleTextureSampleLevelSampler {
+                    group: pair.sampler_group,
+                    binding: pair.sampler_binding,
+                });
+            }
+        }
+
+        Ok(())
+    }
+
     /// Scan active buffer bindings corresponding to layouts without `min_binding_size` specified.
     pub(super) fn check_late_buffer_bindings(
         &self,

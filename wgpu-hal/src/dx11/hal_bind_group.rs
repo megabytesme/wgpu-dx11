@@ -765,6 +765,7 @@ mod tests {
             texture_slot: 0,
             sampler_slot: 0,
             requires_bias_compatible: false,
+            requires_single_mip: false,
         };
         assert!(plan.sampling_pairs_compatible(&[pair]));
 
@@ -840,6 +841,7 @@ mod tests {
             texture_slot: 1,
             sampler_slot: 1,
             requires_bias_compatible: false,
+            requires_single_mip: false,
         };
         assert!(plan.sampling_pairs_compatible(&[]));
         assert!(plan.sampling_pairs_compatible(&[pair]));

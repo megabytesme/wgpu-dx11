@@ -14,6 +14,17 @@ semantics. Core passed 140/140, private HAL 493/493 and the full public target
 129/129 after the final unused-float-input consistency edge was added. The
 dedicated strict uniform-array target also passed 1/1.
 
+The direct fragment `textureSampleLevel` candidate is now implemented as a
+separate narrow capability. For an unconditional direct `texture_2d<f32>`
+sample with literal positive LOD zero, Naga proof lowers the operation to
+implicit sampling; Core checks the selected entry's currently bound view is
+single-mip and sampler min/mag filters match with anisotropy one before each
+draw. The generic explicit-LOD capability remains false. HAL/Naga/Core tests
+and strict RTX 3090 Ti FL9_1 readback validate the subset; helper, control-flow,
+dynamic/nonzero LOD, non-2D resources and incompatible bindings stay rejected.
+Full regression results will be recorded in `FL9_1_PROGRESS.md` after the
+checkpoint run.
+
 Checkpoint `ab926004e` fixes a public Core/HAL mismatch for index buffer
 ranges: offsets remain index-width aligned, but an in-bounds byte size may
 have a trailing partial index. Core clamps draws to the complete indices.
@@ -42,23 +53,20 @@ found no additional confirmed public Core-valid request reaching an
 unsupported HAL path in the reviewed shader, capability/resource and adapter
 paths. They classify one color attachment, no compute/UAV, no geometry stage,
 no ordinary arrays/1D textures and no occlusion queries as native FL9_1
-boundaries. The nearest shader candidate is a tightly proven single-mip
-fragment `textureSampleLevel` subset, but it needs concrete workload demand
-and exact single-mip-view validation. `textureGatherCompare` remains gated
-because fixed-point coordinate snapping prevents a general exact emulation
-proof. Next work should continue the resource/validation contract audit and
-select only Core-valid requests with an implementable FL9_1 behavior; do not
-treat native API limits as software backlog.
+boundaries. A tightly proven single-mip fragment
+`textureSampleLevel(..., 0.0)` subset is now covered; general explicit LOD
+remains gated. `textureGatherCompare` remains gated because fixed-point
+coordinate snapping prevents a general exact emulation proof. Next work should
+continue the resource/validation contract audit and select only Core-valid
+requests with an implementable FL9_1 behavior; do not treat native API limits
+as software backlog.
 
 Public HWND presentation and the desktop cube example have hardware evidence;
 historical FL9_1 drivers, real Lumia/ARM32 CoreWindow execution and physical
 device removal/recovery remain external verification gaps.
 
 Next: continue the remaining Core/HAL audit and choose a shader expansion
-from demonstrated application demand. The direct fragment
-`textureSampleLevel` subset needs a concrete use case and full WGSL-semantic
-review before implementation; helper-mediated fragment uniform-array reads
-are a smaller implementation candidate. Current format candidates R32_FLOAT
+from demonstrated application demand. Current format candidates R32_FLOAT
 sampling and packed format render targets are not supported by the RTX's relevant
 `CheckFormatSupport` bits. Do not treat 1D/ordinary arrays, 3D GPU copies, MRT,
 compute/UAV, indirect drawing or occlusion queries as software backlog where
@@ -1797,9 +1805,10 @@ entry-point selection are covered by a strict public test.
    texture gradients; selected-entry core validation follows helper calls and
    rejects `dpdx`, `dpdy` and `textureSampleGrad` before HAL.
    Reachable `textureSampleLevel` calls are separately gated by the selected
-   entry point: FXC rejects both literal and dynamic exact LOD under the 9_1
-   and 9_3 pixel profiles, including when forwarded through a helper. Implicit
-   sampling remains allowed. Selected-entry `textureDimensions` and
+   entry point. General exact LOD and helper-forwarded LOD remain rejected;
+   FXC rejects unlowered exact-LOD operations under the 9_1 and 9_3 pixel
+   profiles. The current-state section documents the direct literal-zero,
+   single-mip exception. Implicit sampling remains allowed. Selected-entry `textureDimensions` and
    `textureNumLevels` use is gated by narrow downlevel limits and host-known
    view metadata; general image queries remain unavailable.
    `textureSampleBaseClampToEdge` has a separate selected fragment 2D-float
