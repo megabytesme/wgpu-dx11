@@ -16413,3 +16413,56 @@ attempt outside the Visual Studio developer environment could not find
 `link.exe`; rerunning with `VsDevCmd.bat` built the runner and executed the
 test. This result updates the earlier historical failure entry; the relevant
 support is the current narrow local-array path.
+
+## RGBA8_SNORM shadow readback — 2026-11-11
+
+Added a separately gated texture-to-buffer path for RGBA8_SNORM using the
+execution-ordered raw-byte shadow. The existing device format query must
+positively report `TEXTURE2D`, and the backend implementation flag must be
+enabled. Public format capabilities continue to distinguish same-format GPU
+copy support from CPU-shadow readback; no native SRV-only staging read is
+issued. The shadow is initialized to zero, follows queued uploads and GPU
+texture copies in replay order, and preserves the signed format's exact byte
+encoding.
+
+The public integration test uploads a patterned 5x4 source with 256-byte row
+pitch, copies a 3x2 region between nonzero origins into a differently sized
+destination, then reads all 6x4 destination texels at a nonzero buffer offset
+with padded rows. It checks exact bytes, zero-initialized untouched texels,
+unchanged leading bytes and unchanged row padding. A CPU-only production-shadow
+test separately checks padded rows, signed-byte preservation, partial writes,
+different source/destination dimensions and self-copy rejection.
+
+Hardware execution:
+
+- NVIDIA GeForce RTX 3090 Ti, vendor/device `0x10de:0x2203`, driver
+  `32.0.16.2101`, physical adapter, software=false.
+- Requested and selected feature level: FL9_1.
+- Dedicated strict target: 3/3 passed, no skips; the new readback test checked
+  all 24 texels and row padding.
+- Complete private D3D11 HAL suite: 499/499 passed.
+- Complete public D3D11 target: 129/129 test functions passed. One
+  query-dependent RG8_UNORM mip subcase printed an internal skip; it is not
+  counted as executed hardware coverage.
+- D3D12 HAL check passed. HAL and focused public Clippy passed with existing
+  warnings in unrelated D3D11 code. Rust 1.93.1 rustfmt and `git diff --check`
+  passed.
+
+Commands, run from the Visual Studio x64 developer environment with bounded
+parallelism:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_snorm_copy -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93.1 check --offline -j16 -p wgpu-hal --no-default-features --features dx12
+cargo +1.93.1 clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+cargo +1.93.1 clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_snorm_copy
+rustfmt +1.93.1 --check --edition 2021 wgpu-hal/src/dx11/capabilities.rs wgpu-hal/src/dx11/texture.rs wgpu-hal/src/dx11/hal_device.rs wgpu/tests/dx11_snorm_copy.rs
+git diff --check
+```
+
+This improves one verified format operation only. It does not validate native
+staging-copy behavior on historical FL9_1 drivers, and it does not establish
+that the modern RTX reproduces those drivers' restrictions.

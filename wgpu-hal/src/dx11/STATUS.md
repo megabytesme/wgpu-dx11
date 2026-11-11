@@ -1,3 +1,15 @@
+## RGBA8_SNORM shadow readback — 2026-11-11
+
+The existing query-gated RGBA8_SNORM `COPY_SRC` path now also supports
+texture-to-buffer readback through an execution-ordered raw-byte CPU shadow.
+The selected device must report `TEXTURE2D`, and the backend implementation
+gate must be enabled; native SRV-only staging readback remains unavailable.
+Strict public FL9_1 hardware coverage verifies padded upload, partial GPU copy,
+nonzero readback offset, padded rows and all 24 texels, including zeroed
+untouched destination texels. The focused target passed 3/3 on the RTX 3090 Ti
+at requested and actual FL9_1. Earlier entries below that say RGBA8_SNORM
+readback is unsupported describe the state before this change.
+
 ## Selected fragment uniform-array helper — 2026-11-11
 
 Core and the private HAL now accept one constrained helper form for the
@@ -571,7 +583,8 @@ R8G8B8A8_SNORM support sampled/upload mip chains only when the selected device
   reports `TEXTURE2D | MIP`; the independent `SHADER_SAMPLE` query controls
   filterability. Same-format GPU texture copies are separately available for
   RGBA8_SNORM when its selected `TEXTURE2D` query and backend path are positive.
-  Render-target and CPU readback uses remain unsupported. RGBA8 and BGRA8, including their
+  Render-target use remains unsupported; texture-to-buffer readback uses a
+  separately gated ordered raw-byte shadow. RGBA8 and BGRA8, including their
 sRGB variants, are also reported
 single-mip if the selected driver's format query lacks `MIP` or any required
 backend mip path is unavailable. The controlled fixture asserts this
@@ -851,14 +864,16 @@ all out-of-target rectangles. Other backends keep the default true capability.
   tests verify padded signed four-channel sampling and three-level biased
   mip sampling. Same-format texture-to-texture copies are enabled only when
   the selected `TEXTURE2D` query and backend path are positive; a strict public
-  FL9_1 test uploads, copies, samples and validates the destination. Render-
-  target and CPU readback uses remain unsupported.
+  FL9_1 test uploads, copies, samples and validates the destination. A separate
+  gated ordered raw-byte shadow supports CPU readback; render-target use remains
+  unsupported.
 - BC1/BC2/BC3_UNORM have queried one-mip, one-layer sampled/upload subsets and
   block-aligned GPU texture-copy source paths. Dimensions, row pitches, offsets,
   updates and copy boxes align to 4×4 blocks and the format block size (8 bytes
   for BC1; 16 for BC2/BC3). Strict forced-FL9_1 tests upload, partially replace,
-  copy to a second texture and sample all 256 output pixels per format. Core's
-  per-format texture-to-buffer limit rejects CPU readback before HAL.
+  copy to a second texture and sample all 256 output pixels per format. Their
+  query-gated texture-to-buffer operation uses ordered CPU shadows because
+  native FL9_x staging reads are unavailable.
   Render-target, mip-chain and sRGB view uses remain unsupported.
 - Copy-only color texture views can retain metadata and texture ownership without
   creating native sampled or attachment views. They cannot be used for sampling

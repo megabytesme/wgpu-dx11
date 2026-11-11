@@ -668,7 +668,9 @@ impl crate::Device for Device {
                     | wgt::TextureFormat::Bc2RgbaUnormSrgb
                     | wgt::TextureFormat::Bc3RgbaUnormSrgb
             ) || desc.format == wgt::TextureFormat::Rg8Snorm
-                && capabilities.backend.rg8_snorm_shadow_copy_readback)
+                && capabilities.backend.rg8_snorm_shadow_copy_readback
+                || desc.format == wgt::TextureFormat::Rgba8Snorm
+                    && capabilities.backend.rgba8_snorm_shadow_copy_readback)
         {
             texture.copy_shadow = Some(
                 super::texture::Texture2DShadow::zeroed(

@@ -299,6 +299,7 @@ impl Texture2DShadow {
             || !matches!(
                 format,
                 DXGI_FORMAT_R8G8_SNORM
+                    | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_BC1_UNORM_SRGB
                     | DXGI_FORMAT_BC2_UNORM
@@ -2617,6 +2618,56 @@ mod tests {
                 expected[dst..dst + 4].copy_from_slice(&patch[..4]);
             } else if row == 2 {
                 expected[dst..dst + 4].copy_from_slice(&patch[4..]);
+            }
+        }
+        assert_eq!(actual, expected);
+        assert!(source
+            .copy_region_from(&source, 0, 0, [0, 0], 0, 0, [1, 0], [2, 2])
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn rgba8_snorm_shadow_preserves_raw_signed_bytes_and_partial_copies() -> Result<()> {
+        let source = Texture2DShadow::zeroed(4, 3, 1, 1, DXGI_FORMAT_R8G8B8A8_SNORM)?;
+        let rows = [
+            [
+                0x80, 0x7f, 0xc0, 0x40, 0x20, 0xe0, 0x01, 0xff, 0x11, 0x22, 0x33, 0x44, 0x55, 0x66,
+                0x77, 0x88,
+            ],
+            [
+                0x7f, 0x80, 0x40, 0xc0, 0xe0, 0x20, 0xfe, 0x02, 0x13, 0x24, 0x35, 0x46, 0x57, 0x68,
+                0x79, 0x8a,
+            ],
+            [
+                0x10, 0x21, 0x32, 0x43, 0x54, 0x65, 0x76, 0x87, 0x98, 0xa9, 0xba, 0xcb, 0xdc, 0xed,
+                0xfe, 0x0f,
+            ],
+        ];
+        let mut upload = alloc::vec![0xee; 60];
+        for (row, values) in rows.iter().enumerate() {
+            let start = row * 20;
+            upload[start..start + 16].copy_from_slice(values);
+        }
+        source.write_region(0, 0, [0, 0], [4, 3], 20, &upload)?;
+
+        let patch = [
+            0xa1, 0xb2, 0xc3, 0xd4, 0x15, 0x26, 0x37, 0x48, 0x59, 0x6a, 0x7b, 0x8c, 0x9d, 0xae,
+            0xbf, 0xc0,
+        ];
+        source.write_region(0, 0, [1, 1], [2, 2], 8, &patch)?;
+
+        let destination = Texture2DShadow::zeroed(6, 4, 1, 1, DXGI_FORMAT_R8G8B8A8_SNORM)?;
+        destination.copy_region_from(&source, 0, 0, [1, 0], 0, 0, [2, 1], [2, 3])?;
+        let actual = destination.read_region(0, 0, [0, 0], [6, 4])?;
+        let mut expected = alloc::vec![0; 6 * 4 * 4];
+        for (row, values) in rows.iter().enumerate() {
+            let dst = ((row + 1) * 6 + 2) * 4;
+            expected[dst..dst + 8].copy_from_slice(&values[4..12]);
+            if row == 1 {
+                expected[dst..dst + 8].copy_from_slice(&patch[..8]);
+            } else if row == 2 {
+                expected[dst..dst + 8].copy_from_slice(&patch[8..]);
             }
         }
         assert_eq!(actual, expected);

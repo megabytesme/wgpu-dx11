@@ -2369,15 +2369,16 @@ Run the public strict execution test with:
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_subset -- --nocapture --test-threads=1
 ```
-BC1/BC2/BC3 `COPY_SRC` is limited to GPU texture-to-texture copying; a controlled
-texture-to-buffer attempt fails core validation because FL9_x cannot safely
-copy an SRV-only BC texture to CPU-visible memory. R16G16_SNORM still does not
+BC1/BC2/BC3 `COPY_SRC` supports query-gated GPU texture-to-texture copying and
+ordered CPU-shadow texture-to-buffer readback; a native copy to CPU-visible
+staging memory remains unavailable for FL9_x SRV-only textures. R16G16_SNORM still does not
 support render-target, copy-source or readback operations in this private
-subset. RG8_SNORM texture-to-texture copy and raw readback now use an
+subset. RG8_SNORM texture-to-texture copy and raw readback use an
 execution-ordered CPU byte shadow because valid FL9_1 native GPU copies failed
-on the development driver; RGBA8_SNORM supports same-format GPU texture
-copies only when the selected device reports `TEXTURE2D`. Their readback masks
-remain clear and texture-to-buffer readback is still rejected. RGB5A1 and RGBA4 remain
+on the development driver. RGBA8_SNORM supports same-format GPU texture
+copies when the selected device reports `TEXTURE2D` and raw-byte
+texture-to-buffer readback through a separate ordered shadow path. Direct
+GPU-to-staging reads remain rejected for this SRV-only format. RGB5A1 and RGBA4 remain
 non-renderable and lack texture-to-buffer readback, but support query-gated
 same-format GPU copies. R8_UNORM,
 R8G8_UNORM and B5G6R5 have a narrower query-gated single-mip render-target,
@@ -2393,24 +2394,46 @@ texture-copy source only when the selected device positively reports
 checks that a missing query or disabled implementation keeps `COPY_SRC`
 unavailable. The strict public test explicitly requests FL9_1, uploads signed
 texels, copies the texture to a second RGBA8_SNORM resource, samples the copy
-and checks all 64 output pixels after RGBA8 readback. It also verifies that
-`texture_to_buffer_copy_format_mask` does not advertise SNORM CPU readback.
+and checks all 64 output pixels after RGBA8 readback. A separate ordered
+shadow-readback test is described below.
 On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), the selected
 format query returned `0x000213a0` and all 64 pixels matched
 `[255, 0, 255, 0]`. This confirms the selected-device path only; it does not
 verify historical FL9_1 drivers.
 
-The positive `CPU_LOCKABLE` bit does not legalize the current readback path:
-the FL9_1 texture is bound only as a shader resource, and Microsoft's 10Level9
+The positive `CPU_LOCKABLE` bit does not legalize a native readback path: the
+FL9_1 texture is bound only as a shader resource, and Microsoft's 10Level9
 context restrictions prohibit copying that GPU resource directly to
-CPU-visible staging memory. Readback remains disabled unless a verified
-GPU-to-GPU conversion path is added.
+CPU-visible staging memory. The backend therefore uses an execution-ordered
+raw-byte shadow, kept current by texture initialization, queue uploads and
+texture-to-texture copies. This path is included in the format mask only when
+both the selected-device `COPY_SRC` query path and the shadow implementation
+are enabled.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib rgba8_snorm_texture_copy_source_requires_implementation_and_positive_query -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_snorm_copy public_dx11_rgba8_snorm_texture_copy_then_sample_at_fl91 -- --nocapture --test-threads=1
 ```
+
+### RGBA8_SNORM ordered shadow readback
+
+The public test reads raw RGBA8_SNORM bytes from the CPU shadow after a padded
+queue upload and partial GPU texture copy. It uses different source and
+destination dimensions and origins, a nonzero buffer offset, 256-byte row
+pitch and sentinel padding. It validates all 24 destination texels, including
+zero-initialized untouched texels, and checks that the leading bytes and row
+padding remain unchanged.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_snorm_copy -- --nocapture --test-threads=1
+```
+
+The target passed 3/3 tests with zero skips on the RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual FL9_1.
+Direct native GPU-to-staging readback remains unavailable; this result covers
+the synchronized CPU-shadow fallback.
 
 ### RG8_SNORM shadow copy and raw readback
 

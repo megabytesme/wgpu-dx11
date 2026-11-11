@@ -312,6 +312,7 @@ pub(super) struct BackendCapabilities {
     pub rgb565_copy_source: bool,
     pub rg8_snorm_shadow_copy_readback: bool,
     pub rgba8_snorm_texture_to_texture_copy: bool,
+    pub rgba8_snorm_shadow_copy_readback: bool,
     pub rgb5551_texture_to_texture_copy: bool,
     pub rgba4444_texture_to_texture_copy: bool,
     pub rg8_snorm_sampled_upload: bool,
@@ -459,6 +460,7 @@ impl BackendCapabilities {
         rgb565_copy_source: true,
         rg8_snorm_shadow_copy_readback: true,
         rgba8_snorm_texture_to_texture_copy: true,
+        rgba8_snorm_shadow_copy_readback: true,
         rgb5551_texture_to_texture_copy: true,
         rgba4444_texture_to_texture_copy: true,
         rg8_snorm_sampled_upload: true,
@@ -1122,6 +1124,7 @@ impl Capabilities {
             wgt::TextureFormat::R8Unorm,
             wgt::TextureFormat::Rg8Unorm,
             wgt::TextureFormat::Rg8Snorm,
+            wgt::TextureFormat::Rgba8Snorm,
             wgt::TextureFormat::Rgb5g6b5Unorm,
             wgt::TextureFormat::Bc1RgbaUnorm,
             wgt::TextureFormat::Bc1RgbaUnormSrgb,
@@ -1135,16 +1138,18 @@ impl Capabilities {
             if self
                 .texture_format_capabilities(format)
                 .contains(crate::TextureFormatCapabilities::COPY_SRC)
-                && (self.backend.bc_texture_to_buffer_shadow_readback
-                    || !matches!(
-                        format,
-                        wgt::TextureFormat::Bc1RgbaUnorm
-                            | wgt::TextureFormat::Bc1RgbaUnormSrgb
-                            | wgt::TextureFormat::Bc2RgbaUnorm
-                            | wgt::TextureFormat::Bc2RgbaUnormSrgb
-                            | wgt::TextureFormat::Bc3RgbaUnorm
-                            | wgt::TextureFormat::Bc3RgbaUnormSrgb
-                    ))
+                && match format {
+                    wgt::TextureFormat::Bc1RgbaUnorm
+                    | wgt::TextureFormat::Bc1RgbaUnormSrgb
+                    | wgt::TextureFormat::Bc2RgbaUnorm
+                    | wgt::TextureFormat::Bc2RgbaUnormSrgb
+                    | wgt::TextureFormat::Bc3RgbaUnorm
+                    | wgt::TextureFormat::Bc3RgbaUnormSrgb => {
+                        self.backend.bc_texture_to_buffer_shadow_readback
+                    }
+                    wgt::TextureFormat::Rgba8Snorm => self.backend.rgba8_snorm_shadow_copy_readback,
+                    _ => true,
+                }
             {
                 mask | wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format)
             } else {
@@ -6502,11 +6507,10 @@ mod tests {
         assert!(caps
             .texture_format_capabilities(format)
             .contains(crate::TextureFormatCapabilities::COPY_SRC));
+        let readback_bit = wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format);
         assert_eq!(
-            caps.texture_to_buffer_copy_format_mask()
-                & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
-            0,
-            "texture-to-texture support must not enable CPU readback"
+            caps.texture_to_buffer_copy_format_mask() & readback_bit,
+            readback_bit
         );
 
         let mut no_texture2d = caps;
@@ -6538,6 +6542,16 @@ mod tests {
         assert!(!unimplemented
             .texture_format_capabilities(format)
             .contains(crate::TextureFormatCapabilities::COPY_SRC));
+
+        let mut no_shadow = caps;
+        no_shadow.backend.rgba8_snorm_shadow_copy_readback = false;
+        assert!(no_shadow
+            .texture_format_capabilities(format)
+            .contains(crate::TextureFormatCapabilities::COPY_SRC));
+        assert_eq!(
+            no_shadow.texture_to_buffer_copy_format_mask() & readback_bit,
+            0
+        );
     }
 
     #[test]

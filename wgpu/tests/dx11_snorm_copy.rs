@@ -75,8 +75,8 @@ fn public_dx11_rgba8_snorm_texture_copy_then_sample_at_fl91() {
             .limits
             .texture_to_buffer_copy_format_mask
             & readback_bit,
-        0,
-        "GPU texture copy support must not imply CPU readback support for SNORM"
+        readback_bit,
+        "the shadow-backed raw-byte readback path must be projected for SNORM"
     );
 
     println!(
@@ -441,8 +441,8 @@ fn public_dx11_rgba8_snorm_multimip_partial_copy_then_sample_at_fl91() {
             .limits
             .texture_to_buffer_copy_format_mask
             & readback_bit,
-        0,
-        "SNORM texture-to-texture copy support must not enable CPU texture readback"
+        readback_bit,
+        "the ordered shadow-backed readback path must be projected for SNORM"
     );
 
     println!(
@@ -811,4 +811,221 @@ struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }
     println!(
         "PASS: RGBA8_SNORM mip-1 2x2 region copied at nonzero source/destination origins; 16 sampled pixels verified, neighboring mip-1 texels preserved; no SNORM CPU texture readback was used"
     );
+}
+
+#[test]
+fn public_dx11_rgba8_snorm_shadow_readback_after_partial_copy_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters
+        .into_iter()
+        .find(|adapter| adapter.get_info().device_type != DeviceType::Cpu)
+    else {
+        assert!(
+            required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+
+    let format = TextureFormat::Rgba8Snorm;
+    let usages = TextureUsages::COPY_SRC | TextureUsages::COPY_DST;
+    let format_caps = adapter.get_texture_format_features(format);
+    assert!(
+        format_caps.allowed_usages.contains(usages),
+        "{format_caps:?}"
+    );
+    let readback_bit = DownlevelLimits::texture_to_buffer_copy_format_bit(format);
+    assert_ne!(
+        adapter
+            .get_downlevel_capabilities()
+            .limits
+            .texture_to_buffer_copy_format_mask
+            & readback_bit,
+        0,
+        "the synchronized raw-byte shadow path must be exposed"
+    );
+
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=RGBA8_SNORM padded upload→partial GPU copy→ordered shadow readback with padded rows",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 RGBA8_SNORM shadow readback"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the physical FL9_1 device");
+
+    const SOURCE_WIDTH: u32 = 5;
+    const WIDTH: u32 = 6;
+    const HEIGHT: u32 = 4;
+    const ROW_PITCH: u32 = 256;
+    const BUFFER_OFFSET: u64 = 16;
+    let texture = |label, width| {
+        device.create_texture(&TextureDescriptor {
+            label: Some(label),
+            size: Extent3d {
+                width,
+                height: HEIGHT,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: usages,
+            view_formats: &[],
+        })
+    };
+    let source = texture("FL9_1 RGBA8_SNORM source", SOURCE_WIDTH);
+    let destination = texture("FL9_1 RGBA8_SNORM destination", WIDTH);
+    let texel = |x: u32, y: u32| -> [u8; 4] {
+        const VALUES: [i8; 8] = [-128, -127, -90, -1, 0, 1, 90, 127];
+        std::array::from_fn(|channel| {
+            VALUES[(x as usize * 3 + y as usize * 5 + channel * 2) % VALUES.len()] as u8
+        })
+    };
+    let mut upload = vec![0xee; ROW_PITCH as usize * HEIGHT as usize];
+    for y in 0..HEIGHT {
+        for x in 0..SOURCE_WIDTH {
+            let offset = y as usize * ROW_PITCH as usize + x as usize * 4;
+            upload[offset..offset + 4].copy_from_slice(&texel(x, y));
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &upload,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(ROW_PITCH),
+            rows_per_image: Some(HEIGHT),
+        },
+        Extent3d {
+            width: SOURCE_WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
+    );
+
+    const COPY_SOURCE_ORIGIN: Origin3d = Origin3d { x: 1, y: 1, z: 0 };
+    const COPY_DESTINATION_ORIGIN: Origin3d = Origin3d { x: 2, y: 1, z: 0 };
+    const COPY_SIZE: Extent3d = Extent3d {
+        width: 3,
+        height: 2,
+        depth_or_array_layers: 1,
+    };
+    let readback_size = BUFFER_OFFSET + ROW_PITCH as u64 * HEIGHT as u64;
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 RGBA8_SNORM raw-byte shadow readback"),
+        size: readback_size,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: true,
+    });
+    readback
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("initialize readback sentinels")
+        .copy_from_slice(&vec![0xcd; readback_size as usize]);
+    readback.unmap();
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 RGBA8_SNORM ordered shadow readback encoder"),
+    });
+    encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: COPY_SOURCE_ORIGIN,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: COPY_DESTINATION_ORIGIN,
+            aspect: TextureAspect::All,
+        },
+        COPY_SIZE,
+    );
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: BUFFER_OFFSET,
+                bytes_per_row: Some(ROW_PITCH),
+                rows_per_image: Some(HEIGHT),
+            },
+        },
+        Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for SNORM upload, partial copy and shadow readback");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("SNORM shadow readback callback")
+        .expect("map SNORM shadow readback");
+    {
+        let bytes = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped raw-byte readback");
+        assert!(bytes[..BUFFER_OFFSET as usize]
+            .iter()
+            .all(|&byte| byte == 0xcd));
+        for y in 0..HEIGHT {
+            for x in 0..WIDTH {
+                let copied = (2..5).contains(&x) && (1..3).contains(&y);
+                let expected = if copied { texel(x - 1, y) } else { [0; 4] };
+                let offset =
+                    BUFFER_OFFSET as usize + y as usize * ROW_PITCH as usize + x as usize * 4;
+                assert_eq!(
+                    &bytes[offset..offset + 4],
+                    expected.as_slice(),
+                    "destination texel ({x}, {y})"
+                );
+            }
+            let row_start = BUFFER_OFFSET as usize + y as usize * ROW_PITCH as usize;
+            let texel_end = row_start + WIDTH as usize * 4;
+            let row_end = row_start + ROW_PITCH as usize;
+            assert!(
+                bytes[texel_end..row_end].iter().all(|&byte| byte == 0xcd),
+                "row {y} padding changed"
+            );
+        }
+    }
+    readback.unmap();
+    println!("PASS: ordered RGBA8_SNORM upload, partial GPU copy and raw shadow readback verified all 24 texels and row padding at FL9_1");
 }

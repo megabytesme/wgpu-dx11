@@ -2,6 +2,23 @@
 
 ## Latest current state and next queue — 2026-11-11
 
+RGBA8_SNORM now has ordered raw-byte texture-to-buffer readback through the
+existing CPU-shadow mechanism. Its public readback bit requires both the
+selected device's positive `TEXTURE2D` format query and the backend shadow
+implementation. A strict forced-FL9_1 RTX test verifies a padded queue upload,
+partial GPU copy across differently sized textures, zeroed untouched texels,
+nonzero destination offset and padded readback rows. The focused target passed
+3/3; the private HAL suite passed 499/499 and the full public target passed
+129/129 test functions (one query-dependent subcase skipped internally).
+This is a software fallback for an SRV-only format and does not enable native
+staging readback or render-target use.
+
+The recent independent contract reviews still found no new confirmed
+Core-valid request reaching an unsupported HAL path in the audited areas. The
+best next work remains evidence-led: complete the format-operation matrix,
+then test a real client workload. Native FL9_1 exclusions and missing legacy
+GPU/Lumia execution are not software fixes that agents can safely invent.
+
 The selected fragment uniform-array subset now accepts one proven helper
 forwarding form. Core, HAL and the public path agree on a selected fragment
 entry that passes the direct `u32` member of its canonical uniform to one
