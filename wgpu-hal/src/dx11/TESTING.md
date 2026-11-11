@@ -2102,21 +2102,22 @@ or a skipped test is not a pass. Keep other backend builds and tests working.
 
 ## 4. WebGPU CTS
 
-The Deno CTS runner still needs an explicit DX11 feature path and adapter
-selection verification. After that wiring is complete, start with selected
-CTS cases and then run the pinned full suite:
+The Deno CTS runner has an explicit DX11 path and a strict hardware option.
+The focused `basic:fullscreen_quad` selector passed 1/1 on the physical RTX
+3090 Ti at requested and actual FL9_1, with zero skips. The exact command and
+adapter details are in `FL9_1_PROGRESS.md`. This does not establish broad CTS
+coverage. Continue with representative selectors supported by the projection;
+the full CTS suite has not been run for DX11.
 
 ```console
-cargo xtask cts --backend dx11 'webgpu:api,operation,command_buffer,basic:*'
-cargo xtask cts --backend dx11
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,basic:fullscreen_quad:*'
 ```
 
 `--backend` selects the CTS backend and expectation handling; it does not
-make an unavailable adapter usable. At present `deno_webgpu/Cargo.toml` does
-not enable the DX11 core feature on Windows, so wire and verify the local CTS
-runner before using these commands for DX11. Confirm the adapter and backend
-used in the run. Preserve the CTS revision, selected cases, outcomes, skips,
-platform and driver details. Do not claim conformance from a selected subset.
+make an unavailable adapter usable. Keep `--require-dx11-hardware` enabled for
+hardware evidence, verify the adapter and feature level printed by the strict
+path, and record passed, failed, skipped and unrun cases separately. A
+selected subset is not a conformance claim.
 
 ## Hardware and validation matrix
 
