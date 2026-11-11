@@ -1,5 +1,32 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — 2026-11-11
+
+The strict BC readback and bounded fragment sample-bias offset slices are
+implemented and tested. BC readback uses an execution-ordered CPU shadow; it
+avoids a prohibited FL9_x staging copy but adds CPU memory and depends on every
+write route keeping the mirror current. The sample-offset path accepts a
+single-mip 2D view, including mip 1 selected from a multi-mip parent, and
+rejects unsupported shapes before execution. Focused strict public tests and
+the full private/public DX11 suites passed; exact results are in
+`FL9_1_PROGRESS.md`.
+
+The backend is usable for the tested restricted application subset when DX11
+is explicitly selected, but it is not a complete FL9_1 implementation or a
+drop-in backend for arbitrary wgpu applications. Continue as coordinator:
+parallelize read-only audits and bounded compiler probes, then integrate one
+verified Core/Naga/HAL vertical slice at a time. Do not assign every missing
+API category as an independent implementation task; some are hard FL9_1
+limits, and some share compiler/validation infrastructure. Historical
+FL9_1 hardware, Lumia/CoreWindow runtime, and physical device-removal recovery
+remain external verification gaps.
+
+Two read-only shader/pipeline and resource/transfer audits found no additional
+confirmed mismatch in their reviewed paths. This narrows the next software
+search to a concrete app request or a previously unreviewed API area. It does
+not establish complete coverage, and the external historical-device and Lumia
+runtime checks remain necessary.
+
 ## HAL panic reachability review — 2026-11-10
 
 An independent bounded source review found no confirmed safe-public-wgpu-

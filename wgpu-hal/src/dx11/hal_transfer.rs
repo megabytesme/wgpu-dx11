@@ -2,7 +2,10 @@
 use super::{
     buffer::NativeBuffer,
     device::NativeDevice,
-    texture::{format_block_layout, NativeTexture, Texture3DShadow, TextureBlockLayout},
+    texture::{
+        format_block_layout, texture_formats_copy_compatible, NativeTexture, Texture2DShadow,
+        Texture3DShadow, TextureBlockLayout,
+    },
 };
 use windows::{
     core::{Error, Interface, Result},
@@ -14,30 +17,18 @@ use windows::{
                 D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
                 D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
             },
-            Dxgi::Common::{
-                DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_SAMPLE_DESC,
-            },
+            Dxgi::Common::{DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC},
         },
     },
 };
 
+#[cfg(test)]
+use windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+};
+
 fn invalid() -> Error {
     Error::from_hresult(E_INVALIDARG)
-}
-
-fn texture_formats_copy_compatible(
-    source: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
-    destination: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
-) -> bool {
-    source == destination
-        || matches!(
-            (source, destination),
-            (DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
-                | (DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8B8A8_UNORM)
-                | (DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)
-                | (DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_B8G8R8A8_UNORM)
-        )
 }
 
 fn copy_layout(
@@ -127,10 +118,36 @@ pub(super) struct TextureToTexture {
     destination_subresource: u32,
     source_box: D3D11_BOX,
     destination_origin: [u32; 2],
+    shadow_copy: Option<Texture2DShadowCopy>,
+}
+
+#[derive(Debug)]
+struct Texture2DShadowCopy {
+    source: alloc::sync::Arc<Texture2DShadow>,
+    destination: alloc::sync::Arc<Texture2DShadow>,
+    source_mip: u32,
+    source_layer: u32,
+    source_origin: [u32; 2],
+    destination_mip: u32,
+    destination_layer: u32,
+    destination_origin: [u32; 2],
+    extent: [u32; 2],
 }
 
 impl TextureToTexture {
-    pub(super) fn execute(&self, context: &ID3D11DeviceContext) {
+    pub(super) fn execute(&self, context: &ID3D11DeviceContext) -> Result<()> {
+        if let Some(copy) = &self.shadow_copy {
+            copy.destination.copy_region_from(
+                &copy.source,
+                copy.source_mip,
+                copy.source_layer,
+                copy.source_origin,
+                copy.destination_mip,
+                copy.destination_layer,
+                copy.destination_origin,
+                copy.extent,
+            )?;
+        }
         unsafe {
             context.CopySubresourceRegion(
                 &self.destination,
@@ -143,6 +160,7 @@ impl TextureToTexture {
                 Some(&self.source_box),
             );
         }
+        Ok(())
     }
 }
 
@@ -157,6 +175,17 @@ pub(super) struct BufferToTexture {
     source_box: D3D11_BOX,
     destination_box: D3D11_BOX,
     row_pitch: u32,
+    source_size: usize,
+    shadow_write: Option<Texture2DShadowWrite>,
+}
+
+#[derive(Debug)]
+struct Texture2DShadowWrite {
+    shadow: alloc::sync::Arc<Texture2DShadow>,
+    mip: u32,
+    layer: u32,
+    origin: [u32; 2],
+    extent: [u32; 2],
 }
 
 #[derive(Debug)]
@@ -190,15 +219,29 @@ pub(super) struct Texture3DToBuffer {
 #[allow(dead_code)]
 #[derive(Debug)]
 pub(super) struct TextureToBuffer {
-    texture: ID3D11Texture2D,
-    source_subresource: u32,
-    staging: ID3D11Texture2D,
+    source: TextureToBufferSource,
     destination: ID3D11Buffer,
-    source_box: D3D11_BOX,
     destination_offset: u32,
     row_pitch: u32,
     row_bytes: u32,
     rows: u32,
+}
+
+#[derive(Debug)]
+enum TextureToBufferSource {
+    Native {
+        texture: ID3D11Texture2D,
+        source_subresource: u32,
+        staging: ID3D11Texture2D,
+        source_box: D3D11_BOX,
+    },
+    Shadow {
+        shadow: alloc::sync::Arc<Texture2DShadow>,
+        mip: u32,
+        layer: u32,
+        origin: [u32; 2],
+        extent: [u32; 2],
+    },
 }
 
 impl NativeDevice {
@@ -353,12 +396,12 @@ impl NativeDevice {
         destination: &NativeTexture,
         region: &crate::TextureCopy,
     ) -> Result<TextureToTexture> {
-        if !texture_formats_copy_compatible(
-            self.texture_desc(source)?.Format,
-            self.texture_desc(destination)?.Format,
-        ) {
+        let source_format = self.texture_desc(source)?.Format;
+        if !texture_formats_copy_compatible(source_format, self.texture_desc(destination)?.Format) {
             return Err(invalid());
         }
+        let source_shadow = source.bc_shadow.clone();
+        let destination_shadow = destination.bc_shadow.clone();
         let (source, src_size, source_subresource) = self.texture_copy_texture_source(
             source,
             region.src_base.mip_level,
@@ -377,6 +420,27 @@ impl NativeDevice {
         }
         let source_box = texture_box(&region.src_base, &region.size, src_size)?;
         let destination_box = texture_box(&region.dst_base, &region.size, dst_size)?;
+        let block = format_block_layout(source_format)?;
+        if !block_aligned_box(&region.src_base, &region.size, block)
+            || !block_aligned_box(&region.dst_base, &region.size, block)
+        {
+            return Err(invalid());
+        }
+        let shadow_copy = match (source_shadow, destination_shadow) {
+            (Some(source), Some(destination)) => Some(Texture2DShadowCopy {
+                source,
+                destination,
+                source_mip: region.src_base.mip_level,
+                source_layer: region.src_base.array_layer,
+                source_origin: [region.src_base.origin.x, region.src_base.origin.y],
+                destination_mip: region.dst_base.mip_level,
+                destination_layer: region.dst_base.array_layer,
+                destination_origin: [region.dst_base.origin.x, region.dst_base.origin.y],
+                extent: [region.size.width, region.size.height],
+            }),
+            (None, Some(_)) => return Err(invalid()),
+            _ => None,
+        };
         Ok(TextureToTexture {
             source,
             destination,
@@ -384,6 +448,7 @@ impl NativeDevice {
             destination_subresource,
             source_box,
             destination_origin: [destination_box.left, destination_box.top],
+            shadow_copy,
         })
     }
 
@@ -397,7 +462,10 @@ impl NativeDevice {
         let base = &region.texture_base;
         let size = &region.size;
         let layout = &region.buffer_layout;
-        self.validate_texture_readback_source(texture)?;
+        let compressed_shadow = texture.bc_shadow.clone();
+        if compressed_shadow.is_none() {
+            self.validate_texture_readback_source(texture)?;
+        }
         let (source, dimensions, source_subresource) =
             self.texture_copy_texture_source(texture, base.mip_level, base.array_layer)?;
         let source_box = texture_box(base, size, dimensions)?;
@@ -409,31 +477,44 @@ impl NativeDevice {
             copy_layout(layout, size.width, size.height, block)?;
         let native_destination =
             self.texture_copy_buffer_destination(destination, u64::from(offset), total as usize)?;
-        let staging_desc = D3D11_TEXTURE2D_DESC {
-            Width: size.width,
-            Height: size.height,
-            MipLevels: 1,
-            ArraySize: 1,
-            Format: self.texture_desc(texture)?.Format,
-            SampleDesc: DXGI_SAMPLE_DESC {
-                Count: 1,
-                Quality: 0,
-            },
-            Usage: D3D11_USAGE_STAGING,
-            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-            ..Default::default()
+        let source = if let Some(shadow) = compressed_shadow {
+            TextureToBufferSource::Shadow {
+                shadow,
+                mip: base.mip_level,
+                layer: base.array_layer,
+                origin: [base.origin.x, base.origin.y],
+                extent: [size.width, size.height],
+            }
+        } else {
+            let staging_desc = D3D11_TEXTURE2D_DESC {
+                Width: size.width,
+                Height: size.height,
+                MipLevels: 1,
+                ArraySize: 1,
+                Format: self.texture_desc(texture)?.Format,
+                SampleDesc: DXGI_SAMPLE_DESC {
+                    Count: 1,
+                    Quality: 0,
+                },
+                Usage: D3D11_USAGE_STAGING,
+                CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+                ..Default::default()
+            };
+            let mut staging = None;
+            unsafe {
+                self.raw_device()
+                    .CreateTexture2D(&staging_desc, None, Some(&mut staging))?;
+            }
+            TextureToBufferSource::Native {
+                texture: source,
+                source_subresource,
+                staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                source_box,
+            }
         };
-        let mut staging = None;
-        unsafe {
-            self.raw_device()
-                .CreateTexture2D(&staging_desc, None, Some(&mut staging))?;
-        }
         Ok(TextureToBuffer {
-            texture: source,
-            source_subresource,
-            staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+            source,
             destination: native_destination,
-            source_box,
             destination_offset: offset,
             row_pitch: pitch,
             row_bytes,
@@ -489,6 +570,17 @@ impl NativeDevice {
             },
             destination_box,
             row_pitch: pitch,
+            source_size: total as usize,
+            shadow_write: texture
+                .bc_shadow
+                .clone()
+                .map(|shadow| Texture2DShadowWrite {
+                    shadow,
+                    mip: base.mip_level,
+                    layer: base.array_layer,
+                    origin: [base.origin.x, base.origin.y],
+                    extent: [size.width, size.height],
+                }),
         })
     }
 }
@@ -497,46 +589,128 @@ impl TextureToBuffer {
     /// Replay under the owning device's immediate-context lock.
     #[allow(dead_code)]
     pub(super) fn execute(&self, context: &ID3D11DeviceContext) -> Result<()> {
-        unsafe {
-            context.CopySubresourceRegion(
-                &self.staging,
-                0,
-                0,
-                0,
-                0,
-                &self.texture,
-                self.source_subresource,
-                Some(&self.source_box),
-            );
-            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-            let last_row = (self.rows as usize - 1)
-                .checked_mul(mapped.RowPitch as usize)
-                .and_then(|v| v.checked_add(self.row_bytes as usize));
-            if mapped.pData.is_null() || mapped.RowPitch < self.row_bytes || last_row.is_none() {
-                context.Unmap(&self.staging, 0);
-                return Err(Error::from_hresult(E_FAIL));
+        match &self.source {
+            TextureToBufferSource::Shadow {
+                shadow,
+                mip,
+                layer,
+                origin,
+                extent,
+            } => {
+                let bytes = shadow.read_region(*mip, *layer, *origin, *extent)?;
+                write_packed_rows(
+                    context,
+                    &self.destination,
+                    self.destination_offset,
+                    self.row_pitch,
+                    self.row_bytes,
+                    self.rows,
+                    &bytes,
+                    self.row_bytes,
+                )
             }
-            for row in 0..self.rows {
-                let left = self.destination_offset + row * self.row_pitch;
-                let area = D3D11_BOX {
-                    left,
-                    right: left + self.row_bytes,
-                    top: 0,
-                    bottom: 1,
-                    front: 0,
-                    back: 1,
+            TextureToBufferSource::Native {
+                texture,
+                source_subresource,
+                staging,
+                source_box,
+            } => unsafe {
+                context.CopySubresourceRegion(
+                    staging,
+                    0,
+                    0,
+                    0,
+                    0,
+                    texture,
+                    *source_subresource,
+                    Some(source_box),
+                );
+                let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+                context.Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+                let source_size = (self.rows as usize - 1)
+                    .checked_mul(mapped.RowPitch as usize)
+                    .and_then(|value| value.checked_add(self.row_bytes as usize));
+                let result = if mapped.pData.is_null()
+                    || mapped.RowPitch < self.row_bytes
+                    || source_size.is_none()
+                {
+                    Err(Error::from_hresult(E_FAIL))
+                } else {
+                    let bytes = core::slice::from_raw_parts(
+                        mapped.pData.cast::<u8>(),
+                        source_size.unwrap(),
+                    );
+                    write_packed_rows(
+                        context,
+                        &self.destination,
+                        self.destination_offset,
+                        self.row_pitch,
+                        self.row_bytes,
+                        self.rows,
+                        bytes,
+                        mapped.RowPitch,
+                    )
                 };
-                let source = mapped
-                    .pData
-                    .cast::<u8>()
-                    .add(row as usize * mapped.RowPitch as usize);
-                context.UpdateSubresource(&self.destination, 0, Some(&area), source.cast(), 0, 0);
-            }
-            context.Unmap(&self.staging, 0);
-            Ok(())
+                context.Unmap(staging, 0);
+                result
+            },
         }
     }
+}
+
+fn write_packed_rows(
+    context: &ID3D11DeviceContext,
+    destination: &ID3D11Buffer,
+    destination_offset: u32,
+    destination_pitch: u32,
+    row_bytes: u32,
+    rows: u32,
+    source: &[u8],
+    source_pitch: u32,
+) -> Result<()> {
+    if rows == 0 || row_bytes == 0 || destination_pitch < row_bytes || source_pitch < row_bytes {
+        return Err(invalid());
+    }
+    let source_size = (rows as usize - 1)
+        .checked_mul(source_pitch as usize)
+        .and_then(|offset| offset.checked_add(row_bytes as usize))
+        .ok_or_else(invalid)?;
+    if source.len() < source_size {
+        return Err(invalid());
+    }
+    for row in 0..rows {
+        let destination_left = destination_offset
+            .checked_add(row.checked_mul(destination_pitch).ok_or_else(invalid)?)
+            .ok_or_else(invalid)?;
+        let destination_right = destination_left
+            .checked_add(row_bytes)
+            .ok_or_else(invalid)?;
+        let source_left = (row as usize)
+            .checked_mul(source_pitch as usize)
+            .ok_or_else(invalid)?;
+        let source_right = source_left
+            .checked_add(row_bytes as usize)
+            .ok_or_else(invalid)?;
+        let area = D3D11_BOX {
+            left: destination_left,
+            right: destination_right,
+            top: 0,
+            bottom: 1,
+            front: 0,
+            back: 1,
+        };
+        unsafe {
+            context.UpdateSubresource(
+                destination,
+                0,
+                Some(&area),
+                source[source_left..source_right].as_ptr().cast(),
+                0,
+                0,
+            );
+        }
+    }
+    Ok(())
 }
 
 impl BufferToTexture {
@@ -559,6 +733,21 @@ impl BufferToTexture {
             if mapped.pData.is_null() {
                 context.Unmap(&self.staging, 0);
                 return Err(Error::from_hresult(E_FAIL));
+            }
+            if let Some(write) = &self.shadow_write {
+                let source =
+                    core::slice::from_raw_parts(mapped.pData.cast::<u8>(), self.source_size);
+                if let Err(error) = write.shadow.write_region(
+                    write.mip,
+                    write.layer,
+                    write.origin,
+                    write.extent,
+                    self.row_pitch,
+                    source,
+                ) {
+                    context.Unmap(&self.staging, 0);
+                    return Err(error);
+                }
             }
             context.UpdateSubresource(
                 &self.texture,

@@ -1,13 +1,16 @@
 # FL9_1 completion plan
 
-## Latest current state and next queue — 2026-11-10
+## Latest current state and next queue — 2026-11-11
 
 The current branch is a substantial opt-in public FL9_1 implementation, but
 the practical-completion audit remains open. The Milestone 8 static uniform
 path has verified constant budgets, sparse/stage-specific bindings, ranges,
 updates and near-limit shaders; historical-device portability remains
-unverified. Core/HAL audits have not found a confirmed valid-public-request to
-unsupported-HAL mismatch in their reviewed paths. The latest capability
+unverified. A selected sample-bias-offset audit found and fixed a Core-valid
+single-mip view of a multi-mip parent that HAL had rejected by checking the
+parent mip count. Follow-up shader/pipeline and resource/transfer audits found
+no additional confirmed Core-valid-to-HAL mismatch in their reviewed paths;
+these scoped reviews are not an exhaustive proof. The latest capability
 projection correction explicitly zeros unused compute and storage limits; its
 HAL projection test and strict public readback/integration test passed on the
 RTX 3090 Ti forced to FL9_1. A source audit confirmed that the existing
@@ -20,11 +23,12 @@ valid public operations and shader/resource boundary cases.
 Historical FL9_1 hardware and physical device-removal recovery are external
 verification gaps.
 
-The latest implementation checkpoint is `c75e82cef`, which allows a direct
-fragment `textureSampleBias` to select between two finite literal values
-within the FL9_1 range. It passed the strict full HAL and public D3D11 suites,
-the Core/types suites, FXC profile compilation and targeted DX12 checks;
-details are in `FL9_1_PROGRESS.md`. The earlier
+The current uncommitted checkpoint adds ordered BC1/2/3 CPU-shadow
+texture-to-buffer readback and a direct fragment `textureSampleBias` texel
+offset subset. Strict tests pass on the RTX 3090 Ti at requested/actual
+FL9_1; details are in `FL9_1_PROGRESS.md`. The previous implementation
+checkpoint is `c75e82cef`, which allows a direct fragment `textureSampleBias`
+to select between two finite literal values within the FL9_1 range. The earlier
 capability correction `6b1cff301` withholds sRGB blending through FL9_3 while
 preserving sRGB attachments and query-backed linear blending. A read-only
 RGBA8_SNORM audit confirmed the existing direct
@@ -35,24 +39,24 @@ matching Core/HAL proofs and strict GPU evidence. Arbitrary dynamic
 `textureSampleBias` remains rejected because WGSL's legal bias range exceeds
 the defined FL9_1 `texldb` range; clamping is not semantics preserving.
 
-The latest feature slice proves bounded fragment sample-bias selection in
-Core and HAL, retains rejection of arbitrary dynamic bias, and verifies FXC
-compilation plus 64 strict public FL9_1 readback pixels. The full strict
-private HAL suite passed 480/480 and the strict public D3D11 suite passed
-126/126, with two recognizable optional capability skips. The Core suite
-passed 123/123, wgpu-types passed 113/113 plus a serde compatibility test,
-the DX12 HAL check passed, and affected Clippy and formatting checks passed.
-Exact commands and device output are in `FL9_1_PROGRESS.md`.
+BC readback is a CPU mirror fallback, not native GPU readback; correctness
+depends on ordered mirror updates from every write route. The sample-bias
+offset path uses the selected 2D single-mip view dimensions, including a
+single-mip view into a multi-mip parent. Current verification passed the
+focused strict BC and sample-offset targets, the complete strict private HAL
+suite (488/488), and public D3D11 suite (126/126). Core passed 124/124, Naga
+162/162 and wgpu-types 113/113; the DX12 HAL check passed. The broader
+contract audit remains open. Select the next implementation from a concrete
+Core-valid request that does not already fail validation at a documented
+FL9_1/profile boundary. Historical-device, Lumia/CoreWindow runtime and
+physical device-removal verification remain external gaps.
 
 Next work remains a practical-completion audit, not a claim that the backend is
 finished. Use agents for separate read-only contract/compiler audits, then
 select one concrete vertical feature gap for the coordinator to implement and
-test. The bounded direct fragment sample-bias select is now verified; keep
-arbitrary dynamic bias and SNORM readback gated. The transfer audit found a
-potential BC texture readback implementation through an ordered CPU shadow,
-but that requires adding and testing authoritative 2D shadow updates at queue
-replay and copy time before advertising `COPY_SRC`. Public adapter support and
-ordinary wgpu use are present but still opt-in and experimental; historical
+test. Arbitrary dynamic sample bias, SNORM readback and unsupported profile
+operations remain gated. Public adapter support and ordinary wgpu use are
+present behind explicit DX11 selection and remain experimental; historical
 FL9_1 and Lumia runtime verification remain external.
 
 ## Earlier current-state checkpoint — 2026-11-10

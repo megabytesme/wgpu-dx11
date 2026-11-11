@@ -1510,6 +1510,7 @@ impl crate::Device for super::Device {
                 fl9_texture_dimensions_3d_proof: None,
                 fl9_texture_num_levels_proof: None,
                 fl9_texture_base_clamp_proof: None,
+                fl9_texture_sample_bias_offset_proof: None,
                 fl9_viewport_transform: None,
                 fl9_instance_index_input: false,
                 fl9_vertex_index_input: false,

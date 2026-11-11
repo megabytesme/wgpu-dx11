@@ -323,6 +323,7 @@ pub(super) struct BackendCapabilities {
     pub bc2_texture_to_texture_copy: bool,
     pub bc3_sampled_upload: bool,
     pub bc3_texture_to_texture_copy: bool,
+    pub bc_texture_to_buffer_shadow_readback: bool,
     pub packed_16bit_sampled_upload: bool,
     pub vertex_input_formats: u64,
     pub texture_zero_initialized: bool,
@@ -338,6 +339,7 @@ pub(super) struct BackendCapabilities {
     pub fl91_fragment_texture_base_clamp_2d_float: bool,
     pub fl91_fragment_frexp_fraction_only: bool,
     pub fragment_texture_sample_bias_literal_select: bool,
+    pub fragment_texture_sample_bias_offset_2d_single_mip: bool,
     pub texture_array_layers: u32,
     pub cube_texture_sampling: bool,
     pub cube_texture_mipmaps: bool,
@@ -466,6 +468,7 @@ impl BackendCapabilities {
         bc2_texture_to_texture_copy: true,
         bc3_sampled_upload: true,
         bc3_texture_to_texture_copy: true,
+        bc_texture_to_buffer_shadow_readback: true,
         packed_16bit_sampled_upload: true,
         vertex_input_formats: fl91_vertex_formats() | optional_vertex_formats(),
         texture_zero_initialized: true,
@@ -481,6 +484,7 @@ impl BackendCapabilities {
         fl91_fragment_texture_base_clamp_2d_float: true,
         fl91_fragment_frexp_fraction_only: true,
         fragment_texture_sample_bias_literal_select: true,
+        fragment_texture_sample_bias_offset_2d_single_mip: true,
         texture_array_layers: 1,
         cube_texture_sampling: true,
         cube_texture_mipmaps: true,
@@ -614,6 +618,13 @@ impl Capabilities {
 
     pub fn private_fl91_fragment_frexp_fraction_only(&self) -> bool {
         self.hardware.level == FeatureLevel::L9_1 && self.backend.fl91_fragment_frexp_fraction_only
+    }
+
+    pub fn private_fl91_fragment_texture_sample_bias_offset_2d_single_mip(&self) -> bool {
+        self.hardware.level == FeatureLevel::L9_1
+            && self
+                .backend
+                .fragment_texture_sample_bias_offset_2d_single_mip
     }
 
     pub fn private_fl91_fragment_texture_load_3d_float(&self) -> bool {
@@ -918,6 +929,8 @@ impl Capabilities {
                     .backend
                     .fragment_texture_sample_bias_literal_select,
                 texture_sample_bias_offset: false,
+                fragment_texture_sample_bias_offset_2d_single_mip: self
+                    .private_fl91_fragment_texture_sample_bias_offset_2d_single_mip(),
                 texture_sample_bias_requires_compatible_sampler: true,
                 fragment_derivatives: self.hardware.fragment_derivatives
                     && self.backend.fragment_derivatives,
@@ -1086,12 +1099,28 @@ impl Capabilities {
             wgt::TextureFormat::R8Unorm,
             wgt::TextureFormat::Rg8Unorm,
             wgt::TextureFormat::Rgb5g6b5Unorm,
+            wgt::TextureFormat::Bc1RgbaUnorm,
+            wgt::TextureFormat::Bc1RgbaUnormSrgb,
+            wgt::TextureFormat::Bc2RgbaUnorm,
+            wgt::TextureFormat::Bc2RgbaUnormSrgb,
+            wgt::TextureFormat::Bc3RgbaUnorm,
+            wgt::TextureFormat::Bc3RgbaUnormSrgb,
         ]
         .into_iter()
         .fold(0, |mask, format| {
             if self
                 .texture_format_capabilities(format)
                 .contains(crate::TextureFormatCapabilities::COPY_SRC)
+                && (self.backend.bc_texture_to_buffer_shadow_readback
+                    || !matches!(
+                        format,
+                        wgt::TextureFormat::Bc1RgbaUnorm
+                            | wgt::TextureFormat::Bc1RgbaUnormSrgb
+                            | wgt::TextureFormat::Bc2RgbaUnorm
+                            | wgt::TextureFormat::Bc2RgbaUnormSrgb
+                            | wgt::TextureFormat::Bc3RgbaUnorm
+                            | wgt::TextureFormat::Bc3RgbaUnormSrgb
+                    ))
             {
                 mask | wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format)
             } else {
@@ -4104,6 +4133,44 @@ mod tests {
     }
 
     #[test]
+    fn sample_bias_offset_projection_is_fl91_backend_gated() {
+        let mut fl91 = model(FeatureLevel::L9_1);
+        assert!(fl91.private_fl91_fragment_texture_sample_bias_offset_2d_single_mip());
+        assert!(
+            fl91.wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .fragment_texture_sample_bias_offset_2d_single_mip
+        );
+
+        fl91.backend
+            .fragment_texture_sample_bias_offset_2d_single_mip = false;
+        assert!(
+            !fl91
+                .wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .fragment_texture_sample_bias_offset_2d_single_mip
+        );
+
+        for level in [
+            FeatureLevel::L9_2,
+            FeatureLevel::L9_3,
+            FeatureLevel::L10_0,
+            FeatureLevel::L10_1,
+            FeatureLevel::L11_0,
+            FeatureLevel::L11_1,
+        ] {
+            assert!(!model(level).private_fl91_fragment_texture_sample_bias_offset_2d_single_mip());
+            assert!(model(level).wgpu_projection().is_none());
+        }
+    }
+
+    #[test]
     fn vertex_format_projection_intersects_level_driver_and_backend() {
         let mut fl91 = model(FeatureLevel::L9_1);
         let baseline = fl91_vertex_formats();
@@ -6363,7 +6430,8 @@ mod tests {
         assert_eq!(
             caps.texture_to_buffer_copy_format_mask()
                 & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
-            0
+            wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+            "CPU shadow readback is separate from the native GPU-copy path"
         );
         let texture2d_only = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
         let mut copy_query = caps;
@@ -6376,6 +6444,12 @@ mod tests {
         assert!(copy_query
             .texture_format_capabilities(format)
             .contains(crate::TextureFormatCapabilities::COPY_SRC));
+        assert_ne!(
+            copy_query.texture_to_buffer_copy_format_mask()
+                & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+            0,
+            "block-copy support plus the CPU shadow permits raw-byte readback"
+        );
         assert!(!copy_query
             .texture_format_capabilities(format)
             .contains(crate::TextureFormatCapabilities::SAMPLED_LINEAR));
@@ -6435,6 +6509,11 @@ mod tests {
         assert_eq!(
             query.check_private_texture_2d(format, copy_source_usage, [8, 8], 1, 1, 1),
             Err(UnsupportedUsage)
+        );
+        assert_eq!(
+            query.texture_to_buffer_copy_format_mask()
+                & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+            0
         );
     }
 
@@ -6603,7 +6682,7 @@ mod tests {
             assert_eq!(
                 caps.texture_to_buffer_copy_format_mask()
                     & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
-                0
+                wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format)
             );
         }
 
@@ -6636,7 +6715,7 @@ mod tests {
             assert_eq!(
                 caps.texture_to_buffer_copy_format_mask()
                     & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
-                0
+                wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format)
             );
 
             let query = match format {
@@ -6689,6 +6768,11 @@ mod tests {
                 no_copy.check_private_texture_2d(format, copy_usage, [8, 8], 1, 1, 1),
                 Err(UnsupportedUsage)
             );
+            assert_eq!(
+                no_copy.texture_to_buffer_copy_format_mask()
+                    & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+                0
+            );
 
             assert_eq!(
                 caps.check_private_texture_2d(format, usage, [6, 8], 1, 1, 1),
@@ -6700,5 +6784,56 @@ mod tests {
                 .features
                 .contains(wgt::Features::TEXTURE_COMPRESSION_BC));
         }
+    }
+
+    #[test]
+    fn bc_texture_to_buffer_mask_requires_shadow_and_queried_copy_paths() {
+        let formats = [
+            wgt::TextureFormat::Bc1RgbaUnorm,
+            wgt::TextureFormat::Bc1RgbaUnormSrgb,
+            wgt::TextureFormat::Bc2RgbaUnorm,
+            wgt::TextureFormat::Bc2RgbaUnormSrgb,
+            wgt::TextureFormat::Bc3RgbaUnorm,
+            wgt::TextureFormat::Bc3RgbaUnormSrgb,
+        ];
+        let caps = model(FeatureLevel::L9_1);
+        for format in formats {
+            let bit = wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format);
+            assert_eq!(caps.texture_to_buffer_copy_format_mask() & bit, bit);
+        }
+
+        let mut no_shadow = caps;
+        no_shadow.backend.bc_texture_to_buffer_shadow_readback = false;
+        for format in formats {
+            let bit = wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format);
+            assert_eq!(no_shadow.texture_to_buffer_copy_format_mask() & bit, 0);
+        }
+
+        let mut missing_query = caps;
+        missing_query.driver.bc2_srgb = Query::Unavailable(-1);
+        assert_eq!(
+            missing_query.texture_to_buffer_copy_format_mask()
+                & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(
+                    wgt::TextureFormat::Bc2RgbaUnormSrgb
+                ),
+            0
+        );
+        assert_ne!(
+            missing_query.texture_to_buffer_copy_format_mask()
+                & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(
+                    wgt::TextureFormat::Bc1RgbaUnorm
+                ),
+            0
+        );
+
+        let mut missing_copy = caps;
+        missing_copy.backend.bc3_texture_to_texture_copy = false;
+        assert_eq!(
+            missing_copy.texture_to_buffer_copy_format_mask()
+                & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(
+                    wgt::TextureFormat::Bc3RgbaUnorm
+                ),
+            0
+        );
     }
 }

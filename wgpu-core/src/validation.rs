@@ -300,6 +300,7 @@ struct EntryPoint {
     fl9_texture_load_dynamic_coordinate_supported: bool,
     fl9_texture_load_3d_supported: bool,
     fl9_texture_load_dimensions_supported: bool,
+    fl9_texture_sample_bias_offset_binding: Option<TextureSampleBiasOffsetBinding>,
     unsupported_runtime_integer_semantics: bool,
     frexp_fraction_only_runtime_integer_semantics: bool,
     unsupported_runtime_integer_indexing: bool,
@@ -356,6 +357,13 @@ pub(crate) struct TextureLoadBinding {
     pub group: u32,
     pub binding: u32,
     pub dimension: naga::ImageDimension,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TextureSampleBiasOffsetBinding {
+    pub group: u32,
+    pub binding: u32,
+    pub sample_expression: naga::Handle<naga::Expression>,
 }
 
 #[derive(Debug)]
@@ -2349,6 +2357,7 @@ fn function_uses_unsupported_integer_semantics(
     supported_index_parameters: &[bool],
     supported_fragment_index_expressions: Option<&FastHashSet<naga::Handle<naga::Expression>>>,
     supported_fragment_frexp_result: Option<naga::Handle<naga::Expression>>,
+    supported_fragment_sample_bias_offset: Option<naga::Handle<naga::Expression>>,
     budget: &mut usize,
 ) -> bool {
     if function.arguments.len() > *budget {
@@ -2436,7 +2445,10 @@ fn function_uses_unsupported_integer_semantics(
             naga::Expression::ImageSample {
                 offset: Some(offset),
                 ..
-            } => !global_initializer_is_simple(module, offset, budget),
+            } => {
+                supported_fragment_sample_bias_offset != Some(handle)
+                    && !global_initializer_is_simple(module, offset, budget)
+            }
             _ => false,
         };
         integer_operation
@@ -2501,6 +2513,7 @@ fn entry_point_uses_unsupported_integer_semantics(
     entry_point: &naga::EntryPoint,
     entry_point_info: &naga::valid::FunctionInfo,
     supported_fragment_frexp_result: Option<naga::Handle<naga::Expression>>,
+    supported_fragment_sample_bias_offset: Option<naga::Handle<naga::Expression>>,
 ) -> bool {
     let vertex_entry = entry_point.stage == naga::ShaderStage::Vertex;
     let fragment_index_proof = fragment_uniform_array_indexing_proof(
@@ -2527,6 +2540,7 @@ fn entry_point_uses_unsupported_integer_semantics(
             .as_ref()
             .map(|proof| &proof.integer_expressions),
         supported_fragment_frexp_result,
+        supported_fragment_sample_bias_offset,
         &mut budget,
     ) || block_has_switch(&entry_point.function.body, &mut budget)
         || module.global_variables.iter().any(|(handle, global)| {
@@ -2596,6 +2610,7 @@ fn entry_point_uses_unsupported_integer_semantics(
                 info,
                 false,
                 &parameter_origins,
+                None,
                 None,
                 None,
                 &mut budget,
@@ -3498,6 +3513,216 @@ fn entry_point_fl9_texture_load_support(
         ),
         _ => (false, false, None),
     }
+}
+
+fn entry_point_fl9_texture_sample_bias_offset_binding(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+    entry_point_info: &naga::valid::FunctionInfo,
+) -> Option<TextureSampleBiasOffsetBinding> {
+    if entry_point.stage != naga::ShaderStage::Fragment
+        || !matches!(
+            entry_point.function.arguments.as_slice(),
+            [argument]
+                if matches!(
+                    argument.binding,
+                    Some(naga::Binding::Location { location: 0, .. })
+                ) && matches!(
+                    module.types[argument.ty].inner,
+                    naga::TypeInner::Vector {
+                        size: naga::VectorSize::Bi,
+                        scalar: naga::Scalar {
+                            kind: naga::ScalarKind::Float,
+                            width: 4,
+                        },
+                    }
+                )
+        )
+        || entry_point.function.body.iter().any(|statement| {
+            !matches!(
+                statement,
+                naga::Statement::Emit(_) | naga::Statement::Return { .. }
+            )
+        })
+    {
+        return None;
+    }
+
+    let mut sampled_image = None;
+    let mut sampled_sampler = None;
+    let mut sample_expression = None;
+    let mut sample_count = 0;
+    for (handle, expression) in entry_point.function.expressions.iter() {
+        match *expression {
+            naga::Expression::ImageSample {
+                image,
+                sampler,
+                coordinate,
+                level: naga::SampleLevel::Bias(_),
+                gather: None,
+                array_index: None,
+                offset: Some(offset),
+                depth_ref: None,
+                clamp_to_edge: false,
+            } => {
+                sample_count += 1;
+                if sample_count != 1
+                    || entry_point_info[handle].ref_count == 0
+                    || !fl9_sample_offset_in_range(module, &entry_point.function, offset)
+                    || !matches!(
+                        entry_point.function.expressions[coordinate],
+                        naga::Expression::FunctionArgument(0)
+                    )
+                {
+                    return None;
+                }
+                let naga::Expression::GlobalVariable(image) =
+                    entry_point.function.expressions[image]
+                else {
+                    return None;
+                };
+                let naga::Expression::GlobalVariable(sampler) =
+                    entry_point.function.expressions[sampler]
+                else {
+                    return None;
+                };
+                if !matches!(
+                    module.types[module.global_variables[image].ty].inner,
+                    naga::TypeInner::Image {
+                        dim: naga::ImageDimension::D2,
+                        arrayed: false,
+                        class: naga::ImageClass::Sampled {
+                            kind: naga::ScalarKind::Float,
+                            multi: false,
+                        },
+                    }
+                ) || !matches!(
+                    module.types[module.global_variables[sampler].ty].inner,
+                    naga::TypeInner::Sampler { comparison: false }
+                ) {
+                    return None;
+                }
+                sampled_image = Some(image);
+                sampled_sampler = Some(sampler);
+                sample_expression = Some(handle);
+            }
+            naga::Expression::ImageSample { .. }
+            | naga::Expression::ImageLoad { .. }
+            | naga::Expression::ImageQuery { .. } => return None,
+            _ => {}
+        }
+    }
+
+    let image = sampled_image?;
+    let sampler = sampled_sampler?;
+    if module.global_variables.iter().any(|(handle, global)| {
+        global.binding.is_some()
+            && handle != image
+            && handle != sampler
+            && !entry_point_info[handle].is_empty()
+    }) {
+        return None;
+    }
+    let binding = module.global_variables[image].binding?;
+    module.global_variables[sampler].binding?;
+    Some(TextureSampleBiasOffsetBinding {
+        group: binding.group,
+        binding: binding.binding,
+        sample_expression: sample_expression?,
+    })
+}
+
+fn fl9_sample_offset_in_range(
+    module: &naga::Module,
+    function: &naga::Function,
+    offset: naga::Handle<naga::Expression>,
+) -> bool {
+    fn is_i32x2(module: &naga::Module, ty: naga::Handle<naga::Type>) -> bool {
+        matches!(
+            module.types[ty].inner,
+            naga::TypeInner::Vector {
+                size: naga::VectorSize::Bi,
+                scalar: naga::Scalar {
+                    kind: naga::ScalarKind::Sint,
+                    width: 4,
+                },
+            }
+        )
+    }
+
+    fn scalar_from_global(
+        module: &naga::Module,
+        expression: naga::Handle<naga::Expression>,
+    ) -> Option<i32> {
+        match module.global_expressions[expression] {
+            naga::Expression::Literal(naga::Literal::I32(value)) => Some(value),
+            naga::Expression::Constant(constant) => {
+                scalar_from_global(module, module.constants[constant].init)
+            }
+            _ => None,
+        }
+    }
+
+    fn scalar_from_function(
+        module: &naga::Module,
+        function: &naga::Function,
+        expression: naga::Handle<naga::Expression>,
+    ) -> Option<i32> {
+        match function.expressions[expression] {
+            naga::Expression::Literal(naga::Literal::I32(value)) => Some(value),
+            naga::Expression::Constant(constant) => {
+                scalar_from_global(module, module.constants[constant].init)
+            }
+            _ => None,
+        }
+    }
+
+    fn vector_from_global(
+        module: &naga::Module,
+        expression: naga::Handle<naga::Expression>,
+    ) -> Option<[i32; 2]> {
+        match module.global_expressions[expression] {
+            naga::Expression::Compose { ref components, .. } if components.len() == 2 => Some([
+                scalar_from_global(module, components[0])?,
+                scalar_from_global(module, components[1])?,
+            ]),
+            naga::Expression::Splat {
+                size: naga::VectorSize::Bi,
+                value,
+            } => {
+                let value = scalar_from_global(module, value)?;
+                Some([value, value])
+            }
+            naga::Expression::ZeroValue(ty) if is_i32x2(module, ty) => Some([0, 0]),
+            naga::Expression::Constant(constant) => {
+                vector_from_global(module, module.constants[constant].init)
+            }
+            _ => None,
+        }
+    }
+
+    let components = match function.expressions[offset] {
+        naga::Expression::Compose { ref components, .. } if components.len() == 2 => components
+            .first()
+            .and_then(|x| scalar_from_function(module, function, *x))
+            .zip(
+                components
+                    .get(1)
+                    .and_then(|y| scalar_from_function(module, function, *y)),
+            )
+            .map(|(x, y)| [x, y]),
+        naga::Expression::Splat {
+            size: naga::VectorSize::Bi,
+            value,
+        } => scalar_from_function(module, function, value).map(|value| [value, value]),
+        naga::Expression::ZeroValue(ty) if is_i32x2(module, ty) => Some([0, 0]),
+        naga::Expression::Constant(constant) => {
+            vector_from_global(module, module.constants[constant].init)
+        }
+        _ => None,
+    };
+
+    components.is_some_and(|[x, y]| (-8..=7).contains(&x) && (-8..=7).contains(&y))
 }
 
 fn entry_point_supports_fl9_dynamic_2d_texture_load_coordinate(
@@ -6470,6 +6695,8 @@ impl Interface {
                 info,
                 entry_point.stage,
             );
+            let fl9_texture_sample_bias_offset_binding =
+                entry_point_fl9_texture_sample_bias_offset_binding(module, entry_point, info);
             let unsupported_runtime_integer_semantics = !fl9_texture_load_dimensions_supported
                 && entry_point_uses_unsupported_integer_semantics(
                     module,
@@ -6477,6 +6704,7 @@ impl Interface {
                     entry_point,
                     info,
                     None,
+                    fl9_texture_sample_bias_offset_binding.map(|binding| binding.sample_expression),
                 );
             let frexp_fraction_only_runtime_integer_semantics =
                 unsupported_runtime_integer_semantics
@@ -6487,6 +6715,8 @@ impl Interface {
                             entry_point,
                             info,
                             Some(result),
+                            fl9_texture_sample_bias_offset_binding
+                                .map(|binding| binding.sample_expression),
                         )
                     });
             let mut ep = EntryPoint {
@@ -6521,6 +6751,7 @@ impl Interface {
                 fl9_texture_load_dynamic_coordinate_supported,
                 fl9_texture_load_3d_supported,
                 fl9_texture_load_dimensions_supported,
+                fl9_texture_sample_bias_offset_binding,
                 unsupported_runtime_integer_semantics,
                 frexp_fraction_only_runtime_integer_semantics,
                 unsupported_runtime_integer_indexing,
@@ -6806,6 +7037,18 @@ impl Interface {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
         Ok(entry_point.fl9_texture_load_binding)
+    }
+
+    pub(crate) fn fl9_texture_sample_bias_offset_binding_used(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<Option<TextureSampleBiasOffsetBinding>, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.fl9_texture_sample_bias_offset_binding)
     }
 
     pub(crate) fn entry_point_uses_texture_sample_bias(
@@ -7237,9 +7480,14 @@ impl Interface {
         let Some(entry_point) = self.entry_points.get(&key) else {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
+        let offset_emulation_supported = stage == naga::ShaderStage::Fragment
+            && limits.fragment_texture_sample_bias_offset_2d_single_mip
+            && entry_point.fl9_texture_sample_bias_offset_binding.is_some();
         Ok(entry_point.texture_sample_biases.iter().any(|bias| {
             bias.analysis_incomplete
-                || (bias.has_offset && !limits.texture_sample_bias_offset)
+                || (bias.has_offset
+                    && !limits.texture_sample_bias_offset
+                    && !offset_emulation_supported)
                 || match bias.literal {
                     Some(value) => {
                         limits.max_texture_sample_bias != u32::MAX
@@ -8988,6 +9236,185 @@ mod tests {
         assert!(interface
             .entry_point_uses_texture_sample_bias(naga::ShaderStage::Fragment, "missing")
             .is_err());
+    }
+
+    #[test]
+    fn fl9_texture_sample_bias_offset_proof_is_entry_point_specific() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(1) @binding(17) var image: texture_2d<f32>;
+            @group(1) @binding(42) var smp: sampler;
+            const NAMED_OFFSET: vec2i = vec2i(1, 0);
+            fn offset_helper(uv: vec2f) -> vec4f {
+                return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0));
+            }
+            @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0));
+            }
+            @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return offset_helper(uv);
+            }
+            @fragment fn multiple(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let first = textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0));
+                let second = textureSampleBias(image, smp, uv, 1.0, vec2i(0, 1));
+                return first + second;
+            }
+            @fragment fn no_offset(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, 1.0);
+            }
+            @fragment fn named_constant(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, 1.0, NAMED_OFFSET);
+            }
+            @fragment fn offset_too_positive(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, 1.0, vec2i(8, 0));
+            }
+            @fragment fn offset_too_negative(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, smp, uv, 1.0, vec2i(0, -9));
+            }
+            "#,
+        )
+        .expect("parse FL9 textureSampleBias offset proof module");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate FL9 textureSampleBias offset proof module");
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let limits = wgt::DownlevelLimits {
+            max_texture_sample_bias: 3,
+            texture_sample_bias_dynamic: false,
+            texture_sample_bias_offset: false,
+            fragment_texture_sample_bias_offset_2d_single_mip: true,
+            ..Default::default()
+        };
+
+        let proof = interface
+            .fl9_texture_sample_bias_offset_binding_used(naga::ShaderStage::Fragment, "direct")
+            .unwrap()
+            .unwrap();
+        assert_eq!((proof.group, proof.binding), (1, 17));
+        assert!(matches!(
+            module.entry_points[0].function.expressions[proof.sample_expression],
+            naga::Expression::ImageSample {
+                level: naga::SampleLevel::Bias(_),
+                offset: Some(_),
+                ..
+            }
+        ));
+        let restricted_integer_limits = wgt::DownlevelLimits {
+            runtime_integer_shader_operations: false,
+            ..limits
+        };
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "direct",
+                &restricted_integer_limits,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "offset_too_positive",
+                &restricted_integer_limits,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_bias(
+                naga::ShaderStage::Fragment,
+                "direct",
+                &limits,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_bias(
+                naga::ShaderStage::Fragment,
+                "named_constant",
+                &limits,
+            )
+            .unwrap());
+        for entry in ["offset_too_positive", "offset_too_negative"] {
+            assert!(interface
+                .entry_point_uses_unsupported_texture_sample_bias(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &limits,
+                )
+                .unwrap());
+        }
+        assert!(interface
+            .entry_point_uses_unsupported_texture_sample_bias(
+                naga::ShaderStage::Fragment,
+                "helper",
+                &limits,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_texture_sample_bias(
+                naga::ShaderStage::Fragment,
+                "multiple",
+                &limits,
+            )
+            .unwrap());
+        assert_eq!(
+            interface
+                .fl9_texture_sample_bias_offset_binding_used(
+                    naga::ShaderStage::Fragment,
+                    "no_offset",
+                )
+                .unwrap(),
+            None
+        );
+        let mut disabled = limits;
+        disabled.fragment_texture_sample_bias_offset_2d_single_mip = false;
+        assert!(interface
+            .entry_point_uses_unsupported_texture_sample_bias(
+                naga::ShaderStage::Fragment,
+                "direct",
+                &disabled,
+            )
+            .unwrap());
+
+        let pipeline_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(1) @binding(17) var image: texture_2d<f32>;
+            @group(1) @binding(42) var image_sampler: sampler;
+            struct VertexOutput {
+                @builtin(position) position: vec4f,
+                @location(0) uv: vec2f,
+            }
+            @vertex fn vs(@location(0) position: vec2f) -> VertexOutput {
+                return VertexOutput(
+                    vec4f(position, 0.0, 1.0),
+                    vec2f((position.x + 1.0) * 0.5, (1.0 - position.y) * 0.5),
+                );
+            }
+            @fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleBias(image, image_sampler, uv, 0.0, vec2i(1, 0));
+            }
+            "#,
+        )
+        .expect("parse pipeline-shaped FL9 textureSampleBias offset module");
+        let pipeline_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&pipeline_module)
+        .expect("validate pipeline-shaped FL9 textureSampleBias offset module");
+        let pipeline_interface =
+            Interface::new(&pipeline_module, &pipeline_info, wgt::Limits::defaults());
+        assert!(pipeline_interface
+            .fl9_texture_sample_bias_offset_binding_used(naga::ShaderStage::Fragment, "fs")
+            .unwrap()
+            .is_some());
+        assert!(!pipeline_interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "fs",
+                &restricted_integer_limits,
+            )
+            .unwrap());
     }
 
     #[test]

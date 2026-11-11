@@ -1,5 +1,31 @@
 # Direct3D 11 validation plan
 
+## BC texture readback and bounded sample-bias offsets — 2026-11-11
+
+Run in a Visual Studio x64 developer environment. The strict gate requires a
+physical adapter that creates at the explicitly requested FL9_1 level.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_subset -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_sample_bias_offset -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+On 2026-11-11, the two focused public targets each passed 1/1 on NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested and
+actual FL9_1, `software=false`. BC checks covered BC1/2/3 partial updates,
+raw padded readback, BC1 cube faces, and UNORM/sRGB-compatible block copies.
+The sample-offset test checked 64 pixels for a standalone 8x8 view and 64 for
+a 4x8 mip-1 view selected from a multi-mip parent. The strict private HAL
+suite passed 488/488 tests; the strict public D3D11 suite passed 126/126 test
+functions. These totals include CPU-only tests and must not be read as counts
+of GPU executions. The public suite's optional format skips remain skips, not
+hardware passes. Core, Naga and wgpu-types suites passed 124/124, 162/162 and
+113/113 respectively; the DX12 HAL check passed. See `FL9_1_PROGRESS.md` for
+the full commands and diagnostics.
+
 ## Storage-limit projection
 
 The HAL capability-model test checks that the FL9_1 projection reports zero

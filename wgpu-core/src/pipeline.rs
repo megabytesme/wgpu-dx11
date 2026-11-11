@@ -1263,6 +1263,8 @@ pub struct RenderPipeline {
     pub(crate) immediate_slots_required: naga::valid::ImmediateSlots,
     pub(crate) sampling_pairs: Vec<validation::SamplingPair>,
     pub(crate) fl9_texture_load_binding: Option<validation::TextureLoadBinding>,
+    pub(crate) fl9_texture_sample_bias_offset_binding:
+        Option<validation::TextureSampleBiasOffsetBinding>,
     pub(crate) requires_texture_sample_bias_compatible_samplers: bool,
     /// The `label` from the descriptor used to create the resource.
     pub(crate) label: String,
@@ -1353,6 +1355,7 @@ impl RenderPipeline {
             immediate_slots_required: naga::valid::ImmediateSlots::default(),
             sampling_pairs: Vec::new(),
             fl9_texture_load_binding: None,
+            fl9_texture_sample_bias_offset_binding: None,
             requires_texture_sample_bias_compatible_samplers: false,
             label,
             is_mesh: false,

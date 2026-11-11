@@ -2139,13 +2139,13 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     assert_eq!(depth24_core, depth_core);
     let bc1_core =
         global.adapter_get_texture_format_features(adapter_id, wgt::TextureFormat::Bc1RgbaUnorm);
-    assert_eq!(
+    assert_ne!(
         texture_to_buffer_mask
             & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(
                 wgt::TextureFormat::Bc1RgbaUnorm,
             ),
         0,
-        "BC1 GPU-copy support must not imply CPU readback"
+        "queried BC1 copy support plus the ordered CPU shadow enables readback"
     );
     assert_ne!(
         texture_to_buffer_mask
@@ -7397,18 +7397,15 @@ fn render_triangle(
             )
             .expect("record BC1 texture-to-texture copy");
 
-        let (invalid_encoder, error) = global.device_create_command_encoder(
+        let (bc_readback_encoder, error) = global.device_create_command_encoder(
             device,
             &wgt::CommandEncoderDescriptor::default(),
             None,
         );
-        assert!(
-            error.is_none(),
-            "BC1 readback validation encoder: {error:?}"
-        );
+        assert!(error.is_none(), "BC1 readback encoder: {error:?}");
         global
             .command_encoder_copy_texture_to_buffer(
-                invalid_encoder,
+                bc_readback_encoder,
                 &wgt::TexelCopyTextureInfo {
                     texture: sampled,
                     mip_level: 0,
@@ -7425,25 +7422,17 @@ fn render_triangle(
                 },
                 &sample_extent,
             )
-            .expect("record BC1 readback for deferred validation");
-        let (invalid_command, error) = global.command_encoder_finish(
-            invalid_encoder,
+            .expect("record BC1 shadow-backed readback");
+        let (bc_readback_command, error) = global.command_encoder_finish(
+            bc_readback_encoder,
             &wgt::CommandBufferDescriptor::default(),
             None,
         );
-        assert!(
-            matches!(
-                error.as_ref(),
-                Some((_, crate::command::CommandEncoderError::Transfer(
-                    crate::command::TransferError::UnsupportedTextureToBufferFormat(format)
-                ))) if *format == wgt::TextureFormat::Bc1RgbaUnorm
-            ),
-            "BC1 texture-to-buffer readback must fail before HAL: {error:?}"
-        );
-        global.command_buffer_drop(invalid_command);
-        global.command_encoder_drop(invalid_encoder);
+        assert!(error.is_none(), "BC1 shadow-backed readback: {error:?}");
+        global.command_buffer_drop(bc_readback_command);
+        global.command_encoder_drop(bc_readback_encoder);
         std::println!(
-            "PASS: BC1 GPU copy is allowed while texture-to-buffer readback is rejected by core"
+            "PASS: BC1 GPU copies and shadow-backed texture-to-buffer readback are accepted"
         );
     }
     if let Some((green, blue, _)) = render_mip_views {

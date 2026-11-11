@@ -696,7 +696,7 @@ impl CommandBuffer {
                     NativeCommand::BufferToTexture3D(copy) => copy.execute(context)?,
                     NativeCommand::Texture3DToBuffer(copy) => copy.execute(context)?,
                     NativeCommand::TextureToBuffer(copy) => copy.execute(context)?,
-                    NativeCommand::TextureToTexture(copy) => copy.execute(context),
+                    NativeCommand::TextureToTexture(copy) => copy.execute(context)?,
                     #[cfg(test)]
                     NativeCommand::InjectedFailure => {
                         return Err(Error::from_hresult(E_FAIL));
@@ -891,7 +891,8 @@ impl CommandBuffer {
                     } => {
                         let constants = match kind {
                             super::hal_shader::Fl9TextureEmulationKind::Load
-                            | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions => [
+                            | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions
+                            | super::hal_shader::Fl9TextureEmulationKind::SampleBiasOffset => [
                                 *width as f32,
                                 *height as f32,
                                 1.0 / *width as f32,

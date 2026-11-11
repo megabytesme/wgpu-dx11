@@ -654,6 +654,28 @@ impl crate::Device for Device {
                 .map_err(device_error)?
         };
         texture.logical_format = Some(desc.format);
+        if desc.usage.contains(wgt::TextureUses::COPY_SRC)
+            && matches!(
+                desc.format,
+                wgt::TextureFormat::Bc1RgbaUnorm
+                    | wgt::TextureFormat::Bc2RgbaUnorm
+                    | wgt::TextureFormat::Bc3RgbaUnorm
+                    | wgt::TextureFormat::Bc1RgbaUnormSrgb
+                    | wgt::TextureFormat::Bc2RgbaUnormSrgb
+                    | wgt::TextureFormat::Bc3RgbaUnormSrgb
+            )
+        {
+            texture.bc_shadow = Some(
+                super::texture::Texture2DShadow::zeroed(
+                    desc.size.width,
+                    desc.size.height,
+                    desc.size.depth_or_array_layers,
+                    desc.mip_level_count,
+                    texture.format,
+                )
+                .map_err(device_error)?,
+            );
+        }
         if desc.sample_count > 1 {
             self.native
                 .clear_multisampled_color_texture(&texture)

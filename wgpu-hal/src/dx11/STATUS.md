@@ -65,6 +65,31 @@ translation and FXC path without adding a backend capability or broadening the
 shader contract.
 # Direct3D 11 backend status
 
+## BC readback and fragment sample-bias offset — 2026-11-11
+
+BC1/BC2/BC3 `COPY_SRC` now has a narrow texture-to-buffer path backed by an
+execution-ordered CPU shadow. Direct writes, mapped buffer uploads and
+texture-region copies update the shadow at their command replay position;
+readback copies the raw compressed block bytes into the requested destination
+layout. This avoids the FL9_x-prohibited GPU copy from shader-resource-only BC
+textures, but duplicates compressed storage on the CPU and depends on every
+future write path maintaining the mirror. Strict FL9_1 public tests cover
+padded readback, offsets, cube faces and compatible UNORM/sRGB copies.
+
+Core and the private HAL also support the bounded direct fragment
+`textureSampleBias` texel-offset subset. The view must be 2D and expose one
+mip, but may select one mip from a multi-mip parent texture. HLSL applies the
+constant offset using that selected view's dimensions. Strict public readback
+passed for standalone 8x8 and selected 4x8 mip-1 views. Arbitrary offsets,
+helper-contained offsets and other texture shapes remain rejected.
+
+The sample-bias audit found and fixed a Core/HAL mismatch: Core's legal
+single-mip view of a multi-mip parent was previously rejected because the HAL
+checked the parent mip count instead of the view's mip range. The strict
+multi-mip-parent case now exercises the corrected boundary. Hardware results
+are limited to the RTX 3090 Ti at requested/actual FL9_1 and do not represent
+legacy-device verification.
+
 Recent public strict-hardware checks verified partial initialization of BC1,
 BC2 and BC3 textures (all 96 sampled pixels) and WGSL `determinant` for mat2,
 mat3 and mat4 in both vertex and fragment stages (768 readback pixels). All

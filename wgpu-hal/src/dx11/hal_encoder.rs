@@ -207,18 +207,23 @@ impl RenderState {
         }
         let texture = bound.resources.textures.get(local)?;
         let info = *bound.resources.sampling.textures.get(local)?;
-        let single_mip = matches!(
+        let single_mip_resource = matches!(
             load.kind,
             super::hal_shader::Fl9TextureEmulationKind::Load
                 | super::hal_shader::Fl9TextureEmulationKind::Load3D
                 | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions
                 | super::hal_shader::Fl9TextureEmulationKind::BaseClamp
         );
+        let single_mip_view = matches!(
+            load.kind,
+            super::hal_shader::Fl9TextureEmulationKind::SampleBiasOffset
+        );
         let rgba8_load = matches!(
             load.kind,
             super::hal_shader::Fl9TextureEmulationKind::Load
                 | super::hal_shader::Fl9TextureEmulationKind::Load3D
                 | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions
+                | super::hal_shader::Fl9TextureEmulationKind::SampleBiasOffset
         );
         let expected_dimension = match load.dimension {
             naga::ImageDimension::D2 => wgt::TextureViewDimension::D2,
@@ -232,9 +237,13 @@ impl RenderState {
             && (!rgba8_load || texture.logical_format == Some(wgt::TextureFormat::Rgba8Unorm))
             && texture.logical_format.is_some()
             && texture.sample_count == 1
-            && (!single_mip || texture.mip_count == 1)
+            && (!single_mip_resource || texture.mip_count == 1)
             && !texture.depth
-            && info.mip_levels == texture.mip_count
+            && (if single_mip_view {
+                info.mip_levels == 1
+            } else {
+                info.mip_levels == texture.mip_count
+            })
             && info.mip_levels != 0
             && info.size[0] != 0
             && info.size[1] != 0

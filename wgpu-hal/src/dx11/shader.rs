@@ -51,6 +51,7 @@ pub(super) struct Fl9ShaderInputOptions {
     pub texture_num_levels_binding: Option<naga::ResourceBinding>,
     pub texture_num_levels_helper: bool,
     pub texture_base_clamp_binding: Option<naga::ResourceBinding>,
+    pub texture_sample_bias_offset_binding: Option<naga::ResourceBinding>,
 }
 
 /// The compiler HRESULT and any diagnostic text returned by FXC.
@@ -394,6 +395,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         input_options.texture_dimensions_3d_binding,
         input_options.texture_num_levels_binding,
         input_options.texture_base_clamp_binding,
+        input_options.texture_sample_bias_offset_binding,
     ];
     let combined_load_dimensions = matches!(
         (
@@ -403,7 +405,8 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         (Some(load), Some(dimensions)) if load == dimensions
     ) && input_options.texture_dimensions_3d_binding.is_none()
         && input_options.texture_num_levels_binding.is_none()
-        && input_options.texture_base_clamp_binding.is_none();
+        && input_options.texture_base_clamp_binding.is_none()
+        && input_options.texture_sample_bias_offset_binding.is_none();
     if proof_bindings.into_iter().filter(Option::is_some).count() > 1 && !combined_load_dimensions {
         return Err(NagaCompileError::InvalidBindingMapping);
     }
@@ -413,6 +416,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         .or(input_options.texture_dimensions_3d_binding)
         .or(input_options.texture_num_levels_binding)
         .or(input_options.texture_base_clamp_binding)
+        .or(input_options.texture_sample_bias_offset_binding)
     {
         if stage != naga::ShaderStage::Fragment {
             return Err(NagaCompileError::InvalidBindingMapping);
@@ -449,6 +453,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         fl9_texture_dimensions_3d_proof: input_options.texture_dimensions_3d_binding,
         fl9_texture_num_levels_proof: input_options.texture_num_levels_binding,
         fl9_texture_base_clamp_proof: input_options.texture_base_clamp_binding,
+        fl9_texture_sample_bias_offset_proof: input_options.texture_sample_bias_offset_binding,
         fl9_uniform_index_arguments: uniform_index_arguments.to_vec(),
         signed_function_restrict_indexing: matches!(
             profile,
@@ -1757,6 +1762,40 @@ mod tests {
             &bindings,
         )
         .expect("the SM5 control profile accepts the same static biased offset");
+
+        let input_options = Fl9ShaderInputOptions {
+            texture_sample_bias_offset_binding: Some(naga::ResourceBinding {
+                group: 0,
+                binding: 0,
+            }),
+            ..Default::default()
+        };
+        let (translated, _) = translate_naga_with_viewport_and_fl9_inputs(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            input_options,
+        )
+        .expect("rewrite the static offset into normalized coordinates");
+        assert!(translated.contains("naga_fl9_load_size.zw"), "{translated}");
+        assert!(
+            !translated.contains(", 1.0, int2("),
+            "the level-9 shader must not retain the unsupported native offset: {translated}"
+        );
+        let code = compile_naga_with_viewport_and_fl9_inputs(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            input_options,
+        )
+        .expect("FXC compiles the emulated sample-bias offset at FL9_1");
+        assert!(code.starts_with(b"DXBC"));
     }
 
     #[test]

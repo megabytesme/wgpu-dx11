@@ -611,6 +611,39 @@ impl Binder {
         }
     }
 
+    pub(super) fn check_fl9_texture_sample_bias_offset_views(
+        &self,
+        pipeline: &RenderPipeline,
+    ) -> Result<(), DrawError> {
+        let Some(binding) = pipeline.fl9_texture_sample_bias_offset_binding else {
+            return Ok(());
+        };
+
+        let group = self
+            .list_valid()
+            .find_map(|(index, group, _)| (index == binding.group as usize).then_some(group))
+            .ok_or(DrawError::MissingTextureSampleBiasOffsetBindingMetadata {
+                group: binding.group,
+                binding: binding.binding,
+            })?;
+        let compatibility = group
+            .fl9_texture_load_compatible
+            .get(&binding.binding)
+            .ok_or(DrawError::MissingTextureSampleBiasOffsetBindingMetadata {
+                group: binding.group,
+                binding: binding.binding,
+            })?;
+
+        if compatibility.len() == 1 && compatibility[0].d2 {
+            Ok(())
+        } else {
+            Err(DrawError::IncompatibleTextureSampleBiasOffsetView {
+                group: binding.group,
+                binding: binding.binding,
+            })
+        }
+    }
+
     pub(super) fn check_texture_sample_bias_samplers(
         &self,
         pipeline: &RenderPipeline,

@@ -266,6 +266,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 texture_sample_bias_dynamic: true,
                 fragment_texture_sample_bias_literal_select: false,
                 texture_sample_bias_offset: true,
+                fragment_texture_sample_bias_offset_2d_single_mip: false,
                 texture_sample_bias_requires_compatible_sampler: false,
                 fragment_derivatives: true,
                 vertex_format_mask: wgt::DownlevelLimits::webgpu_vertex_format_mask(),

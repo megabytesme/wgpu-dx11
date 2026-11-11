@@ -96,8 +96,14 @@ pub enum DrawError {
     MissingSamplingBindingMetadata { group: u32, binding: u32 },
     #[error("TextureLoad binding metadata is missing for group {group} binding {binding}")]
     MissingTextureLoadBindingMetadata { group: u32, binding: u32 },
+    #[error(
+        "TextureSampleBias offset binding metadata is missing for group {group} binding {binding}"
+    )]
+    MissingTextureSampleBiasOffsetBindingMetadata { group: u32, binding: u32 },
     #[error("The restricted FL9_1 textureLoad path requires a single-mip, single-sample Rgba8Unorm view at group {group} binding {binding}")]
     IncompatibleTextureLoadView { group: u32, binding: u32 },
+    #[error("The restricted FL9 textureSampleBias offset path requires a single-mip, single-sample Rgba8Unorm 2D view at group {group} binding {binding}")]
+    IncompatibleTextureSampleBiasOffsetView { group: u32, binding: u32 },
 }
 
 impl WebGpuError for DrawError {

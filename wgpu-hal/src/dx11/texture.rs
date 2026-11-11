@@ -102,6 +102,7 @@ pub struct NativeTexture {
     sample_count: u32,
     pub(super) usage: wgt::TextureUses,
     pub(super) cpu_shadow: Option<Arc<Texture3DShadow>>,
+    pub(super) bc_shadow: Option<Arc<Texture2DShadow>>,
 }
 
 #[derive(Debug)]
@@ -266,6 +267,262 @@ impl Texture3DShadow {
     }
 }
 
+#[derive(Debug)]
+pub(super) struct Texture2DShadow {
+    format: DXGI_FORMAT,
+    layers: u32,
+    mip_levels: u32,
+    block: TextureBlockLayout,
+    subresources: Mutex<Vec<Texture2DShadowSubresource>>,
+}
+
+#[derive(Debug)]
+struct Texture2DShadowSubresource {
+    width: u32,
+    height: u32,
+    bytes: Vec<u8>,
+}
+
+impl Texture2DShadow {
+    pub(super) fn zeroed(
+        width: u32,
+        height: u32,
+        layers: u32,
+        mip_levels: u32,
+        format: DXGI_FORMAT,
+    ) -> Result<Arc<Self>> {
+        if width == 0
+            || height == 0
+            || layers == 0
+            || mip_levels == 0
+            || mip_levels > width.max(height).ilog2() + 1
+            || !matches!(
+                format,
+                DXGI_FORMAT_BC1_UNORM
+                    | DXGI_FORMAT_BC1_UNORM_SRGB
+                    | DXGI_FORMAT_BC2_UNORM
+                    | DXGI_FORMAT_BC2_UNORM_SRGB
+                    | DXGI_FORMAT_BC3_UNORM
+                    | DXGI_FORMAT_BC3_UNORM_SRGB
+            )
+        {
+            return Err(invalid());
+        }
+        let block = format_block_layout(format)?;
+        if width < block.width
+            || height < block.height
+            || !width.is_multiple_of(block.width)
+            || !height.is_multiple_of(block.height)
+        {
+            return Err(invalid());
+        }
+        let subresource_count = layers.checked_mul(mip_levels).ok_or_else(invalid)?;
+        let mut subresources = Vec::new();
+        subresources
+            .try_reserve_exact(usize::try_from(subresource_count).map_err(|_| invalid())?)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        for _layer in 0..layers {
+            for mip in 0..mip_levels {
+                let mip_width = (width >> mip).max(1);
+                let mip_height = (height >> mip).max(1);
+                let byte_count = block.byte_len(mip_width, mip_height)?;
+                let mut bytes = Vec::new();
+                bytes
+                    .try_reserve_exact(byte_count)
+                    .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                bytes.resize(byte_count, 0);
+                subresources.push(Texture2DShadowSubresource {
+                    width: mip_width,
+                    height: mip_height,
+                    bytes,
+                });
+            }
+        }
+        Ok(Arc::new(Self {
+            format,
+            layers,
+            mip_levels,
+            block,
+            subresources: Mutex::new(subresources),
+        }))
+    }
+
+    pub(super) fn write_region(
+        &self,
+        mip: u32,
+        layer: u32,
+        origin: [u32; 2],
+        extent: [u32; 2],
+        row_pitch: u32,
+        source: &[u8],
+    ) -> Result<()> {
+        let mut subresources = self.subresources.lock();
+        let index = self.subresource_index(mip, layer)?;
+        let target = subresources.get_mut(index).ok_or_else(invalid)?;
+        let layout = self.region_layout(target, origin, extent)?;
+        if row_pitch < layout.row_bytes || !row_pitch.is_multiple_of(self.block.bytes) {
+            return Err(invalid());
+        }
+        let row_pitch = usize::try_from(row_pitch).map_err(|_| invalid())?;
+        let required = (layout.rows as usize - 1)
+            .checked_mul(row_pitch)
+            .and_then(|offset| offset.checked_add(layout.row_bytes as usize))
+            .ok_or_else(invalid)?;
+        if source.len() < required {
+            return Err(invalid());
+        }
+        let target_row_pitch = usize::try_from(layout.target_row_pitch).map_err(|_| invalid())?;
+        let target_offset = usize::try_from(layout.target_offset).map_err(|_| invalid())?;
+        let row_bytes = layout.row_bytes as usize;
+        for row in 0..layout.rows as usize {
+            let source_start = row.checked_mul(row_pitch).ok_or_else(invalid)?;
+            let target_start = target_offset
+                .checked_add(row.checked_mul(target_row_pitch).ok_or_else(invalid)?)
+                .ok_or_else(invalid)?;
+            let source_end = source_start.checked_add(row_bytes).ok_or_else(invalid)?;
+            let target_end = target_start.checked_add(row_bytes).ok_or_else(invalid)?;
+            let source_row = source.get(source_start..source_end).ok_or_else(invalid)?;
+            let target_row = target
+                .bytes
+                .get_mut(target_start..target_end)
+                .ok_or_else(invalid)?;
+            target_row.copy_from_slice(source_row);
+        }
+        Ok(())
+    }
+
+    pub(super) fn read_region(
+        &self,
+        mip: u32,
+        layer: u32,
+        origin: [u32; 2],
+        extent: [u32; 2],
+    ) -> Result<Vec<u8>> {
+        let subresources = self.subresources.lock();
+        let index = self.subresource_index(mip, layer)?;
+        let source = subresources.get(index).ok_or_else(invalid)?;
+        let layout = self.region_layout(source, origin, extent)?;
+        let row_bytes = usize::try_from(layout.row_bytes).map_err(|_| invalid())?;
+        let output_size = row_bytes
+            .checked_mul(layout.rows as usize)
+            .ok_or_else(invalid)?;
+        let mut output = Vec::new();
+        output
+            .try_reserve_exact(output_size)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        output.resize(output_size, 0);
+        let source_row_pitch = usize::try_from(layout.target_row_pitch).map_err(|_| invalid())?;
+        let source_offset = usize::try_from(layout.target_offset).map_err(|_| invalid())?;
+        for row in 0..layout.rows as usize {
+            let source_start = source_offset
+                .checked_add(row.checked_mul(source_row_pitch).ok_or_else(invalid)?)
+                .ok_or_else(invalid)?;
+            let output_start = row.checked_mul(row_bytes).ok_or_else(invalid)?;
+            let source_end = source_start.checked_add(row_bytes).ok_or_else(invalid)?;
+            let output_end = output_start.checked_add(row_bytes).ok_or_else(invalid)?;
+            let source_row = source
+                .bytes
+                .get(source_start..source_end)
+                .ok_or_else(invalid)?;
+            let output_row = output
+                .get_mut(output_start..output_end)
+                .ok_or_else(invalid)?;
+            output_row.copy_from_slice(source_row);
+        }
+        Ok(output)
+    }
+
+    pub(super) fn copy_region_from(
+        &self,
+        source: &Self,
+        src_mip: u32,
+        src_layer: u32,
+        src_origin: [u32; 2],
+        dst_mip: u32,
+        dst_layer: u32,
+        dst_origin: [u32; 2],
+        extent: [u32; 2],
+    ) -> Result<()> {
+        if !texture_formats_copy_compatible(source.format, self.format)
+            || (core::ptr::eq(self, source) && src_mip == dst_mip && src_layer == dst_layer)
+        {
+            return Err(invalid());
+        }
+        let packed = source.read_region(src_mip, src_layer, src_origin, extent)?;
+        let row_pitch = self.block.row_bytes(extent[0])?;
+        self.write_region(dst_mip, dst_layer, dst_origin, extent, row_pitch, &packed)
+    }
+
+    fn subresource_index(&self, mip: u32, layer: u32) -> Result<usize> {
+        if mip >= self.mip_levels || layer >= self.layers {
+            return Err(invalid());
+        }
+        let index = layer
+            .checked_mul(self.mip_levels)
+            .and_then(|value| value.checked_add(mip))
+            .ok_or_else(invalid)?;
+        usize::try_from(index).map_err(|_| invalid())
+    }
+
+    fn region_layout(
+        &self,
+        subresource: &Texture2DShadowSubresource,
+        origin: [u32; 2],
+        extent: [u32; 2],
+    ) -> Result<Texture2DShadowRegionLayout> {
+        let right = origin[0].checked_add(extent[0]).ok_or_else(invalid)?;
+        let bottom = origin[1].checked_add(extent[1]).ok_or_else(invalid)?;
+        if extent.contains(&0)
+            || right > subresource.width
+            || bottom > subresource.height
+            || !origin[0].is_multiple_of(self.block.width)
+            || !origin[1].is_multiple_of(self.block.height)
+            || !extent[0].is_multiple_of(self.block.width)
+            || !extent[1].is_multiple_of(self.block.height)
+        {
+            return Err(invalid());
+        }
+        let row_bytes = self.block.row_bytes(extent[0])?;
+        let rows = self.block.height_blocks(extent[1]);
+        let target_row_pitch = self.block.row_bytes(subresource.width)?;
+        let target_offset = (origin[1] / self.block.height)
+            .checked_mul(target_row_pitch)
+            .and_then(|offset| {
+                (origin[0] / self.block.width)
+                    .checked_mul(self.block.bytes)
+                    .and_then(|x_offset| offset.checked_add(x_offset))
+            })
+            .ok_or_else(invalid)?;
+        let final_target_end = usize::try_from(target_offset)
+            .map_err(|_| invalid())?
+            .checked_add(
+                usize::try_from(rows - 1)
+                    .map_err(|_| invalid())?
+                    .checked_mul(usize::try_from(target_row_pitch).map_err(|_| invalid())?)
+                    .ok_or_else(invalid)?,
+            )
+            .and_then(|offset| offset.checked_add(row_bytes as usize))
+            .ok_or_else(invalid)?;
+        if final_target_end > subresource.bytes.len() {
+            return Err(invalid());
+        }
+        Ok(Texture2DShadowRegionLayout {
+            row_bytes,
+            rows,
+            target_row_pitch,
+            target_offset,
+        })
+    }
+}
+
+#[derive(Clone, Copy)]
+struct Texture2DShadowRegionLayout {
+    row_bytes: u32,
+    rows: u32,
+    target_row_pitch: u32,
+    target_offset: u32,
+}
+
 fn volume_byte_count(width: u32, height: u32, depth: u32) -> Result<usize> {
     (width as usize)
         .checked_mul(height as usize)
@@ -309,6 +566,7 @@ impl NativeTexture {
             sample_count: 1,
             usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::PRESENT,
             cpu_shadow: None,
+            bc_shadow: None,
         })
     }
 
@@ -519,6 +777,26 @@ pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLay
     }
 }
 
+pub(super) fn texture_formats_copy_compatible(
+    source: DXGI_FORMAT,
+    destination: DXGI_FORMAT,
+) -> bool {
+    source == destination
+        || matches!(
+            (source, destination),
+            (DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+                | (DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8B8A8_UNORM)
+                | (DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB)
+                | (DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_B8G8R8A8_UNORM)
+                | (DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_BC1_UNORM_SRGB)
+                | (DXGI_FORMAT_BC1_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM)
+                | (DXGI_FORMAT_BC2_UNORM, DXGI_FORMAT_BC2_UNORM_SRGB)
+                | (DXGI_FORMAT_BC2_UNORM_SRGB, DXGI_FORMAT_BC2_UNORM)
+                | (DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB)
+                | (DXGI_FORMAT_BC3_UNORM_SRGB, DXGI_FORMAT_BC3_UNORM)
+        )
+}
+
 pub(super) fn subresource_layout(
     texture: &NativeTexture,
     mip: u32,
@@ -591,6 +869,7 @@ impl NativeDevice {
             sample_count: 1,
             usage: wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE,
             cpu_shadow: None,
+            bc_shadow: None,
         })
     }
 
@@ -705,6 +984,7 @@ impl NativeDevice {
             sample_count,
             usage: wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE,
             cpu_shadow: None,
+            bc_shadow: None,
         })
     }
 
@@ -1367,6 +1647,7 @@ impl NativeDevice {
                     }
             },
             cpu_shadow: None,
+            bc_shadow: None,
         })
     }
 
@@ -1982,16 +2263,13 @@ impl NativeDevice {
             bottom,
             back: 1,
         };
+        let raw = texture.raw.as_2d()?;
         let context = self.immediate_context();
+        if let Some(shadow) = &texture.bc_shadow {
+            shadow.write_region(mip, layer, origin, extent, row_pitch, bytes)?;
+        }
         unsafe {
-            context.UpdateSubresource(
-                texture.raw.as_2d()?,
-                index,
-                Some(&area),
-                bytes.as_ptr().cast(),
-                row_pitch,
-                0,
-            );
+            context.UpdateSubresource(raw, index, Some(&area), bytes.as_ptr().cast(), row_pitch, 0);
         }
         Ok(())
     }
@@ -2282,6 +2560,140 @@ mod tests {
             .write_region(0, [3, 0, 0], [2, 1, 1], 8, 8, &[0; 8])
             .is_err());
         assert!(shadow.read_region(0, [0, 0, 3], [1, 1, 2]).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn bc_shadow_rows_use_format_specific_block_sizes() -> Result<()> {
+        for (format, bytes_per_block) in [
+            (DXGI_FORMAT_BC1_UNORM, 8),
+            (DXGI_FORMAT_BC2_UNORM, 16),
+            (DXGI_FORMAT_BC3_UNORM, 16),
+        ] {
+            let shadow = Texture2DShadow::zeroed(8, 8, 1, 1, format)?;
+            let row_bytes = bytes_per_block * 2;
+            let row_pitch = row_bytes + bytes_per_block;
+            let mut source = alloc::vec![0xee; (row_pitch + row_bytes) as usize];
+            source[..row_bytes as usize].fill(0x11);
+            source[row_pitch as usize..(row_pitch + row_bytes) as usize].fill(0x22);
+
+            shadow.write_region(0, 0, [0, 0], [8, 8], row_pitch, &source)?;
+            let readback = shadow.read_region(0, 0, [0, 0], [8, 8])?;
+            let mut expected = alloc::vec![0x11; row_bytes as usize];
+            expected.extend_from_slice(&alloc::vec![0x22; row_bytes as usize]);
+            assert_eq!(readback, expected);
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn bc_shadow_keeps_mips_and_layers_separate() -> Result<()> {
+        let shadow = Texture2DShadow::zeroed(16, 8, 2, 2, DXGI_FORMAT_BC3_UNORM)?;
+        shadow.write_region(0, 0, [0, 0], [16, 8], 64, &[0x11; 128])?;
+        shadow.write_region(0, 1, [0, 0], [16, 8], 64, &[0x22; 128])?;
+        shadow.write_region(1, 1, [0, 0], [8, 4], 32, &[0x33; 32])?;
+
+        assert_eq!(
+            shadow.read_region(0, 0, [0, 0], [16, 8])?.as_slice(),
+            &[0x11; 128]
+        );
+        assert_eq!(
+            shadow.read_region(0, 1, [0, 0], [16, 8])?.as_slice(),
+            &[0x22; 128]
+        );
+        assert_eq!(
+            shadow.read_region(1, 1, [0, 0], [8, 4])?.as_slice(),
+            &[0x33; 32]
+        );
+        assert_eq!(
+            shadow.read_region(1, 0, [0, 0], [8, 4])?.as_slice(),
+            &[0; 32]
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn bc_shadow_rejects_invalid_shapes_regions_and_pitches() -> Result<()> {
+        assert!(Texture2DShadow::zeroed(0, 8, 1, 1, DXGI_FORMAT_BC1_UNORM).is_err());
+        assert!(Texture2DShadow::zeroed(6, 8, 1, 1, DXGI_FORMAT_BC1_UNORM).is_err());
+        assert!(Texture2DShadow::zeroed(8, 8, 0, 1, DXGI_FORMAT_BC1_UNORM).is_err());
+        assert!(Texture2DShadow::zeroed(8, 8, 1, 1, DXGI_FORMAT_R8_UNORM).is_err());
+        assert!(Texture2DShadow::zeroed(8, 8, u32::MAX, 2, DXGI_FORMAT_BC1_UNORM).is_err());
+
+        let shadow = Texture2DShadow::zeroed(8, 8, 1, 1, DXGI_FORMAT_BC1_UNORM)?;
+        assert!(shadow
+            .write_region(1, 0, [0, 0], [4, 4], 8, &[0; 8])
+            .is_err());
+        assert!(shadow
+            .write_region(0, 1, [0, 0], [4, 4], 8, &[0; 8])
+            .is_err());
+        assert!(shadow
+            .write_region(0, 0, [1, 0], [4, 4], 8, &[0; 8])
+            .is_err());
+        assert!(shadow
+            .write_region(0, 0, [0, 0], [2, 4], 8, &[0; 8])
+            .is_err());
+        assert!(shadow
+            .write_region(0, 0, [8, 0], [4, 4], 8, &[0; 8])
+            .is_err());
+        assert!(shadow
+            .write_region(0, 0, [u32::MAX, 0], [4, 4], 8, &[0; 8])
+            .is_err());
+        assert!(shadow
+            .write_region(0, 0, [0, 0], [4, 4], 4, &[0; 8])
+            .is_err());
+        assert!(shadow
+            .write_region(0, 0, [0, 0], [4, 4], 9, &[0; 8])
+            .is_err());
+        assert!(shadow
+            .write_region(0, 0, [0, 0], [8, 8], 16, &[0; 31])
+            .is_err());
+        assert!(shadow.read_region(0, 0, [0, 0], [0, 4]).is_err());
+        assert!(shadow.read_region(0, 0, [8, 8], [4, 4]).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn bc_shadow_same_arc_face_copy_uses_a_source_snapshot() -> Result<()> {
+        let shadow = Texture2DShadow::zeroed(8, 8, 6, 1, DXGI_FORMAT_BC1_UNORM)?;
+        shadow.write_region(0, 0, [0, 0], [4, 8], 8, &[0x11; 16])?;
+        shadow.copy_region_from(&shadow, 0, 0, [0, 0], 0, 1, [4, 0], [4, 8])?;
+
+        assert_eq!(
+            shadow.read_region(0, 0, [0, 0], [4, 8])?.as_slice(),
+            &[0x11; 16]
+        );
+        assert_eq!(
+            shadow.read_region(0, 1, [4, 0], [4, 8])?.as_slice(),
+            &[0x11; 16]
+        );
+        assert_eq!(
+            shadow.read_region(0, 1, [0, 0], [4, 8])?.as_slice(),
+            &[0; 16]
+        );
+        assert!(shadow
+            .copy_region_from(&shadow, 0, 1, [0, 0], 0, 1, [4, 0], [4, 8])
+            .is_err());
+
+        let incompatible = Texture2DShadow::zeroed(8, 8, 1, 1, DXGI_FORMAT_BC3_UNORM)?;
+        assert!(incompatible
+            .copy_region_from(&shadow, 0, 0, [0, 0], 0, 0, [0, 0], [4, 4])
+            .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn bc_shadow_copies_srgb_and_unorm_views_as_raw_blocks() -> Result<()> {
+        let source = Texture2DShadow::zeroed(8, 8, 1, 1, DXGI_FORMAT_BC1_UNORM_SRGB)?;
+        let destination = Texture2DShadow::zeroed(8, 8, 1, 1, DXGI_FORMAT_BC1_UNORM)?;
+        let blocks = [0x12; 32];
+        source.write_region(0, 0, [0, 0], [8, 8], 16, &blocks)?;
+        destination.copy_region_from(&source, 0, 0, [0, 0], 0, 0, [0, 0], [8, 8])?;
+        assert_eq!(destination.read_region(0, 0, [0, 0], [8, 8])?, blocks);
+        assert!(!texture_formats_copy_compatible(
+            DXGI_FORMAT_BC1_UNORM,
+            DXGI_FORMAT_BC2_UNORM_SRGB
+        ));
         Ok(())
     }
 }

@@ -16077,3 +16077,75 @@ Feature checkpoint: `c75e82cef` (`dx11: bound FL9_1 fragment sample bias
 selection`). This slice extends only a narrow fragment shader subset; it does
 not make arbitrary WGSL bias expressions safe or establish historical-driver
 behavior.
+
+## BC readback and sample-bias texel offsets — 2026-11-11
+
+BC1/BC2/BC3 `COPY_SRC` now supports raw texture-to-buffer readback through an
+ordered CPU shadow. Shadows begin zeroed and are updated during queue replay
+for direct writes, buffer-to-texture uploads and texture-to-texture region
+copies. The readback path honors block rows, row padding and destination
+offsets. This is an explicit CPU fallback because FL9_x does not permit the
+direct GPU-to-CPU copy for these shader-resource-only BC textures. It duplicates
+compressed storage, and every future write path must mirror its updates.
+Strict public coverage includes partial updates, readback for BC1/2/3, BC1
+cube faces, and compatible UNORM/sRGB block copies; the test also samples GPU
+copy destinations. An initial test failure was an incorrect expected output
+quadrant under the test's oversized clamped UVs; the expected region was fixed,
+and final strict execution passed.
+
+Core and HAL now accept one bounded fragment `textureSampleBias` offset form:
+a direct selected-entry sample from a 2D single-mip view with a constant
+`i32x2` offset in the supported FL9_1 range. The HLSL backend emulates the
+offset by adding it in normalized coordinates using the selected view's
+dimensions. A multi-mip parent is allowed when the bound view selects exactly
+one mip. The HAL previously rejected that legal shape by checking the parent
+resource's mip count; it now checks the actual view range. Other offset
+shapes, helpers and arbitrary computed biases remain rejected. An initial HAL
+unit expectation still assumed all offsets failed; it was updated to compile
+the direct supported path and keep helper-contained offsets negative.
+
+Strict public tests passed for both additions on NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), with requested and actual FL9_1 and
+`software=false`. BC coverage verified partial block replacement, padded raw
+readback with offsets, six BC1 cube faces, and UNORM/sRGB-compatible copies.
+The sample-offset test verified 64 pixels for an 8x8 standalone view plus 64
+pixels for a 4x8 view of mip 1 from a multi-mip parent.
+
+Verification completed:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_subset -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_sample_bias_offset -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu-core --features wgsl --lib
+cargo +1.93.1 test --offline -j16 -p naga --lib
+cargo +1.93.1 test --offline -j16 -p wgpu-types --lib
+cargo +1.93.1 check --offline -j16 -p wgpu-hal --no-default-features --features dx12
+```
+
+Results: private HAL 488/488, public D3D11 126/126, Core 124/124, Naga
+162/162, and wgpu-types 113/113. These suite totals mix CPU-only and hardware
+tests; only the two focused strict targets and other explicit strict hardware
+cases count as device execution. The public suite reports optional format
+cases as skips, not passes. Core Clippy passed cleanly; HAL and public Clippy
+passed with existing unrelated HAL warnings. Formatting and `git diff
+--check` passed. The DX12 compile initially caught the new Naga option missing
+from the DX12 initializer; an explicit `None` was added and the check then
+passed. This is a software checkpoint only for the tested RTX; historical
+FL9_1 behavior and long-term CPU-shadow consistency on untested future write
+routes remain open.
+
+Two additional read-only audits checked shader/pipeline validation and
+texture/transfer/view/render-pass contracts after this slice. Neither found a
+second confirmed public-Core-valid request that the current FL9_1 projection
+allows but the reviewed HAL path rejects. The shader audit confirmed that
+explicit LOD, derivatives/gradients, vertex sampling and other known profile
+boundaries are gated. The resource audit confirmed the reviewed 3D view,
+copy, attachment-count, resolve and per-format-copy restrictions are gated.
+These scoped audits do not close the full contract audit; the next useful
+target should be a concrete application workload or an unreviewed API area.
+
+Implementation checkpoint: pending.
+The mission remains active.

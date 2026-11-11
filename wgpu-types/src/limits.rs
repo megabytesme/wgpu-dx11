@@ -1480,6 +1480,11 @@ pub struct DownlevelLimits {
     /// Whether `textureSampleBias` may specify a constant texel offset.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_sample_bias_offset: bool,
+    /// Whether a fragment entry point may use one direct constant-offset
+    /// `textureSampleBias` on a single-mip 2D float view, using the backend's
+    /// restricted FL9 offset emulation.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub fragment_texture_sample_bias_offset_2d_single_mip: bool,
     /// Whether `textureSampleBias` requires equal minification/magnification filters and anisotropy 1.
     #[cfg_attr(feature = "serde", serde(default))]
     pub texture_sample_bias_requires_compatible_sampler: bool,
@@ -1651,6 +1656,7 @@ impl Default for DownlevelLimits {
             texture_sample_bias_dynamic: true,
             fragment_texture_sample_bias_literal_select: false,
             texture_sample_bias_offset: true,
+            fragment_texture_sample_bias_offset_2d_single_mip: false,
             texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: true,
             vertex_format_mask: Self::webgpu_vertex_format_mask(),
@@ -1768,6 +1774,11 @@ impl DownlevelLimits {
             crate::TextureFormat::Rgba4Unorm => 1 << 12,
             crate::TextureFormat::Depth16Unorm => 1 << 13,
             crate::TextureFormat::Depth24PlusStencil8 => 1 << 14,
+            crate::TextureFormat::Bc1RgbaUnormSrgb => 1 << 15,
+            crate::TextureFormat::Bc2RgbaUnorm => 1 << 16,
+            crate::TextureFormat::Bc2RgbaUnormSrgb => 1 << 17,
+            crate::TextureFormat::Bc3RgbaUnorm => 1 << 18,
+            crate::TextureFormat::Bc3RgbaUnormSrgb => 1 << 19,
             _ => 0,
         }
     }
@@ -1935,6 +1946,8 @@ impl DownlevelLimits {
             && (!required.fragment_texture_sample_bias_literal_select
                 || self.fragment_texture_sample_bias_literal_select)
             && (!required.texture_sample_bias_offset || self.texture_sample_bias_offset)
+            && (!required.fragment_texture_sample_bias_offset_2d_single_mip
+                || self.fragment_texture_sample_bias_offset_2d_single_mip)
             && (!self.texture_sample_bias_requires_compatible_sampler
                 || required.texture_sample_bias_requires_compatible_sampler)
             && (!required.fragment_derivatives || self.fragment_derivatives)
@@ -2688,6 +2701,7 @@ mod tests {
             texture_sample_bias_dynamic: false,
             fragment_texture_sample_bias_literal_select: false,
             texture_sample_bias_offset: false,
+            fragment_texture_sample_bias_offset_2d_single_mip: false,
             texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
@@ -2771,6 +2785,7 @@ mod tests {
             texture_sample_bias_dynamic: false,
             fragment_texture_sample_bias_literal_select: false,
             texture_sample_bias_offset: false,
+            fragment_texture_sample_bias_offset_2d_single_mip: false,
             texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
@@ -2961,7 +2976,20 @@ mod tests {
     #[test]
     fn texture_to_buffer_copy_format_mask_is_a_downlevel_limit() {
         let rgba8 = DownlevelLimits::texture_to_buffer_copy_format_bit(TextureFormat::Rgba8Unorm);
-        let bc1 = DownlevelLimits::texture_to_buffer_copy_format_bit(TextureFormat::Bc1RgbaUnorm);
+        let bc_formats = [
+            TextureFormat::Bc1RgbaUnorm,
+            TextureFormat::Bc1RgbaUnormSrgb,
+            TextureFormat::Bc2RgbaUnorm,
+            TextureFormat::Bc2RgbaUnormSrgb,
+            TextureFormat::Bc3RgbaUnorm,
+            TextureFormat::Bc3RgbaUnormSrgb,
+        ];
+        let bc_bits = bc_formats.map(DownlevelLimits::texture_to_buffer_copy_format_bit);
+        assert!(bc_bits.iter().all(|bit| *bit != 0));
+        for (index, bit) in bc_bits.iter().enumerate() {
+            assert!(bc_bits[..index].iter().all(|previous| previous != bit));
+        }
+        let bc_mask = bc_bits.into_iter().fold(0, |mask, bit| mask | bit);
         let available = DownlevelLimits {
             texture_to_buffer_copy_format_mask: rgba8,
             ..DownlevelLimits::default()
@@ -2975,9 +3003,17 @@ mod tests {
             ..DownlevelLimits::default()
         }));
         assert!(!available.check_limits(&DownlevelLimits {
-            texture_to_buffer_copy_format_mask: bc1,
+            texture_to_buffer_copy_format_mask: bc_bits[0],
             ..DownlevelLimits::default()
         }));
+        let bc_available = DownlevelLimits {
+            texture_to_buffer_copy_format_mask: bc_mask,
+            ..DownlevelLimits::default()
+        };
+        for format in bc_formats {
+            assert!(bc_available.supports_texture_to_buffer_copy(format));
+        }
+        assert!(!bc_available.supports_texture_to_buffer_copy(TextureFormat::Rgba8Unorm));
         assert!(!DownlevelCapabilities {
             limits: available,
             ..DownlevelCapabilities::default()
@@ -3306,6 +3342,7 @@ mod tests {
             "texture_sample_bias_dynamic",
             "fragment_texture_sample_bias_literal_select",
             "texture_sample_bias_offset",
+            "fragment_texture_sample_bias_offset_2d_single_mip",
             "fragment_derivatives",
         ] {
             object.remove(field);
@@ -3363,6 +3400,7 @@ mod tests {
         assert!(limits.texture_sample_bias_dynamic);
         assert!(!limits.fragment_texture_sample_bias_literal_select);
         assert!(limits.texture_sample_bias_offset);
+        assert!(!limits.fragment_texture_sample_bias_offset_2d_single_mip);
         assert!(limits.fragment_derivatives);
     }
 
