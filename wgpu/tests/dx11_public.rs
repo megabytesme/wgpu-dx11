@@ -11881,6 +11881,9 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     let rg16_sampled = rg16_features
         .allowed_usages
         .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST);
+    let rg16_copy_src = rg16_features
+        .allowed_usages
+        .contains(TextureUsages::COPY_SRC);
     let rg16_filterable = rg16_features
         .flags
         .contains(TextureFormatFeatureFlags::FILTERABLE);
@@ -11888,10 +11891,15 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
         assert!(rg16_features
             .flags
             .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
+        assert!(rg16_copy_src);
     } else {
         assert!(rg16_features.allowed_usages.is_empty());
         assert!(rg16_features.flags.is_empty());
     }
+    assert!(!adapter
+        .get_downlevel_capabilities()
+        .limits
+        .supports_texture_to_buffer_copy(TextureFormat::Rg16Snorm));
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; Rg8Snorm={rg_features:?}; Rg16Snorm={rg16_features:?}; Rgba8Snorm={rgba_features:?}",
         info.name, info.vendor, info.device, info.driver_info
@@ -12019,7 +12027,7 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     );
     let rg16_texture = if rg16_sampled {
         let texture = device.create_texture(&TextureDescriptor {
-            label: Some("public FL9_1 Rg16Snorm sampled texture"),
+            label: Some("public FL9_1 Rg16Snorm sampled and copy-source texture"),
             size: Extent3d {
                 width: 8,
                 height: 8,
@@ -12029,7 +12037,9 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             sample_count: 1,
             dimension: TextureDimension::D2,
             format: TextureFormat::Rg16Snorm,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let mut data = vec![0; 8 * 256];
@@ -12063,9 +12073,48 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     } else {
         None
     };
+    let rg16_copy_texture = if rg16_sampled {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("public FL9_1 Rg16Snorm GPU copy destination"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rg16Snorm,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let zeroes = vec![0; 8 * 256];
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &zeroes,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        Some(texture)
+    } else {
+        None
+    };
     let rg_view = rg_texture.create_view(&TextureViewDescriptor::default());
     let rgba_view = rgba_texture.create_view(&TextureViewDescriptor::default());
-    let rg16_view = rg16_texture
+    let rg16_view = rg16_copy_texture
         .as_ref()
         .map(|texture| texture.create_view(&TextureViewDescriptor::default()));
     if rg16_sampled && !rg16_filterable {
@@ -12200,7 +12249,7 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
          @group(0) @binding(7) var rg_image: texture_2d<f32>;\n\
          @group(0) @binding(13) var rg16_image: texture_2d<f32>;\n\
          @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
-         @fragment fn fs() -> @location(0) vec4f { let rg = textureSample(rg_image, nearest_sampler, vec2f(0.5)).rg; let rgba = textureSample(rgba_image, nearest_sampler, vec2f(0.5)); let rg16 = textureSample(rg16_image, nearest_sampler, vec2f(0.5)).r; return vec4f(rg * 0.5 + vec2f(0.5), rgba.b * 0.5 + 0.5, rg16 * 0.5 + 0.5); }"
+         @fragment fn fs() -> @location(0) vec4f { let rg = textureSample(rg_image, nearest_sampler, vec2f(0.5)).rg; let rgba = textureSample(rgba_image, nearest_sampler, vec2f(0.5)); let copied = textureSample(rg16_image, nearest_sampler, vec2f(0.5)).r; let untouched = textureSample(rg16_image, nearest_sampler, vec2f(0.125)).r; return vec4f(rg * 0.5 + vec2f(0.5), rgba.b * 0.25 + copied * 0.5 + 0.5, untouched * 0.5 + 0.5); }"
     } else {
         "@group(0) @binding(100) var nearest_sampler: sampler;\n\
          @group(0) @binding(42) var rgba_image: texture_2d<f32>;\n\
@@ -12284,9 +12333,67 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
+    if rg16_sampled {
+        expect_validation_error(
+            &device,
+            "Rg16Snorm texture-to-buffer readback remains unavailable",
+            || {
+                let mut invalid_encoder =
+                    device.create_command_encoder(&CommandEncoderDescriptor {
+                        label: Some("invalid public FL9_1 Rg16Snorm readback"),
+                    });
+                invalid_encoder.copy_texture_to_buffer(
+                    TexelCopyTextureInfo {
+                        texture: rg16_texture.as_ref().expect("Rg16Snorm source texture"),
+                        mip_level: 0,
+                        origin: Origin3d::ZERO,
+                        aspect: TextureAspect::All,
+                    },
+                    TexelCopyBufferInfo {
+                        buffer: &readback,
+                        layout: TexelCopyBufferLayout {
+                            offset: 0,
+                            bytes_per_row: Some(256),
+                            rows_per_image: Some(8),
+                        },
+                    },
+                    Extent3d {
+                        width: 8,
+                        height: 8,
+                        depth_or_array_layers: 1,
+                    },
+                );
+                let _ = invalid_encoder.finish();
+            },
+        );
+        println!("PASS: Core kept Rg16Snorm texture-to-buffer readback unavailable");
+    }
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("public FL9_1 SNORM commands"),
     });
+    if rg16_sampled {
+        encoder.copy_texture_to_texture(
+            TexelCopyTextureInfo {
+                texture: rg16_texture.as_ref().expect("Rg16Snorm source texture"),
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyTextureInfo {
+                texture: rg16_copy_texture
+                    .as_ref()
+                    .expect("Rg16Snorm copy destination"),
+                mip_level: 0,
+                origin: Origin3d { x: 2, y: 2, z: 0 },
+                aspect: TextureAspect::All,
+            },
+            Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
     {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("public FL9_1 SNORM pass"),
@@ -12351,7 +12458,7 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             for x in 0..8 {
                 let offset = y * 256 + x * 4;
                 let expected = if rg16_sampled {
-                    [192u8, 63, 160, 64]
+                    [192u8, 63, 80, 128]
                 } else {
                     [192u8, 63, 160, 255]
                 };

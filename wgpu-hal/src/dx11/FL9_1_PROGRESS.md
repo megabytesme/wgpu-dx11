@@ -1,5 +1,38 @@
 # FL9_1 progress
 
+## Query-gated Rg16Snorm GPU copies — 2026-11-11
+
+The format model and HAL now expose Rg16Snorm `COPY_SRC` only when the selected
+device reports `TEXTURE2D` and the backend's same-format native texture-copy
+path is enabled. The path does not add render-target binding or a CPU shadow.
+The texture-to-buffer readback mask remains clear, and the public test checks
+Core rejects that separate operation. The strict test uploads a signed
+source, copies a 4×4 region to destination origin (2,2), then samples the
+copied center texel and an untouched zero sentinel into an RGBA8 target.
+
+The synthetic capability test passed. The strict public test passed on the
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested
+and actual FL9_1, software=false. It reported Rg16Snorm usages
+`COPY_SRC | COPY_DST | TEXTURE_BINDING`, point-only, verified all 64 output
+pixels `[192, 63, 80, 128]`, rejected filtering use, and confirmed Core still
+rejects Rg16Snorm texture-to-buffer readback. The complete strict private HAL
+suite passed 502/502. The complete strict public D3D11 target passed 129/129,
+including `experimental_dx11_is_not_enabled_by_default`; three optional
+format/vertex-input subcases reported skips while all hardware-required paths
+executed on the RTX.
+
+The first full HAL run caught three stale tests that still expected the new
+copy source to be unsupported. Their capability and fixture expectations were
+updated, the focused tests passed, and the final full suite is green. Rustc
+initially exhausted `C:` while writing temporary symbols; the repeat routed
+`TEMP`/`TMP` to `E:\Temp\wgpu-mission-rust-tmp` and completed successfully.
+
+```powershell
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --lib --no-default-features --features dx11 rg16_snorm_gpu_copy_source_is_query_gated_without_readback -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_snorm_sampled_uploads_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
 ## Dynamic texture-load proof parity — 2026-11-11
 
 An independent review found Core accepted a helper body with the proven load

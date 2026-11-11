@@ -2384,6 +2384,19 @@ core validation, while the non-filtering sampler path matched all 64 output
 pixels. The test therefore validates both the optional native behavior and
 the rejection boundary. This forced modern driver does not establish behavior
 on historical FL9_1 hardware.
+
+When the selected query positively reports `TEXTURE2D`, the same public test
+also creates an `Rg16Snorm` source with `COPY_SRC`, copies a 4×4 region into a
+zero-initialized sampled destination at a nonzero origin, and checks both the
+copied and untouched destination texels through point sampling and RGBA8
+readback. Core rejects `Rg16Snorm` texture-to-buffer copies because its
+separate downlevel readback-format mask remains clear. No CPU shadow or native
+staging readback is exposed for this format.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_snorm_sampled_uploads_at_fl91 -- --exact --nocapture --test-threads=1
+```
 The BC1 test uploads an 8×8 block-compressed image from offset 8 with a 24-byte
 block-row pitch. BC2/BC3 use offset 16 and a 48-byte row pitch because their
 blocks are 16 bytes. Each test replaces the block at [4,0] using an aligned
@@ -2416,9 +2429,9 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 ```
 BC1/BC2/BC3 `COPY_SRC` supports query-gated GPU texture-to-texture copying and
 ordered CPU-shadow texture-to-buffer readback; a native copy to CPU-visible
-staging memory remains unavailable for FL9_x SRV-only textures. R16G16_SNORM still does not
-support render-target, copy-source or readback operations in this private
-subset. RG8_SNORM texture-to-texture copy and raw readback use an
+staging memory remains unavailable for FL9_x SRV-only textures. R16G16_SNORM
+supports a query-gated same-format GPU texture-to-texture copy, but no render
+target or texture-to-buffer readback path. RG8_SNORM texture-to-texture copy and raw readback use an
 execution-ordered CPU byte shadow because valid FL9_1 native GPU copies failed
 on the development driver. RGBA8_SNORM supports same-format GPU texture
 copies when the selected device reports `TEXTURE2D` and raw-byte

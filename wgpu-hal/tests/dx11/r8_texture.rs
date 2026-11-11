@@ -121,6 +121,7 @@ fn sample_upload(
                 wgt::TextureFormat::Bc1RgbaUnorm
                     | wgt::TextureFormat::Bc2RgbaUnorm
                     | wgt::TextureFormat::Bc3RgbaUnorm
+                    | wgt::TextureFormat::Rg16Snorm
                     | wgt::TextureFormat::Rg8Snorm
                     | wgt::TextureFormat::Rgba8Snorm
             ) {

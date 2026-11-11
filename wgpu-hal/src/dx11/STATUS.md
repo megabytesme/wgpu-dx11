@@ -1,3 +1,17 @@
+## R16G16_SNORM GPU texture copies — 2026-11-11
+
+The private format model now exposes `COPY_SRC` for `Rg16Snorm` only when the
+selected device reports `TEXTURE2D` and the backend same-format GPU copy path
+is enabled. Creation does not request an RTV or maintain a CPU shadow. The
+separate texture-to-buffer readback mask remains clear. A strict public
+forced-FL9_1 test copies a nonzero-origin 4×4 region into a sampled
+destination and verifies both copied and untouched texels through point
+sampling and RGBA8 readback; it also confirms Core rejects direct
+`Rg16Snorm` texture-to-buffer readback. This RTX result does not establish
+historical-driver behavior. The full strict private suite passed 502/502 and
+the full strict public D3D11 target passed 129/129; three optional format or
+vertex-input subcases were reported as skips.
+
 ## BC cube-format downlevel-mask correction — 2026-11-11
 
 `DownlevelLimits::texture_cube_format_bit` now assigns separate bits to all

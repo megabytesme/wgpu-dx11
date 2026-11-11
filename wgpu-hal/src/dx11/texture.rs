@@ -1053,6 +1053,7 @@ impl NativeDevice {
                     | DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
+                    | DXGI_FORMAT_R16G16_SNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_BC1_UNORM_SRGB

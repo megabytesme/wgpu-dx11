@@ -357,7 +357,9 @@ impl crate::Device for Device {
         ) || (desc.format == wgt::TextureFormat::Rgba8Snorm
             && capabilities.backend.rgba8_snorm_texture_to_texture_copy)
             || (desc.format == wgt::TextureFormat::Rg8Snorm
-                && capabilities.backend.rg8_snorm_shadow_copy_readback);
+                && capabilities.backend.rg8_snorm_shadow_copy_readback)
+            || (desc.format == wgt::TextureFormat::Rg16Snorm
+                && capabilities.backend.rg16_snorm_texture_to_texture_copy);
         let supported = wgt::TextureUses::TRANSIENT
             | if depth {
                 wgt::TextureUses::DEPTH_STENCIL_READ
@@ -561,8 +563,10 @@ impl crate::Device for Device {
                 )
                 .map_err(|_| DeviceError::Unexpected)?;
         }
-        if desc.format == wgt::TextureFormat::Rgba8Snorm
-            && desc.usage.contains(wgt::TextureUses::COPY_SRC)
+        if matches!(
+            desc.format,
+            wgt::TextureFormat::Rg16Snorm | wgt::TextureFormat::Rgba8Snorm
+        ) && desc.usage.contains(wgt::TextureUses::COPY_SRC)
         {
             capabilities
                 .check_private_texture_2d(
@@ -603,6 +607,7 @@ impl crate::Device for Device {
                             | wgt::TextureFormat::Bc3RgbaUnormSrgb
                             | wgt::TextureFormat::Rgb5a1Unorm
                             | wgt::TextureFormat::Rgba4Unorm
+                            | wgt::TextureFormat::Rg16Snorm
                             | wgt::TextureFormat::Rg8Snorm
                             | wgt::TextureFormat::Rgba8Snorm
                     )
@@ -649,6 +654,7 @@ impl crate::Device for Device {
                                     | wgt::TextureFormat::Bc3RgbaUnormSrgb
                                     | wgt::TextureFormat::Rgb5a1Unorm
                                     | wgt::TextureFormat::Rgba4Unorm
+                                    | wgt::TextureFormat::Rg16Snorm
                                     | wgt::TextureFormat::Rg8Snorm
                                     | wgt::TextureFormat::Rgba8Snorm
                             )),
