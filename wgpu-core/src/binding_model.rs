@@ -1389,7 +1389,9 @@ fn fl9_texture_load_format_compatible(
     match dimension {
         naga::ImageDimension::D2 => matches!(
             format,
-            wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::R8Unorm
+            wgt::TextureFormat::Rgba8Unorm
+                | wgt::TextureFormat::R8Unorm
+                | wgt::TextureFormat::Rg8Unorm
         ),
         naga::ImageDimension::D3 => format == wgt::TextureFormat::Rgba8Unorm,
         _ => false,
@@ -1456,10 +1458,11 @@ mod fl9_texture_load_tests {
     fn fl9_texture_load_format_subset_is_dimension_specific() {
         assert!(compatible(Rgba8Unorm, D2));
         assert!(compatible(R8Unorm, D2));
+        assert!(compatible(Rg8Unorm, D2));
         assert!(compatible(Rgba8Unorm, D3));
         assert!(!compatible(R8Unorm, D3));
+        assert!(!compatible(Rg8Unorm, D3));
         assert!(!compatible(Rgba8UnormSrgb, D2));
-        assert!(!compatible(Rg8Unorm, D2));
     }
 }
 

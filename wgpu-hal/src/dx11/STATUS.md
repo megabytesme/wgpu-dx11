@@ -1,16 +1,17 @@
-## Query-gated R8 fragment `textureLoad` — 2026-11-11
+## Query-gated R8/RG8 fragment `textureLoad` — 2026-11-11
 
 The restricted fragment 2D `textureLoad` emulation now accepts `R8Unorm` in
-addition to `Rgba8Unorm`. Core checks the selected bound view and requires a
-single-mip parent; HAL independently keeps the format allowance limited to
-2D `Load` and `LoadDimensions`, leaving 3D load and sample-bias offset on
-their previous format restrictions. The selected R8 texture still requires
-the device's `TEXTURE2D` query and sampled-upload backend path. It does not
-require `SHADER_SAMPLE` because the emulation uses a point sampler. Strict
-forced-FL9_1 RTX readback verified all 16 in-bounds texels as normalized
-red/zero green/zero blue/one alpha and all 48 out-of-bounds results as zero.
-R8 sample-bias remains rejected, and historical FL9_1 drivers remain
-unverified.
+addition to `Rgba8Unorm`, and now also accepts query-gated `Rg8Unorm` for 2D
+loads. Core checks the selected bound view and requires a single-mip parent;
+HAL independently keeps the format allowance limited to 2D `Load` and
+`LoadDimensions`, leaving 3D load and sample-bias offset on their previous
+format restrictions. R8/RG8 resources require the selected device's
+`TEXTURE2D` query and sampled-upload backend path, but not `SHADER_SAMPLE`
+because the emulation uses a point sampler. Strict forced-FL9_1 RTX readback
+verified R8 normalized red/zero green/zero blue/one alpha and RG8 normalized
+red/green/zero blue/one alpha for all 16 in-bounds texels; all 48
+out-of-bounds results per format were zero. R8/RG8 sample-bias remains
+rejected, and historical FL9_1 drivers remain unverified.
 
 ## RGB565 query-gated sampled mip chains — 2026-11-11
 

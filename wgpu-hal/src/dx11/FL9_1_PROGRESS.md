@@ -1,3 +1,48 @@
+## Query-gated Rg8 fragment `textureLoad` — 2026-11-11
+
+The restricted fragment 2D `textureLoad` path now accepts `Rg8Unorm` as well
+as the existing `Rgba8Unorm` and query-gated `R8Unorm` views. Core and HAL
+keep the new allowance limited to 2D `Load`/`LoadDimensions`; 3D load and
+sample-bias restrictions remain unchanged. The actual bound view still must
+be single-mip, single-sample, and backed by a single-mip texture. Public
+texture creation remains gated by the selected device's `TEXTURE2D` query and
+the sampled-upload implementation path; filtering is not required.
+
+The strict test uploaded padded `Rg8Unorm` rows, loaded 16 distinct texels at
+interpolated coordinates, and read back normalized `(R,G,0,1)` values for all
+in-bounds pixels plus zero for all 48 out-of-bounds pixels. The physical RTX
+3090 Ti reported `TEXTURE_BINDING | COPY_DST` for Rg8 at requested and actual
+FL9_1 (`0x10de:0x2203`, driver `32.0.16.2101`, software=false). Existing
+synthetic capability tests cover absent or negative selected-format queries.
+
+Verification with Rust 1.93.1, MSVC and bounded `-j8` Cargo jobs:
+
+- Strict focused public textureLoad test: 1/1 passed, including the existing
+  RGBA8 and R8 baseline cases and the new RG8 GPU readback.
+- Strict private D3D11 HAL suite: 509/509 passed.
+- Strict public `dx11_public`: 131/131 passed. Optional IA-format and
+  Rg8-mipmap subcases logged SKIP where the selected FL9_1 projection did not
+  report support.
+- Core DX11 fixture tests: 142/142 passed; Core DX12 regression: 131/131.
+- Core and HAL format-matrix unit tests: 1/1 each.
+- HAL, Core and wgpu targeted Clippy checks passed. Six pre-existing HAL
+  warnings remain in unrelated index, transfer and texture helpers; the new
+  test helper's temporary too-many-arguments warning was removed by grouping
+  shared render state.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+
+Historical FL9_1 device behavior remains unverified; the forced-level RTX
+result does not establish compatibility with older drivers.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_texture_load_dynamic -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,glsl,wgsl,std --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+```
+
 ## Query-gated R8 fragment `textureLoad` — 2026-11-11
 
 The restricted fragment 2D `textureLoad` path now accepts `R8Unorm` as well

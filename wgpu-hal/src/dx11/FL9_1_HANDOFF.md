@@ -3,14 +3,14 @@
 ## Current coordinator checkpoint — 2026-11-11
 
 The newest verified software slice extends the narrow fragment 2D
-`textureLoad` emulation to query-gated `R8Unorm`. Core and HAL check format
-compatibility per selected operation; R8 is allowed only for 2D load and
-load-plus-dimensions, not 3D load or sample-bias. The selected R8 texture must
-be sampled-upload capable, but filterability is unnecessary because the
-emulation samples at texel centers with an internal point sampler. Core now
-rejects both full multi-mip views and one-mip subviews from multi-mip parent
-resources before HAL, matching its existing resource restriction. Strict
-RTX 3090 Ti readback at requested/actual FL9_1 verified all R8 channel
+`textureLoad` emulation to query-gated `R8Unorm` and `Rg8Unorm`. Core and HAL
+check format compatibility per selected operation; R8/RG8 are allowed only
+for 2D load and load-plus-dimensions, not 3D load or sample-bias. The selected
+format must be sampled-upload capable, but filterability is unnecessary
+because the emulation samples at texel centers with an internal point sampler.
+Core rejects both full multi-mip views and one-mip subviews from multi-mip
+parent resources before HAL, matching its resource restriction. Strict
+RTX 3090 Ti readback at requested/actual FL9_1 verified R8/RG8 channel
 semantics and out-of-bounds results. Broader regression results and the exact
 hardware report are in `FL9_1_PROGRESS.md`.
 

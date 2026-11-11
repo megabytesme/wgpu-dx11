@@ -85,11 +85,11 @@ fn fl9_texture_emulation_format_supported(
 ) -> bool {
     use super::hal_shader::Fl9TextureEmulationKind as Kind;
     use naga::ImageDimension::{D2, D3};
-    use wgt::TextureFormat::{R8Unorm, Rgba8Unorm};
+    use wgt::TextureFormat::{R8Unorm, Rg8Unorm, Rgba8Unorm};
 
     match kind {
         Kind::Load | Kind::LoadDimensions => {
-            dimension == D2 && matches!(format, Rgba8Unorm | R8Unorm)
+            dimension == D2 && matches!(format, Rgba8Unorm | R8Unorm | Rg8Unorm)
         }
         Kind::Load3D => dimension == D3 && format == Rgba8Unorm,
         Kind::SampleBiasOffset => dimension == D2 && format == Rgba8Unorm,
@@ -2516,10 +2516,11 @@ mod tests {
 
         assert!(supported(Kind::Load, D2, Rgba8Unorm));
         assert!(supported(Kind::Load, D2, R8Unorm));
+        assert!(supported(Kind::Load, D2, Rg8Unorm));
         assert!(supported(Kind::LoadDimensions, D2, R8Unorm));
         assert!(supported(Kind::Load3D, D3, Rgba8Unorm));
         assert!(!supported(Kind::Load3D, D3, R8Unorm));
-        assert!(!supported(Kind::Load, D2, Rg8Unorm));
+        assert!(!supported(Kind::Load3D, D3, Rg8Unorm));
         assert!(!supported(Kind::Load, D2, Rgba8UnormSrgb));
         assert!(!supported(Kind::SampleBiasOffset, D2, R8Unorm));
     }
