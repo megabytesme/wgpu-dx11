@@ -3190,6 +3190,74 @@ mod tests {
     }
 
     #[test]
+    fn bc_cube_formats_require_cube_queries_and_sampled_backend_paths() {
+        let required =
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_TEXTURECUBE.0) as u32;
+        let formats = [
+            wgt::TextureFormat::Bc1RgbaUnorm,
+            wgt::TextureFormat::Bc2RgbaUnorm,
+            wgt::TextureFormat::Bc3RgbaUnorm,
+            wgt::TextureFormat::Bc1RgbaUnormSrgb,
+            wgt::TextureFormat::Bc2RgbaUnormSrgb,
+            wgt::TextureFormat::Bc3RgbaUnormSrgb,
+        ];
+        for format in formats {
+            let format_bit = wgt::DownlevelLimits::texture_cube_format_bit(format);
+            let mut caps = model(FeatureLevel::L9_1);
+            assert_ne!(caps.cube_texture_format_mask() & format_bit, 0);
+            set_bc_cube_query(&mut caps, format, Query::Value(required));
+            assert!(caps
+                .texture_format_capabilities(format)
+                .contains(crate::TextureFormatCapabilities::SAMPLED));
+            assert_ne!(caps.cube_texture_format_mask() & format_bit, 0);
+            set_bc_cube_query(&mut caps, format, Query::Unavailable(-1));
+            assert_eq!(caps.cube_texture_format_mask() & format_bit, 0);
+            set_bc_cube_query(&mut caps, format, Query::Value(required));
+
+            disable_bc_cube_sampled_path(&mut caps, format);
+            assert_eq!(caps.cube_texture_format_mask() & format_bit, 0);
+        }
+
+        let format = wgt::TextureFormat::Bc1RgbaUnormSrgb;
+        let format_bit = wgt::DownlevelLimits::texture_cube_format_bit(format);
+        let mut caps = model(FeatureLevel::L9_1);
+        for missing in [
+            D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32,
+            D3D11_FORMAT_SUPPORT_TEXTURECUBE.0 as u32,
+        ] {
+            caps.driver.bc1_srgb = Query::Value(required & !missing);
+            assert_eq!(caps.cube_texture_format_mask() & format_bit, 0);
+        }
+    }
+
+    fn set_bc_cube_query(caps: &mut Capabilities, format: wgt::TextureFormat, query: Query<u32>) {
+        match format {
+            wgt::TextureFormat::Bc1RgbaUnorm => caps.driver.bc1_unorm = query,
+            wgt::TextureFormat::Bc2RgbaUnorm => caps.driver.bc2_unorm = query,
+            wgt::TextureFormat::Bc3RgbaUnorm => caps.driver.bc3_unorm = query,
+            wgt::TextureFormat::Bc1RgbaUnormSrgb => caps.driver.bc1_srgb = query,
+            wgt::TextureFormat::Bc2RgbaUnormSrgb => caps.driver.bc2_srgb = query,
+            wgt::TextureFormat::Bc3RgbaUnormSrgb => caps.driver.bc3_srgb = query,
+            _ => unreachable!(),
+        }
+    }
+
+    fn disable_bc_cube_sampled_path(caps: &mut Capabilities, format: wgt::TextureFormat) {
+        match format {
+            wgt::TextureFormat::Bc1RgbaUnorm | wgt::TextureFormat::Bc1RgbaUnormSrgb => {
+                caps.backend.bc1_sampled_upload = false;
+            }
+            wgt::TextureFormat::Bc2RgbaUnorm | wgt::TextureFormat::Bc2RgbaUnormSrgb => {
+                caps.backend.bc2_sampled_upload = false;
+            }
+            wgt::TextureFormat::Bc3RgbaUnorm | wgt::TextureFormat::Bc3RgbaUnormSrgb => {
+                caps.backend.bc3_sampled_upload = false;
+            }
+            _ => unreachable!(),
+        }
+    }
+
+    #[test]
     fn private_cube_texture_validation_is_shape_and_query_aware() {
         let mut caps = model(FeatureLevel::L9_1);
         let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;

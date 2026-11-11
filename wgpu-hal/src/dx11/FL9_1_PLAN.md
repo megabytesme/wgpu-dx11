@@ -1,6 +1,17 @@
 # FL9_1 completion plan
 
-## Latest current state and next queue — 2026-11-11
+## Latest current state — 2026-11-11
+
+The shared cube-format mask now represents each BC1/2/3 UNORM and sRGB format
+independently. Before this correction, HAL's selected-device cube queries
+already considered all six formats, but five formats mapped to zero in
+`DownlevelLimits` and were therefore not projected through Core. The strict
+RTX test now reports cube mask `0x0003ff1f` at requested/actual FL9_1 and
+uploads/readbacks all six faces for each BC format. Raw block verification
+uses the ordered CPU shadow; per-variant cube sampling and historical-driver
+execution remain unverified.
+
+## Previous checkpoint — 2026-11-11
 
 RGBA8_SNORM now has ordered raw-byte texture-to-buffer readback through the
 existing CPU-shadow mechanism. Its public readback bit requires both the
@@ -16,11 +27,11 @@ Follow-up strict coverage also reads mip 1 after a partial multi-mip texture
 copy, validating all texels, unchanged regions, the nonzero destination offset
 and row padding through the same shadow path.
 
-Strict public BC coverage now also reads each BC1/BC2/BC3 sRGB source directly
+Strict public BC coverage also reads each BC1/BC2/BC3 sRGB source directly
 through the ordered CPU shadow and validates exact blocks, nonzero offsets,
-padded rows and sentinels. The RTX queried texture-to-buffer support for all
-three sRGB formats at requested/actual FL9_1. Its cube capability was reported
-only for BC1, so BC2/BC3 cube execution is not claimed.
+padded rows and sentinels. At this checkpoint the shared cube mask did not
+yet represent five queried BC formats; the correction and expanded cube test
+are recorded above.
 
 The recent independent contract reviews still found no new confirmed
 Core-valid request reaching an unsupported HAL path in the audited areas. The

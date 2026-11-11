@@ -1738,6 +1738,11 @@ impl DownlevelLimits {
             crate::TextureFormat::Rgb5g6b5Unorm => 1 << 10,
             crate::TextureFormat::Rgb5a1Unorm => 1 << 11,
             crate::TextureFormat::Rgba4Unorm => 1 << 12,
+            crate::TextureFormat::Bc1RgbaUnormSrgb => 1 << 13,
+            crate::TextureFormat::Bc2RgbaUnormSrgb => 1 << 14,
+            crate::TextureFormat::Bc3RgbaUnormSrgb => 1 << 15,
+            crate::TextureFormat::Bc2RgbaUnorm => 1 << 16,
+            crate::TextureFormat::Bc3RgbaUnorm => 1 << 17,
             _ => 0,
         }
     }
@@ -2508,8 +2513,25 @@ mod tests {
 
     #[test]
     fn cube_texture_limits_are_checked_separately_from_2d_limits() {
-        let rgba8 = DownlevelLimits::texture_cube_format_bit(crate::TextureFormat::Rgba8Unorm);
-        let r8 = DownlevelLimits::texture_cube_format_bit(crate::TextureFormat::R8Unorm);
+        let rgba8 = DownlevelLimits::texture_cube_format_bit(TextureFormat::Rgba8Unorm);
+        let r8 = DownlevelLimits::texture_cube_format_bit(TextureFormat::R8Unorm);
+        let bc_formats = [
+            TextureFormat::Bc1RgbaUnorm,
+            TextureFormat::Bc2RgbaUnorm,
+            TextureFormat::Bc3RgbaUnorm,
+            TextureFormat::Bc1RgbaUnormSrgb,
+            TextureFormat::Bc2RgbaUnormSrgb,
+            TextureFormat::Bc3RgbaUnormSrgb,
+        ]
+        .map(DownlevelLimits::texture_cube_format_bit);
+        for (index, bit) in bc_formats.iter().enumerate() {
+            assert_ne!(*bit, 0);
+            let previous_bits = bc_formats[..index]
+                .iter()
+                .copied()
+                .fold(0, |mask, bit| mask | bit);
+            assert_eq!(previous_bits & bit, 0);
+        }
         let available = DownlevelLimits {
             max_texture_cube_dimension: 512,
             texture_cube_format_mask: rgba8,
@@ -2528,9 +2550,23 @@ mod tests {
             npot_cube_textures: false,
             ..DownlevelLimits::default()
         }));
-        assert!(!available.supports_texture_cube_format(crate::TextureFormat::Rgba16Float));
-        assert!(DownlevelLimits::default()
-            .supports_texture_cube_format(crate::TextureFormat::Rgba16Float));
+        assert!(!available.supports_texture_cube_format(TextureFormat::Rgba16Float));
+        assert!(DownlevelLimits::default().supports_texture_cube_format(TextureFormat::Rgba16Float));
+        let bc_formats_available = DownlevelLimits {
+            texture_cube_format_mask: bc_formats.iter().copied().fold(0, |mask, bit| mask | bit),
+            ..DownlevelLimits::default()
+        };
+        for format in [
+            TextureFormat::Bc1RgbaUnorm,
+            TextureFormat::Bc2RgbaUnorm,
+            TextureFormat::Bc3RgbaUnorm,
+            TextureFormat::Bc1RgbaUnormSrgb,
+            TextureFormat::Bc2RgbaUnormSrgb,
+            TextureFormat::Bc3RgbaUnormSrgb,
+        ] {
+            assert!(bc_formats_available.supports_texture_cube_format(format));
+        }
+        assert!(!available.supports_texture_cube_format(TextureFormat::Bc1RgbaUnormSrgb));
         assert!(!available.check_limits(&DownlevelLimits {
             max_texture_cube_dimension: 513,
             npot_cube_textures: false,

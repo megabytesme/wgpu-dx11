@@ -3552,15 +3552,18 @@ by reading back all 64 texels. Cube-to-buffer readback is now allowed for the
 selected device's query-supported copy formats. Core projects six copy layers
 while ordinary 2D arrays remain disabled by `TEXTURE_2D_ARRAYS`.
 
-The RTX 3090 Ti at requested/actual FL9_1 reported format mask `0x1f1f`,
-vendor/device `0x10de:0x2203`, driver `32.0.16.2101`, and software=false.
+The RTX 3090 Ti at requested/actual FL9_1 reported cube-format mask
+`0x0003ff1f` with the per-format BC1/2/3 UNORM and sRGB bits, vendor/device
+`0x10de:0x2203`, driver `32.0.16.2101`, and software=false.
 Its RGBA8 format query reported mip support. Cube sampling and GPU face copies
 passed with all 960 pixels matching expected face and mip colors, including
 the cross-shape copied face and non-suffix view. Cube-to-2D readback matched
 all 64 texels. Cube texture-to-buffer readback is separately exercised by
-`fl91_cube_texture_to_buffer_readback_uses_padded_faces` below; it requires a
-positive RGBA8 render-target query so the native cube resource is not
-shader-resource-only. No cube RTV is created.
+`fl91_cube_texture_to_buffer_readback_uses_padded_faces` below; native staging
+readback requires a positive RGBA8 render-target query so the native cube
+resource is not shader-resource-only. No cube RTV is created. The strict
+`dx11_bc_subset` target separately checks all six faces for every advertised
+BC1/2/3 UNORM and sRGB cube format using the ordered raw-byte shadow.
 The RG8_UNORM cube request was rejected by core from the selected format mask.
 These per-format `CheckFormatSupport` results do not imply historical FL9_1
 drivers support the same optional formats.
@@ -3575,6 +3578,24 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j8 -p wgpu-core --lib --no-default-features --features dx12,std,wgsl
 ```
+
+### Compressed cube-format projection
+
+The downlevel cube-format mask assigns independent bits to BC1/2/3 UNORM and
+sRGB. The strict `dx11_bc_subset` case logs the cube bit, `COPY_SRC` usage,
+texture-to-buffer bit, and six-layer/dimension limits for each format. For
+every fully advertised format it uploads a distinct block to each of six cube
+faces and verifies exact raw bytes and padding through the ordered CPU shadow.
+The test does not claim visual sampling coverage for each compressed cube
+variant or compatibility with historical FL9_1 drivers.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j4 -p wgpu-types cube_texture_limits_are_checked_separately_from_2d_limits
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --features dx11 --lib bc_cube_formats_require_cube_queries_and_sampled_backend_paths
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_subset -- --nocapture --test-threads=1
+```
+
 ### Storage buffer validation boundary
 
 The controlled core fixture verifies that a buffer with `STORAGE | COPY_SRC |

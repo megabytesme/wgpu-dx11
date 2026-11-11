@@ -1,3 +1,21 @@
+## BC cube-format downlevel-mask correction — 2026-11-11
+
+`DownlevelLimits::texture_cube_format_bit` now assigns separate bits to all
+BC1/2/3 UNORM and sRGB cube formats. The D3D11 capability projection already
+queried these formats independently, but absent shared mask bits silently
+dropped BC2/3 UNORM and all sRGB variants before Core could expose the queried
+result. The RTX 3090 Ti at requested/actual FL9_1 reports cube mask
+`0x0003ff1f`; all six formats also report `COPY_SRC` and texture-to-buffer
+support. A strict public test uploads distinct blocks to all six faces and
+checks exact bytes through the ordered CPU-shadow readback, including padded
+rows and sentinels. This proves the format projection and transfer path, not
+cube sampling for every variant or behavior on historical drivers.
+
+The focused `wgpu-types` cube-mask test, D3D11 capability-model projection
+test, and strict public BC target passed. The public test logged the physical
+adapter (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) and completed
+at requested/actual FL9_1. See `FL9_1_PROGRESS.md` for exact commands.
+
 ## RGBA8_SNORM shadow readback — 2026-11-11
 
 The existing query-gated RGBA8_SNORM `COPY_SRC` path now also supports

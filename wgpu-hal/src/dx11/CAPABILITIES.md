@@ -159,8 +159,12 @@ format has positive `D3D11_FORMAT_SUPPORT_RENDER_TARGET` support, the default
 resource also receives `D3D11_BIND_RENDER_TARGET`; this bind flag is required
 because FL9_x forbids GPU-to-CPU copying from a resource with only
 `D3D11_BIND_SHADER_RESOURCE`. No RTV is created, and cube render-target views
-remain unavailable. Cube-to-buffer format support remains query-gated; BC
-formats remain GPU-to-GPU-copy-only.
+remain unavailable. Cube-to-buffer format support remains query-gated. BC
+formats with a positive texture-to-buffer capability use the ordered CPU
+shadow for raw block readback. The cube-format and texture-to-buffer masks are
+independent: the first requires per-format `TEXTURE2D | TEXTURECUBE` support
+plus the sampled-upload backend path, while the second requires its own
+`COPY_SRC` and readback-path gates.
 Mip chains require the selected device's `D3D11_FORMAT_SUPPORT_MIP` query, the
 implemented POT mip path and a format not projected as single-mip-only. Each
 mip must be supplied by the caller; automatic mip generation is unavailable.
@@ -177,13 +181,15 @@ view. Public tests confirm the array capability stays unset, reject a
 two-layer 2D texture, and reject a `D2Array` sampled binding layout before HAL.
 
 The mask's bits follow `DownlevelLimits::texture_cube_format_bit` for RGBA8,
-BGRA8, their sRGB variants, R8, RG8, RG8_SNORM, RG16_SNORM, RGBA8_SNORM, BC1,
-RGB565, RGB5A1, and RGBA4 in that order. D3D11 sets a bit only when the
-selected device reports both `TEXTURE2D` and `TEXTURECUBE` and the format is
-also sampled by the implemented backend. This avoids treating 2D sampling
-support as cube support. The RTX 3090 Ti at forced FL9_1 reported mask
-`0x1f1f`; on that driver RG8_UNORM, RG8_SNORM, RG16_SNORM and BC1 were not
-projected as cube formats even though some remain usable as 2D textures.
+BGRA8 and their sRGB variants, R8, RG8, RG8_SNORM, RG16_SNORM, RGBA8_SNORM,
+BC1/2/3 UNORM and sRGB, RGB565, RGB5A1, and RGBA4. Each BC variant has a
+distinct bit. D3D11 sets a bit only when the selected device reports both
+`TEXTURE2D` and `TEXTURECUBE` and the format is also sampled by the implemented
+backend. This avoids treating 2D sampling support as cube support. The RTX 3090
+Ti at forced FL9_1 reports mask `0x0003ff1f`; all six BC variants passed the
+selected-device checks and six-face upload/readback test. RG8_UNORM,
+RG8_SNORM, and RG16_SNORM are not projected as cube formats on this driver,
+even though some remain usable as 2D textures.
 Strict GPU readback sampled all six RGBA8 faces and four mip levels on the RTX
 3090 Ti at forced FL9_1; all 960 pixels matched their face/mip colors. A
 non-suffix view selecting levels 1 and 2 also passed through the six-face GPU
@@ -198,8 +204,10 @@ cube shape; ordinary arrays remain disabled by the separate
 `TEXTURE_2D_ARRAYS` flag. The strict HAL test verifies all 384 texels from six
 asymmetric faces through a 256-byte-pitched buffer and checks all image, row,
 and buffer padding. BC1/BC2/BC3 cube-face raw-byte readback uses the ordered CPU
-shadow rather than a render-target bind. The strict RTX test verifies all six
-BC1 unorm faces; it does not expose the queried cube capability for BC2/BC3.
+shadow rather than a render-target bind. The strict RTX test verifies six faces
+for each of BC1/2/3 UNORM and sRGB, after each format is independently admitted
+by its cube bit, `COPY_SRC` usage and texture-to-buffer bit. This modern-driver
+result does not establish the same optional support on historical FL9_1 GPUs.
 Cube render-target views and single-face D2 views remain unsupported.
 
 Microsoft references: [10Level9 device constraints](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device),

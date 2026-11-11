@@ -16549,3 +16549,40 @@ BC2/BC3 cube support is claimed. The exact command was:
 ```powershell
 cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set "WGPU_DX11_REQUIRE_HARDWARE=1" && set "CARGO_TARGET_DIR=E:\Temp\wgpu-mission-gpu-target" && set "CARGO_NET_OFFLINE=true" && set "CARGO_BUILD_JOBS=4" && cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_subset -- --nocapture --test-threads=1'
 ```
+
+## BC cube-format mask projection — 2026-11-11
+
+An independent format audit found that `Capabilities::cube_texture_format_mask`
+already queried BC1/2/3 UNORM and sRGB, but `DownlevelLimits` only assigned a
+cube-format bit to BC1 UNORM. The other five variants therefore mapped to zero
+and were dropped before Core could receive the selected-device result. Added
+distinct bits for BC1/2/3 sRGB and BC2/3 UNORM, plus shared-type tests checking
+that all six bits are nonzero, unique and independently recognized. The HAL
+test now verifies all six mappings, positive queries, unavailable-query
+rejection and backend-path rejection. Core consumes the same mask directly;
+the read-only consumer audit found no other production changes were needed.
+
+The strict public test now logs each BC cube bit and its separate `COPY_SRC`,
+texture-to-buffer, dimension and layer requirements. It uploads six distinct
+face patterns for every fully advertised format and checks exact bytes,
+padding and sentinels through the backend's ordered CPU shadow. The RTX 3090 Ti
+at requested/actual FL9_1 (`0x10de:0x2203`, driver `32.0.16.2101`,
+`software=false`) reported cube mask `0x0003ff1f`; all six BC1/2/3 UNORM and
+sRGB formats were advertised and all six passed face upload/readback checks.
+This does not yet prove visible cube sampling for each format or compatibility
+with legacy FL9_1 drivers.
+
+The `wgpu-types` library tests passed 114/114. The full strict private D3D11
+HAL suite passed 500/500 (the suite includes both CPU-only and GPU tests). The
+Core strict adapter test passed 1/1 and enumerated one physical FL9_1 D3D11
+adapter. The focused public BC target passed 1/1 with all six format checks
+executed and no skips. The exact hardware command was:
+
+```powershell
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set "WGPU_DX11_REQUIRE_HARDWARE=1" && set "CARGO_TARGET_DIR=E:\Temp\wgpu-mission-gpu-target" && set "CARGO_NET_OFFLINE=true" && set "CARGO_BUILD_JOBS=4" && cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_subset -- --nocapture --test-threads=1'
+```
+
+Formatting and `git diff --check` passed. Clippy passed for `wgpu-types`,
+`wgpu-hal` with DX11 tests, and the public BC target. Its warnings are existing
+serde-gated unused imports and unrelated D3D11 HAL lints; no new warning came
+from the changed cube-mask code or test.

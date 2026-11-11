@@ -818,119 +818,6 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
             copied_readbacks[index].unmap();
         }
 
-        let cube_formats = formats
-            .into_iter()
-            .filter(|format| {
-                adapter
-                    .get_downlevel_capabilities()
-                    .limits
-                    .supports_texture_cube_format(*format)
-            })
-            .collect::<Vec<_>>();
-        for format in cube_formats {
-            let cube = device.create_texture(&TextureDescriptor {
-                label: Some("FL9_1 compressed cube readback"),
-                size: Extent3d {
-                    width: 8,
-                    height: 8,
-                    depth_or_array_layers: 6,
-                },
-                mip_level_count: 1,
-                sample_count: 1,
-                dimension: TextureDimension::D2,
-                format,
-                usage: TextureUsages::TEXTURE_BINDING
-                    | TextureUsages::COPY_DST
-                    | TextureUsages::COPY_SRC,
-                view_formats: &[],
-            });
-            let block_size = match format {
-                TextureFormat::Bc1RgbaUnorm => 8,
-                _ => 16,
-            };
-            let output = sentinel_readback(&device, 6 * 512, "FL9_1 BC cube face bytes");
-            let mut cube_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-                label: Some("FL9_1 compressed cube face readback"),
-            });
-            let mut face_blocks = Vec::new();
-            for face in 0..6 {
-                let block = bc_color_block(format, 0xf800u16 ^ (face * 0x111) as u16);
-                let bytes = block.repeat(4);
-                queue.write_texture(
-                    TexelCopyTextureInfo {
-                        texture: &cube,
-                        mip_level: 0,
-                        origin: Origin3d {
-                            x: 0,
-                            y: 0,
-                            z: face,
-                        },
-                        aspect: TextureAspect::All,
-                    },
-                    &bytes,
-                    TexelCopyBufferLayout {
-                        offset: 0,
-                        bytes_per_row: Some((block_size * 2) as u32),
-                        rows_per_image: Some(8),
-                    },
-                    Extent3d {
-                        width: 8,
-                        height: 8,
-                        depth_or_array_layers: 1,
-                    },
-                );
-                face_blocks.push(block);
-                cube_encoder.copy_texture_to_buffer(
-                    TexelCopyTextureInfo {
-                        texture: &cube,
-                        mip_level: 0,
-                        origin: Origin3d {
-                            x: 0,
-                            y: 0,
-                            z: face,
-                        },
-                        aspect: TextureAspect::All,
-                    },
-                    TexelCopyBufferInfo {
-                        buffer: &output,
-                        layout: TexelCopyBufferLayout {
-                            offset: face as u64 * 512 + 16,
-                            bytes_per_row: Some(256),
-                            rows_per_image: Some(8),
-                        },
-                    },
-                    Extent3d {
-                        width: 8,
-                        height: 8,
-                        depth_or_array_layers: 1,
-                    },
-                );
-            }
-            let submission = queue.submit([cube_encoder.finish()]);
-            let (sender, receiver) = std::sync::mpsc::channel();
-            output
-                .slice(..)
-                .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
-            device
-                .poll(PollType::Wait {
-                    submission_index: Some(submission),
-                    timeout: Some(Duration::from_secs(10)),
-                })
-                .expect("wait for six compressed cube-face uploads/readbacks");
-            receiver
-                .recv_timeout(Duration::from_secs(10))
-                .expect("compressed cube readback callback")
-                .expect("map compressed cube readback");
-            let bytes = output.slice(..).get_mapped_range().unwrap();
-            for face in 0..6 {
-                let blocks = std::array::from_fn(|_| face_blocks[face].clone());
-                let face_bytes = &bytes[face * 512..(face + 1) * 512];
-                assert_bc_readback(face_bytes, &blocks, block_size * 2, 16);
-            }
-            drop(bytes);
-            output.unmap();
-            println!("PASS: {format:?} compressed cube readback covered all six faces");
-        }
         println!(
             "PASS: BC1/BC2/BC3 forced-FL9_1 partial uploads, texture copies and padded raw-byte readbacks"
         );
@@ -940,6 +827,168 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
             "strict mode requires FL9_1 BC copy-source support for compressed readback"
         );
         println!("SKIP: selected adapter does not expose BC copy-source support");
+    }
+
+    let cube_limits = adapter.get_downlevel_capabilities().limits;
+    let public_limits = adapter.limits();
+    let cube_dimensions_ok = cube_limits.max_texture_cube_dimension >= 8
+        && public_limits.max_texture_dimension_2d >= 8
+        && public_limits.max_texture_array_layers >= 6
+        && cube_limits.max_texture_to_buffer_copy_layers >= 1;
+    let cube_formats = [
+        (TextureFormat::Bc1RgbaUnorm, true),
+        (TextureFormat::Bc2RgbaUnorm, true),
+        (TextureFormat::Bc3RgbaUnorm, true),
+        (TextureFormat::Bc1RgbaUnormSrgb, srgb_available),
+        (TextureFormat::Bc2RgbaUnormSrgb, srgb_available),
+        (TextureFormat::Bc3RgbaUnormSrgb, srgb_available),
+    ];
+    for (format, feature_available) in cube_formats {
+        let caps = adapter.get_texture_format_features(format);
+        let cube_mask = cube_limits.texture_cube_format_mask;
+        let cube_format_bit = DownlevelLimits::texture_cube_format_bit(format);
+        let cube_format_supported = cube_limits.supports_texture_cube_format(format);
+        let copy_src_usage = caps.allowed_usages.contains(TextureUsages::COPY_SRC);
+        let texture_to_buffer_mask = cube_limits.texture_to_buffer_copy_format_mask;
+        let texture_to_buffer_bit = DownlevelLimits::texture_to_buffer_copy_format_bit(format);
+        let texture_to_buffer_supported = cube_limits.supports_texture_to_buffer_copy(format);
+        println!(
+            "BC cube capability: format={format:?} feature_available={feature_available} cube_mask={cube_mask:#010x} cube_bit={cube_format_bit:#010x} cube_supported={cube_format_supported} copy_src_usage={copy_src_usage} texture_to_buffer_mask={texture_to_buffer_mask:#010x} texture_to_buffer_bit={texture_to_buffer_bit:#010x} texture_to_buffer_supported={texture_to_buffer_supported} dimensions_ok={cube_dimensions_ok}"
+        );
+
+        if !feature_available {
+            println!("SKIP: optional {format:?} cube readback; compression feature is unavailable");
+            continue;
+        }
+        if !cube_format_supported {
+            println!(
+                "SKIP: optional {format:?} cube readback; cube-format mask does not advertise it"
+            );
+            continue;
+        }
+        if !copy_src_usage {
+            println!("SKIP: optional {format:?} cube readback; COPY_SRC usage is unavailable");
+            continue;
+        }
+        if !texture_to_buffer_supported {
+            println!("SKIP: optional {format:?} cube readback; texture-to-buffer format mask excludes it");
+            continue;
+        }
+        if !cube_dimensions_ok {
+            println!(
+                "SKIP: optional {format:?} cube readback; cube dimension or six-layer limit is insufficient"
+            );
+            continue;
+        }
+        let required_usage =
+            TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST | TextureUsages::COPY_SRC;
+        if !caps.allowed_usages.contains(required_usage) {
+            println!(
+                "SKIP: optional {format:?} cube readback; required texture, upload and readback usages are not all advertised"
+            );
+            continue;
+        }
+
+        let cube = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 compressed cube readback"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 6,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: required_usage,
+            view_formats: &[],
+        });
+        let block_size = match format {
+            TextureFormat::Bc1RgbaUnorm | TextureFormat::Bc1RgbaUnormSrgb => 8,
+            _ => 16,
+        };
+        let output = sentinel_readback(&device, 6 * 512, "FL9_1 BC cube face bytes");
+        let mut cube_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("FL9_1 compressed cube face readback"),
+        });
+        let mut face_blocks = Vec::new();
+        for face in 0..6 {
+            let block = bc_color_block(format, 0xf800u16 ^ (face * 0x111) as u16);
+            let bytes = block.repeat(4);
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: &cube,
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: face,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                &bytes,
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some((block_size * 2) as u32),
+                    rows_per_image: Some(8),
+                },
+                Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+            );
+            face_blocks.push(block);
+            cube_encoder.copy_texture_to_buffer(
+                TexelCopyTextureInfo {
+                    texture: &cube,
+                    mip_level: 0,
+                    origin: Origin3d {
+                        x: 0,
+                        y: 0,
+                        z: face,
+                    },
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyBufferInfo {
+                    buffer: &output,
+                    layout: TexelCopyBufferLayout {
+                        offset: face as u64 * 512 + 16,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(8),
+                    },
+                },
+                Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        let submission = queue.submit([cube_encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        output
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for six compressed cube-face uploads/readbacks");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("compressed cube readback callback")
+            .expect("map compressed cube readback");
+        let bytes = output.slice(..).get_mapped_range().unwrap();
+        for face in 0..6 {
+            let blocks = std::array::from_fn(|_| face_blocks[face].clone());
+            let face_bytes = &bytes[face * 512..(face + 1) * 512];
+            assert_bc_readback(face_bytes, &blocks, block_size * 2, 16);
+        }
+        drop(bytes);
+        output.unmap();
+        println!("PASS: {format:?} compressed cube readback covered all six faces");
     }
 
     if srgb_available {
