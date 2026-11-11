@@ -17372,3 +17372,29 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 This only verifies the selected modern driver while its device is restricted
 to FL9_1. BGRA8 multisample support remains optional, and historical FL9_1
 drivers remain unverified.
+
+## BGRA8 multisample resolve counts — 2026-11-11
+
+Extended the public strict BGRA8 resolve test to execute each query-advertised
+2x, 4x and 8x sample count. Each case clears an 8x8 multisampled target,
+resolves to same-format BGRA8, and reads back all 64 pixels. The RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) reported all three counts and selected
+physical FL9_1 with `software=false`; requested and actual levels matched.
+Every pixel matched `[191, 128, 64, 255]` within one byte per channel (the
+observed value was `[191, 127, 64, 255]`). This adds test coverage only; the
+existing capability projection remains query-gated and unchanged.
+
+The pinned Rust 1.93.1 strict focused test passed 1/1, executing all three
+sample counts with no skips. The complete strict public D3D11 target passed
+135/135 test functions; it includes the default-enumeration isolation test.
+Several optional per-format subcases logged explicit `SKIP` messages when the
+selected device lacked their queried format capability. Targeted Clippy passed
+with six existing warnings in `hal_index.rs`, `hal_transfer.rs` and
+`texture.rs`; workspace formatting and `git diff --check` passed. The Visual
+Studio developer prompt printed its existing `vError: Unknown error` banner,
+while MSVC linking and the test run completed successfully.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_supported_bgra8_sample_counts_at_fl91 -- --exact --nocapture --test-threads=1
+```

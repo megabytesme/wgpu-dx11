@@ -3607,17 +3607,18 @@ single-sample texture, and readback checked all 64 pixels: 28 full red triangle,
 This is optional selected-device evidence from a modern GPU, not a FL9_1
 hardware guarantee.
 
-`public_dx11_resolves_four_sample_bgra8_at_fl91` clears a four-sample BGRA8
-render target to a non-symmetric color, resolves it to a same-format texture,
-and reads back all 64 BGRA pixels. Expected bytes are `[191, 128, 64, 255]`
-with one-byte per-channel tolerance for UNORM rounding; the RTX returned
-`[191, 127, 64, 255]`.
-Strict mode fails if the selected physical FL9_1 device lacks the queried
-BGRA8 4x render and resolve support; a normal run reports `SKIP`.
+`public_dx11_resolves_supported_bgra8_sample_counts_at_fl91` checks each of
+2x, 4x and 8x that the selected device reports for BGRA8 render and resolve.
+For every count it clears a multisampled target to a non-symmetric color,
+resolves to a same-format texture, and reads back all 64 BGRA pixels. Expected
+bytes are `[191, 128, 64, 255]` with one-byte per-channel tolerance for UNORM
+rounding; the RTX returned `[191, 127, 64, 255]` at each count. Strict mode
+fails if any of these expected counts is unavailable; an ordinary run reports
+a separate `SKIP` for each unavailable optional count.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
-cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_four_sample_bgra8_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_supported_bgra8_sample_counts_at_fl91 -- --exact --nocapture --test-threads=1
 ```
 
 The same strict test selected D24PlusStencil8 after a positive 4x query,

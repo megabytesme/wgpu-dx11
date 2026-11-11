@@ -2,24 +2,32 @@
 
 ## Current mission status — 2026-11-11
 
-The latest verified software increment extends the narrow fragment 2D
-`textureLoad` path to query-gated `Rg8Snorm` and `Rgba8Snorm`; strict readback
-matched all 256 tested pixels at requested/actual FL9_1. The strict private
-HAL suite passed 509/509, the strict public target 134/134, and Core DX11/DX12
-passed 129/129 and 128/128. A Windows winit example also selected physical
-FL9_1 hardware, rendered 60 indexed textured depth-tested frames and verified
-surface reconfiguration after a resize. Exact commands and warnings are
-recorded in `FL9_1_PROGRESS.md`.
+The latest verified increment extends the strict public BGRA8 multisample
+resolve test to all query-advertised 2x, 4x and 8x counts. On the RTX 3090 Ti,
+each forced-FL9_1 case resolved and checked all 64 pixels within the stated
+UNORM rounding tolerance. The focused test passed 1/1; the complete strict
+public target passed 135/135 functions, including default-enumeration
+isolation. This adds verification coverage, not a new capability. Exact
+commands are recorded in `FL9_1_PROGRESS.md`.
 
-This is useful constrained opt-in support, not feature-complete FL9_1 wgpu.
-Remaining software work is to close the public Core-to-HAL contract audit and
-implement only additional valid operations with a faithful FL9_1 path.
-Compute/UAV, geometry-class shaders, MRT and ordinary 1D/array texture support
-remain hardware/profile exclusions. Historical FL9_1 drivers, Lumia
-ARM32/CoreWindow execution and physical device-removal recovery remain external
-verification gaps. Use agents for independent audits and isolated consumer
-probes; keep cross-layer Core/Naga/HAL changes and their end-to-end validation
-under the coordinator.
+This is a substantial constrained opt-in graphics subset, not feature-complete
+FL9_1 wgpu. Recent separate reviews of public adapter/render, resource/transfer,
+and shader/error paths found no confirmed Core-valid request that reaches an
+unsupported HAL operation in their reviewed scopes; a complete API/CTS contract
+audit is still open. Remaining software breadth includes conservative shader
+subsets and 3D GPU copy/attachment paths. Compute/UAV, geometry shaders, MRT,
+indirect execution, occlusion queries, 1D textures and ordinary texture arrays
+are FL9_1/profile or native API exclusions, not a software backlog to bypass.
+The shared CTS lists do not track DX11-specific results; focused strict runs
+and the public backend suite provide the current evidence.
+
+Historical FL9_1 drivers, Lumia ARM32/CoreWindow execution and physical
+device-removal recovery remain external verification gaps. Use agents for
+independent audits, CTS triage and compiler probes, but assign each coupled
+Core/Naga/HAL feature to one implementation owner and keep end-to-end GPU
+validation under the coordinator. A temporary FXC probe found that 3x3 f32
+matrix inverse cofactor code compiles in both level-9 shader profiles, making
+it a possible GLSL/Naga IR slice; it is not implemented or GPU-verified.
 
 ## Current coordinator checkpoint — query-gated Rg16Snorm texture load — 2026-11-11
 

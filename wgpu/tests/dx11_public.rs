@@ -30509,7 +30509,13 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
 }
 
 #[test]
-fn public_dx11_resolves_four_sample_bgra8_at_fl91() {
+fn public_dx11_resolves_supported_bgra8_sample_counts_at_fl91() {
+    for sample_count in [2, 4, 8] {
+        run_public_dx11_bgra8_resolve_at_fl91(sample_count);
+    }
+}
+
+fn run_public_dx11_bgra8_resolve_at_fl91(sample_count: u32) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -30535,14 +30541,21 @@ fn public_dx11_resolves_four_sample_bgra8_at_fl91() {
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; BGRA8 features={:?}",
         info.name, info.vendor, info.device, info.driver_info, format_features
     );
-    if !format_features.flags.contains(
-        TextureFormatFeatureFlags::MULTISAMPLE_X4 | TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE,
-    ) {
+    let sample_count_flag = match sample_count {
+        2 => TextureFormatFeatureFlags::MULTISAMPLE_X2,
+        4 => TextureFormatFeatureFlags::MULTISAMPLE_X4,
+        8 => TextureFormatFeatureFlags::MULTISAMPLE_X8,
+        _ => unreachable!("the test only requests supported FL9_1 sample counts"),
+    };
+    if !format_features
+        .flags
+        .contains(sample_count_flag | TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE)
+    {
         assert!(
             !required,
-            "strict mode requires the physical FL9_1 device to support BGRA8 4x render and resolve"
+            "strict mode requires the physical FL9_1 device to support BGRA8 {sample_count}x render and resolve"
         );
-        println!("SKIP: selected FL9_1 device does not report BGRA8 4x render and resolve support");
+        println!("SKIP: selected FL9_1 device does not report BGRA8 {sample_count}x render and resolve support");
         return;
     }
 
@@ -30556,14 +30569,14 @@ fn public_dx11_resolves_four_sample_bgra8_at_fl91() {
     let command_internal_scope = device.push_error_scope(ErrorFilter::Internal);
     let command_validation_scope = device.push_error_scope(ErrorFilter::Validation);
     let source = device.create_texture(&TextureDescriptor {
-        label: Some("FL9_1 four-sample BGRA8 source"),
+        label: Some("FL9_1 multisample BGRA8 source"),
         size: Extent3d {
             width: 8,
             height: 8,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
-        sample_count: 4,
+        sample_count,
         dimension: TextureDimension::D2,
         format: TextureFormat::Bgra8Unorm,
         usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT,
@@ -30711,7 +30724,7 @@ fn public_dx11_resolves_four_sample_bgra8_at_fl91() {
     }
     readback.unmap();
     println!(
-        "PASS: FL9_1 BGRA8 4x resolve matched 64 BGRA pixels [191, 128, 64, 255] within one byte"
+        "PASS: FL9_1 BGRA8 {sample_count}x resolve matched 64 BGRA pixels [191, 128, 64, 255] within one byte"
     );
 }
 

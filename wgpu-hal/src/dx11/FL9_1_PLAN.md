@@ -1,5 +1,15 @@
 # FL9_1 completion plan
 
+## Recent continuation — BGRA8 multisample resolve counts — 2026-11-11
+
+The strict public resolve test now executes all query-advertised BGRA8 2x,
+4x and 8x paths on the RTX 3090 Ti at requested/actual FL9_1. All 64 pixels
+passed the one-byte UNORM tolerance for each count. The focused test passed
+1/1 and the complete strict public target passed 135/135 functions, including
+the default-enumeration isolation check. This closes a test-evidence gap
+without changing capability projection. Exact commands are recorded in
+`FL9_1_PROGRESS.md`.
+
 ## Recent continuation — query-gated BGRA8 multisample resolve — 2026-11-11
 
 BGRA8 now uses its own selected-device format-support and per-sample-count
