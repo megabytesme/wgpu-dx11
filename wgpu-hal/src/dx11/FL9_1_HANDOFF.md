@@ -2,6 +2,15 @@
 
 ## Current mission status — 2026-11-11
 
+The latest increment accepts query-gated `Bgra8Unorm` and `Bgra8UnormSrgb`
+views in the narrow fragment 2D `textureLoad` subset. The strict RTX 3090 Ti
+FL9_1 run verified BGRA channel order and sRGB decode for all 128 output
+pixels. Full strict regressions passed: private HAL 510/510, Core DX11
+132/132, Core DX12 131/131 and public D3D11 144/144, with three optional
+format/input subcase skips and no hardware skips. Targeted Clippy, formatting
+and diff checks passed; see the latest `FL9_1_PROGRESS.md` section for exact
+commands and pre-existing warnings.
+
 The latest verified change allows selected 3D and cube `textureDimensions`
 queries and helpers to use nonzero bind groups while preserving the group-0
 sampler restriction. Strict forced-FL9_1 readback on the physical RTX 3090 Ti

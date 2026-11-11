@@ -1391,6 +1391,8 @@ fn fl9_texture_load_format_compatible(
             format,
             wgt::TextureFormat::Rgba8Unorm
                 | wgt::TextureFormat::Rgba8UnormSrgb
+                | wgt::TextureFormat::Bgra8Unorm
+                | wgt::TextureFormat::Bgra8UnormSrgb
                 | wgt::TextureFormat::R8Unorm
                 | wgt::TextureFormat::Rg8Unorm
                 | wgt::TextureFormat::Rg8Snorm
@@ -1407,8 +1409,13 @@ fn fl9_texture_load_resource_view_formats_compatible(
     view_format: wgt::TextureFormat,
     dimension: naga::ImageDimension,
 ) -> bool {
-    let srgb = matches!(resource_format, wgt::TextureFormat::Rgba8UnormSrgb)
-        || matches!(view_format, wgt::TextureFormat::Rgba8UnormSrgb);
+    let srgb = matches!(
+        resource_format,
+        wgt::TextureFormat::Rgba8UnormSrgb | wgt::TextureFormat::Bgra8UnormSrgb
+    ) || matches!(
+        view_format,
+        wgt::TextureFormat::Rgba8UnormSrgb | wgt::TextureFormat::Bgra8UnormSrgb
+    );
     fl9_texture_load_format_compatible(view_format, dimension)
         && (!srgb || resource_format == view_format)
 }
@@ -1472,7 +1479,8 @@ mod fl9_texture_load_tests {
     use super::fl9_texture_load_resource_view_formats_compatible as resource_view_compatible;
     use naga::ImageDimension::{D2, D3};
     use wgt::TextureFormat::{
-        R8Unorm, Rg16Snorm, Rg8Snorm, Rg8Unorm, Rgba8Snorm, Rgba8Unorm, Rgba8UnormSrgb,
+        Bgra8Unorm, Bgra8UnormSrgb, R8Unorm, Rg16Snorm, Rg8Snorm, Rg8Unorm, Rgba8Snorm, Rgba8Unorm,
+        Rgba8UnormSrgb,
     };
 
     #[test]
@@ -1488,15 +1496,21 @@ mod fl9_texture_load_tests {
         assert!(!compatible(Rg8Snorm, D3));
         assert!(!compatible(Rgba8Snorm, D3));
         assert!(compatible(Rgba8UnormSrgb, D2));
+        assert!(compatible(Bgra8Unorm, D2));
+        assert!(compatible(Bgra8UnormSrgb, D2));
         assert!(compatible(Rg16Snorm, D2));
         assert!(!compatible(Rgba8UnormSrgb, D3));
         assert!(!compatible(Rg16Snorm, D3));
         assert!(resource_view_compatible(Rgba8UnormSrgb, Rgba8UnormSrgb, D2));
+        assert!(resource_view_compatible(Bgra8Unorm, Bgra8Unorm, D2));
+        assert!(resource_view_compatible(Bgra8UnormSrgb, Bgra8UnormSrgb, D2));
         assert!(resource_view_compatible(Rg16Snorm, Rg16Snorm, D2));
         assert!(resource_view_compatible(Rg8Snorm, Rg8Snorm, D2));
         assert!(resource_view_compatible(Rgba8Snorm, Rgba8Snorm, D2));
         assert!(!resource_view_compatible(Rgba8Unorm, Rgba8UnormSrgb, D2));
         assert!(!resource_view_compatible(Rgba8UnormSrgb, Rgba8Unorm, D2));
+        assert!(!resource_view_compatible(Bgra8Unorm, Bgra8UnormSrgb, D2));
+        assert!(!resource_view_compatible(Bgra8UnormSrgb, Bgra8Unorm, D2));
     }
 }
 

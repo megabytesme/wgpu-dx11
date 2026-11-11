@@ -35655,6 +35655,341 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
 }
 
 #[test]
+fn public_dx11_bgra_texture_load_emulation_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().find(|adapter| {
+        let info = adapter.get_info();
+        info.backend == Backend::Dx11
+            && info.driver_info.contains("FL9_1")
+            && info.driver_info.contains("physical")
+    }) else {
+        assert!(
+            !required,
+            "strict mode requires physical FL9_1 D3D11 hardware for BGRA textureLoad"
+        );
+        println!("SKIP: no physical FL9_1 D3D11 adapter for BGRA textureLoad test");
+        return;
+    };
+    let info = adapter.get_info();
+    let formats = [
+        (
+            TextureFormat::Bgra8Unorm,
+            [32, 64, 128, 255],
+            [128, 64, 32, 255],
+        ),
+        (
+            TextureFormat::Bgra8UnormSrgb,
+            [32, 64, 128, 255],
+            [55, 13, 4, 255],
+        ),
+    ];
+    let cases = formats
+        .into_iter()
+        .filter_map(|(format, source, expected)| {
+            let supported = adapter
+                .get_texture_format_features(format)
+                .allowed_usages
+                .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST);
+            println!("Format query: {format:?} sampled_upload={supported}");
+            supported.then_some((format, source, expected))
+        })
+        .collect::<Vec<_>>();
+    if required {
+        assert!(
+            cases
+                .iter()
+                .any(|(format, _, _)| *format == TextureFormat::Bgra8Unorm),
+            "strict RTX run expects query-supported BGRA8_UNORM sampling and upload"
+        );
+    }
+    if cases.is_empty() {
+        println!("SKIP: selected FL9_1 device has no query-supported BGRA sampled upload format");
+        return;
+    }
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(downlevel.limits.texture_load_2d_float_fragment);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=BGRA fragment textureLoad; cases={}",
+        info.name,
+        info.vendor,
+        info.device,
+        info.driver_info,
+        cases.len()
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 BGRA fragment textureLoad"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the FL9_1 capability projection");
+    let submit_errors = Arc::new(std::sync::Mutex::new(Vec::new()));
+    device.on_uncaptured_error({
+        let submit_errors = submit_errors.clone();
+        Arc::new(move |error| submit_errors.lock().unwrap().push(format!("{error:?}")))
+    });
+    let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 BGRA textureLoad layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: true },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 BGRA textureLoad pipeline layout"),
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 BGRA textureLoad shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
+             struct VertexOut { @builtin(position) position: vec4f }\n\
+             @vertex fn vs(@location(0) position: vec2f) -> VertexOut { var out: VertexOut; out.position = vec4f(position, 0.0, 1.0); return out; }\n\
+             @fragment fn fs() -> @location(0) vec4f { return textureLoad(image, vec2i(0, 0), 0); }"
+                .into(),
+        ),
+    });
+    let vertices = [-1.0f32, -1.0, -1.0, 3.0, 3.0, -1.0];
+    let vertex_bytes = vertices
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect::<Vec<_>>();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 BGRA textureLoad fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map BGRA textureLoad vertices")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+    let attribute = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let mut textures = Vec::with_capacity(cases.len());
+    let mut views = Vec::with_capacity(cases.len());
+    let mut bind_groups = Vec::with_capacity(cases.len());
+    let mut targets = Vec::with_capacity(cases.len());
+    let mut target_views = Vec::with_capacity(cases.len());
+    let mut pipelines = Vec::with_capacity(cases.len());
+    for (index, (format, source, _)) in cases.iter().enumerate() {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 BGRA textureLoad source"),
+            size: Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: *format,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            source,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = texture.create_view(&TextureViewDescriptor::default());
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("FL9_1 BGRA textureLoad binding"),
+            layout: &bind_group_layout,
+            entries: &[BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&view),
+            }],
+        });
+        let target = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 BGRA textureLoad target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let target_view = target.create_view(&TextureViewDescriptor::default());
+        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 BGRA textureLoad pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &attribute,
+                })],
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        println!("Prepared {:?} textureLoad case {index}", format);
+        textures.push(texture);
+        views.push(view);
+        bind_groups.push(bind_group);
+        targets.push(target);
+        target_views.push(target_view);
+        pipelines.push(pipeline);
+    }
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 BGRA textureLoad readback"),
+        size: cases.len() as u64 * 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 BGRA textureLoad render and readback"),
+    });
+    for index in 0..cases.len() {
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 BGRA textureLoad pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_views[index],
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipelines[index]);
+            pass.set_bind_group(0, &bind_groups[index], &[]);
+            pass.set_vertex_buffer(0, vertex.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &targets[index],
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: index as u64 * 8 * 256,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    let submission = queue.submit([encoder.finish()]);
+    assert!(
+        submit_errors.lock().unwrap().is_empty(),
+        "BGRA textureLoad submission reported errors: {:?}",
+        *submit_errors.lock().unwrap()
+    );
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for BGRA textureLoad rendering");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("BGRA textureLoad map callback")
+        .expect("map BGRA textureLoad results");
+    let pixels = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped BGRA textureLoad pixels");
+    for (index, (_, _, expected)) in cases.iter().enumerate() {
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = index * 8 * 256 + y * 256 + x * 4;
+                for channel in 0..4 {
+                    assert!(
+                        pixels[offset + channel].abs_diff(expected[channel]) <= 1,
+                        "{:?} textureLoad pixel ({x}, {y}), channel {channel}: expected {}, observed {}",
+                        cases[index].0,
+                        expected[channel],
+                        pixels[offset + channel]
+                    );
+                }
+            }
+        }
+    }
+    drop(pixels);
+    readback.unmap();
+    println!(
+        "PASS: BGRA textureLoad verified {} sampled/upload formats across {} output pixels",
+        cases.len(),
+        cases.len() * 64
+    );
+}
+
+#[test]
 fn public_dx11_fragment_rg16_snorm_texture_load_emulation_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

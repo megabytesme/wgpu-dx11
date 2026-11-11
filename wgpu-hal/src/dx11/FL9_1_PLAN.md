@@ -1,6 +1,29 @@
 # FL9_1 completion plan
 
-## Current coordinator checkpoint — nonzero-group 3D/cube dimensions — 2026-11-11
+## Current coordinator checkpoint — query-gated BGRA8 texture loads — 2026-11-11
+
+The narrow fragment 2D `textureLoad` path now accepts query-gated BGRA8
+unorm and sRGB views. Core protects the single-mip and exact sRGB resource/view
+format contract; HAL keeps the additions limited to 2D point-load emulation.
+The RTX 3090 Ti at requested/actual FL9_1 reported sampled-upload support for
+both formats, and strict GPU readback verified logical RGBA ordering for all
+64 pixels per case, including sRGB decoding `[128, 64, 32, 255]` to
+`[55, 13, 4, 255]`. Historical format support remains device-query-dependent.
+Narrow format unit tests and strict GPU execution passed. Full regression
+results: HAL 510/510, Core DX11 132/132, Core DX12 131/131 and public D3D11
+144/144, with three optional format/input subcase skips and no hardware test
+skips. Targeted Clippy, formatting and diff checks passed; six known HAL
+warnings remain. Details are recorded in `FL9_1_PROGRESS.md`.
+
+Three probes recommend keeping agent work focused: vertex-only f32 mat4 inverse
+is feasible but needs a new stage-specific limit and exact Naga/HAL/GPU proof;
+nonzero-group `textureNumLevels` is a smaller query-proof candidate; and
+`Queue::wait_for_idle` still does not prove DXGI present completion. Continue
+with one integrated vertical slice at a time. Compute/UAV, geometry shaders,
+MRT, indirect draws and other documented profile/API limits are not software
+backlog. Historical FL9_1 and Lumia/CoreWindow execution remain external.
+
+## Previous coordinator checkpoint — nonzero-group 3D/cube dimensions — 2026-11-11
 
 Naga, Core and HAL now preserve the logical group/binding identity for selected
 3D and cube `textureDimensions` proofs in any supported bind group. Sparse

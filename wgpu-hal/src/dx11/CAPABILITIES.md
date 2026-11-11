@@ -714,14 +714,15 @@ additional images and non-fragment stages before HAL. The private path maps the
 resource to `t0` and emulates point sampling at texel centers with an internal
 sampler at `s15` and dimensions at `b13`. The shader returns zero for
 out-of-bounds coordinates and nonzero mip requests. The 2D path also accepts
-query-gated `Rgba8UnormSrgb`, `R8Unorm`, `Rg8Unorm`, `Rg8Snorm`,
+query-gated `Rgba8UnormSrgb`, `Bgra8Unorm`, `Bgra8UnormSrgb`, `R8Unorm`, `Rg8Unorm`, `Rg8Snorm`,
 `Rgba8Snorm` and `Rg16Snorm` views when
 the selected device reports the format's sampled-resource support and the
 sampled-upload backend path is enabled. `Rg16Snorm` additionally requires the
 public 16-bit normalized format feature and an unfilterable-float layout. For
 sRGB, the typed SRV performs the required RGB-to-linear conversion on shader
-reads while alpha remains linear; this is limited to a resource and view both
-natively formatted as `Rgba8UnormSrgb`.
+reads while alpha remains linear; this is limited to resources and views both
+natively formatted as `Rgba8UnormSrgb` or `Bgra8UnormSrgb`. A BGRA typed view
+returns channels in WGSL's logical RGBA order.
 The internal point sampler does not require filtering behavior from the load
 itself. Query-gated R8/RG8 and 8-bit SNORM sampled-upload paths require
 `TEXTURE2D` but not `SHADER_SAMPLE`; sRGB remains behind the ordinary
@@ -732,10 +733,13 @@ alpha one; Rgba8Snorm supplies all four normalized channels. Core checks the
 currently bound view and parent resource for the selected entry point before
 drawing: it must be a single-mip, single-sample
 2D view of a single-mip resource, with `Rgba8Unorm`, query-gated
-`Rgba8UnormSrgb`, `R8Unorm`, `Rg8Unorm`, `Rg8Snorm`, `Rgba8Snorm` or
+`Rgba8UnormSrgb`, `Bgra8Unorm`, query-gated `Bgra8UnormSrgb`, `R8Unorm`,
+`Rg8Unorm`, `Rg8Snorm`, `Rgba8Snorm` or
 `Rg16Snorm` format. sRGB sampled
 usage remains gated by the selected format query; the typed sRGB SRV preserves
-the WGSL read conversion for RGB and linear alpha. Rg16Snorm additionally
+the WGSL read conversion for RGB and linear alpha. Strict readback verifies
+BGRA channel order for unorm and the linearized sRGB values. BGRA sRGB
+resource/view formats must match. Rg16Snorm additionally
 requires its query-gated sampled/upload path and `TEXTURE_FORMAT_16BIT_NORM`.
 The separate sample-bias-offset emulation still requires linear RGBA8.
 Unsupported formats

@@ -4179,8 +4179,9 @@ cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,w
 
 Core validates the current view before this selected entry point reaches HAL.
 The restricted path accepts a single-mip, single-sample `Rgba8Unorm` 2D view
-or a query-gated `Rgba8UnormSrgb`, `R8Unorm`, `Rg8Unorm` or `Rg16Snorm`
-view, and requires the parent resource to be single-mip. sRGB requires
+or a query-gated `Rgba8UnormSrgb`, `Bgra8Unorm`, `Bgra8UnormSrgb`, `R8Unorm`,
+`Rg8Unorm` or `Rg16Snorm` view, and requires the parent resource to be
+single-mip. sRGB requires
 sampled-resource support for that selected format and uses the typed sRGB SRV's RGB linearization;
 alpha remains linear. Multi-mip views produce a validation error without an
 internal HAL error. A sibling entry point that does not use `textureLoad` does
@@ -4197,6 +4198,20 @@ out-of-bounds zero behavior:
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93.1 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_rg16_snorm_texture_load_emulation_at_fl91 -- --nocapture --test-threads=1
+```
+
+### Query-gated BGRA8 fragment `textureLoad`
+
+The narrow 2D point-load path supports BGRA8 when the selected adapter reports
+sampled upload support. The strict test checks non-symmetric channel values in
+`Bgra8Unorm` and, when queried, `Bgra8UnormSrgb`; it validates all 64 output
+pixels per format. The sRGB result must be linearized in RGB while alpha stays
+linear. The development RTX 3090 Ti reported support for both formats and
+matched `[128, 64, 32, 255]` and `[55, 13, 4, 255]` respectively.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_bgra_texture_load_emulation_at_fl91 -- --nocapture --test-threads=1
 ```
 
 ### FL9_1 GLSL `outerProduct`

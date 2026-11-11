@@ -1,3 +1,44 @@
+## Query-gated BGRA8 fragment `textureLoad` — 2026-11-11
+
+Extended the private 2D point-load format gate and Core's bound-view
+compatibility proof for `Bgra8Unorm` and `Bgra8UnormSrgb`. The sRGB rule now
+requires resource and view formats to match for either channel order. The
+strict public test queried both formats on the RTX 3090 Ti, explicitly
+requested and selected FL9_1, and verified every pixel in 8x8 targets:
+BGRA bytes `[32, 64, 128, 255]` produced logical RGBA `[128, 64, 32, 255]`,
+while the sRGB format produced `[55, 13, 4, 255]`. Both paths passed; no
+hardware subcase skipped.
+
+CPU unit tests passed for Core format/dimension and resource/view compatibility
+and the HAL operation-specific format matrix (1 test each). The strict public
+GPU test passed 1/1. Full strict validation passed: private HAL 510/510, Core
+DX11 132/132, Core DX12 131/131, and public D3D11 144/144. The public target
+logged three optional vertex-input/format capability subcase skips; no
+hardware-required test skipped. Targeted Clippy passed for Core, HAL and the
+public test target, with six pre-existing HAL warnings and no warnings in
+changed code. Rust 1.93.1 formatting and `git diff --check` passed. A first
+direct Cargo attempt could not link because the shell did not contain MSVC
+`link.exe`; rerunning through the configured Visual Studio Cargo wrapper built
+and ran successfully. The wrapper still prints its existing `vError: Unknown
+error` banner. Exact successful commands:
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_texture_load_format_subset_is_dimension_specific
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_emulation_format_matrix_is_narrow
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_bgra_texture_load_emulation_at_fl91 -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
 ## Nonzero-group 3D/cube `textureDimensions` — 2026-11-11
 
 Removed the unnecessary group-0 restriction from the selected-entry fragment

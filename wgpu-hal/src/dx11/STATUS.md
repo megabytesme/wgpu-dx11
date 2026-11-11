@@ -1,3 +1,13 @@
+## Query-gated BGRA8 fragment `textureLoad` — 2026-11-11
+
+The selected-entry fragment 2D `textureLoad` subset now supports query-gated
+`Bgra8Unorm` and `Bgra8UnormSrgb` views. Core enforces single-mip resources and
+keeps sRGB resource/view pairs format-identical; the HAL permits these formats
+only for the existing 2D point-load emulation. Strict FL9_1 RTX readback
+verified logical RGBA channel order for both BGRA formats across 128 output
+pixels, including sRGB decoding of `[128, 64, 32, 255]` to `[55, 13, 4, 255]`.
+Historical-device format support remains query-dependent.
+
 ## Query-gated 8-bit SNORM fragment `textureLoad` — 2026-11-11
 
 The selected-entry fragment 2D `textureLoad` path now accepts

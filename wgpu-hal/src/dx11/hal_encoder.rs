@@ -86,7 +86,8 @@ fn fl9_texture_emulation_format_supported(
     use super::hal_shader::Fl9TextureEmulationKind as Kind;
     use naga::ImageDimension::{D2, D3};
     use wgt::TextureFormat::{
-        R8Unorm, Rg16Snorm, Rg8Snorm, Rg8Unorm, Rgba8Snorm, Rgba8Unorm, Rgba8UnormSrgb,
+        Bgra8Unorm, Bgra8UnormSrgb, R8Unorm, Rg16Snorm, Rg8Snorm, Rg8Unorm, Rgba8Snorm, Rgba8Unorm,
+        Rgba8UnormSrgb,
     };
 
     match kind {
@@ -96,6 +97,8 @@ fn fl9_texture_emulation_format_supported(
                     format,
                     Rgba8Unorm
                         | Rgba8UnormSrgb
+                        | Bgra8Unorm
+                        | Bgra8UnormSrgb
                         | R8Unorm
                         | Rg8Unorm
                         | Rg8Snorm
@@ -2555,7 +2558,8 @@ mod tests {
         use super::fl9_texture_emulation_format_supported as supported;
         use naga::ImageDimension::{D2, D3};
         use wgt::TextureFormat::{
-            R8Unorm, Rg16Snorm, Rg8Snorm, Rg8Unorm, Rgba8Snorm, Rgba8Unorm, Rgba8UnormSrgb,
+            Bgra8Unorm, Bgra8UnormSrgb, R8Unorm, Rg16Snorm, Rg8Snorm, Rg8Unorm, Rgba8Snorm,
+            Rgba8Unorm, Rgba8UnormSrgb,
         };
 
         assert!(supported(Kind::Load, D2, Rgba8Unorm));
@@ -2564,16 +2568,23 @@ mod tests {
         assert!(supported(Kind::Load, D2, Rg8Snorm));
         assert!(supported(Kind::Load, D2, Rgba8Snorm));
         assert!(supported(Kind::Load, D2, Rgba8UnormSrgb));
+        assert!(supported(Kind::Load, D2, Bgra8Unorm));
+        assert!(supported(Kind::Load, D2, Bgra8UnormSrgb));
         assert!(supported(Kind::Load, D2, Rg16Snorm));
         assert!(supported(Kind::LoadDimensions, D2, R8Unorm));
         assert!(supported(Kind::LoadDimensions, D2, Rgba8UnormSrgb));
+        assert!(supported(Kind::LoadDimensions, D2, Bgra8UnormSrgb));
         assert!(supported(Kind::LoadDimensions, D2, Rg16Snorm));
         assert!(supported(Kind::LoadDimensions, D2, Rg8Snorm));
         assert!(supported(Kind::LoadDimensions, D2, Rgba8Snorm));
         assert!(supported(Kind::Load3D, D3, Rgba8Unorm));
         assert!(!supported(Kind::Load3D, D3, R8Unorm));
         assert!(!supported(Kind::Load3D, D3, Rg8Unorm));
+        assert!(!supported(Kind::Load3D, D3, Bgra8Unorm));
         assert!(!supported(Kind::Load3D, D3, Rgba8UnormSrgb));
+        assert!(!supported(Kind::SampleBiasOffset, D2, Bgra8Unorm));
+        assert!(!supported(Kind::SampleBiasOffset, D2, Bgra8UnormSrgb));
+        assert!(!supported(Kind::Load3D, D3, Bgra8UnormSrgb));
         assert!(!supported(Kind::SampleBiasOffset, D2, Rgba8UnormSrgb));
         assert!(!supported(Kind::Load3D, D3, Rg16Snorm));
         assert!(!supported(Kind::Load3D, D3, Rg8Snorm));
