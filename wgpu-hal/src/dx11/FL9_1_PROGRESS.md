@@ -17206,3 +17206,31 @@ Verification with Rust 1.93.1, MSVC and bounded `-j4` Cargo jobs:
 - HAL Clippy and public-target Clippy passed. Existing HAL warnings are confined to older index, transfer and texture code; the new public test has no Clippy warning. `cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed.
 
 This verifies the query-enabled path on the selected modern NVIDIA driver under forced FL9_1, not the behavior of historical FL9_1 hardware. The format's mip path is sampled/upload and selected readback; no new mip generation or broad packed-format exposure is introduced.
+## Query-gated sRGB 2D fragment `textureLoad` — 2026-11-11
+
+Extended the existing selected-view 2D fragment `textureLoad` proof to accept
+`Rgba8UnormSrgb`, without changing the separate sample-bias-offset or 3D
+format subsets. Core retains actual-view validation; ordinary format projection
+continues to require the selected sRGB format's positive sampled-resource
+query and the implemented upload path. The emulation uses the typed sRGB SRV
+at an exact texel center, so shader reads linearize RGB while alpha remains
+linear. The test checks a 1×1 uploaded sRGB texel `[128, 128, 128, 128]` into a
+linear RGBA8 target and verifies `[55, 55, 55, 128]` within one byte across
+all 64 pixels. When that optional format query is absent, the sRGB subcase
+prints `SKIP`; strict mode still requires physical FL9_1 hardware for the
+other loads.
+
+Verification used Rust 1.93.1, the Visual Studio x64 environment and the
+mission cargo wrapper at `E:\Temp\wgpu_mission_cargo.bat`:
+
+- `E:\Temp\wgpu_mission_cargo.bat test --offline -p wgpu-core --features wgsl --lib`: 128/128 passed.
+- `$env:WGPU_DX11_REQUIRE_HARDWARE='1'; E:\Temp\wgpu_mission_cargo.bat test --offline -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1`: 509/509 passed. Hardware cases required real FL9_1 hardware; they used the RTX 3090 Ti and did not substitute WARP.
+- Focused Core format-subset unit test: 1/1 passed.
+- Focused HAL format matrix and unavailable selected-format query tests: 1/1 each passed. The full HAL suite also includes the positive and unavailable sRGB-format projection tests.
+- `$env:WGPU_DX11_REQUIRE_HARDWARE='1'; E:\Temp\wgpu_mission_cargo.bat test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_load_emulation_at_fl91 -- --nocapture --test-threads=1`: 1/1 passed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, physical, requested/actual FL9_1. It validated the existing in-bounds, out-of-bounds, helper and mip cases plus the sRGB conversion above.
+- The same strict command without the test-name filter ran all 132 public `dx11_public` test functions: 132/132 passed. The strict suite used the RTX 3090 Ti; optional unsupported format subcases emitted explicit `SKIP` diagnostics rather than being counted as feature coverage.
+- Core DX12 regression suite: 128/128 passed. `experimental_dx11_is_not_enabled_by_default`: 1/1 passed.
+- `E:\Temp\wgpu_mission_cargo.bat clippy --offline -p wgpu-core --features wgsl --lib` and the corresponding HAL (`--no-default-features --features dx11 --lib`) and public-target (`-p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public`) Clippy commands passed. HAL Clippy emitted six pre-existing warnings in index, transfer and texture code; test compilation emitted four pre-existing unnecessary-qualification warnings in `hal_queue.rs`.
+- `cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed.
+
+An initial Core unit command omitted the `wgsl` feature and therefore failed to compile WGSL-based tests; the corrected command above passed. This does not change public adapter selection and does not establish historical FL9_1 driver behavior.

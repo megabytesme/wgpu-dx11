@@ -4107,9 +4107,14 @@ This is not general `textureLoad` support. It covers one single-mip, non-arrayed
 shader emulation point-samples at texel centers using `s15`, reads dimensions
 from `b13`, and yields zero for out-of-bounds coordinates and nonzero mip
 requests. The public test on the physical RTX 3090 Ti at requested/actual
-FL9_1 checked four 8×8 outputs: 64 direct-helper in-bounds green pixels, 64 out-of-bounds zero pixels, 64 zero pixels for a nonzero mip request and 64 nested-helper in-bounds green pixels. The broader
-strict public suite also includes this test. This modern driver result does
-not establish behavior on historical FL9_1 hardware.
+FL9_1 checks five 8×8 outputs: direct-helper in-bounds green pixels,
+out-of-bounds zero pixels, zero pixels for a nonzero mip request,
+nested-helper in-bounds green pixels and the dynamic-coordinate helper's four
+source quadrants. When the selected device exposes sampled/upload support for
+RGBA8 sRGB, a sixth draw reads encoded `[128, 128, 128, 128]` through the sRGB
+view and verifies linear-target `[55, 55, 55, 128]` across all 64 pixels. The
+broader strict public suite also includes this test. This modern driver result
+does not establish behavior on historical FL9_1 hardware.
 
 A separate proven coordinate form permits a direct fragment entry-point
 `@location(0) vec2f` argument to be converted to `vec2i` and used as the
@@ -4126,11 +4131,13 @@ cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,w
 
 Core validates the current view before this selected entry point reaches HAL.
 The restricted path accepts a single-mip, single-sample `Rgba8Unorm` 2D view
-or a query-gated `R8Unorm` or `Rg8Unorm` view, and requires the parent resource
-to be single-mip. Multi-mip views produce a validation error without an
+or a query-gated `Rgba8UnormSrgb`, `R8Unorm` or `Rg8Unorm` view, and requires
+the parent resource to be single-mip. sRGB requires sampled-resource support
+for that selected format and uses the typed sRGB SRV's RGB linearization;
+alpha remains linear. Multi-mip views produce a validation error without an
 internal HAL error. A sibling entry point that does not use `textureLoad` does
-not inherit the selected entry point's view restrictions. R8 and RG8 remain
-rejected by the separate sample-bias-offset path.
+not inherit the selected entry point's view restrictions. sRGB, R8 and RG8
+remain rejected by the separate sample-bias-offset path.
 
 ### FL9_1 GLSL `outerProduct`
 

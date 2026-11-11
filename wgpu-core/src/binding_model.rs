@@ -1390,12 +1390,24 @@ fn fl9_texture_load_format_compatible(
         naga::ImageDimension::D2 => matches!(
             format,
             wgt::TextureFormat::Rgba8Unorm
+                | wgt::TextureFormat::Rgba8UnormSrgb
                 | wgt::TextureFormat::R8Unorm
                 | wgt::TextureFormat::Rg8Unorm
         ),
         naga::ImageDimension::D3 => format == wgt::TextureFormat::Rgba8Unorm,
         _ => false,
     }
+}
+
+fn fl9_texture_load_resource_view_formats_compatible(
+    resource_format: wgt::TextureFormat,
+    view_format: wgt::TextureFormat,
+    dimension: naga::ImageDimension,
+) -> bool {
+    let srgb = matches!(resource_format, wgt::TextureFormat::Rgba8UnormSrgb)
+        || matches!(view_format, wgt::TextureFormat::Rgba8UnormSrgb);
+    fl9_texture_load_format_compatible(view_format, dimension)
+        && (!srgb || resource_format == view_format)
 }
 
 fn sampled_view_fl9_texture_view_compatible(
@@ -1420,8 +1432,11 @@ pub(crate) fn sampled_view_fl9_texture_load_compatible(
     view: &TextureView,
     dimension: naga::ImageDimension,
 ) -> bool {
-    fl9_texture_load_format_compatible(view.desc.format, dimension)
-        && view.parent.desc.mip_level_count == 1
+    fl9_texture_load_resource_view_formats_compatible(
+        view.parent.desc.format,
+        view.desc.format,
+        dimension,
+    ) && view.parent.desc.mip_level_count == 1
         && sampled_view_fl9_texture_view_compatible(view, dimension)
 }
 
@@ -1451,6 +1466,7 @@ pub(crate) fn sampled_view_fl9_texture_load_view_compatibility(
 #[cfg(test)]
 mod fl9_texture_load_tests {
     use super::fl9_texture_load_format_compatible as compatible;
+    use super::fl9_texture_load_resource_view_formats_compatible as resource_view_compatible;
     use naga::ImageDimension::{D2, D3};
     use wgt::TextureFormat::{R8Unorm, Rg8Unorm, Rgba8Unorm, Rgba8UnormSrgb};
 
@@ -1462,7 +1478,11 @@ mod fl9_texture_load_tests {
         assert!(compatible(Rgba8Unorm, D3));
         assert!(!compatible(R8Unorm, D3));
         assert!(!compatible(Rg8Unorm, D3));
-        assert!(!compatible(Rgba8UnormSrgb, D2));
+        assert!(compatible(Rgba8UnormSrgb, D2));
+        assert!(!compatible(Rgba8UnormSrgb, D3));
+        assert!(resource_view_compatible(Rgba8UnormSrgb, Rgba8UnormSrgb, D2));
+        assert!(!resource_view_compatible(Rgba8Unorm, Rgba8UnormSrgb, D2));
+        assert!(!resource_view_compatible(Rgba8UnormSrgb, Rgba8Unorm, D2));
     }
 }
 

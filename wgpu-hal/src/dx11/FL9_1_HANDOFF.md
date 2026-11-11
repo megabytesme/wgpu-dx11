@@ -1,5 +1,20 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — query-gated sRGB 2D `textureLoad` — 2026-11-11
+
+The narrow selected-entry fragment 2D `textureLoad` path now accepts a
+single-mip `Rgba8UnormSrgb` view when the existing selected-format projection
+permits sampled/upload usage. Core checks the actual bound view; the HAL
+keeps this allowance out of 3D loads and sample-bias-offset. Strict RTX 3090
+FL9_1 GPU readback converted `[128, 128, 128, 128]` sRGB storage to linear
+`[55, 55, 55, 128]` across 64 pixels. Core passed 128/128, the strict private
+HAL suite 509/509, the focused strict public test 1/1, and the full strict
+public target 132/132; Core DX12 passed 128/128 and default DX11 isolation
+passed 1/1. Affected Clippy, format and diff checks passed. Historical-driver
+behavior remains unknown.
+See the latest `FL9_1_PROGRESS.md` entry for exact commands and warning
+details.
+
 ## Current coordinator checkpoint — nonzero-group 2D query helper — 2026-11-11
 
 The current working change widens only the narrow 2D `textureDimensions`

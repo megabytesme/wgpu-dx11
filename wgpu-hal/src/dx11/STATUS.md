@@ -1900,3 +1900,14 @@ the complete runtime `frexp` result remains an expected Core validation error.
 This proves the installed compiler and modern NVIDIA driver path, not every
 FXC release or historical FL9_1 driver. Other WGSL `frexp` forms remain
 unavailable.
+
+## Query-gated RGBA8 sRGB fragment `textureLoad` — 2026-11-11
+
+The existing 2D fragment-load emulation now accepts an `Rgba8UnormSrgb`
+resource/view when the selected adapter's normal format projection permits
+sampled use. It uses the proven texel-center point sample through the typed
+sRGB SRV, which converts RGB to linear values and leaves alpha linear. Core
+continues to validate the actual bound view; HAL keeps sRGB out of 3D load and
+sample-bias-offset paths. Strict forced-FL9_1 RTX readback verified encoded
+`[128, 128, 128, 128]` as linear `[55, 55, 55, 128]` across 64 pixels. This
+does not establish behavior on historical FL9_1 drivers.

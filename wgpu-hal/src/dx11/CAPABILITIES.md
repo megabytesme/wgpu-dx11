@@ -713,22 +713,32 @@ additional images and non-fragment stages before HAL. The private path maps the
 resource to `t0` and emulates point sampling at texel centers with an internal
 sampler at `s15` and dimensions at `b13`. The shader returns zero for
 out-of-bounds coordinates and nonzero mip requests. The 2D path also accepts
-query-gated `R8Unorm` and `Rg8Unorm` views when the selected device reports
-`TEXTURE2D` and the sampled-upload backend path is enabled. The internal point
-sampler means `SHADER_SAMPLE`/filterability is not required for that load
-emulation. WGSL channel semantics are preserved: R8 supplies normalized red,
-zero green/blue and alpha one; RG8 supplies normalized red/green, zero blue and
-alpha one. Core checks the currently bound view and parent resource for the
-selected entry point before drawing: it must be a single-mip, single-sample
-2D view of a single-mip resource, with `Rgba8Unorm`, query-gated `R8Unorm` or
-query-gated `Rg8Unorm` format. The separate sample-bias-offset emulation still
-requires RGBA8. Unsupported formats and mip ranges produce a validation error
-instead of a late HAL error; sibling entry points without `textureLoad` do
-not inherit this restriction. Strict public readback on the RTX 3090 Ti at
-requested/actual FL9_1 validated all 16 patterned texels for R8 and RG8,
-including four-channel conversion, plus 48 out-of-bounds zero results for
-each. This does not enable general texture-load support or establish
-compatibility with historical 9_1 hardware.
+query-gated `Rgba8UnormSrgb`, `R8Unorm` and `Rg8Unorm` views when the selected
+device reports the format's sampled-resource support and the sampled-upload
+backend path is enabled. For sRGB, the typed SRV performs the required
+RGB-to-linear conversion on shader reads while alpha remains linear; this is
+limited to a resource and view both natively formatted as `Rgba8UnormSrgb`.
+The internal point sampler does not require filtering behavior from the load
+itself. Query-gated R8/RG8 sampled-upload paths require `TEXTURE2D` but not
+`SHADER_SAMPLE`; sRGB remains behind the ordinary sampled-resource projection
+and its selected format query. WGSL channel semantics are preserved: R8
+supplies normalized red, zero green/blue and alpha one; RG8 supplies
+normalized red/green, zero blue and alpha one. Core checks the currently bound
+view and parent resource for the selected entry point before drawing: it must
+be a single-mip, single-sample
+2D view of a single-mip resource, with `Rgba8Unorm`, query-gated
+`Rgba8UnormSrgb`, `R8Unorm` or query-gated `Rg8Unorm` format. sRGB sampled
+usage remains gated by the selected format query; the typed sRGB SRV preserves
+the WGSL read conversion for RGB and linear alpha. The separate
+sample-bias-offset emulation still requires linear RGBA8. Unsupported formats
+and mip ranges produce a validation error instead of a late HAL error; sibling
+entry points without `textureLoad` do not inherit this restriction. Strict
+public readback on the RTX 3090 Ti at requested/actual FL9_1 validated all 16
+patterned texels for R8 and RG8, including four-channel conversion, plus 48
+out-of-bounds zero results for each. The sRGB case read `[128, 128, 128, 128]`
+through a typed sRGB view into a linear RGBA8 target and matched `[55, 55, 55,
+128]` within one byte across 64 pixels. This does not enable general
+texture-load support or establish compatibility with historical 9_1 hardware.
 
 A separate `texture_load_3d_float_fragment` limit covers one fragment
 `textureLoad` from a single-mip, non-arrayed `texture_3d<f32>`. The selected

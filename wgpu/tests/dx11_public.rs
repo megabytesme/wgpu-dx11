@@ -33934,9 +33934,13 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
     let downlevel = adapter.get_downlevel_capabilities();
     assert!(!downlevel.limits.texture_load);
     assert!(downlevel.limits.texture_load_2d_float_fragment);
+    let srgb_load_supported = adapter
+        .get_texture_format_features(TextureFormat::Rgba8UnormSrgb)
+        .allowed_usages
+        .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureLoad emulation",
-        info.name, info.vendor, info.device, info.driver_info
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureLoad emulation; rgba8_srgb_sample_upload={srgb_load_supported}",
+        info.name, info.vendor, info.device, info.driver_info,
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public FL9_1 fragment textureLoad emulation"),
@@ -34008,6 +34012,51 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
             resource: BindingResource::TextureView(&source_view),
         }],
     });
+    let srgb_resources = srgb_load_supported.then(|| {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 sRGB textureLoad source"),
+            size: Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8UnormSrgb,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &[128, 128, 128, 128],
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(4),
+                rows_per_image: Some(1),
+            },
+            Extent3d {
+                width: 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = texture.create_view(&TextureViewDescriptor::default());
+        let bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("FL9_1 sRGB textureLoad binding"),
+            layout: &bind_group_layout,
+            entries: &[BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&view),
+            }],
+        });
+        (texture, view, bind_group)
+    });
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("FL9_1 textureLoad pipeline layout"),
         bind_group_layouts: &[Some(&bind_group_layout)],
@@ -34028,7 +34077,8 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
              @fragment fn through_nested_helper() -> @location(0) vec4f { return nested_load(); }\n\
              @fragment fn through_dynamic_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return load_at(uv); }\n\
              @fragment fn outside() -> @location(0) vec4f { return textureLoad(image, vec2i(2, 0), 0); }\n\
-             @fragment fn invalid_level() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 1); }"
+             @fragment fn invalid_level() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 1); }\n\
+             @fragment fn inside_srgb() -> @location(0) vec4f { return textureLoad(image, vec2i(0, 0), 0); }"
                 .into(),
         ),
     });
@@ -34070,13 +34120,16 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
             cache: None,
         })
     };
-    let pipelines = [
+    let mut pipelines = vec![
         make_pipeline("inside"),
         make_pipeline("outside"),
         make_pipeline("invalid_level"),
         make_pipeline("through_nested_helper"),
         make_pipeline("through_dynamic_helper"),
     ];
+    if srgb_load_supported {
+        pipelines.push(make_pipeline("inside_srgb"));
+    }
     let vertices = [-1.0f32, -1.0, -1.0, 3.0, 3.0, -1.0];
     let vertex_bytes: Vec<u8> = vertices
         .iter()
@@ -34094,7 +34147,7 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
         .copy_from_slice(&vertex_bytes);
     vertex.unmap();
 
-    let targets = [
+    let mut targets = vec![
         device.create_texture(&TextureDescriptor {
             label: Some("FL9_1 in-bounds textureLoad target"),
             size: Extent3d {
@@ -34166,23 +34219,36 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
             view_formats: &[],
         }),
     ];
-    let target_views = [
-        targets[0].create_view(&TextureViewDescriptor::default()),
-        targets[1].create_view(&TextureViewDescriptor::default()),
-        targets[2].create_view(&TextureViewDescriptor::default()),
-        targets[3].create_view(&TextureViewDescriptor::default()),
-        targets[4].create_view(&TextureViewDescriptor::default()),
-    ];
+    if srgb_load_supported {
+        targets.push(device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 sRGB textureLoad target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        }));
+    }
+    let target_views: Vec<_> = targets
+        .iter()
+        .map(|target| target.create_view(&TextureViewDescriptor::default()))
+        .collect();
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 textureLoad readback"),
-        size: 5 * 8 * 256,
+        size: pipelines.len() as u64 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 textureLoad render and readback"),
     });
-    for index in 0..5 {
+    for index in 0..pipelines.len() {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("FL9_1 textureLoad pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
@@ -34200,7 +34266,12 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
             multiview_mask: None,
         });
         pass.set_pipeline(&pipelines[index]);
-        pass.set_bind_group(0, &bind_group, &[]);
+        let selected_bind_group = if index == 5 {
+            &srgb_resources.as_ref().unwrap().2
+        } else {
+            &bind_group
+        };
+        pass.set_bind_group(0, selected_bind_group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..3, 0..1);
         drop(pass);
@@ -34291,9 +34362,29 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
                 );
             }
         }
+        if srgb_load_supported {
+            for y in 0..8 {
+                for x in 0..8 {
+                    let srgb = 5 * 8 * 256 + y * 256 + x * 4;
+                    let expected = [55, 55, 55, 128];
+                    for channel in 0..4 {
+                        assert!(
+                            pixels[srgb + channel].abs_diff(expected[channel]) <= 1,
+                            "sRGB textureLoad output ({x}, {y}), channel {channel}: expected {}, observed {}",
+                            expected[channel],
+                            pixels[srgb + channel]
+                        );
+                    }
+                }
+            }
+        }
     }
     readback.unmap();
-    println!("PASS: direct and nested-helper FL9_1 fragment textureLoad produced expected in-bounds, out-of-bounds and nonzero-mip pixels; one helper also converted the interpolated vec2 coordinate and matched all four 4x4 texture quadrants across 320 readback pixels");
+    if srgb_load_supported {
+        println!("PASS: direct and nested-helper FL9_1 fragment textureLoad produced expected in-bounds, out-of-bounds and nonzero-mip pixels; the dynamic helper matched all four source quadrants, and sRGB input [128, 128, 128, 128] decoded to [55, 55, 55, 128] across 64 pixels");
+    } else {
+        println!("PASS: direct and nested-helper FL9_1 fragment textureLoad results matched; SKIP: selected adapter did not expose query-gated RGBA8 sRGB sampling and upload");
+    }
 }
 
 #[test]
