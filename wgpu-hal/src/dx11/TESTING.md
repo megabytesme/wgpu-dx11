@@ -173,8 +173,12 @@ The strict public test compares selected-device format usage reports with
 Core/HAL texture and view creation. It checks all 15 nonempty combinations of
 copy-source, copy-destination, sampled and render-attachment usage across 21
 formats, then creates canonical D2 views for each advertised sampled,
-attachment and combined view usage. It also checks transient usage, one mip
-contract per format, and 2x/4x/8x/16x attachment sample-count contracts.
+attachment and combined view usage. For formats advertising mip-chain support,
+it also creates these views on a two-mip texture; for advertised multisampled
+attachment support, it creates the matching multisampled attachment view.
+Single-mip-only formats continue to reject the two-mip shape. The test also
+checks transient usage, one mip contract per format, and 2x/4x/8x/16x
+attachment sample-count contracts.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
@@ -182,10 +186,12 @@ cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,w
 ```
 
 The RTX 3090 Ti at requested/actual FL9_1 passed 197 advertised usage
-combinations, 128 unreported-usage rejections, 197 view-usage checks, 21 mip
-contracts and 40 sample-count contracts. Separate strict tests execute actual
-operations for query-advertised format families; view creation alone is not
-counted as proof of rendering or transfer execution.
+combinations, 128 unreported-usage rejections, 216 canonical D2 view checks,
+21 mip contracts and 40 sample-count contracts. Separate strict tests execute
+actual operations for query-advertised format families; view creation alone
+is not counted as proof of rendering or transfer execution. The full strict
+`dx11_public` target also passed 129/129 test functions after these checks;
+three optional capability subcases reported SKIP.
 
 ## Multisample blending with a partial write mask
 

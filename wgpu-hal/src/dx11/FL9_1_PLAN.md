@@ -26,8 +26,10 @@ CoreWindow evidence.
 
 The public format projection test also creates canonical D2 views for every
 advertised sampled, render-attachment, and combined view-usage subset across
-the 21-format matrix. The RTX passed all 197 view-usage checks without Core
-validation or HAL internal errors.
+the 21-format matrix. It creates those views on advertised two-mip resources
+and multisampled attachment resources as well. The RTX passed all 216 view
+checks without Core validation or HAL internal errors; this is creation
+coverage, not GPU operation proof for every projected format.
 
 ## Previous checkpoint — 2026-11-11
 

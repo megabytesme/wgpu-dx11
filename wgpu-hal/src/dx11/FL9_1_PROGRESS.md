@@ -16675,6 +16675,36 @@ cargo +1.93.1 clippy --offline -j4 -p wgpu --no-default-features --features dx11
 
 Checkpoint: `261d90eef3e449a69100a0a090f09b6166a92ac3` (`dx11: verify advertised texture view usages`).
 
+## Public mip-chain and multisample view creation follow-up — 2026-11-11
+
+Extended the same format-projection test to create canonical D2 views for
+advertised sampled, render-attachment, and combined usages on supported
+two-mip textures, and attachment views on advertised multisampled textures.
+Single-mip-only formats still reject the two-mip shape. This closes a test
+coverage gap in Core/HAL view creation; it does not assert that every such
+format has been rendered or copied on hardware.
+
+The strict focused projection test passed on the physical NVIDIA GeForce RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) at requested
+and actual FL9_1. Results: 21 formats, 197 advertised usage combinations,
+128 unreported usage rejections, 216 canonical D2 view checks, 21 mip
+contracts, and 40 sample-count contracts. The complete strict public target
+passed 129/129 test functions; three optional capability subcases reported
+SKIP for unsupported R8G8_UNORM vertex input, R16G16_FLOAT vertex input, and
+RG8_UNORM mip support. The strict setting required hardware, and all executed
+GPU cases reported the physical RTX at forced FL9_1.
+
+The changed public test file passed Rust 1.93.1 formatting. Targeted Clippy
+passed with six existing `wgpu-hal` warnings and no warning in the changed
+test. `git diff --check` passed.
+
+```powershell
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set "WGPU_DX11_REQUIRE_HARDWARE=1" && set "CARGO_TARGET_DIR=E:\Temp\wgpu-mission-gpu-target" && set "CARGO_NET_OFFLINE=true" && set "CARGO_BUILD_JOBS=4" && cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1'
+cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 && set "CARGO_TARGET_DIR=E:\Temp\wgpu-mission-gpu-target" && set "CARGO_NET_OFFLINE=true" && set "CARGO_BUILD_JOBS=4" && cargo +1.93.1 clippy --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public'
+```
+
+## Coordinator contract-audit round — 2026-11-11
+
 ## Coordinator contract-audit round — 2026-11-11
 
 Three independent read-only reviews covered shader/profile restrictions,

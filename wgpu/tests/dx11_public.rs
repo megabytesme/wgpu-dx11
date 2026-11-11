@@ -37622,7 +37622,17 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
             let single_mip_only = features
                 .flags
                 .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY);
-            let (validation, internal) = create_texture(format, usage, 2, 1, [None; 3]);
+            let viewable_usage =
+                usage & (TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT);
+            let mip_view_usages = [
+                TextureUsages::TEXTURE_BINDING,
+                TextureUsages::RENDER_ATTACHMENT,
+                TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
+            ]
+            .map(|candidate| {
+                (!single_mip_only && viewable_usage.contains(candidate)).then_some(candidate)
+            });
+            let (validation, internal) = create_texture(format, usage, 2, 1, mip_view_usages);
             assert!(
                 internal.is_none(),
                 "{format:?} two-mip usage {usage:?} reached an internal error: {internal:?}"
@@ -37637,6 +37647,7 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
                     validation.is_none(),
                     "{format:?} permits mip chains but Core rejected the two-mip {usage:?} shape: {validation:?}"
                 );
+                view_checks += mip_view_usages.iter().flatten().count();
             }
             mip_checks += 1;
         }
@@ -37663,7 +37674,11 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
                     TextureUsages::RENDER_ATTACHMENT,
                     1,
                     sample_count,
-                    [None; 3],
+                    [
+                        supported.then_some(TextureUsages::RENDER_ATTACHMENT),
+                        None,
+                        None,
+                    ],
                 );
                 assert!(
                     internal.is_none(),
@@ -37674,6 +37689,7 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
                         validation.is_none(),
                         "{format:?} advertises sample_count={sample_count}, but Core rejected creation: {validation:?}"
                     );
+                    view_checks += 1;
                 } else {
                     assert!(
                         matches!(validation, Some(Error::Validation { .. })),
