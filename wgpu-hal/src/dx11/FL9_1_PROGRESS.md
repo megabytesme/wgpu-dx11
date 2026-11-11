@@ -16390,3 +16390,26 @@ This is a bounded shader compiler/validation expansion and does not make the
 backend a general wgpu implementation. The broader Core/HAL contract audit,
 historical driver testing, Lumia/CoreWindow execution and physical device-loss
 verification remain open.
+
+## Strict fullscreen-quad CTS recheck — 2026-11-11
+
+The current tree's narrow vertex-shader path for a direct `vertex_index`
+lookup into a locally initialized `array<vec2f, 3>` passes the standard
+fullscreen-quad CTS case. This selector draws a three-vertex, bufferless
+triangle into a 1x1 RGBA8 target and expects green readback. It exercises the
+existing local-array proof and does not establish general dynamic vector
+indexing; FXC still rejects the separate dynamic vector-component form under
+the level-9.1 profile.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,basic:fullscreen_quad:*'
+```
+
+The CTS passed 1/1, with zero skips and failures. Strict selection reported
+the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver
+`32.0.16.2101`, software=false, with requested and actual FL9_1. The initial
+attempt outside the Visual Studio developer environment could not find
+`link.exe`; rerunning with `VsDevCmd.bat` built the runner and executed the
+test. This result updates the earlier historical failure entry; the relevant
+support is the current narrow local-array path.

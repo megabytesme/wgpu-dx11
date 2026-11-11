@@ -61,6 +61,13 @@ continue the resource/validation contract audit and select only Core-valid
 requests with an implementable FL9_1 behavior; do not treat native API limits
 as software backlog.
 
+The current tree's narrowly proven direct `vertex_index` lookup into a
+locally initialized `array<vec2f, 3>` also passes the strict WebGPU CTS
+`basic:fullscreen_quad` selector on the physical RTX 3090 Ti at requested and
+actual FL9_1 (1/1, zero skips). This does not enable general dynamic vector
+indexing; the separate vector-index form remains rejected by FXC with X3548.
+The fresh command and hardware evidence are recorded in `FL9_1_PROGRESS.md`.
+
 Public HWND presentation and the desktop cube example have hardware evidence;
 historical FL9_1 drivers, real Lumia/ARM32 CoreWindow execution and physical
 device removal/recovery remain external verification gaps.
