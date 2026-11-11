@@ -104,6 +104,12 @@ pub enum DrawError {
     IncompatibleTextureLoadView { group: u32, binding: u32 },
     #[error("The restricted FL9 textureSampleBias offset path requires a single-mip, single-sample Rgba8Unorm 2D view at group {group} binding {binding}")]
     IncompatibleTextureSampleBiasOffsetView { group: u32, binding: u32 },
+    #[error("The restricted FL9 texture comparison offset path requires a single-mip, single-sample 2D depth view at group {group} binding {binding}")]
+    IncompatibleTextureSampleCompareOffsetView { group: u32, binding: u32 },
+    #[error(
+        "Texture comparison sample-offset binding metadata is missing for group {group} binding {binding}"
+    )]
+    MissingTextureSampleCompareOffsetBindingMetadata { group: u32, binding: u32 },
 }
 
 impl WebGpuError for DrawError {

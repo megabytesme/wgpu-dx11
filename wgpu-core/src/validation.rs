@@ -301,6 +301,8 @@ struct EntryPoint {
     fl9_texture_load_3d_supported: bool,
     fl9_texture_load_dimensions_supported: bool,
     fl9_texture_sample_bias_offset_binding: Option<TextureSampleBiasOffsetBinding>,
+    fl9_texture_sample_compare_offset_binding: Option<TextureSampleCompareOffsetBinding>,
+    texture_sample_compare_offset_used: bool,
     unsupported_runtime_integer_semantics: bool,
     frexp_fraction_only_runtime_integer_semantics: bool,
     unsupported_runtime_integer_indexing: bool,
@@ -361,6 +363,13 @@ pub(crate) struct TextureLoadBinding {
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) struct TextureSampleBiasOffsetBinding {
+    pub group: u32,
+    pub binding: u32,
+    pub sample_expression: naga::Handle<naga::Expression>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(crate) struct TextureSampleCompareOffsetBinding {
     pub group: u32,
     pub binding: u32,
     pub sample_expression: naga::Handle<naga::Expression>,
@@ -3632,6 +3641,157 @@ fn entry_point_fl9_texture_sample_bias_offset_binding(
     })
 }
 
+fn entry_point_fl9_texture_sample_compare_offset_binding(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+    entry_point_info: &naga::valid::FunctionInfo,
+) -> Option<TextureSampleCompareOffsetBinding> {
+    if entry_point.stage != naga::ShaderStage::Fragment
+        || !matches!(
+            entry_point.function.arguments.as_slice(),
+            [argument]
+                if matches!(
+                    argument.binding,
+                    Some(naga::Binding::Location { location: 0, .. })
+                ) && matches!(
+                    module.types[argument.ty].inner,
+                    naga::TypeInner::Vector {
+                        size: naga::VectorSize::Bi,
+                        scalar: naga::Scalar {
+                            kind: naga::ScalarKind::Float,
+                            width: 4,
+                        },
+                    }
+                )
+        )
+        || entry_point.function.body.iter().any(|statement| {
+            !matches!(
+                statement,
+                naga::Statement::Emit(_) | naga::Statement::Return { .. }
+            )
+        })
+    {
+        return None;
+    }
+
+    let mut sampled_image = None;
+    let mut sampled_sampler = None;
+    let mut sample_expression = None;
+    let mut sample_count = 0;
+    for (handle, expression) in entry_point.function.expressions.iter() {
+        match *expression {
+            naga::Expression::ImageSample {
+                image,
+                sampler,
+                coordinate,
+                level: naga::SampleLevel::Auto | naga::SampleLevel::Zero,
+                gather: None,
+                array_index: None,
+                offset: Some(offset),
+                depth_ref: Some(_),
+                clamp_to_edge: false,
+            } => {
+                sample_count += 1;
+                if sample_count != 1
+                    || entry_point_info[handle].ref_count == 0
+                    || !fl9_sample_offset_in_range(module, &entry_point.function, offset)
+                    || !matches!(
+                        entry_point.function.expressions[coordinate],
+                        naga::Expression::FunctionArgument(0)
+                    )
+                {
+                    return None;
+                }
+                let naga::Expression::GlobalVariable(image) =
+                    entry_point.function.expressions[image]
+                else {
+                    return None;
+                };
+                let naga::Expression::GlobalVariable(sampler) =
+                    entry_point.function.expressions[sampler]
+                else {
+                    return None;
+                };
+                if !matches!(
+                    module.types[module.global_variables[image].ty].inner,
+                    naga::TypeInner::Image {
+                        dim: naga::ImageDimension::D2,
+                        arrayed: false,
+                        class: naga::ImageClass::Depth { multi: false },
+                    }
+                ) || !matches!(
+                    module.types[module.global_variables[sampler].ty].inner,
+                    naga::TypeInner::Sampler { comparison: true }
+                ) {
+                    return None;
+                }
+                sampled_image = Some(image);
+                sampled_sampler = Some(sampler);
+                sample_expression = Some(handle);
+            }
+            naga::Expression::ImageSample { .. }
+            | naga::Expression::ImageLoad { .. }
+            | naga::Expression::ImageQuery { .. } => return None,
+            _ => {}
+        }
+    }
+
+    let image = sampled_image?;
+    let sampler = sampled_sampler?;
+    if module.global_variables.iter().any(|(handle, global)| {
+        global.binding.is_some()
+            && handle != image
+            && handle != sampler
+            && !entry_point_info[handle].is_empty()
+    }) {
+        return None;
+    }
+    let binding = module.global_variables[image].binding?;
+    module.global_variables[sampler].binding?;
+    Some(TextureSampleCompareOffsetBinding {
+        group: binding.group,
+        binding: binding.binding,
+        sample_expression: sample_expression?,
+    })
+}
+
+fn function_uses_texture_sample_compare_offset(function: &naga::Function) -> bool {
+    function.expressions.iter().any(|(_, expression)| {
+        matches!(
+            expression,
+            naga::Expression::ImageSample {
+                offset: Some(_),
+                depth_ref: Some(_),
+                ..
+            }
+        )
+    })
+}
+
+fn entry_point_uses_texture_sample_compare_offset(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+) -> bool {
+    if function_uses_texture_sample_compare_offset(&entry_point.function) {
+        return true;
+    }
+
+    let mut called_functions = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut called_functions);
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = called_functions.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        let function = &module.functions[handle];
+        if function_uses_texture_sample_compare_offset(function) {
+            return true;
+        }
+        collect_called_functions(&function.body, &mut called_functions);
+    }
+    false
+}
+
 fn fl9_sample_offset_in_range(
     module: &naga::Module,
     function: &naga::Function,
@@ -6697,6 +6857,16 @@ impl Interface {
             );
             let fl9_texture_sample_bias_offset_binding =
                 entry_point_fl9_texture_sample_bias_offset_binding(module, entry_point, info);
+            let fl9_texture_sample_compare_offset_binding =
+                entry_point_fl9_texture_sample_compare_offset_binding(module, entry_point, info);
+            let fl9_texture_sample_offset_expression = fl9_texture_sample_bias_offset_binding
+                .map(|binding| binding.sample_expression)
+                .or_else(|| {
+                    fl9_texture_sample_compare_offset_binding
+                        .map(|binding| binding.sample_expression)
+                });
+            let texture_sample_compare_offset_used =
+                entry_point_uses_texture_sample_compare_offset(module, entry_point);
             let unsupported_runtime_integer_semantics = !fl9_texture_load_dimensions_supported
                 && entry_point_uses_unsupported_integer_semantics(
                     module,
@@ -6704,7 +6874,7 @@ impl Interface {
                     entry_point,
                     info,
                     None,
-                    fl9_texture_sample_bias_offset_binding.map(|binding| binding.sample_expression),
+                    fl9_texture_sample_offset_expression,
                 );
             let frexp_fraction_only_runtime_integer_semantics =
                 unsupported_runtime_integer_semantics
@@ -6715,8 +6885,7 @@ impl Interface {
                             entry_point,
                             info,
                             Some(result),
-                            fl9_texture_sample_bias_offset_binding
-                                .map(|binding| binding.sample_expression),
+                            fl9_texture_sample_offset_expression,
                         )
                     });
             let mut ep = EntryPoint {
@@ -6752,6 +6921,8 @@ impl Interface {
                 fl9_texture_load_3d_supported,
                 fl9_texture_load_dimensions_supported,
                 fl9_texture_sample_bias_offset_binding,
+                fl9_texture_sample_compare_offset_binding,
+                texture_sample_compare_offset_used,
                 unsupported_runtime_integer_semantics,
                 frexp_fraction_only_runtime_integer_semantics,
                 unsupported_runtime_integer_indexing,
@@ -7049,6 +7220,18 @@ impl Interface {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
         Ok(entry_point.fl9_texture_sample_bias_offset_binding)
+    }
+
+    pub(crate) fn fl9_texture_sample_compare_offset_binding_used(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<Option<TextureSampleCompareOffsetBinding>, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.fl9_texture_sample_compare_offset_binding)
     }
 
     pub(crate) fn entry_point_uses_texture_sample_bias(
@@ -7508,6 +7691,26 @@ impl Interface {
                     }
                 }
         }))
+    }
+
+    pub(crate) fn entry_point_uses_unsupported_texture_sample_compare_offset(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+        limits: &wgt::DownlevelLimits,
+    ) -> Result<bool, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        let offset_emulation_supported = stage == naga::ShaderStage::Fragment
+            && limits.fragment_texture_sample_compare_offset_2d_single_mip
+            && entry_point
+                .fl9_texture_sample_compare_offset_binding
+                .is_some();
+        Ok(entry_point.texture_sample_compare_offset_used
+            && !limits.texture_sample_compare_offset
+            && !offset_emulation_supported)
     }
 
     pub(crate) fn entry_point_uses_unsupported_fragment_derivatives(
@@ -9413,6 +9616,121 @@ mod tests {
                 naga::ShaderStage::Fragment,
                 "fs",
                 &restricted_integer_limits,
+            )
+            .unwrap());
+    }
+
+    #[test]
+    fn fl9_texture_sample_compare_offset_proof_is_entry_point_specific() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_depth_2d;
+            @group(0) @binding(42) var smp: sampler_comparison;
+            const OFFSET: vec2i = vec2i(1, 0);
+            fn compare_helper(uv: vec2f) -> f32 {
+                return textureSampleCompare(image, smp, uv, 0.5, vec2i(1, 0));
+            }
+            @fragment fn direct(@location(0) uv: vec2f) -> @location(0) f32 {
+                return textureSampleCompare(image, smp, uv, 0.5, vec2i(1, 0));
+            }
+            @fragment fn compare_level(@location(0) uv: vec2f) -> @location(0) f32 {
+                return textureSampleCompareLevel(image, smp, uv, 0.5, OFFSET);
+            }
+            @fragment fn helper(@location(0) uv: vec2f) -> @location(0) f32 {
+                return compare_helper(uv);
+            }
+            @fragment fn multiple(@location(0) uv: vec2f) -> @location(0) f32 {
+                return min(
+                    textureSampleCompare(image, smp, uv, 0.5, vec2i(1, 0)),
+                    textureSampleCompare(image, smp, uv, 0.5, vec2i(0, 1)),
+                );
+            }
+            @fragment fn ordinary(@location(0) uv: vec2f) -> @location(0) f32 {
+                return textureSampleCompare(image, smp, uv, 0.5);
+            }
+            @fragment fn offset_too_positive(@location(0) uv: vec2f) -> @location(0) f32 {
+                return textureSampleCompare(image, smp, uv, 0.5, vec2i(8, 0));
+            }
+            @fragment fn offset_too_negative(@location(0) uv: vec2f) -> @location(0) f32 {
+                return textureSampleCompare(image, smp, uv, 0.5, vec2i(0, -9));
+            }
+            "#,
+        )
+        .expect("parse FL9 textureSampleCompare offset proof module");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate FL9 textureSampleCompare offset proof module");
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let limits = wgt::DownlevelLimits {
+            texture_sample_compare_offset: false,
+            fragment_texture_sample_compare_offset_2d_single_mip: true,
+            ..Default::default()
+        };
+
+        let proof = interface
+            .fl9_texture_sample_compare_offset_binding_used(naga::ShaderStage::Fragment, "direct")
+            .unwrap()
+            .unwrap();
+        assert_eq!((proof.group, proof.binding), (0, 7));
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_compare_offset(
+                naga::ShaderStage::Fragment,
+                "direct",
+                &limits,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_compare_offset(
+                naga::ShaderStage::Fragment,
+                "compare_level",
+                &limits,
+            )
+            .unwrap());
+        assert_eq!(
+            interface
+                .fl9_texture_sample_compare_offset_binding_used(
+                    naga::ShaderStage::Fragment,
+                    "ordinary",
+                )
+                .unwrap(),
+            None
+        );
+        for entry in [
+            "helper",
+            "multiple",
+            "offset_too_positive",
+            "offset_too_negative",
+        ] {
+            assert!(interface
+                .entry_point_uses_unsupported_texture_sample_compare_offset(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &limits,
+                )
+                .unwrap());
+        }
+
+        let mut unavailable = limits.clone();
+        unavailable.fragment_texture_sample_compare_offset_2d_single_mip = false;
+        assert!(interface
+            .entry_point_uses_unsupported_texture_sample_compare_offset(
+                naga::ShaderStage::Fragment,
+                "direct",
+                &unavailable,
+            )
+            .unwrap());
+        let generic = wgt::DownlevelLimits {
+            texture_sample_compare_offset: true,
+            ..limits
+        };
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_compare_offset(
+                naga::ShaderStage::Fragment,
+                "helper",
+                &generic,
             )
             .unwrap());
     }

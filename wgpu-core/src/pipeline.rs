@@ -875,6 +875,10 @@ pub enum CreateRenderPipelineError {
         "Texture sample bias is not supported in the {stage:?} shader by this downlevel adapter"
     )]
     UnsupportedTextureSampleBias { stage: wgt::ShaderStages },
+    #[error(
+        "Texture comparison sample offsets are not supported in the {stage:?} shader by this downlevel adapter"
+    )]
+    UnsupportedTextureSampleCompareOffset { stage: wgt::ShaderStages },
     #[error("Fragment derivatives are not supported by this downlevel adapter")]
     UnsupportedFragmentDerivatives,
     #[error("Explicit texture sample levels are not supported in the {stage:?} shader by this downlevel adapter")]
@@ -1065,6 +1069,7 @@ impl WebGpuError for CreateRenderPipelineError {
             | Self::UnsupportedTextureQuery { .. }
             | Self::UnsupportedTextureSampleBaseClampToEdge { .. }
             | Self::UnsupportedTextureSampleBias { .. }
+            | Self::UnsupportedTextureSampleCompareOffset { .. }
             | Self::UnsupportedFragmentDerivatives
             | Self::UnsupportedTextureSampleLevel { .. }
             | Self::UnsupportedTextureGather { .. }
@@ -1265,6 +1270,8 @@ pub struct RenderPipeline {
     pub(crate) fl9_texture_load_binding: Option<validation::TextureLoadBinding>,
     pub(crate) fl9_texture_sample_bias_offset_binding:
         Option<validation::TextureSampleBiasOffsetBinding>,
+    pub(crate) fl9_texture_sample_compare_offset_binding:
+        Option<validation::TextureSampleCompareOffsetBinding>,
     pub(crate) requires_texture_sample_bias_compatible_samplers: bool,
     /// The `label` from the descriptor used to create the resource.
     pub(crate) label: String,
@@ -1356,6 +1363,7 @@ impl RenderPipeline {
             sampling_pairs: Vec::new(),
             fl9_texture_load_binding: None,
             fl9_texture_sample_bias_offset_binding: None,
+            fl9_texture_sample_compare_offset_binding: None,
             requires_texture_sample_bias_compatible_samplers: false,
             label,
             is_mesh: false,

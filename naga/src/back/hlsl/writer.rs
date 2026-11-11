@@ -1177,7 +1177,11 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             ) && self.options.fl9_texture_dimensions_3d_proof.is_none()
                 && self.options.fl9_texture_num_levels_proof.is_none()
                 && self.options.fl9_texture_base_clamp_proof.is_none()
-                && self.options.fl9_texture_sample_bias_offset_proof.is_none();
+                && self.options.fl9_texture_sample_bias_offset_proof.is_none()
+                && self
+                    .options
+                    .fl9_texture_sample_compare_offset_proof
+                    .is_none();
         let (fl9_texel_load_reachable_functions, fl9_texel_load_used_globals) = if self
             .options
             .fl9_texel_load_proof
@@ -1187,6 +1191,10 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             || self.options.fl9_texture_dimensions_3d_proof.is_some()
             || self.options.fl9_texture_num_levels_proof.is_some()
             || self.options.fl9_texture_sample_bias_offset_proof.is_some()
+            || self
+                .options
+                .fl9_texture_sample_compare_offset_proof
+                .is_some()
         {
             let Some(&(ShaderStage::Fragment, ref name)) =
                 self.pipeline_options.entry_point.as_ref()
@@ -1270,6 +1278,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         .or(self.options.fl9_texture_dimensions_proof)
                         .or(self.options.fl9_texture_num_levels_proof)
                         .or(self.options.fl9_texture_sample_bias_offset_proof)
+                        .or(self.options.fl9_texture_sample_compare_offset_proof)
             }) {
                 if !used_globals.contains(&target) {
                     used_globals.push(target);
@@ -1567,6 +1576,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             self.options.fl9_texture_num_levels_proof,
             self.options.fl9_texture_base_clamp_proof,
             self.options.fl9_texture_sample_bias_offset_proof,
+            self.options.fl9_texture_sample_compare_offset_proof,
         ]
         .into_iter()
         .filter(Option::is_some)
@@ -1584,6 +1594,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             .or(self.options.fl9_texture_num_levels_proof)
             .or(self.options.fl9_texture_base_clamp_proof)
             .or(self.options.fl9_texture_sample_bias_offset_proof)
+            .or(self.options.fl9_texture_sample_compare_offset_proof)
         {
             if !self.options.direct_sampler_bindings
                 || self.options.special_constants_binding.is_some()
@@ -1610,6 +1621,12 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         "FL9 base-clamp proof requires reserved t0 and b13 bindings".into()
                     } else if self.options.fl9_texture_sample_bias_offset_proof.is_some() {
                         "FL9 sample-bias offset proof requires reserved t0 and b13 bindings".into()
+                    } else if self
+                        .options
+                        .fl9_texture_sample_compare_offset_proof
+                        .is_some()
+                    {
+                        "FL9 comparison-offset proof requires reserved t0 and b13 bindings".into()
                     } else {
                         "FL9 texel-load proof requires reserved t0, s15 and b13 bindings".into()
                     },
@@ -1637,16 +1654,29 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             } else {
                 crate::ImageDimension::D2
             };
+            let compare_offset_proof = self
+                .options
+                .fl9_texture_sample_compare_offset_proof
+                .is_some();
             let texture_dimension = match module.types[global.ty].inner {
                 TypeInner::Image {
                     dim,
                     arrayed: false,
-                    class:
+                    class,
+                } if if compare_offset_proof {
+                    matches!(class, crate::ImageClass::Depth { .. })
+                } else {
+                    matches!(
+                        class,
                         crate::ImageClass::Sampled {
                             kind: ScalarKind::Float,
                             multi: false,
-                        },
-                } => Some(dim),
+                        }
+                    )
+                } =>
+                {
+                    Some(dim)
+                }
                 _ => None,
             };
             let is_3d_texel_load = self.options.fl9_texel_load_proof.is_some()
@@ -1682,13 +1712,15 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 ));
             }
             let sampler_required = self.options.fl9_texture_base_clamp_proof.is_some()
-                || self.options.fl9_texture_sample_bias_offset_proof.is_some();
+                || self.options.fl9_texture_sample_bias_offset_proof.is_some()
+                || compare_offset_proof;
             let sampler_allowed = !combined_texel_load_dimensions_proof
                 && (sampler_required
                     || self.options.fl9_texture_dimensions_proof.is_some()
                     || self.options.fl9_texture_dimensions_3d_proof.is_some()
                     || self.options.fl9_texture_num_levels_proof.is_some()
-                    || self.options.fl9_texture_sample_bias_offset_proof.is_some());
+                    || self.options.fl9_texture_sample_bias_offset_proof.is_some()
+                    || compare_offset_proof);
             let Some(&(_, ref entry_name)) = self.pipeline_options.entry_point.as_ref() else {
                 unreachable!()
             };
@@ -1701,7 +1733,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             };
             let entry = &module.entry_points[entry_index];
             let entry_info = module_info.get_entry_point(entry_index);
-            if self.options.fl9_texture_sample_bias_offset_proof.is_some()
+            if (self.options.fl9_texture_sample_bias_offset_proof.is_some() || compare_offset_proof)
                 && (!fl9_reachable_functions(module, &entry.function).is_empty()
                     || entry.function.body.iter().any(|statement| {
                         !matches!(
@@ -1786,7 +1818,11 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         || self.options.fl9_texture_base_clamp_proof.is_some()
                         || self.options.fl9_texture_dimensions_proof.is_some()
                         || self.options.fl9_texture_num_levels_proof.is_some()
-                        || self.options.fl9_texture_sample_bias_offset_proof.is_some())
+                        || self.options.fl9_texture_sample_bias_offset_proof.is_some()
+                        || self
+                            .options
+                            .fl9_texture_sample_compare_offset_proof
+                            .is_some())
                         || !entry_info[handle].is_empty()
                         || fl9_texel_load_reachable_functions
                             .as_ref()
@@ -1802,11 +1838,17 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         if bound_resources.next().is_some()
                             || !matches!(
                                 module.types[sampler_global.ty].inner,
-                                TypeInner::Sampler { comparison: false }
+                                TypeInner::Sampler { comparison }
+                                    if comparison == compare_offset_proof
                             )
                         {
                             return Err(Error::Custom(
-                                "FL9 texture proof permits only one non-comparison sampler".into(),
+                                if compare_offset_proof {
+                                    "FL9 comparison-offset proof requires one comparison sampler"
+                                } else {
+                                    "FL9 texture proof permits only one non-comparison sampler"
+                                }
+                                .into(),
                             ));
                         }
                         let sampler_binding = sampler_global.binding.unwrap();
@@ -1846,6 +1888,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             let mut query_count = 0;
             let mut base_clamp_count = 0;
             let mut sample_bias_offset_count = 0;
+            let mut sample_compare_offset_count = 0;
             let mut implicit_sample_count = 0;
             let mut texel_load_count = 0;
             let mut functions_to_check = vec![(&entry.function, entry_info, None)];
@@ -1941,6 +1984,20 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                             coordinate,
                             gather: None,
                             array_index: None,
+                            offset: Some(_),
+                            level: crate::SampleLevel::Auto | crate::SampleLevel::Zero,
+                            depth_ref: Some(_),
+                            clamp_to_edge: false,
+                        } if compare_offset_proof => {
+                            sample_compare_offset_count += 1;
+                            (image, sampler, coordinate)
+                        }
+                        crate::Expression::ImageSample {
+                            image,
+                            sampler,
+                            coordinate,
+                            gather: None,
+                            array_index: None,
                             offset: None,
                             level: crate::SampleLevel::Auto,
                             depth_ref: None,
@@ -1958,7 +2015,8 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                                 || self.options.fl9_texture_dimensions_proof.is_some()
                                 || self.options.fl9_texture_dimensions_3d_proof.is_some()
                                 || self.options.fl9_texture_num_levels_proof.is_some()
-                                || self.options.fl9_texture_sample_bias_offset_proof.is_some() =>
+                                || self.options.fl9_texture_sample_bias_offset_proof.is_some()
+                                || compare_offset_proof =>
                         {
                             return Err(Error::Custom(
                                 "FL9 texture proof supports only its proven sampling operation"
@@ -1970,7 +2028,8 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                                 || self.options.fl9_texture_dimensions_proof.is_some()
                                 || self.options.fl9_texture_dimensions_3d_proof.is_some()
                                 || self.options.fl9_texture_num_levels_proof.is_some()
-                                || self.options.fl9_texture_sample_bias_offset_proof.is_some() =>
+                                || self.options.fl9_texture_sample_bias_offset_proof.is_some()
+                                || compare_offset_proof =>
                         {
                             return Err(Error::Custom(
                                 "FL9 texture sampling proof does not support textureLoad".into(),
@@ -2014,6 +2073,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     );
                     let bias_offset_coordinate_matches =
                         self.options.fl9_texture_sample_bias_offset_proof.is_none()
+                            && !compare_offset_proof
                             || matches!(
                                 function.expressions[coordinate],
                                 crate::Expression::FunctionArgument(0)
@@ -2233,6 +2293,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     && (query_count != 0 || base_clamp_count != 1)
                 || self.options.fl9_texture_sample_bias_offset_proof.is_some()
                     && (query_count != 0 || sample_bias_offset_count != 1)
+                || compare_offset_proof && (query_count != 0 || sample_compare_offset_count != 1)
             {
                 return Err(Error::Custom(
                     "FL9 texture emulation requires exactly its proven query".into(),
@@ -2315,6 +2376,10 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 && self.options.fl9_texture_dimensions_3d_proof.is_none()
                 && self.options.fl9_texture_num_levels_proof.is_none()
                 && self.options.fl9_texture_sample_bias_offset_proof.is_none()
+                && self
+                    .options
+                    .fl9_texture_sample_compare_offset_proof
+                    .is_none()
                 && (!module.functions.is_empty()
                     || entry.function.body.iter().any(|statement| {
                         !matches!(
@@ -6561,15 +6626,25 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                                 if module.global_variables[global].binding == Some(binding)
                         )
                     });
+                let sample_compare_offset_emulated = self
+                    .options
+                    .fl9_texture_sample_compare_offset_proof
+                    .is_some_and(|binding| {
+                        matches!(
+                            func_ctx.expressions[image],
+                            Expression::GlobalVariable(global)
+                                if module.global_variables[global].binding == Some(binding)
+                        )
+                    });
 
                 self.write_expr(module, image, func_ctx)?;
                 write!(self.out, ".{base_str}{cmp_str}{component_str}{level_str}(")?;
                 self.write_expr(module, sampler, func_ctx)?;
                 write!(self.out, ", ")?;
-                if sample_bias_offset_emulated {
+                if sample_bias_offset_emulated || sample_compare_offset_emulated {
                     let Some(offset) = offset else {
                         return Err(Error::Custom(
-                            "FL9 sample-bias offset proof requires a static offset".into(),
+                            "FL9 sampled offset proof requires a static offset".into(),
                         ));
                     };
                     write!(self.out, "(")?;
@@ -6618,7 +6693,9 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     }
                 }
 
-                if let Some(offset) = offset.filter(|_| !sample_bias_offset_emulated) {
+                if let Some(offset) = offset
+                    .filter(|_| !sample_bias_offset_emulated && !sample_compare_offset_emulated)
+                {
                     write!(self.out, ", ")?;
                     write!(self.out, "int2(")?; // work around https://github.com/microsoft/DirectXShaderCompiler/issues/5082#issuecomment-1540147807
                     self.write_const_expression(module, offset, func_ctx.expressions)?;
@@ -6634,6 +6711,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     .or(self.options.fl9_texture_dimensions_3d_proof)
                     .or(self.options.fl9_texture_num_levels_proof)
                     .or(self.options.fl9_texture_base_clamp_proof)
+                    .or(self.options.fl9_texture_sample_compare_offset_proof)
                     .or(self.options.fl9_texel_load_proof)
                 {
                     let Expression::GlobalVariable(handle) = func_ctx.expressions[image] else {
@@ -7893,6 +7971,65 @@ mod fl9_viewport_tests {
         let multiple = source.replace(
             "return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0));",
             "return textureSampleBias(image, smp, uv, 1.0, vec2i(1, 0)) + textureSampleBias(image, smp, uv, 1.0, vec2i(0, 1));",
+        );
+        assert!(translate(&multiple, &options, ShaderStage::Fragment).is_err());
+    }
+
+    #[test]
+    fn fl9_sample_compare_offset_uses_host_view_dimensions() {
+        let texture_binding = crate::ResourceBinding {
+            group: 1,
+            binding: 17,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 1,
+            binding: 42,
+        };
+        let source = "@group(1) @binding(17) var image: texture_depth_2d; @group(1) @binding(42) var smp: sampler_comparison; @fragment fn main(@location(0) uv: vec2f) -> @location(0) f32 { return textureSampleCompare(image, smp, uv, 0.5, vec2i(1, 0)); }";
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_sample_compare_offset_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            texture_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        options.binding_map.insert(
+            sampler_binding,
+            super::super::BindTarget {
+                register: 3,
+                ..Default::default()
+            },
+        );
+
+        let output = translate(source, &options, ShaderStage::Fragment)
+            .expect("rewrite one direct static comparison offset");
+        assert!(
+            output.contains("Texture2D<float> image : register(t0)"),
+            "{output}"
+        );
+        assert!(
+            output.contains("SamplerComparisonState smp : register(s3)"),
+            "{output}"
+        );
+        assert!(output.contains("register(b13)"), "{output}");
+        assert!(output.contains("naga_fl9_load_size.zw"), "{output}");
+        assert!(output.contains(".SampleCmp(smp,"), "{output}");
+        assert!(!output.contains(", int2(int2(1, 0))"), "{output}");
+
+        let helper = source.replace(
+            "@fragment fn main(@location(0) uv: vec2f) -> @location(0) f32 { return textureSampleCompare(image, smp, uv, 0.5, vec2i(1, 0)); }",
+            "fn sample_image(uv: vec2f) -> f32 { return textureSampleCompare(image, smp, uv, 0.5, vec2i(1, 0)); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) f32 { return sample_image(uv); }",
+        );
+        assert!(translate(&helper, &options, ShaderStage::Fragment).is_err());
+
+        let multiple = source.replace(
+            "return textureSampleCompare(image, smp, uv, 0.5, vec2i(1, 0));",
+            "return min(textureSampleCompare(image, smp, uv, 0.5, vec2i(1, 0)), textureSampleCompare(image, smp, uv, 0.5, vec2i(0, 1)));",
         );
         assert!(translate(&multiple, &options, ShaderStage::Fragment).is_err());
     }

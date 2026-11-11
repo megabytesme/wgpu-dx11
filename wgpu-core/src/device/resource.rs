@@ -5756,6 +5756,7 @@ impl Device {
         let mut sampling_pairs = Vec::new();
         let mut fl9_texture_load_binding = None;
         let mut fl9_texture_sample_bias_offset_binding = None;
+        let mut fl9_texture_sample_compare_offset_binding = None;
         let mut requires_texture_sample_bias_compatible_samplers = false;
         match desc.vertex {
             pipeline::RenderPipelineVertexProcessor::Vertex(ref vertex) => {
@@ -6421,6 +6422,23 @@ impl Device {
 
                 if match shader_module.interface.interface() {
                     Some(interface) => interface
+                        .entry_point_uses_unsupported_texture_sample_compare_offset(
+                            stage.to_naga(),
+                            &fragment_entry_point_name,
+                            &self.downlevel.limits,
+                        )
+                        .map_err(stage_err)?,
+                    None => true,
+                } {
+                    return Err(
+                        pipeline::CreateRenderPipelineError::UnsupportedTextureSampleCompareOffset {
+                            stage: stage_bit,
+                        },
+                    );
+                }
+
+                if match shader_module.interface.interface() {
+                    Some(interface) => interface
                         .entry_point_uses_unsupported_texture_sample_level(
                             stage.to_naga(),
                             &fragment_entry_point_name,
@@ -6752,6 +6770,19 @@ impl Device {
                             )
                             .map_err(stage_err)?;
                     }
+                    if self
+                        .downlevel
+                        .limits
+                        .fragment_texture_sample_compare_offset_2d_single_mip
+                        && !self.downlevel.limits.texture_sample_compare_offset
+                    {
+                        fl9_texture_sample_compare_offset_binding = interface
+                            .fl9_texture_sample_compare_offset_binding_used(
+                                stage.to_naga(),
+                                &fragment_entry_point_name,
+                            )
+                            .map_err(stage_err)?;
+                    }
                     let (stage_sampling_pairs, given) = unique_sampling_pairs(
                         interface
                             .sampling_pairs_used(stage.to_naga(), &fragment_entry_point_name)
@@ -7047,6 +7078,7 @@ impl Device {
             sampling_pairs,
             fl9_texture_load_binding,
             fl9_texture_sample_bias_offset_binding,
+            fl9_texture_sample_compare_offset_binding,
             requires_texture_sample_bias_compatible_samplers,
             label: desc.label.to_string(),
             tracking_data: TrackingData::new(self.tracker_indices.render_pipelines.clone()),

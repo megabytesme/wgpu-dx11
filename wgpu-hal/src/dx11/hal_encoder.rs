@@ -217,6 +217,11 @@ impl RenderState {
         let single_mip_view = matches!(
             load.kind,
             super::hal_shader::Fl9TextureEmulationKind::SampleBiasOffset
+                | super::hal_shader::Fl9TextureEmulationKind::SampleCompareOffset
+        );
+        let depth_comparison = matches!(
+            load.kind,
+            super::hal_shader::Fl9TextureEmulationKind::SampleCompareOffset
         );
         let rgba8_load = matches!(
             load.kind,
@@ -238,7 +243,7 @@ impl RenderState {
             && texture.logical_format.is_some()
             && texture.sample_count == 1
             && (!single_mip_resource || texture.mip_count == 1)
-            && !texture.depth
+            && (texture.depth == depth_comparison)
             && (if single_mip_view {
                 info.mip_levels == 1
             } else {

@@ -340,6 +340,7 @@ pub(super) struct BackendCapabilities {
     pub fl91_fragment_frexp_fraction_only: bool,
     pub fragment_texture_sample_bias_literal_select: bool,
     pub fragment_texture_sample_bias_offset_2d_single_mip: bool,
+    pub fragment_texture_sample_compare_offset_2d_single_mip: bool,
     pub texture_array_layers: u32,
     pub cube_texture_sampling: bool,
     pub cube_texture_mipmaps: bool,
@@ -485,6 +486,7 @@ impl BackendCapabilities {
         fl91_fragment_frexp_fraction_only: true,
         fragment_texture_sample_bias_literal_select: true,
         fragment_texture_sample_bias_offset_2d_single_mip: true,
+        fragment_texture_sample_compare_offset_2d_single_mip: true,
         texture_array_layers: 1,
         cube_texture_sampling: true,
         cube_texture_mipmaps: true,
@@ -625,6 +627,13 @@ impl Capabilities {
             && self
                 .backend
                 .fragment_texture_sample_bias_offset_2d_single_mip
+    }
+
+    pub fn private_fl91_fragment_texture_sample_compare_offset_2d_single_mip(&self) -> bool {
+        self.private_fl91_depth_comparison_sampling()
+            && self
+                .backend
+                .fragment_texture_sample_compare_offset_2d_single_mip
     }
 
     pub fn private_fl91_fragment_texture_load_3d_float(&self) -> bool {
@@ -925,12 +934,15 @@ impl Capabilities {
                     .private_fl91_fragment_texture_base_clamp_2d_float(),
                 max_texture_sample_bias: 3,
                 texture_sample_bias_dynamic: false,
+                texture_sample_compare_offset: false,
                 fragment_texture_sample_bias_literal_select: self
                     .backend
                     .fragment_texture_sample_bias_literal_select,
                 texture_sample_bias_offset: false,
                 fragment_texture_sample_bias_offset_2d_single_mip: self
                     .private_fl91_fragment_texture_sample_bias_offset_2d_single_mip(),
+                fragment_texture_sample_compare_offset_2d_single_mip: self
+                    .private_fl91_fragment_texture_sample_compare_offset_2d_single_mip(),
                 texture_sample_bias_requires_compatible_sampler: true,
                 fragment_derivatives: self.hardware.fragment_derivatives
                     && self.backend.fragment_derivatives,
@@ -4167,6 +4179,56 @@ mod tests {
         ] {
             assert!(!model(level).private_fl91_fragment_texture_sample_bias_offset_2d_single_mip());
             assert!(model(level).wgpu_projection().is_none());
+        }
+    }
+
+    #[test]
+    fn sample_compare_offset_projection_requires_backend_and_shadow_query() {
+        let mut fl91 = model(FeatureLevel::L9_1);
+        assert!(fl91.private_fl91_fragment_texture_sample_compare_offset_2d_single_mip());
+        assert!(
+            fl91.wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .fragment_texture_sample_compare_offset_2d_single_mip
+        );
+
+        fl91.driver.comparison_shadow = Query::Unavailable(-1);
+        assert!(!fl91.private_fl91_fragment_texture_sample_compare_offset_2d_single_mip());
+        assert!(
+            !fl91
+                .wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .fragment_texture_sample_compare_offset_2d_single_mip
+        );
+
+        fl91.driver.comparison_shadow = Query::Value(false);
+        assert!(!fl91.private_fl91_fragment_texture_sample_compare_offset_2d_single_mip());
+
+        fl91.driver.comparison_shadow = Query::Value(true);
+        fl91.backend.fl91_depth_comparison_sampling = false;
+        assert!(!fl91.private_fl91_fragment_texture_sample_compare_offset_2d_single_mip());
+        fl91.backend.fl91_depth_comparison_sampling = true;
+        fl91.backend
+            .fragment_texture_sample_compare_offset_2d_single_mip = false;
+        assert!(!fl91.private_fl91_fragment_texture_sample_compare_offset_2d_single_mip());
+
+        for level in [
+            FeatureLevel::L9_2,
+            FeatureLevel::L9_3,
+            FeatureLevel::L10_0,
+            FeatureLevel::L10_1,
+            FeatureLevel::L11_0,
+            FeatureLevel::L11_1,
+        ] {
+            let caps = model(level);
+            assert!(!caps.private_fl91_fragment_texture_sample_compare_offset_2d_single_mip());
+            assert!(caps.wgpu_projection().is_none());
         }
     }
 

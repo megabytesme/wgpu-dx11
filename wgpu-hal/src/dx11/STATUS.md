@@ -67,6 +67,17 @@ shader contract.
 
 ## BC readback and fragment sample-bias offset — 2026-11-11
 
+Core and HAL now also support direct fragment `textureSampleCompare` and
+`textureSampleCompareLevel` calls with one constant `i32x2` texel offset in
+`[-8, 7]`. The selected depth view must be 2D, single-mip and single-sample;
+the actual bound view is checked at draw time. The DX11 projection enables the
+subset only when D3D9 shadow-comparison support was positively queried. Naga
+emits coordinate adjustment using the selected view's dimensions instead of
+FXC's rejected native-offset call. Strict requested/actual FL9_1 tests on the
+RTX 3090 Ti compiled and rendered both builtins, with the shifted comparison
+edge matching all 64 readback pixels. Other comparison-offset shapes and
+unsupported or unqueried devices remain rejected.
+
 BC1/BC2/BC3 `COPY_SRC` now has a narrow texture-to-buffer path backed by an
 execution-ordered CPU shadow. Direct writes, mapped buffer uploads and
 texture-region copies update the shadow at their command replay position;

@@ -1480,11 +1480,19 @@ pub struct DownlevelLimits {
     /// Whether `textureSampleBias` may specify a constant texel offset.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_sample_bias_offset: bool,
+    /// Whether depth comparison sampling may specify a constant texel offset.
+    #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+    pub texture_sample_compare_offset: bool,
     /// Whether a fragment entry point may use one direct constant-offset
     /// `textureSampleBias` on a single-mip 2D float view, using the backend's
     /// restricted FL9 offset emulation.
     #[cfg_attr(feature = "serde", serde(default))]
     pub fragment_texture_sample_bias_offset_2d_single_mip: bool,
+    /// Whether a fragment entry point may use one direct constant-offset
+    /// depth comparison sample on a single-mip 2D depth view, using a backend's
+    /// restricted FL9 offset emulation.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub fragment_texture_sample_compare_offset_2d_single_mip: bool,
     /// Whether `textureSampleBias` requires equal minification/magnification filters and anisotropy 1.
     #[cfg_attr(feature = "serde", serde(default))]
     pub texture_sample_bias_requires_compatible_sampler: bool,
@@ -1656,7 +1664,9 @@ impl Default for DownlevelLimits {
             texture_sample_bias_dynamic: true,
             fragment_texture_sample_bias_literal_select: false,
             texture_sample_bias_offset: true,
+            texture_sample_compare_offset: true,
             fragment_texture_sample_bias_offset_2d_single_mip: false,
+            fragment_texture_sample_compare_offset_2d_single_mip: false,
             texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: true,
             vertex_format_mask: Self::webgpu_vertex_format_mask(),
@@ -1946,8 +1956,11 @@ impl DownlevelLimits {
             && (!required.fragment_texture_sample_bias_literal_select
                 || self.fragment_texture_sample_bias_literal_select)
             && (!required.texture_sample_bias_offset || self.texture_sample_bias_offset)
+            && (!required.texture_sample_compare_offset || self.texture_sample_compare_offset)
             && (!required.fragment_texture_sample_bias_offset_2d_single_mip
                 || self.fragment_texture_sample_bias_offset_2d_single_mip)
+            && (!required.fragment_texture_sample_compare_offset_2d_single_mip
+                || self.fragment_texture_sample_compare_offset_2d_single_mip)
             && (!self.texture_sample_bias_requires_compatible_sampler
                 || required.texture_sample_bias_requires_compatible_sampler)
             && (!required.fragment_derivatives || self.fragment_derivatives)
@@ -2062,6 +2075,7 @@ impl DownlevelCapabilities {
                 >= DownlevelLimits::default().max_texture_sample_bias
             && self.limits.texture_sample_bias_dynamic
             && self.limits.texture_sample_bias_offset
+            && self.limits.texture_sample_compare_offset
             && !self.limits.texture_sample_bias_requires_compatible_sampler
             && self.limits.fragment_derivatives
             && self.limits.vertex_format_mask & DownlevelLimits::webgpu_vertex_format_mask()
@@ -2701,7 +2715,9 @@ mod tests {
             texture_sample_bias_dynamic: false,
             fragment_texture_sample_bias_literal_select: false,
             texture_sample_bias_offset: false,
+            texture_sample_compare_offset: false,
             fragment_texture_sample_bias_offset_2d_single_mip: false,
+            fragment_texture_sample_compare_offset_2d_single_mip: false,
             texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
@@ -2785,7 +2801,9 @@ mod tests {
             texture_sample_bias_dynamic: false,
             fragment_texture_sample_bias_literal_select: false,
             texture_sample_bias_offset: false,
+            texture_sample_compare_offset: false,
             fragment_texture_sample_bias_offset_2d_single_mip: false,
+            fragment_texture_sample_compare_offset_2d_single_mip: false,
             texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: false,
             vertex_format_mask: DownlevelLimits::webgpu_vertex_format_mask(),
@@ -3342,7 +3360,9 @@ mod tests {
             "texture_sample_bias_dynamic",
             "fragment_texture_sample_bias_literal_select",
             "texture_sample_bias_offset",
+            "texture_sample_compare_offset",
             "fragment_texture_sample_bias_offset_2d_single_mip",
+            "fragment_texture_sample_compare_offset_2d_single_mip",
             "fragment_derivatives",
         ] {
             object.remove(field);
@@ -3400,7 +3420,9 @@ mod tests {
         assert!(limits.texture_sample_bias_dynamic);
         assert!(!limits.fragment_texture_sample_bias_literal_select);
         assert!(limits.texture_sample_bias_offset);
+        assert!(limits.texture_sample_compare_offset);
         assert!(!limits.fragment_texture_sample_bias_offset_2d_single_mip);
+        assert!(!limits.fragment_texture_sample_compare_offset_2d_single_mip);
         assert!(limits.fragment_derivatives);
     }
 

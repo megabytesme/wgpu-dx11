@@ -1371,6 +1371,7 @@ pub struct BindGroup {
 pub(crate) struct Fl9TextureLoadViewCompatibility {
     pub d2: bool,
     pub d3: bool,
+    pub d2_depth: bool,
 }
 
 pub(crate) fn sampled_view_mip_count(view: &TextureView) -> u32 {
@@ -1405,6 +1406,18 @@ pub(crate) fn sampled_view_fl9_texture_load_view_compatibility(
     Fl9TextureLoadViewCompatibility {
         d2: sampled_view_fl9_texture_load_compatible(view, naga::ImageDimension::D2),
         d3: sampled_view_fl9_texture_load_compatible(view, naga::ImageDimension::D3),
+        d2_depth: matches!(
+            view.desc.format,
+            wgt::TextureFormat::Depth16Unorm
+                | wgt::TextureFormat::Depth24Plus
+                | wgt::TextureFormat::Depth24PlusStencil8
+        ) && view.desc.dimension == wgt::TextureViewDimension::D2
+            && view.parent.desc.sample_count == 1
+            && sampled_view_mip_count(view) == 1
+            && view
+                .desc
+                .usage
+                .contains(wgt::TextureUsages::TEXTURE_BINDING),
     }
 }
 

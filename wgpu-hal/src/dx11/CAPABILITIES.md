@@ -2,6 +2,20 @@
 
 ## Additional strict FL9_1 evidence — 2026-11-11
 
+Core and the private HAL now support a narrowly proved direct fragment
+`textureSampleCompare` or `textureSampleCompareLevel` with one static `i32x2`
+texel offset in `[-8, 7]`, using a 2D depth view that exposes exactly one mip
+and one sample. Core rechecks the currently bound view before each draw. The
+DX11 capability is exposed only when the FL9_1 device has a positive D3D9
+shadow-comparison query; missing and negative results remain unsupported. The
+HAL binds the selected view at the reserved texture slot and supplies its
+dimensions through the reserved constants, while Naga rewrites the offset as
+normalized-coordinate arithmetic because FXC rejects the native offset form
+for `ps_4_0_level_9_1`. Strict RTX tests compiled and executed both WGSL
+builtins and verified the one-texel shifted comparison boundary across all 64
+pixels. This is a bounded emulation proof, not general depth sampling or
+comparison-offset support on every FL9_1 driver.
+
 The strict public BC1/BC2/BC3 subset now verifies ordered CPU-shadow
 texture-to-buffer readback, padded rows and offsets, BC cube faces, and
 UNORM/sRGB-compatible block copies. The shadow is an explicit CPU mirror of

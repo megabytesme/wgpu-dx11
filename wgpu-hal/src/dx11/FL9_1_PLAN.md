@@ -2,6 +2,14 @@
 
 ## Latest current state and next queue — 2026-11-11
 
+The latest verified shader-surface addition is a query-gated, direct fragment
+depth-comparison texel-offset subset: `textureSampleCompare` and
+`textureSampleCompareLevel`, static offsets only, with one selected 2D
+single-mip/single-sample depth view. Strict readback on the RTX 3090 Ti at
+forced FL9_1 passed for both entry points. See the top of `FL9_1_PROGRESS.md`
+for commands. This does not change the remaining practical-completion audit or
+historical-device verification requirement.
+
 The current branch is a substantial opt-in public FL9_1 implementation, but
 the practical-completion audit remains open. The Milestone 8 static uniform
 path has verified constant budgets, sparse/stage-specific bindings, ranges,

@@ -30465,7 +30465,29 @@ fn public_dx11_texture_3d_cpu_shadow_readback_at_fl91() {
 
 #[test]
 fn public_dx11_query_gated_fl91_d16_depth_comparison_sampling() {
-    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth16Unorm, false, None, false);
+    run_public_fl91_depth_comparison_sampling(
+        TextureFormat::Depth16Unorm,
+        false,
+        None,
+        false,
+        false,
+    );
+}
+
+#[test]
+fn public_dx11_query_gated_fl91_comparison_sample_offset() {
+    run_public_fl91_depth_comparison_sampling(
+        TextureFormat::Depth16Unorm,
+        false,
+        None,
+        false,
+        true,
+    );
+}
+
+#[test]
+fn public_dx11_query_gated_fl91_comparison_level_sample_offset() {
+    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth16Unorm, true, None, false, true);
 }
 
 #[test]
@@ -30475,7 +30497,7 @@ fn public_dx11_fl91_combined_default_depth_views_support_their_roles() {
         TextureFormat::Depth24Plus,
         TextureFormat::Depth24PlusStencil8,
     ] {
-        run_public_fl91_depth_comparison_sampling(format, false, None, true);
+        run_public_fl91_depth_comparison_sampling(format, false, None, true, false);
     }
 }
 
@@ -30486,17 +30508,30 @@ fn public_dx11_query_gated_fl91_d24s8_depth_comparison_sampling() {
         false,
         None,
         false,
+        false,
     );
 }
 
 #[test]
 fn public_dx11_query_gated_fl91_depth24plus_comparison_sampling() {
-    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth24Plus, false, None, false);
+    run_public_fl91_depth_comparison_sampling(
+        TextureFormat::Depth24Plus,
+        false,
+        None,
+        false,
+        false,
+    );
 }
 
 #[test]
 fn public_dx11_query_gated_fl91_depth_comparison_level_zero() {
-    run_public_fl91_depth_comparison_sampling(TextureFormat::Depth16Unorm, true, None, false);
+    run_public_fl91_depth_comparison_sampling(
+        TextureFormat::Depth16Unorm,
+        true,
+        None,
+        false,
+        false,
+    );
 }
 
 #[test]
@@ -30505,6 +30540,7 @@ fn public_dx11_query_gated_fl91_comparison_border_sampling() {
         TextureFormat::Depth16Unorm,
         false,
         Some(SamplerBorderColor::OpaqueBlack),
+        false,
         false,
     );
 }
@@ -30516,6 +30552,7 @@ fn public_dx11_query_gated_fl91_comparison_border_white_sampling() {
         false,
         Some(SamplerBorderColor::OpaqueWhite),
         false,
+        false,
     );
 }
 
@@ -30524,6 +30561,7 @@ fn run_public_fl91_depth_comparison_sampling(
     level_zero: bool,
     border_color: Option<SamplerBorderColor>,
     combined_default_view: bool,
+    sample_offset: bool,
 ) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -30557,6 +30595,17 @@ fn run_public_fl91_depth_comparison_sampling(
         );
         return;
     }
+    let compare_offset_supported = downlevel
+        .limits
+        .fragment_texture_sample_compare_offset_2d_single_mip;
+    if sample_offset && !compare_offset_supported {
+        assert!(
+            !required,
+            "strict mode requires the proved FL9_1 comparison sample-offset capability"
+        );
+        println!("SKIP: selected FL9_1 adapter does not expose comparison sample-offset emulation");
+        return;
+    }
     let border_supported = adapter_features.contains(Features::ADDRESS_MODE_CLAMP_TO_BORDER)
         && downlevel
             .limits
@@ -30577,14 +30626,15 @@ fn run_public_fl91_depth_comparison_sampling(
         .allowed_usages
         .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT));
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; comparison_functions={:#06x} independent_filters={} max_comparison_anisotropy={} depth_format={depth_format:?} features={depth_features:?}",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; comparison_functions={:#06x} independent_filters={} max_comparison_anisotropy={} sample_compare_offset={} depth_format={depth_format:?} features={depth_features:?}",
         info.name,
         info.vendor,
         info.device,
         info.driver_info,
         downlevel.limits.comparison_sampler_function_mask,
         downlevel.limits.comparison_sampler_independent_filters,
-        downlevel.limits.max_comparison_sampler_anisotropy
+        downlevel.limits.max_comparison_sampler_anisotropy,
+        compare_offset_supported
     );
 
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -30642,6 +30692,16 @@ struct VertexOut {
     } else {
         shader_source.to_owned()
     };
+    if sample_offset {
+        shader_source = shader_source.replace(
+            "textureSampleCompareLevel(shadow, shadow_sampler, uv, 0.5)",
+            "textureSampleCompareLevel(shadow, shadow_sampler, uv, 0.5, vec2i(1, 0))",
+        );
+        shader_source = shader_source.replace(
+            "textureSampleCompare(shadow, shadow_sampler, uv, 0.5)",
+            "textureSampleCompare(shadow, shadow_sampler, uv, 0.5, vec2i(1, 0))",
+        );
+    }
     if border_color.is_some() {
         shader_source =
             shader_source.replace("position * 0.5 + vec2f(0.5)", "position * 0.5 + vec2f(1.5)");
@@ -30945,7 +31005,7 @@ struct VertexOut {
                 let expected = match border_color {
                     Some(SamplerBorderColor::OpaqueWhite) => [255, 0, 0, 255],
                     Some(_) => [0, 0, 0, 255],
-                    None if x >= 4 => [255, 0, 0, 255],
+                    None if x >= if sample_offset { 3 } else { 4 } => [255, 0, 0, 255],
                     None => [0, 0, 0, 255],
                 };
                 let offset = y * 256 + x * 4;
@@ -30999,7 +31059,8 @@ struct VertexOut {
         );
     } else {
         println!(
-            "PASS: public FL9_1 {depth_format:?} LessEqual depth comparison matched 64 pixels (32 black, 32 red); invalid function, mismatched filters and anisotropy were rejected before HAL"
+            "PASS: public FL9_1 {depth_format:?} LessEqual depth comparison{} matched 64 pixels; invalid function, mismatched filters and anisotropy were rejected before HAL",
+            if sample_offset { " with one-texel offset" } else { "" }
         );
     }
 }

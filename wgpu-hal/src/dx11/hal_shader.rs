@@ -2554,6 +2554,113 @@ mod tests {
     }
 
     #[test]
+    fn fl9_texture_sample_compare_offset_is_direct_and_entry_point_specific() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_depth_2d;
+            @group(0) @binding(42) var smp: sampler_comparison;
+            const OFFSET: vec2i = vec2i(1, 0);
+            fn compare_helper(uv: vec2f) -> f32 {
+                return textureSampleCompare(image, smp, uv, 0.5, vec2i(1, 0));
+            }
+            @fragment fn direct(@location(0) uv: vec2f) -> @location(0) f32 {
+                return textureSampleCompare(image, smp, uv, 0.5, vec2i(1, 0));
+            }
+            @fragment fn compare_level(@location(0) uv: vec2f) -> @location(0) f32 {
+                return textureSampleCompareLevel(image, smp, uv, 0.5, OFFSET);
+            }
+            @fragment fn helper(@location(0) uv: vec2f) -> @location(0) f32 {
+                return compare_helper(uv);
+            }
+            @fragment fn multiple(@location(0) uv: vec2f) -> @location(0) f32 {
+                return min(
+                    textureSampleCompare(image, smp, uv, 0.5, vec2i(1, 0)),
+                    textureSampleCompare(image, smp, uv, 0.5, vec2i(0, 1)),
+                );
+            }
+            @fragment fn ordinary(@location(0) uv: vec2f) -> @location(0) f32 {
+                return textureSampleCompare(image, smp, uv, 0.5);
+            }
+            @fragment fn offset_too_positive(@location(0) uv: vec2f) -> @location(0) f32 {
+                return textureSampleCompare(image, smp, uv, 0.5, vec2i(8, 0));
+            }
+            @fragment fn offset_too_negative(@location(0) uv: vec2f) -> @location(0) f32 {
+                return textureSampleCompare(image, smp, uv, 0.5, vec2i(0, -9));
+            }
+            "#,
+        )
+        .expect("parse sample-compare offset module");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate sample-compare offset module");
+
+        let proof =
+            fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "direct")
+                .expect("analyze direct sample-compare offset")
+                .expect("detect direct sample-compare offset");
+        assert_eq!(proof.binding.group, 0);
+        assert_eq!(proof.binding.binding, 7);
+        assert!(matches!(
+            proof.kind,
+            Fl9TextureEmulationKind::SampleCompareOffset
+        ));
+        let direct_index = module
+            .entry_points
+            .iter()
+            .position(|entry| entry.stage == naga::ShaderStage::Fragment && entry.name == "direct")
+            .unwrap();
+        assert!(
+            !has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices_and_sample_offset(
+                &module,
+                &info,
+                &module.entry_points[direct_index].function,
+                info.get_entry_point(direct_index),
+                ShaderProfile::PixelLevel9_1,
+                Fl9ShaderInputOptions {
+                    texture_sample_compare_offset_binding: Some(proof.binding),
+                    ..Default::default()
+                },
+                &[],
+                proof.sample_expression,
+            )
+        );
+        for entry in [
+            "helper",
+            "multiple",
+            "offset_too_positive",
+            "offset_too_negative",
+        ] {
+            assert!(fl9_texture_emulation_binding(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                entry,
+            )
+            .is_err());
+        }
+        assert!(fl9_texture_emulation_binding(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "ordinary",
+        )
+        .expect("analyze comparison without offset")
+        .is_none());
+        let level = fl9_texture_emulation_binding(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "compare_level",
+        )
+        .expect("analyze explicit level comparison")
+        .expect("detect explicit level comparison offset");
+        assert_eq!(level.binding, proof.binding);
+    }
+
+    #[test]
     fn checked_uniform_shader_distinguishes_local_vector_indexing() {
         let module = naga::front::wgsl::parse_str(
             r#"
@@ -5151,6 +5258,7 @@ pub(super) enum Fl9TextureEmulationKind {
     NumLevels,
     BaseClamp,
     SampleBiasOffset,
+    SampleCompareOffset,
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -5413,6 +5521,158 @@ fn fl9_sample_offset_in_range(
     components.is_some_and(|[x, y]| (-8..=7).contains(&x) && (-8..=7).contains(&y))
 }
 
+fn fl9_sample_compare_offset_emulation(
+    module: &naga::Module,
+    info: &naga::valid::ModuleInfo,
+    entry_index: usize,
+) -> Result<Option<Fl9TextureEmulation>, crate::PipelineError> {
+    let entry = &module.entry_points[entry_index];
+    let function_info = info.get_entry_point(entry_index);
+    let has_offset_sample = entry
+        .function
+        .expressions
+        .iter()
+        .any(|(handle, expression)| {
+            function_info[handle].ref_count != 0
+                && matches!(
+                    expression,
+                    naga::Expression::ImageSample {
+                        offset: Some(_),
+                        depth_ref: Some(_),
+                        ..
+                    }
+                )
+        });
+    if !has_offset_sample {
+        return Ok(None);
+    }
+
+    let stages = wgt::ShaderStages::FRAGMENT;
+    let invalid = || {
+        crate::PipelineError::Linkage(
+            stages,
+            "D3D11 FL9 textureSampleCompare offset requires one direct fragment sample with a constant offset"
+                .into(),
+        )
+    };
+    if entry.stage != naga::ShaderStage::Fragment
+        || !matches!(
+            entry.function.arguments.as_slice(),
+            [argument]
+                if matches!(
+                    argument.binding,
+                    Some(naga::Binding::Location { location: 0, .. })
+                ) && matches!(
+                    module.types[argument.ty].inner,
+                    naga::TypeInner::Vector {
+                        size: naga::VectorSize::Bi,
+                        scalar: naga::Scalar {
+                            kind: naga::ScalarKind::Float,
+                            width: 4,
+                        },
+                    }
+                )
+        )
+        || entry.function.body.iter().any(|statement| {
+            !matches!(
+                statement,
+                naga::Statement::Emit(_) | naga::Statement::Return { .. }
+            )
+        })
+    {
+        return Err(invalid());
+    }
+
+    let mut selected = None;
+    let mut selected_sampler = None;
+    let mut sample_expression = None;
+    let mut sample_count = 0;
+    for (handle, expression) in entry.function.expressions.iter() {
+        if function_info[handle].ref_count == 0 {
+            continue;
+        }
+        match *expression {
+            naga::Expression::ImageSample {
+                image,
+                sampler,
+                coordinate,
+                level: naga::SampleLevel::Auto | naga::SampleLevel::Zero,
+                gather: None,
+                array_index: None,
+                offset: Some(offset),
+                depth_ref: Some(_),
+                clamp_to_edge: false,
+            } => {
+                sample_count += 1;
+                if sample_count != 1
+                    || !fl9_sample_offset_in_range(module, &entry.function, offset)
+                    || !matches!(
+                        entry.function.expressions[coordinate],
+                        naga::Expression::FunctionArgument(0)
+                    )
+                {
+                    return Err(invalid());
+                }
+                let naga::Expression::GlobalVariable(image) = entry.function.expressions[image]
+                else {
+                    return Err(invalid());
+                };
+                let naga::Expression::GlobalVariable(sampler) = entry.function.expressions[sampler]
+                else {
+                    return Err(invalid());
+                };
+                if !matches!(
+                    module.types[module.global_variables[image].ty].inner,
+                    naga::TypeInner::Image {
+                        dim: naga::ImageDimension::D2,
+                        arrayed: false,
+                        class: naga::ImageClass::Depth { .. },
+                    }
+                ) || !matches!(
+                    module.types[module.global_variables[sampler].ty].inner,
+                    naga::TypeInner::Sampler { comparison: true }
+                ) {
+                    return Err(invalid());
+                }
+                selected = Some(image);
+                selected_sampler = Some(sampler);
+                sample_expression = Some(handle);
+            }
+            naga::Expression::ImageSample { .. }
+            | naga::Expression::ImageLoad { .. }
+            | naga::Expression::ImageQuery { .. } => return Err(invalid()),
+            _ => {}
+        }
+    }
+    let image = selected.ok_or_else(invalid)?;
+    let sampler = selected_sampler.ok_or_else(invalid)?;
+    if sample_count != 1
+        || module.global_variables.iter().any(|(handle, global)| {
+            global.binding.is_some()
+                && handle != image
+                && handle != sampler
+                && !function_info[handle].is_empty()
+        })
+    {
+        return Err(invalid());
+    }
+    let binding = module.global_variables[image].binding.ok_or_else(invalid)?;
+    module.global_variables[sampler]
+        .binding
+        .ok_or_else(invalid)?;
+
+    Ok(Some(Fl9TextureEmulation {
+        binding,
+        kind: Fl9TextureEmulationKind::SampleCompareOffset,
+        sample_expression,
+        coordinate_conversion: None,
+        dimension: naga::ImageDimension::D2,
+        mip_level: 0,
+        has_implicit_sample: false,
+        has_helper: false,
+    }))
+}
+
 fn fl9_texture_dimensions_level(
     module: &naga::Module,
     function: &naga::Function,
@@ -5475,6 +5735,32 @@ fn fl9_texture_emulation_binding(
                 crate::PipelineError::Linkage(
                     stages,
                     "D3D11 FL9 textureSampleBias offset cannot be resolved to its direct selected entry"
+                        .into(),
+                )
+            })
+        });
+    }
+    if reachable_expression(
+        module,
+        info,
+        function,
+        function_info,
+        |_, _, _, expression| {
+            matches!(
+                expression,
+                naga::Expression::ImageSample {
+                    offset: Some(_),
+                    depth_ref: Some(_),
+                    ..
+                }
+            )
+        },
+    ) {
+        return fl9_sample_compare_offset_emulation(module, info, entry_index).and_then(|proof| {
+            proof.map(Some).ok_or_else(|| {
+                crate::PipelineError::Linkage(
+                    stages,
+                    "D3D11 FL9 textureSampleCompare offset cannot be resolved to its direct selected entry"
                         .into(),
                 )
             })
@@ -5573,7 +5859,8 @@ fn fl9_texture_emulation_binding(
     };
     let unsupported_function_shape =
         match kind {
-            Fl9TextureEmulationKind::SampleBiasOffset => true,
+            Fl9TextureEmulationKind::SampleBiasOffset
+            | Fl9TextureEmulationKind::SampleCompareOffset => true,
             Fl9TextureEmulationKind::BaseClamp => {
                 !fl9_base_clamp_helpers_are_supported(module, function, &reachable_functions)
             }
@@ -5699,6 +5986,7 @@ fn fl9_texture_emulation_binding(
     let mut binding = None;
     let mut sampler_binding = None;
     let mut sample_count = 0;
+    let mut sample_expression = None;
     let mut load_count = 0;
     let mut dimensions_query_count = 0;
     let mut texture_load_coordinate_conversion = None;
@@ -5977,6 +6265,71 @@ fn fl9_texture_emulation_binding(
                 sample_count = 1;
                 *image
             }
+            naga::Expression::ImageSample {
+                image,
+                sampler,
+                coordinate,
+                gather: None,
+                array_index: None,
+                offset: Some(offset),
+                level: naga::SampleLevel::Auto | naga::SampleLevel::Zero,
+                depth_ref: Some(_),
+                clamp_to_edge: false,
+            } if matches!(kind, Fl9TextureEmulationKind::SampleCompareOffset) => {
+                if sample_count != 0
+                    || !fl9_sample_offset_in_range(module, function, *offset)
+                    || !matches!(
+                        function.expressions[*coordinate],
+                        naga::Expression::FunctionArgument(0)
+                    )
+                    || !matches!(
+                        function_info[*coordinate].ty.inner_with(&module.types),
+                        naga::TypeInner::Vector {
+                            size: naga::VectorSize::Bi,
+                            scalar: naga::Scalar {
+                                kind: naga::ScalarKind::Float,
+                                width: 4,
+                            }
+                        }
+                    )
+                {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 comparison offset requires one direct vec2 sample with an in-range constant offset".into(),
+                    ));
+                }
+                let naga::Expression::GlobalVariable(sampler) = function.expressions[*sampler]
+                else {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 comparison offset requires a direct sampler".into(),
+                    ));
+                };
+                let global = &module.global_variables[sampler];
+                let Some(resource) = global.binding else {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 comparison sampler is not bound".into(),
+                    ));
+                };
+                if global.space != naga::AddressSpace::Handle
+                    || resource.group != 0
+                    || !matches!(
+                        module.types[global.ty].inner,
+                        naga::TypeInner::Sampler { comparison: true }
+                    )
+                    || sampler_binding.replace(resource).is_some()
+                {
+                    return Err(crate::PipelineError::Linkage(
+                        stages,
+                        "D3D11 FL9 comparison offset requires one group-zero comparison sampler"
+                            .into(),
+                    ));
+                }
+                sample_count = 1;
+                sample_expression = Some(handle);
+                *image
+            }
             naga::Expression::ImageSample { .. } => {
                 return Err(crate::PipelineError::Linkage(
                     stages,
@@ -6026,12 +6379,8 @@ fn fl9_texture_emulation_binding(
         let global = &module.global_variables[image];
         let naga::TypeInner::Image {
             dim,
-            arrayed: false,
-            class:
-                naga::ImageClass::Sampled {
-                    kind: naga::ScalarKind::Float,
-                    multi: false,
-                },
+            arrayed,
+            class,
         } = module.types[global.ty].inner
         else {
             return Err(crate::PipelineError::Linkage(
@@ -6040,6 +6389,23 @@ fn fl9_texture_emulation_binding(
                     .into(),
             ));
         };
+        let class_supported = if matches!(kind, Fl9TextureEmulationKind::SampleCompareOffset) {
+            matches!(class, naga::ImageClass::Depth { .. })
+        } else {
+            matches!(
+                class,
+                naga::ImageClass::Sampled {
+                    kind: naga::ScalarKind::Float,
+                    multi: false,
+                }
+            )
+        };
+        if arrayed || !class_supported {
+            return Err(crate::PipelineError::Linkage(
+                stages,
+                "D3D11 FL9 texture emulation image class is unsupported for this operation".into(),
+            ));
+        }
         if sample_count != 0
             && !matches!(
                 (kind, dim),
@@ -6062,6 +6428,10 @@ fn fl9_texture_emulation_binding(
                 ) | (Fl9TextureEmulationKind::BaseClamp, naga::ImageDimension::D2)
                     | (
                         Fl9TextureEmulationKind::SampleBiasOffset,
+                        naga::ImageDimension::D2
+                    )
+                    | (
+                        Fl9TextureEmulationKind::SampleCompareOffset,
                         naga::ImageDimension::D2
                     )
             )
@@ -6115,7 +6485,8 @@ fn fl9_texture_emulation_binding(
             | (Fl9TextureEmulationKind::Load, naga::ImageDimension::D2)
             | (Fl9TextureEmulationKind::LoadDimensions, naga::ImageDimension::D2)
             | (Fl9TextureEmulationKind::BaseClamp, naga::ImageDimension::D2)
-            | (Fl9TextureEmulationKind::SampleBiasOffset, naga::ImageDimension::D2) => {}
+            | (Fl9TextureEmulationKind::SampleBiasOffset, naga::ImageDimension::D2)
+            | (Fl9TextureEmulationKind::SampleCompareOffset, naga::ImageDimension::D2) => {}
             _ => {
                 return Err(crate::PipelineError::Linkage(
                     stages,
@@ -6168,21 +6539,25 @@ fn fl9_texture_emulation_binding(
             "D3D11 FL9 textureLoad supports only one selected texture resource".into(),
         ));
     }
-    let allow_unselected_bound_resources = matches!(kind, Fl9TextureEmulationKind::BaseClamp)
-        || (matches!(
-            kind,
-            Fl9TextureEmulationKind::Dimensions
-                | Fl9TextureEmulationKind::Dimensions3D
-                | Fl9TextureEmulationKind::NumLevels
-        ) && !reachable_functions.is_empty());
-    if matches!(kind, Fl9TextureEmulationKind::BaseClamp)
-        || (matches!(
-            kind,
-            Fl9TextureEmulationKind::Dimensions
-                | Fl9TextureEmulationKind::Dimensions3D
-                | Fl9TextureEmulationKind::DimensionsCube
-                | Fl9TextureEmulationKind::NumLevels
-        ) && sampler_binding.is_some())
+    let allow_unselected_bound_resources = matches!(
+        kind,
+        Fl9TextureEmulationKind::BaseClamp | Fl9TextureEmulationKind::SampleCompareOffset
+    ) || (matches!(
+        kind,
+        Fl9TextureEmulationKind::Dimensions
+            | Fl9TextureEmulationKind::Dimensions3D
+            | Fl9TextureEmulationKind::NumLevels
+    ) && !reachable_functions.is_empty());
+    if matches!(
+        kind,
+        Fl9TextureEmulationKind::BaseClamp | Fl9TextureEmulationKind::SampleCompareOffset
+    ) || (matches!(
+        kind,
+        Fl9TextureEmulationKind::Dimensions
+            | Fl9TextureEmulationKind::Dimensions3D
+            | Fl9TextureEmulationKind::DimensionsCube
+            | Fl9TextureEmulationKind::NumLevels
+    ) && sampler_binding.is_some())
     {
         let Some(sampler_binding) = sampler_binding else {
             return Err(crate::PipelineError::Linkage(
@@ -6203,7 +6578,7 @@ fn fl9_texture_emulation_binding(
         }) {
             return Err(crate::PipelineError::Linkage(
                 stages,
-                "D3D11 FL9 base-clamp supports only one texture and one sampler".into(),
+                "D3D11 FL9 texture emulation supports only its selected texture and sampler".into(),
             ));
         }
     }
@@ -6242,7 +6617,7 @@ fn fl9_texture_emulation_binding(
             Ok(Some(Fl9TextureEmulation {
                 binding,
                 kind,
-                sample_expression: None,
+                sample_expression,
                 coordinate_conversion: if matches!(kind, Fl9TextureEmulationKind::Load)
                     && load_count == 1
                     && reachable_functions.is_empty()
@@ -9655,6 +10030,19 @@ impl ShaderModule {
                 }
                 Fl9TextureEmulationKind::SampleBiasOffset => {
                     input_options.texture_sample_bias_offset_binding = Some(proof.binding);
+                    sample_bias_offset_expression = proof.sample_expression;
+                }
+                Fl9TextureEmulationKind::SampleCompareOffset => {
+                    if !super::capabilities::Capabilities::query(&self.owner)
+                        .private_fl91_fragment_texture_sample_compare_offset_2d_single_mip()
+                    {
+                        return Err(crate::PipelineError::Linkage(
+                            wgt::ShaderStages::FRAGMENT,
+                            "D3D11 FL9_1 textureSampleCompare offset requires query-confirmed depth comparison sampling"
+                                .into(),
+                        ));
+                    }
+                    input_options.texture_sample_compare_offset_binding = Some(proof.binding);
                     sample_bias_offset_expression = proof.sample_expression;
                 }
             }

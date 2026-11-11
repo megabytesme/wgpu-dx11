@@ -570,6 +570,10 @@ pub struct Options {
     /// supplies the selected view dimensions and reciprocal dimensions in b13.
     pub fl9_texture_sample_bias_offset_proof: Option<crate::ResourceBinding>,
 
+    /// Experimental opt-in proof for one direct fragment depth comparison
+    /// sample with a constant offset on a single-mip 2D depth texture.
+    pub fl9_texture_sample_compare_offset_proof: Option<crate::ResourceBinding>,
+
     /// Apply an FL9 viewport remapping to the selected vertex entry point's
     /// position output. The host must reserve this D3D constant-buffer register
     /// and bind a float4 containing scale_x, scale_y, offset_x and offset_y.
@@ -660,6 +664,7 @@ impl Default for Options {
             fl9_texture_num_levels_proof: None,
             fl9_texture_base_clamp_proof: None,
             fl9_texture_sample_bias_offset_proof: None,
+            fl9_texture_sample_compare_offset_proof: None,
             fl9_viewport_transform: None,
             fl9_instance_index_input: false,
             fl9_vertex_index_input: false,

@@ -2,6 +2,30 @@
 
 ## BC texture readback and bounded sample-bias offsets — 2026-11-11
 
+The comparison-offset path has a Naga HLSL writer test, selected-entry Core
+validation test, HAL shader-proof test and capability-model test. Strict
+hardware coverage runs both implicit-LOD `textureSampleCompare` and explicit
+level-zero `textureSampleCompareLevel`; each requires a positive FL9_1 depth
+comparison query and checks all 64 output pixels after a one-texel X offset.
+The capability's synthetic Core cases reject helper-contained, multiple and
+out-of-range offsets; the backend capability model rejects unavailable or
+negative driver queries and all non-FL9_1 identities.
+
+```powershell
+cargo +1.93.1 test --offline -j16 -p naga --lib fl9_sample_compare_offset_uses_host_view_dimensions
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_texture_sample_compare_offset_proof_is_entry_point_specific
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_sample_compare_offset_is_direct_and_entry_point_specific
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib sample_compare_offset_projection_requires_backend_and_shadow_query
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_fl91_comparison_sample_offset -- --exact --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_fl91_comparison_level_sample_offset -- --exact --nocapture --test-threads=1
+```
+
+Both public cases passed on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), requested/actual FL9_1, `software=false`. The
+depth-comparison result changed from 32 passing pixels to 40 when sampling one
+texel to the right, and all 64 pixels matched the exact expected colors.
+
 Run in a Visual Studio x64 developer environment. The strict gate requires a
 physical adapter that creates at the explicitly requested FL9_1 level.
 

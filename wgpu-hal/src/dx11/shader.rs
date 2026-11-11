@@ -52,6 +52,7 @@ pub(super) struct Fl9ShaderInputOptions {
     pub texture_num_levels_helper: bool,
     pub texture_base_clamp_binding: Option<naga::ResourceBinding>,
     pub texture_sample_bias_offset_binding: Option<naga::ResourceBinding>,
+    pub texture_sample_compare_offset_binding: Option<naga::ResourceBinding>,
 }
 
 /// The compiler HRESULT and any diagnostic text returned by FXC.
@@ -396,6 +397,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         input_options.texture_num_levels_binding,
         input_options.texture_base_clamp_binding,
         input_options.texture_sample_bias_offset_binding,
+        input_options.texture_sample_compare_offset_binding,
     ];
     let combined_load_dimensions = matches!(
         (
@@ -406,7 +408,10 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
     ) && input_options.texture_dimensions_3d_binding.is_none()
         && input_options.texture_num_levels_binding.is_none()
         && input_options.texture_base_clamp_binding.is_none()
-        && input_options.texture_sample_bias_offset_binding.is_none();
+        && input_options.texture_sample_bias_offset_binding.is_none()
+        && input_options
+            .texture_sample_compare_offset_binding
+            .is_none();
     if proof_bindings.into_iter().filter(Option::is_some).count() > 1 && !combined_load_dimensions {
         return Err(NagaCompileError::InvalidBindingMapping);
     }
@@ -417,13 +422,21 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         .or(input_options.texture_num_levels_binding)
         .or(input_options.texture_base_clamp_binding)
         .or(input_options.texture_sample_bias_offset_binding)
+        .or(input_options.texture_sample_compare_offset_binding)
     {
         if stage != naga::ShaderStage::Fragment {
             return Err(NagaCompileError::InvalidBindingMapping);
         }
-        let Some(texture) = remapped_bindings.iter_mut().find(|mapping| {
-            mapping.binding == binding && mapping.kind == ShaderBindingKind::TextureFloat
-        }) else {
+        let expected_kind = if input_options.texture_sample_compare_offset_binding == Some(binding)
+        {
+            ShaderBindingKind::TextureDepth
+        } else {
+            ShaderBindingKind::TextureFloat
+        };
+        let Some(texture) = remapped_bindings
+            .iter_mut()
+            .find(|mapping| mapping.binding == binding && mapping.kind == expected_kind)
+        else {
             return Err(NagaCompileError::InvalidBindingMapping);
         };
         texture.slot = 0;
@@ -454,6 +467,8 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         fl9_texture_num_levels_proof: input_options.texture_num_levels_binding,
         fl9_texture_base_clamp_proof: input_options.texture_base_clamp_binding,
         fl9_texture_sample_bias_offset_proof: input_options.texture_sample_bias_offset_binding,
+        fl9_texture_sample_compare_offset_proof: input_options
+            .texture_sample_compare_offset_binding,
         fl9_uniform_index_arguments: uniform_index_arguments.to_vec(),
         signed_function_restrict_indexing: matches!(
             profile,

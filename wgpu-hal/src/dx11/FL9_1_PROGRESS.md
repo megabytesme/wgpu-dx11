@@ -16150,3 +16150,35 @@ target should be a concrete application workload or an unreviewed API area.
 Implementation checkpoint: `18afefed1` (`dx11: add BC readback and bounded
 sample offsets`).
 The mission remains active.
+
+## Query-gated FL9_1 comparison-sample offsets — 2026-11-11
+
+A narrowly proven fragment-shader subset now supports constant texel offsets on
+`textureSampleCompare` and `textureSampleCompareLevel`. The selected entry
+must be direct and straight-line, use one 2D single-mip/single-sample depth
+view and one in-range constant `i32x2` offset, and the selected FL9_1 device
+must positively report D3D9 shadow-comparison support. Naga/HLSL lowers the
+offset to normalized coordinates using the selected view dimensions because
+FXC rejects its native texel-offset overload for `ps_4_0_level_9_1`. Core
+rechecks the actual selected view at direct and bundled draw paths. Other
+shapes remain rejected; no broader sampling capability is enabled.
+
+Both strict public hardware tests passed on NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), requested and actual FL9_1,
+`software=false`. Each rendered the depth threshold edge with the one-texel X
+offset and verified all 64 pixels: 40 red and 24 black.
+
+Verification completed with Rust 1.93.1 and the Visual Studio x64 environment:
+Naga focused unit 1/1; Core focused proof 1/1; HAL focused proof 1/1; full
+Core 136/136; full Naga 163/163; wgpu-types 113/113; strict private HAL
+490/490; strict public D3D11 suite 128/128; the two focused strict hardware
+tests 2/2; DX12 HAL check passed. The suites include CPU-only coverage; only
+tests explicitly run in strict hardware mode count as device execution.
+Affected Clippy targets passed with existing warnings in unrelated HAL code.
+Rust formatting checks and `git diff --check` passed. Public adapter exposure
+and the broader FL9_1 contract audit are unchanged.
+
+Implementation checkpoint: `dx11: emulate bounded FL9_1 comparison sample
+offsets`. This is one verified shader subset, not completion of the practical
+FL9_1 support audit. Historical FL9_1 portability and Lumia/CoreWindow runtime
+execution remain external verification gaps.
