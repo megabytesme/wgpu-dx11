@@ -2,6 +2,26 @@
 
 ## Current coordinator checkpoint — 2026-11-11
 
+The selected RTX query-gates sampled/upload mip chains for RGB5A1 and RGBA4.
+Strict forced-FL9_1 GPU coverage uploaded mip 1, copied a partial region,
+verified padded raw-shadow readback and sampled a single-mip view for each
+format. Both returned `TEXTURE2D | MIP` in mask `0x000213A0`. This adds no mip
+generation or render-target support and does not establish historical-driver
+behavior.
+
+RGB5A1 and RGBA4 now expose query-gated texture-to-buffer readback through
+their execution-ordered packed-word CPU shadows. Strict forced-FL9_1 tests
+verify upload, partial GPU copy, sample, raw source/destination words,
+preserved borders, padded rows and sentinels. The full private HAL suite
+passed 508/508 and the full public target 131/131. This is not native staging
+readback; historical hardware remains unverified.
+
+Current format slice: Rg16Snorm sampled/upload mip chains require the selected
+device's positive `TEXTURE2D | MIP` query plus the backend path.
+`SHADER_SAMPLE` separately controls filtering; the RTX query is point-only.
+Strict public coverage samples mip 1 and checks a partial mip-1 copy/readback.
+Historical-device behavior is not established.
+
 The latest focused shader increment enables direct `vertex_index` reads from
 float vectors for the opt-in FL9_1 projection. Core/HAL proofs and Naga's
 static-swizzle lowering agree on the narrowly accepted entry point; helpers,

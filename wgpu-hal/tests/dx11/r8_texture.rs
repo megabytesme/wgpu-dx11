@@ -160,6 +160,7 @@ fn sample_upload(
         wgt::TextureFormat::R8Unorm
             | wgt::TextureFormat::Rg8Unorm
             | wgt::TextureFormat::Rg8Snorm
+            | wgt::TextureFormat::Rg16Snorm
             | wgt::TextureFormat::Rgba8Snorm
     ) && format_support & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0;
     assert_eq!(

@@ -1,3 +1,36 @@
+## RGB5A1/RGBA4 ordered texture-to-buffer readback — 2026-11-11
+
+The selected-device format query and existing same-format GPU `COPY_SRC`
+projection remain prerequisites for RGB5A1 and RGBA4. Their additional
+texture-to-buffer path copies raw 16-bit texels from an execution-ordered CPU
+shadow; it does not create a native staging resource. The shadow is allocated
+only for `COPY_SRC` textures when the implementation gate is enabled and is
+updated by the existing ordered upload and texture-copy paths. Strict
+FL9_1 hardware coverage validates packed words, partial-copy borders, padded
+rows, offsets and sentinels for both formats. The formats remain
+non-renderable.
+
+## RGB5A1/RGBA4 query-gated mip chains — 2026-11-11
+
+The selected-device `TEXTURE2D | MIP` query now gates packed RGB5A1/RGBA4
+sampled/upload mip chains in both the capability projection and native texture
+constructor. The RTX 3090 Ti returned `0x000213A0` for each format at requested
+and actual FL9_1. Strict public coverage uploaded mip 1, copied a partial
+region, verified padded raw-shadow readback and sampled a single-mip view for
+both formats. Mip generation, rendering and historical-device behavior remain
+unsupported or unverified.
+
+## R16G16_SNORM query-gated mip chains — 2026-11-11
+
+`Rg16Snorm` multi-mip creation and sampled/upload capability now require both
+the backend path and the selected device's positive `TEXTURE2D | MIP` query.
+`SHADER_SAMPLE` is not required for point-only use and still controls
+filterability independently. The RTX 3090 Ti forced to FL9_1 reports
+`0x00021122`, including MIP but not `SHADER_SAMPLE`. Strict public tests upload
+three levels and sample mip 1 through a single-mip view, then separately
+perform a mip-1 partial GPU copy and verify raw readback, padded rows and
+sentinels. Historical FL9_1 devices remain unverified.
+
 ## R16G16_SNORM GPU texture copies — 2026-11-11
 
 The private format model exposes `COPY_SRC` for `Rg16Snorm` only when the
@@ -254,7 +287,8 @@ the required 2D format support. The native-only `TEXTURE_FORMAT_16BIT_PACKED`
 feature covers query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled
 uploads. RGB565 additionally has queried render-target and copy/readback
 support; RGB5A1 and RGBA4 additionally have query-gated same-format GPU
-texture copies, but no render-target or texture-to-buffer readback support.
+texture copies and ordered CPU-shadow texture-to-buffer readback, but no
+render-target support.
 R8_UNORM and R8G8_UNORM
 also expose copy-source use only when their selected format query reports
 render-target support. Their blendability is separately projected only when
@@ -611,8 +645,8 @@ public projection reports that format restriction.
 
 Per-format `SINGLE_MIP_ONLY` metadata is also projected through
 `TextureFormatFeatures`, and core rejects larger mip chains before HAL. The
-R8G8_UNORM, R16G16_SNORM, BC1_UNORM, BC2_UNORM, BC3_UNORM, D16_UNORM and D24S8
-remain single-mip in the private implementation. R8G8_SNORM and
+R8G8_UNORM, BC1_UNORM, BC2_UNORM, BC3_UNORM, D16_UNORM and D24S8 remain
+single-mip in the private implementation. R16G16_SNORM, R8G8_SNORM and
 R8G8B8A8_SNORM support sampled/upload mip chains only when the selected device
   reports `TEXTURE2D | MIP`; the independent `SHADER_SAMPLE` query controls
   filterability. Same-format GPU texture copies are separately available for
@@ -889,8 +923,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
   forced to FL9_1 reports `0x00021122`, without `SHADER_SAMPLE`; strict HAL
   and public tests upload, point-sample and validate readback, while core
   rejects a filtering layout from the queried format flags. Public use also
-  requires `TEXTURE_FORMAT_16BIT_NORM`. The format remains single-mip,
-  sampled/upload-only and is not renderable or readable back through a buffer.
+  requires `TEXTURE_FORMAT_16BIT_NORM`. Multi-mip sampled/upload use requires
+  the selected query's `TEXTURE2D | MIP` bits plus the backend path; the
+  format remains non-filterable without `SHADER_SAMPLE`. It is not renderable.
+  Same-format GPU copies and ordered CPU-shadow readback are separately gated.
 - R8G8B8A8_SNORM's base sampled/upload subset remains selected-query-gated.
   Its required FL9_1 format guarantees `TEXTURE2D | MIP | SHADER_SAMPLE`, but
   the implementation also requires the selected device's `TEXTURE2D | MIP`

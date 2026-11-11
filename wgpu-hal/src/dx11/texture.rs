@@ -307,6 +307,8 @@ impl Texture2DShadow {
                     | DXGI_FORMAT_BC2_UNORM_SRGB
                     | DXGI_FORMAT_BC3_UNORM
                     | DXGI_FORMAT_BC3_UNORM_SRGB
+                    | DXGI_FORMAT_B5G5R5A1_UNORM
+                    | DXGI_FORMAT_B4G4R4A4_UNORM
             )
         {
             return Err(invalid());
@@ -1501,15 +1503,24 @@ impl NativeDevice {
                 | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                 | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
         );
-        let sampled_mip_chain = matches!(
-            format,
-            DXGI_FORMAT_R8_UNORM
-                | DXGI_FORMAT_R8G8_UNORM
-                | DXGI_FORMAT_R8G8_SNORM
-                | DXGI_FORMAT_R8G8B8A8_SNORM
-        ) && layers == 1
-            && mip_levels > 1
-            && sample_count == 1;
+        let sampled_mip_shape = layers == 1 && mip_levels > 1 && sample_count == 1;
+        let packed_sampled_mip_chain = sampled_mip_shape
+            && match format {
+                DXGI_FORMAT_B5G5R5A1_UNORM => super::capabilities::Capabilities::query(self)
+                    .packed_16bit_mip_chains_supported(wgt::TextureFormat::Rgb5a1Unorm),
+                DXGI_FORMAT_B4G4R4A4_UNORM => super::capabilities::Capabilities::query(self)
+                    .packed_16bit_mip_chains_supported(wgt::TextureFormat::Rgba4Unorm),
+                _ => false,
+            };
+        let sampled_mip_chain = sampled_mip_shape
+            && (matches!(
+                format,
+                DXGI_FORMAT_R8_UNORM
+                    | DXGI_FORMAT_R8G8_UNORM
+                    | DXGI_FORMAT_R8G8_SNORM
+                    | DXGI_FORMAT_R16G16_SNORM
+                    | DXGI_FORMAT_R8G8B8A8_SNORM
+            ) || packed_sampled_mip_chain);
         let uncompressed_sampled = matches!(
             format,
             DXGI_FORMAT_R8_UNORM
@@ -2674,6 +2685,52 @@ mod tests {
             }
         }
         assert_eq!(actual, expected);
+        Ok(())
+    }
+
+    #[test]
+    fn packed_16bit_shadow_preserves_raw_words_and_partial_copies() -> Result<()> {
+        for format in [DXGI_FORMAT_B5G5R5A1_UNORM, DXGI_FORMAT_B4G4R4A4_UNORM] {
+            let source = Texture2DShadow::zeroed(4, 3, 1, 1, format)?;
+            let mut upload = alloc::vec![0xee; 12 * 3];
+            let mut expected_source = alloc::vec![0; 4 * 3 * 2];
+            for row in 0..3usize {
+                for column in 0..4usize {
+                    let word = (0x1000 + row * 0x100 + column) as u16;
+                    let source_offset = row * 12 + column * 2;
+                    upload[source_offset..source_offset + 2].copy_from_slice(&word.to_le_bytes());
+                    let expected_offset = (row * 4 + column) * 2;
+                    expected_source[expected_offset..expected_offset + 2]
+                        .copy_from_slice(&word.to_le_bytes());
+                }
+            }
+            source.write_region(0, 0, [0, 0], [4, 3], 12, &upload)?;
+
+            let patch_words = [0xa001u16, 0xa002];
+            let mut patch = alloc::vec![0x5a; 8];
+            for (column, word) in patch_words.into_iter().enumerate() {
+                patch[column * 2..column * 2 + 2].copy_from_slice(&word.to_le_bytes());
+                let expected_offset = (4 + column + 1) * 2;
+                expected_source[expected_offset..expected_offset + 2]
+                    .copy_from_slice(&word.to_le_bytes());
+            }
+            source.write_region(0, 0, [1, 1], [2, 1], 8, &patch)?;
+            assert_eq!(source.read_region(0, 0, [0, 0], [4, 3])?, expected_source);
+
+            let destination = Texture2DShadow::zeroed(6, 4, 1, 1, format)?;
+            destination.copy_region_from(&source, 0, 0, [1, 0], 0, 0, [2, 1], [3, 2])?;
+            let actual = destination.read_region(0, 0, [0, 0], [6, 4])?;
+            let mut expected = alloc::vec![0; 6 * 4 * 2];
+            for row in 0..2usize {
+                for column in 0..3usize {
+                    let source_offset = (row * 4 + column + 1) * 2;
+                    let destination_offset = ((row + 1) * 6 + column + 2) * 2;
+                    expected[destination_offset..destination_offset + 2]
+                        .copy_from_slice(&expected_source[source_offset..source_offset + 2]);
+                }
+            }
+            assert_eq!(actual, expected, "packed shadow format {format:?}");
+        }
         Ok(())
     }
 

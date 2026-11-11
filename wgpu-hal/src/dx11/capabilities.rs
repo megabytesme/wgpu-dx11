@@ -304,6 +304,7 @@ pub(super) struct BackendCapabilities {
     pub rg8_unorm_sampled_mips: bool,
     pub rg8_snorm_sampled_mips: bool,
     pub rgba8_snorm_sampled_mips: bool,
+    pub rg16_snorm_sampled_mips: bool,
     pub r8_unorm_color_attachment: bool,
     pub rg8_unorm_color_attachment: bool,
     pub rgb565_color_attachment: bool,
@@ -327,7 +328,9 @@ pub(super) struct BackendCapabilities {
     pub bc3_sampled_upload: bool,
     pub bc3_texture_to_texture_copy: bool,
     pub bc_texture_to_buffer_shadow_readback: bool,
+    pub packed_16bit_shadow_copy_readback: bool,
     pub packed_16bit_sampled_upload: bool,
+    pub packed_16bit_sampled_mips: bool,
     pub vertex_input_formats: u64,
     pub texture_zero_initialized: bool,
     pub fl91_depth_comparison_sampling: bool,
@@ -454,6 +457,7 @@ impl BackendCapabilities {
         rg8_unorm_sampled_mips: true,
         rg8_snorm_sampled_mips: true,
         rgba8_snorm_sampled_mips: true,
+        rg16_snorm_sampled_mips: true,
         r8_unorm_color_attachment: true,
         rg8_unorm_color_attachment: true,
         rgb565_color_attachment: true,
@@ -477,7 +481,9 @@ impl BackendCapabilities {
         bc3_sampled_upload: true,
         bc3_texture_to_texture_copy: true,
         bc_texture_to_buffer_shadow_readback: true,
+        packed_16bit_shadow_copy_readback: true,
         packed_16bit_sampled_upload: true,
+        packed_16bit_sampled_mips: true,
         vertex_input_formats: fl91_vertex_formats() | optional_vertex_formats(),
         texture_zero_initialized: true,
         fl91_depth_comparison_sampling: true,
@@ -741,6 +747,25 @@ impl Capabilities {
         self.hardware.rgba8_snorm_mipmapped_texture
             && self.backend.rgba8_snorm_sampled_mips
             && matches!(self.driver.rgba8_snorm, Query::Value(bits) if bits & required == required)
+    }
+
+    pub fn rg16_snorm_mip_chains_supported(&self) -> bool {
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_MIP.0) as u32;
+        self.backend.rg16_snorm_sampled_mips
+            && matches!(self.driver.rg16_snorm, Query::Value(bits) if bits & required == required)
+    }
+
+    pub fn packed_16bit_mip_chains_supported(&self, format: wgt::TextureFormat) -> bool {
+        let query = match format {
+            wgt::TextureFormat::Rgb5a1Unorm => self.driver.rgb5551_unorm,
+            wgt::TextureFormat::Rgba4Unorm => self.driver.rgba4444_unorm,
+            _ => return false,
+        };
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_MIP.0) as u32;
+        self.hardware.packed_16bit_sampled_texture
+            && self.backend.packed_16bit_sampled_upload
+            && self.backend.packed_16bit_sampled_mips
+            && matches!(query, Query::Value(bits) if bits & required == required)
     }
 
     fn r8_unorm_mip_chain_path_available(&self) -> bool {
@@ -1132,6 +1157,8 @@ impl Capabilities {
             wgt::TextureFormat::Rg16Snorm,
             wgt::TextureFormat::Rgba8Snorm,
             wgt::TextureFormat::Rgb5g6b5Unorm,
+            wgt::TextureFormat::Rgb5a1Unorm,
+            wgt::TextureFormat::Rgba4Unorm,
             wgt::TextureFormat::Bc1RgbaUnorm,
             wgt::TextureFormat::Bc1RgbaUnormSrgb,
             wgt::TextureFormat::Bc2RgbaUnorm,
@@ -1152,6 +1179,9 @@ impl Capabilities {
                     | wgt::TextureFormat::Bc3RgbaUnorm
                     | wgt::TextureFormat::Bc3RgbaUnormSrgb => {
                         self.backend.bc_texture_to_buffer_shadow_readback
+                    }
+                    wgt::TextureFormat::Rgb5a1Unorm | wgt::TextureFormat::Rgba4Unorm => {
+                        self.backend.packed_16bit_shadow_copy_readback
                     }
                     wgt::TextureFormat::Rg16Snorm => self.backend.rg16_snorm_shadow_copy_readback,
                     wgt::TextureFormat::Rgba8Snorm => self.backend.rgba8_snorm_shadow_copy_readback,
@@ -1295,12 +1325,16 @@ impl Capabilities {
         };
         let sampled_mip_chain_path = match format {
             wgt::TextureFormat::R8Unorm => self.r8_unorm_mip_chain_path_available(),
-            wgt::TextureFormat::Rg8Unorm => self.backend.rg8_unorm_sampled_mips,
+            wgt::TextureFormat::Rg8Unorm => self.rg8_unorm_mip_chains_supported(),
             wgt::TextureFormat::Rg8Snorm => {
                 self.hardware.rg8_snorm_mipmapped_texture && self.backend.rg8_snorm_sampled_mips
             }
             wgt::TextureFormat::Rgba8Snorm => {
                 self.hardware.rgba8_snorm_mipmapped_texture && self.backend.rgba8_snorm_sampled_mips
+            }
+            wgt::TextureFormat::Rg16Snorm => self.rg16_snorm_mip_chains_supported(),
+            wgt::TextureFormat::Rgb5a1Unorm | wgt::TextureFormat::Rgba4Unorm => {
+                self.packed_16bit_mip_chains_supported(format)
             }
             _ => false,
         };
@@ -1774,6 +1808,10 @@ impl Capabilities {
                     wgt::TextureFormat::R8Unorm => self.r8_unorm_mip_chains_supported(),
                     wgt::TextureFormat::Rg8Unorm => self.rg8_unorm_mip_chains_supported(),
                     wgt::TextureFormat::Rg8Snorm => self.rg8_snorm_mip_chains_supported(),
+                    wgt::TextureFormat::Rg16Snorm => self.rg16_snorm_mip_chains_supported(),
+                    wgt::TextureFormat::Rgb5a1Unorm | wgt::TextureFormat::Rgba4Unorm => {
+                        self.packed_16bit_mip_chains_supported(format)
+                    }
                     wgt::TextureFormat::Rgba8Snorm => self.rgba8_snorm_mip_chains_supported(),
                     _ => false,
                 };
@@ -3706,6 +3744,78 @@ mod tests {
     }
 
     #[test]
+    fn packed_16bit_mip_chains_require_selected_device_query_and_backend_path() {
+        use TextureRejection::*;
+
+        let mut caps = model(FeatureLevel::L9_1);
+        let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;
+        let texture2d = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
+        let mip = D3D11_FORMAT_SUPPORT_MIP.0 as u32;
+
+        for format in [
+            wgt::TextureFormat::Rgb5a1Unorm,
+            wgt::TextureFormat::Rgba4Unorm,
+        ] {
+            set_packed_format_query(&mut caps, format, Query::Value(texture2d | mip));
+            assert!(caps.packed_16bit_mip_chains_supported(format));
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+                Ok(())
+            );
+            assert!(!caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::SINGLE_MIP_ONLY));
+
+            set_packed_format_query(&mut caps, format, Query::Value(texture2d));
+            assert!(!caps.packed_16bit_mip_chains_supported(format));
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+                Err(UnsupportedShape)
+            );
+            assert!(caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::SINGLE_MIP_ONLY));
+
+            set_packed_format_query(&mut caps, format, Query::Value(texture2d | mip));
+            caps.backend.packed_16bit_sampled_mips = false;
+            assert!(!caps.packed_16bit_mip_chains_supported(format));
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+                Err(UnsupportedShape)
+            );
+            assert!(caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::SINGLE_MIP_ONLY));
+            caps.backend.packed_16bit_sampled_mips = true;
+
+            set_packed_format_query(&mut caps, format, Query::Unavailable(-1));
+            assert!(!caps.packed_16bit_mip_chains_supported(format));
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+                Err(UnsupportedShape)
+            );
+        }
+
+        set_packed_format_query(
+            &mut caps,
+            wgt::TextureFormat::Rgb5g6b5Unorm,
+            Query::Value(texture2d | mip),
+        );
+        assert!(!caps.packed_16bit_mip_chains_supported(wgt::TextureFormat::Rgb5g6b5Unorm));
+        assert_eq!(
+            caps.check_private_texture_2d(
+                wgt::TextureFormat::Rgb5g6b5Unorm,
+                usage,
+                [8, 8],
+                1,
+                2,
+                1
+            ),
+            Err(UnsupportedShape)
+        );
+    }
+
+    #[test]
     fn packed_16bit_gpu_copies_need_only_the_selected_texture2d_query() {
         use TextureRejection::*;
 
@@ -3729,7 +3839,7 @@ mod tests {
             assert_eq!(
                 caps.texture_to_buffer_copy_format_mask()
                     & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
-                0
+                wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format)
             );
 
             set_packed_format_query(&mut caps, format, Query::Value(shader_sample));
@@ -3737,10 +3847,20 @@ mod tests {
                 caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
                 Err(DriverFormatUnsupported)
             );
+            assert_eq!(
+                caps.texture_to_buffer_copy_format_mask()
+                    & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+                0
+            );
             set_packed_format_query(&mut caps, format, Query::Unavailable(-1));
             assert_eq!(
                 caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
                 Err(DriverQueryUnavailable)
+            );
+            assert_eq!(
+                caps.texture_to_buffer_copy_format_mask()
+                    & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+                0
             );
 
             set_packed_format_query(&mut caps, format, Query::Value(texture2d));
@@ -3760,6 +3880,11 @@ mod tests {
             assert!(!caps
                 .texture_format_capabilities(format)
                 .contains(FormatCaps::COPY_SRC));
+            assert_eq!(
+                caps.texture_to_buffer_copy_format_mask()
+                    & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+                0
+            );
             match format {
                 wgt::TextureFormat::Rgb5a1Unorm => {
                     caps.backend.rgb5551_texture_to_texture_copy = true
@@ -3769,6 +3894,26 @@ mod tests {
                 }
                 _ => unreachable!(),
             }
+
+            assert_eq!(
+                caps.texture_to_buffer_copy_format_mask()
+                    & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+                wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format)
+            );
+            caps.backend.packed_16bit_shadow_copy_readback = false;
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+                Ok(())
+            );
+            assert!(caps
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::COPY_SRC));
+            assert_eq!(
+                caps.texture_to_buffer_copy_format_mask()
+                    & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+                0
+            );
+            caps.backend.packed_16bit_shadow_copy_readback = true;
         }
     }
 
@@ -4680,6 +4825,7 @@ mod tests {
                     wgt::TextureFormat::R8Unorm
                         | wgt::TextureFormat::Rg8Unorm
                         | wgt::TextureFormat::Rg8Snorm
+                        | wgt::TextureFormat::Rg16Snorm
                         | wgt::TextureFormat::Rgba8Snorm
                 )
             );
@@ -5910,7 +6056,7 @@ mod tests {
         );
         assert_eq!(
             caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
-            Err(DriverFormatUnsupported)
+            Err(UnsupportedShape)
         );
         assert!(caps
             .texture_format_capabilities(format)
@@ -5939,7 +6085,7 @@ mod tests {
         caps.driver.rg8_unorm = Query::Unavailable(-1);
         assert_eq!(
             caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
-            Err(DriverQueryUnavailable)
+            Err(UnsupportedShape)
         );
         assert!(caps.texture_format_capabilities(format).is_empty());
 
@@ -6333,9 +6479,12 @@ mod tests {
     #[test]
     fn rg16_snorm_is_optional_at_fl91_and_requires_positive_query() {
         use TextureRejection::*;
-        let caps = model(FeatureLevel::L9_1);
+        let mut caps = model(FeatureLevel::L9_1);
         let format = wgt::TextureFormat::Rg16Snorm;
         let sampled_upload = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;
+        caps.driver.rg16_snorm = Query::Value(
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32,
+        );
         assert!(!caps.hardware.rg16_snorm_sampled_texture);
         for usage in [
             wgt::TextureUses::RESOURCE,
@@ -6420,6 +6569,60 @@ mod tests {
             queried.check_private_texture_2d(format, sampled_upload, [7, 5], 1, 1, 1),
             Err(UnsupportedUsage)
         );
+    }
+
+    #[test]
+    fn rg16_snorm_mip_chains_require_a_positive_selected_device_query() {
+        use TextureRejection::*;
+
+        let mut caps = model(FeatureLevel::L9_1);
+        let format = wgt::TextureFormat::Rg16Snorm;
+        let usage = wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST;
+        let texture2d = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
+        let mip = D3D11_FORMAT_SUPPORT_MIP.0 as u32;
+        let sample = D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32;
+
+        caps.driver.rg16_snorm = Query::Value(texture2d | mip);
+        assert!(!caps.hardware.rg16_snorm_sampled_texture);
+        assert!(caps.rg16_snorm_mip_chains_supported());
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+            Ok(())
+        );
+        let point_mipped = caps.texture_format_capabilities(format);
+        assert!(point_mipped.contains(FormatCaps::SAMPLED | FormatCaps::COPY_DST));
+        assert!(!point_mipped.contains(FormatCaps::SINGLE_MIP_ONLY));
+        assert!(!point_mipped.contains(FormatCaps::SAMPLED_LINEAR));
+
+        caps.driver.rg16_snorm = Query::Value(texture2d | sample);
+        assert!(!caps.rg16_snorm_mip_chains_supported());
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+            Err(UnsupportedShape)
+        );
+        assert!(caps
+            .texture_format_capabilities(format)
+            .contains(FormatCaps::SINGLE_MIP_ONLY));
+
+        caps.driver.rg16_snorm = Query::Value(texture2d | mip | sample);
+        caps.backend.rg16_snorm_sampled_mips = false;
+        assert!(!caps.rg16_snorm_mip_chains_supported());
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+            Err(UnsupportedShape)
+        );
+        assert!(caps
+            .texture_format_capabilities(format)
+            .contains(FormatCaps::SINGLE_MIP_ONLY));
+
+        caps.backend.rg16_snorm_sampled_mips = true;
+        caps.driver.rg16_snorm = Query::Unavailable(-1);
+        assert!(!caps.rg16_snorm_mip_chains_supported());
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 2, 1),
+            Err(UnsupportedShape)
+        );
+        assert!(caps.texture_format_capabilities(format).is_empty());
     }
 
     #[test]

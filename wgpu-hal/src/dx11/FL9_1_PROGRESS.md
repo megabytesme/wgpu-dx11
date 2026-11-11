@@ -1,3 +1,105 @@
+## Query-gated packed 16-bit mip chains — 2026-11-11
+
+The internal capability projection and native 2D texture constructor now
+agree on RGB5A1/RGBA4 mip-chain support: only these packed formats are added,
+and only when the selected device reports `TEXTURE2D | MIP` and the existing
+sampled-mip backend path is enabled. `SHADER_SAMPLE` remains the independent
+filterability requirement. The RTX 3090 Ti returned `0x000213A0` for both
+formats at requested and actual FL9_1.
+
+The strict public RGB5A1/RGBA4 test now creates four-level textures, uploads a
+pattern to mip 1, copies a 2x2 region at nonzero origins, reads the source
+region and full destination mip into padded raw-word buffers, then samples the
+destination through a single-mip view. It verified all 64 output pixels per
+format, source and destination words, unchanged borders, row padding and
+sentinels. Upload, copy, readback and sampling were submitted in ordered stages.
+An initial failure showed the native constructor still had a single-mip-only
+format whitelist despite the outer capability gate; aligning that whitelist
+with the selected-device query fixed the test. Historical FL9_1 devices remain
+unverified. After correcting the public format assertion to keep RGB565
+single-mip-only while allowing the two newly queried formats, the complete
+strict private HAL suite passed 508/508 and the strict public D3D11 target
+passed 131/131. The ordinary public DX11 isolation test passed 1/1; it still
+enumerates no adapter by default.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 dx11::capabilities::tests::packed_16bit_mip_chains_require_selected_device_query_and_backend_path -- --exact --nocapture
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+## Packed 16-bit ordered texture readback — 2026-11-11
+
+RGB5A1 and RGBA4 retain their selected-query-gated sampled/upload and
+same-format GPU texture-copy paths. They now also expose texture-to-buffer
+readback when the selected `TEXTURE2D` query, packed `COPY_SRC` implementation
+and CPU-shadow readback gate are all enabled. The destination is populated
+from an execution-ordered CPU shadow containing raw two-byte words; no native
+GPU-to-staging copy is issued. The shadow is initialized to zero and tracks
+queued uploads and texture copies.
+
+The synthetic capability tests verify that the copy-to-buffer mask disappears
+when the query, GPU copy implementation or shadow implementation is absent.
+The CPU shadow test checks padded uploads, partial patches, different source
+and destination sizes, raw words and zero-preserved borders for both formats.
+The strict public GPU test requested and selected FL9_1 on an NVIDIA RTX 3090
+Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false). For both RGB5A1
+and RGBA4 it uploaded a padded source, performed a partial GPU texture copy,
+sampled the result and read back raw source and destination words. All checked
+pixels, words, unchanged destination borders, row padding and sentinels
+matched.
+
+The full strict private D3D11 HAL suite passed 507/507, and the full strict
+public `dx11_public` target passed 131/131. Both packed-format readback cases
+executed on hardware. The public suite also logged optional capability
+subcase skips; those are distinct from the passing test-function count. The
+focused `packed_16bit` HAL tests passed 3/3. No historical FL9_1 device was
+available.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 packed_16bit -- --nocapture
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91 -- --exact --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+## Query-gated Rg16Snorm mip chains — 2026-11-11
+
+`Rg16Snorm` multi-mip sampled/upload use now requires the selected device's
+positive `TEXTURE2D | MIP` query plus the backend implementation gate.
+`SHADER_SAMPLE` remains independent and controls filterability. The RTX 3090
+Ti at requested/actual FL9_1 (`0x10de:0x2203`, driver `32.0.16.2101`,
+software=false) reports `0x00021122`: MIP is present, but SHADER_SAMPLE is
+absent, so the format remains point-only.
+
+Strict public GPU tests uploaded a three-level chain, selected mip 1 through a
+single-mip view and matched all 16 rendered pixels to `[159, 96, 0, 255]`.
+A second test uploaded mip 1, copied a partial region at nonzero source and
+destination origins and read it back with a nonzero buffer offset and padded
+rows; all four texels, unchanged zeroes, row padding and sentinels matched.
+The focused capability tests passed 4/4, the full strict private HAL suite
+passed 506/506, and the complete strict public DX11 target passed 131/131.
+Three optional format/vertex-input subcases logged skips; both new Rg16Snorm
+tests executed on hardware. Core DX12 passed 130/130, and the public target
+also passed `experimental_dx11_is_not_enabled_by_default`.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 capabilities::tests::rg16_snorm -- --nocapture
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public rg16_snorm_mip -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
+The HAL build and both affected-crate Clippy checks completed. Clippy reports
+existing warnings in D3D11 queue, texture-transfer and shader code; no warning
+points to the new Rg16Snorm capability or test code. No historical FL9_1
+driver is available in this verification environment.
+
 ## R16G16_SNORM ordered shadow readback — 2026-11-11
 
 Added a separately gated texture-to-buffer path for `Rg16Snorm`. The selected

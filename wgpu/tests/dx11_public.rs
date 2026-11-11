@@ -10612,6 +10612,11 @@ fn public_dx11_rgba8_snorm_mip_chain_at_fl91() {
     public_dx11_rg8_or_snorm_mip_chain_at_fl91(TextureFormat::Rgba8Snorm);
 }
 
+#[test]
+fn public_dx11_rg16_snorm_mip_chain_at_fl91() {
+    public_dx11_rg8_or_snorm_mip_chain_at_fl91(TextureFormat::Rg16Snorm);
+}
+
 fn public_dx11_rg8_or_snorm_mip_chain_at_fl91(format: TextureFormat) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -10651,25 +10656,31 @@ fn public_dx11_rg8_or_snorm_mip_chain_at_fl91(format: TextureFormat) {
         .contains(TextureFormatFeatureFlags::FILTERABLE);
     let bytes_per_texel = match format {
         TextureFormat::Rg8Unorm | TextureFormat::Rg8Snorm => 2,
-        TextureFormat::Rgba8Snorm => 4,
-        _ => unreachable!("the helper only tests the RG8 and RGBA8 formats"),
+        TextureFormat::Rg16Snorm | TextureFormat::Rgba8Snorm => 4,
+        _ => unreachable!("the helper only tests the supported RG and RGBA formats"),
     };
     let mip_values = match format {
         TextureFormat::Rg8Unorm => [[0, 255, 0, 0], [64, 192, 0, 0], [192, 64, 0, 0]],
         TextureFormat::Rg8Snorm => [[0, 127, 0, 127], [64, -64, 0, 127], [-64, 64, 0, 127]],
+        TextureFormat::Rg16Snorm => [[0, 0, 0, 0], [8192, -8192, 0, 0], [-16384, 16384, 0, 0]],
         TextureFormat::Rgba8Snorm => [[0, 0, 0, 0], [64, -64, 32, -32], [-64, 64, -32, 32]],
-        _ => unreachable!("the helper only tests supported RG8 and RGBA8 formats"),
+        _ => unreachable!("the helper only tests supported RG and RGBA formats"),
     };
     let expected = match format {
         TextureFormat::Rg8Unorm => [64, 192, 0, 255],
         TextureFormat::Rg8Snorm => [192, 64, 0, 255],
+        TextureFormat::Rg16Snorm => [159, 96, 0, 255],
         TextureFormat::Rgba8Snorm => [192, 64, 160, 96],
-        _ => unreachable!("the helper only tests supported RG8 and RGBA8 formats"),
+        _ => unreachable!("the helper only tests supported RG and RGBA formats"),
     };
 
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public DX11 FL9_1 SNORM mip test"),
-        required_features: Features::empty(),
+        required_features: if format == TextureFormat::Rg16Snorm {
+            Features::TEXTURE_FORMAT_16BIT_NORM
+        } else {
+            Features::empty()
+        },
         required_limits: adapter.limits(),
         ..Default::default()
     }))
@@ -10694,8 +10705,16 @@ fn public_dx11_rg8_or_snorm_mip_chain_at_fl91(format: TextureFormat) {
         for y in 0..dimension {
             for x in 0..dimension {
                 let offset = y * 256 + x * bytes_per_texel;
-                for channel in 0..bytes_per_texel {
-                    bytes[offset + channel] = value[channel] as u8;
+                if format == TextureFormat::Rg16Snorm {
+                    for channel in 0..2 {
+                        let sample = value[channel] as i16;
+                        bytes[offset + channel * 2..offset + channel * 2 + 2]
+                            .copy_from_slice(&sample.to_le_bytes());
+                    }
+                } else {
+                    for channel in 0..bytes_per_texel {
+                        bytes[offset + channel] = value[channel] as u8;
+                    }
                 }
             }
         }
@@ -10719,7 +10738,15 @@ fn public_dx11_rg8_or_snorm_mip_chain_at_fl91(format: TextureFormat) {
             },
         );
     }
-    let view = texture.create_view(&TextureViewDescriptor::default());
+    let view = if format == TextureFormat::Rg16Snorm {
+        texture.create_view(&TextureViewDescriptor {
+            base_mip_level: 1,
+            mip_level_count: Some(1),
+            ..Default::default()
+        })
+    } else {
+        texture.create_view(&TextureViewDescriptor::default())
+    };
     let sampler = device.create_sampler(&SamplerDescriptor {
         address_mode_u: AddressMode::ClampToEdge,
         address_mode_v: AddressMode::ClampToEdge,
@@ -10773,6 +10800,11 @@ fn public_dx11_rg8_or_snorm_mip_chain_at_fl91(format: TextureFormat) {
         bind_group_layouts: &[Some(&layout)],
         immediate_size: 0,
     });
+    let sample_expression = if format == TextureFormat::Rg16Snorm {
+        "textureSample(image, image_sampler, input.uv)"
+    } else {
+        "textureSampleBias(image, image_sampler, input.uv, 1.0)"
+    };
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("public FL9_1 SNORM mip shader"),
         source: ShaderSource::Wgsl(
@@ -10781,10 +10813,10 @@ fn public_dx11_rg8_or_snorm_mip_chain_at_fl91(format: TextureFormat) {
                  @group(0) @binding(42) var image_sampler: sampler;\n\
                  struct Out {{ @builtin(position) position: vec4f, @location(0) uv: vec2f }};\n\
                  @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> Out {{ return Out(vec4f(position, 0.5, 1.0), uv); }}\n\
-                 @fragment fn fs(input: Out) -> @location(0) vec4f {{ let value = textureSampleBias(image, image_sampler, input.uv, 1.0); {} }}",
+                 @fragment fn fs(input: Out) -> @location(0) vec4f {{ let value = {sample_expression}; {} }}",
                 if format == TextureFormat::Rg8Unorm {
                     "return vec4f(value.xy, 0.0, 1.0);"
-                } else if format == TextureFormat::Rg8Snorm {
+                } else if matches!(format, TextureFormat::Rg8Snorm | TextureFormat::Rg16Snorm) {
                     "return vec4f(value.xy * 0.5 + vec2f(0.5), 0.0, 1.0);"
                 } else {
                     "return value * 0.5 + vec4f(0.5);"
@@ -10954,8 +10986,13 @@ fn public_dx11_rg8_or_snorm_mip_chain_at_fl91(format: TextureFormat) {
         }
     }
     readback.unmap();
+    let sampling = if format == TextureFormat::Rg16Snorm {
+        "point-sampled mip 1"
+    } else {
+        "biased mip sampling"
+    };
     println!(
-        "PASS: public FL9_1 {format:?} three-level upload and biased sampling; all 16 pixels matched mip-1 values {expected:?}"
+        "PASS: public FL9_1 {format:?} three-level upload and {sampling}; all 16 pixels matched mip-1 values {expected:?}"
     );
 }
 
@@ -11956,9 +11993,6 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
         .flags
         .contains(TextureFormatFeatureFlags::FILTERABLE);
     if rg16_sampled {
-        assert!(rg16_features
-            .flags
-            .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
         assert!(rg16_copy_src);
         assert!(adapter
             .get_downlevel_capabilities()
@@ -12586,6 +12620,220 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     println!(
         "PASS: public FL9_1 Rg8Snorm and Rgba8Snorm sampled; Rg16Snorm sampled={rg16_sampled}; all 64 pixels matched expected signed normalization"
     );
+}
+
+#[test]
+fn public_dx11_rg16_snorm_mip_copy_and_readback_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let features = adapter.get_texture_format_features(TextureFormat::Rg16Snorm);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; Rg16Snorm={features:?}",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let required_usages =
+        TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST;
+    let mip_chain_supported = features.allowed_usages.contains(required_usages)
+        && !features
+            .flags
+            .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY);
+    if !mip_chain_supported {
+        assert!(
+            !required,
+            "strict mode requires queried Rg16Snorm TEXTURE2D | MIP support: {features:?}"
+        );
+        println!("SKIP: selected FL9_1 device did not query Rg16Snorm mip support");
+        return;
+    }
+    assert!(!features
+        .flags
+        .contains(TextureFormatFeatureFlags::FILTERABLE));
+    assert!(adapter
+        .features()
+        .contains(Features::TEXTURE_FORMAT_16BIT_NORM));
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 Rg16Snorm mip-copy test"),
+        required_features: Features::TEXTURE_FORMAT_16BIT_NORM,
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+    let texture_descriptor = |label| TextureDescriptor {
+        label: Some(label),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 3,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rg16Snorm,
+        usage: required_usages,
+        view_formats: &[],
+    };
+    let source = device.create_texture(&texture_descriptor("public FL9_1 Rg16Snorm mip source"));
+    let destination = device.create_texture(&texture_descriptor(
+        "public FL9_1 Rg16Snorm mip destination",
+    ));
+    let _mip_view = destination.create_view(&TextureViewDescriptor {
+        base_mip_level: 1,
+        mip_level_count: Some(1),
+        ..Default::default()
+    });
+    let mut source_mip = vec![0; 2 * 256];
+    for y in 0..2 {
+        for x in 0..2 {
+            let value = (100 * y + 10 * x + 1) as i16;
+            let second = (1000 + 100 * y + 10 * x + 1) as i16;
+            let offset = y * 256 + x * 4;
+            source_mip[offset..offset + 2].copy_from_slice(&value.to_le_bytes());
+            source_mip[offset + 2..offset + 4].copy_from_slice(&second.to_le_bytes());
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 1,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &source_mip,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(2),
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+    );
+    let destination_mip = vec![0; 2 * 256];
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 1,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &destination_mip,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(2),
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+    );
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 Rg16Snorm mip readback"),
+        size: 16 + 2 * 256 + 16,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let sentinel = vec![0xcd; 16 + 2 * 256 + 16];
+    queue.write_buffer(&readback, 0, &sentinel);
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public FL9_1 Rg16Snorm mip copy commands"),
+    });
+    encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 1,
+            origin: Origin3d { x: 1, y: 0, z: 0 },
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 1,
+            origin: Origin3d { x: 0, y: 1, z: 0 },
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 1,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 16,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(2),
+            },
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for Rg16Snorm mip copy");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("Rg16Snorm mip readback callback")
+        .expect("map Rg16Snorm mip readback");
+    let data = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped Rg16Snorm mip data");
+    assert!(data[..16].iter().all(|byte| *byte == 0xcd));
+    for y in 0..2 {
+        for x in 0..2 {
+            let offset = 16 + y * 256 + x * 4;
+            let expected = match (x, y) {
+                (0, 1) => [11, 0, 0xf3, 0x03],
+                _ => [0; 4],
+            };
+            assert_eq!(&data[offset..offset + 4], expected, "mip pixel ({x}, {y})");
+        }
+        assert!(data[16 + y * 256 + 8..16 + (y + 1) * 256]
+            .iter()
+            .all(|byte| *byte == 0xcd));
+    }
+    assert!(data[16 + 2 * 256..].iter().all(|byte| *byte == 0xcd));
+    drop(data);
+    readback.unmap();
+    println!("PASS: uploaded Rg16Snorm mip 1, copied a partial region at nonzero origins, and verified 4 exact texels plus row padding and sentinels");
 }
 
 #[test]
@@ -13390,9 +13638,12 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
         assert!(capabilities
             .flags
             .contains(TextureFormatFeatureFlags::FILTERABLE));
-        assert!(capabilities
-            .flags
-            .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
+        assert_eq!(
+            capabilities
+                .flags
+                .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY),
+            format == TextureFormat::Rgb5g6b5Unorm
+        );
         assert!(capabilities
             .allowed_usages
             .contains(TextureUsages::COPY_SRC));
@@ -13750,7 +14001,7 @@ fn public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91() {
         assert!(!capabilities
             .allowed_usages
             .contains(TextureUsages::RENDER_ATTACHMENT));
-        assert_eq!(
+        assert_ne!(
             adapter
                 .get_downlevel_capabilities()
                 .limits
@@ -13766,6 +14017,16 @@ fn public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91() {
         ..Default::default()
     }))
     .expect("request the selected FL9_1 device with packed formats");
+    let uncaptured_errors = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+    device.on_uncaptured_error({
+        let uncaptured_errors = Arc::clone(&uncaptured_errors);
+        Arc::new(move |error| uncaptured_errors.lock().unwrap().push(error.to_string()))
+    });
+    let device_lost = Arc::new(std::sync::Mutex::new(None::<String>));
+    device.set_device_lost_callback({
+        let device_lost = Arc::clone(&device_lost);
+        move |reason, message| *device_lost.lock().unwrap() = Some(format!("{reason:?}: {message}"))
+    });
 
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 packed texture-copy sample shader"),
@@ -13933,7 +14194,9 @@ fn public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91() {
             sample_count: 1,
             dimension: TextureDimension::D2,
             format,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::COPY_SRC,
             view_formats: &[],
         });
         let mut source_upload = vec![0u8; 2 * 256];
@@ -13988,6 +14251,17 @@ fn public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91() {
                 depth_or_array_layers: 1,
             },
         );
+        let source_readback_offset = 16;
+        let destination_readback_offset = source_readback_offset + 2 * 256 + 16;
+        let packed_readback_size = destination_readback_offset + 4 * 256 + 16;
+        let packed_readback = device.create_buffer(&BufferDescriptor {
+            label: Some("packed texture-copy raw readback"),
+            size: packed_readback_size,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let packed_sentinels = vec![0xcd; packed_readback_size as usize];
+        queue.write_buffer(&packed_readback, 0, &packed_sentinels);
         let source_view = source.create_view(&TextureViewDescriptor::default());
         let destination_view = destination.create_view(&TextureViewDescriptor::default());
         let group = device.create_bind_group(&BindGroupDescriptor {
@@ -14023,6 +14297,48 @@ fn public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91() {
             Extent3d {
                 width: 2,
                 height: 2,
+                depth_or_array_layers: 1,
+            },
+        );
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &source,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &packed_readback,
+                layout: TexelCopyBufferLayout {
+                    offset: source_readback_offset,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(2),
+                },
+            },
+            Extent3d {
+                width: 2,
+                height: 2,
+                depth_or_array_layers: 1,
+            },
+        );
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &destination,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &packed_readback,
+                layout: TexelCopyBufferLayout {
+                    offset: destination_readback_offset,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(4),
+                },
+            },
+            Extent3d {
+                width: 4,
+                height: 4,
                 depth_or_array_layers: 1,
             },
         );
@@ -14071,9 +14387,15 @@ fn public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91() {
         );
         let submission = queue.submit([encoder.finish()]);
         let (sender, receiver) = std::sync::mpsc::channel();
+        let (packed_sender, packed_receiver) = std::sync::mpsc::channel();
         readback
             .slice(..)
             .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        packed_readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| {
+                packed_sender.send(result).unwrap()
+            });
         device
             .poll(PollType::Wait {
                 submission_index: Some(submission),
@@ -14084,6 +14406,10 @@ fn public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91() {
             .recv_timeout(Duration::from_secs(10))
             .expect("packed texture-copy readback callback")
             .expect("map packed texture-copy readback");
+        packed_receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("packed raw texture readback callback")
+            .expect("map packed raw texture readback");
         {
             let data = readback.slice(..).get_mapped_range().expect("mapped data");
             let colors = match format {
@@ -14119,11 +14445,418 @@ fn public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91() {
                 }
             }
         }
+        {
+            let data = packed_readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped raw packed data");
+            assert!(data[..source_readback_offset as usize]
+                .iter()
+                .all(|byte| *byte == 0xcd));
+            for row in 0..2usize {
+                for column in 0..2usize {
+                    let offset = source_readback_offset as usize + row * 256 + column * 2;
+                    let expected = source_words[row * 2 + column].to_le_bytes();
+                    assert_eq!(&data[offset..offset + 2], expected, "{name} source word");
+                }
+                let padding_start = source_readback_offset as usize + row * 256 + 4;
+                let padding_end = source_readback_offset as usize + (row + 1) * 256;
+                assert!(data[padding_start..padding_end]
+                    .iter()
+                    .all(|byte| *byte == 0xcd));
+            }
+            assert!(data
+                [source_readback_offset as usize + 512..destination_readback_offset as usize]
+                .iter()
+                .all(|byte| *byte == 0xcd));
+            for row in 0..4usize {
+                for column in 0..4usize {
+                    let offset = destination_readback_offset as usize + row * 256 + column * 2;
+                    let expected = if (1..=2).contains(&column) && (1..=2).contains(&row) {
+                        source_words[(row - 1) * 2 + column - 1]
+                    } else {
+                        0xffff
+                    }
+                    .to_le_bytes();
+                    assert_eq!(
+                        &data[offset..offset + 2],
+                        expected,
+                        "{name} destination word"
+                    );
+                }
+                let padding_start = destination_readback_offset as usize + row * 256 + 8;
+                let padding_end = destination_readback_offset as usize + (row + 1) * 256;
+                assert!(data[padding_start..padding_end]
+                    .iter()
+                    .all(|byte| *byte == 0xcd));
+            }
+            assert!(data[destination_readback_offset as usize + 4 * 256..]
+                .iter()
+                .all(|byte| *byte == 0xcd));
+        }
+        packed_readback.unmap();
         readback.unmap();
         println!(
-            "PASS: FL9_1 {name} padded upload, partial nonzero-origin GPU copy, sampled output and preserved untouched texels; all 64 output pixels matched"
+            "PASS: FL9_1 {name} padded upload, partial GPU copy, sampled output and raw shadow readback; pixels, words, row padding and sentinels matched"
         );
         drop(source_view);
+    }
+
+    for (name, format, red_word) in [
+        ("RGB5A1", TextureFormat::Rgb5a1Unorm, 0xFC00u16),
+        ("RGBA4", TextureFormat::Rgba4Unorm, 0xFF00u16),
+    ] {
+        let format_features = adapter.get_texture_format_features(format);
+        if format_features
+            .flags
+            .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY)
+        {
+            println!("SKIP: selected FL9_1 device did not expose {name} MIP support");
+            continue;
+        }
+
+        let source_readback_offset = 16;
+        let destination_readback_offset = source_readback_offset + 2 * 256 + 16;
+        let mip_readback_size = destination_readback_offset + 4 * 256 + 16;
+        let mip_readback = device.create_buffer(&BufferDescriptor {
+            label: Some("packed mip raw readback"),
+            size: mip_readback_size,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        let mip_sentinels = vec![0xcd; mip_readback_size as usize];
+        queue.write_buffer(&mip_readback, 0, &mip_sentinels);
+
+        let texture_scope = device.push_error_scope(ErrorFilter::Validation);
+        let source = device.create_texture(&TextureDescriptor {
+            label: Some("packed mip source"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 4,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let destination = device.create_texture(&TextureDescriptor {
+            label: Some("packed mip destination"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 4,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::TEXTURE_BINDING
+                | TextureUsages::COPY_DST
+                | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let texture_error = poll_ready(texture_scope.pop());
+        assert!(
+            texture_error.is_none(),
+            "{name} packed mip texture descriptors were rejected: {texture_error:?}"
+        );
+        let mut source_upload = vec![0u8; 4 * 256];
+        let mut destination_upload = vec![0u8; 4 * 256];
+        for row in 0..4usize {
+            for column in 0..4usize {
+                let offset = row * 256 + column * 2;
+                source_upload[offset..offset + 2].copy_from_slice(&red_word.to_le_bytes());
+                destination_upload[offset..offset + 2].copy_from_slice(&0xffffu16.to_le_bytes());
+            }
+        }
+        for (texture, upload) in [
+            (&source, &source_upload),
+            (&destination, &destination_upload),
+        ] {
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture,
+                    mip_level: 1,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                upload,
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(4),
+                },
+                Extent3d {
+                    width: 4,
+                    height: 4,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+
+        let mip_view = destination.create_view(&TextureViewDescriptor {
+            base_mip_level: 1,
+            mip_level_count: Some(1),
+            ..Default::default()
+        });
+        let mip_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("packed mip sample group"),
+            layout: &layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&mip_view),
+                },
+                BindGroupEntry {
+                    binding: 42,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        let mip_submission_scope = device.push_error_scope(ErrorFilter::Validation);
+        macro_rules! wait_for_mip_submission {
+            ($index:expr, $phase:literal) => {
+                device
+                    .poll(PollType::Wait {
+                        submission_index: Some($index),
+                        timeout: Some(Duration::from_secs(10)),
+                    })
+                    .unwrap_or_else(|error| {
+                        panic!(
+                            "wait for packed mip {name} {}: {error:?}; uncaptured={:?}; lost={:?}",
+                            $phase,
+                            *uncaptured_errors.lock().unwrap(),
+                            *device_lost.lock().unwrap()
+                        )
+                    });
+            };
+        }
+
+        let upload_submission = queue.submit([]);
+        wait_for_mip_submission!(upload_submission, "texture uploads");
+
+        let mut copy_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("packed mip partial texture copy"),
+        });
+        copy_encoder.copy_texture_to_texture(
+            TexelCopyTextureInfo {
+                texture: &source,
+                mip_level: 1,
+                origin: Origin3d { x: 1, y: 1, z: 0 },
+                aspect: TextureAspect::All,
+            },
+            TexelCopyTextureInfo {
+                texture: &destination,
+                mip_level: 1,
+                origin: Origin3d { x: 1, y: 1, z: 0 },
+                aspect: TextureAspect::All,
+            },
+            Extent3d {
+                width: 2,
+                height: 2,
+                depth_or_array_layers: 1,
+            },
+        );
+        let copy_submission = queue.submit([copy_encoder.finish()]);
+        wait_for_mip_submission!(copy_submission, "partial texture copy");
+
+        let mut raw_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("packed mip padded raw readback"),
+        });
+        raw_encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &source,
+                mip_level: 1,
+                origin: Origin3d { x: 1, y: 1, z: 0 },
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &mip_readback,
+                layout: TexelCopyBufferLayout {
+                    offset: source_readback_offset,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(2),
+                },
+            },
+            Extent3d {
+                width: 2,
+                height: 2,
+                depth_or_array_layers: 1,
+            },
+        );
+        raw_encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &destination,
+                mip_level: 1,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &mip_readback,
+                layout: TexelCopyBufferLayout {
+                    offset: destination_readback_offset,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(4),
+                },
+            },
+            Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+        );
+        let raw_submission = queue.submit([raw_encoder.finish()]);
+        let (raw_sender, raw_receiver) = std::sync::mpsc::channel();
+        mip_readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| {
+                raw_sender.send(result).unwrap()
+            });
+        wait_for_mip_submission!(raw_submission, "texture readback");
+        raw_receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("packed mip raw callback")
+            .expect("map packed mip raw readback");
+
+        {
+            let data = mip_readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped packed mip raw data");
+            assert!(data[..source_readback_offset as usize]
+                .iter()
+                .all(|byte| *byte == 0xcd));
+            for row in 0..2usize {
+                for column in 0..2usize {
+                    let source_offset = source_readback_offset as usize + row * 256 + column * 2;
+                    assert_eq!(
+                        &data[source_offset..source_offset + 2],
+                        red_word.to_le_bytes(),
+                        "{name} source mip-1 word"
+                    );
+                    let destination_offset =
+                        destination_readback_offset as usize + row * 256 + column * 2;
+                    let expected = if (1..=2).contains(&column) && (1..=2).contains(&row) {
+                        red_word
+                    } else {
+                        0xffff
+                    }
+                    .to_le_bytes();
+                    assert_eq!(
+                        &data[destination_offset..destination_offset + 2],
+                        expected,
+                        "{name} destination mip-1 word"
+                    );
+                }
+                let source_padding = source_readback_offset as usize + row * 256 + 4;
+                let source_row_end = source_readback_offset as usize + (row + 1) * 256;
+                assert!(data[source_padding..source_row_end]
+                    .iter()
+                    .all(|byte| *byte == 0xcd));
+                let destination_padding = destination_readback_offset as usize + row * 256 + 8;
+                let destination_row_end = destination_readback_offset as usize + (row + 1) * 256;
+                assert!(data[destination_padding..destination_row_end]
+                    .iter()
+                    .all(|byte| *byte == 0xcd));
+            }
+            assert!(data[destination_readback_offset as usize + 4 * 256..]
+                .iter()
+                .all(|byte| *byte == 0xcd));
+        }
+        mip_readback.unmap();
+
+        let mut render_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("packed mip sample and readback"),
+        });
+        {
+            let mut pass = render_encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("sample packed mip-1 copy"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, &mip_group, &[]);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        render_encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([render_encoder.finish()]);
+        let mip_submission_error = poll_ready(mip_submission_scope.pop());
+        assert!(
+            mip_submission_error.is_none(),
+            "{name} packed mip submission was rejected: {mip_submission_error:?}"
+        );
+        let (sample_sender, sample_receiver) = std::sync::mpsc::channel();
+        readback.slice(..).map_async(MapMode::Read, move |result| {
+            sample_sender.send(result).unwrap()
+        });
+        wait_for_mip_submission!(submission, "sampled rendering");
+        sample_receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("packed mip sample callback")
+            .expect("map packed mip sample readback");
+
+        {
+            let data = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped mip sample");
+            for y in 0..8usize {
+                for x in 0..8usize {
+                    let expected = if (2..=5).contains(&x) && (2..=5).contains(&y) {
+                        [255u8, 0, 0, 255]
+                    } else {
+                        [255u8, 255, 255, 255]
+                    };
+                    let offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        expected,
+                        "{name} mip-1 sample ({x}, {y})"
+                    );
+                }
+            }
+        }
+        readback.unmap();
+        println!(
+            "PASS: FL9_1 {name} four-level texture uploaded mip 1, copied a partial mip-1 region, sampled its single-mip view and verified padded raw readback"
+        );
     }
 }
 

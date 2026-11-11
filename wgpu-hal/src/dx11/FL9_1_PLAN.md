@@ -2,6 +2,33 @@
 
 ## Latest current state — 2026-11-11
 
+RGB5A1 and RGBA4 now also have query-gated sampled/upload mip chains. The
+selected device must report `TEXTURE2D | MIP`, and the native constructor and
+capability projection use the same backend gate. Strict forced-FL9_1 tests
+uploaded mip 1, copied a partial region, checked padded raw-shadow readback and
+sampled a single-mip view for both formats. The RTX query was `0x000213A0` for
+each; historical drivers remain unverified. The final strict private HAL suite
+passed 508/508 and the public D3D11 target passed 131/131 on the RTX 3090 Ti;
+the public default-enumeration isolation test passed 1/1. The initial full
+public run exposed a stale assertion that expected RGB5A1/RGBA4 to remain
+single-mip-only; it was corrected while retaining that restriction for RGB565.
+
+RGB5A1 and RGBA4 texture-to-buffer readback now uses a separately gated,
+execution-ordered CPU shadow after the selected `TEXTURE2D` query and GPU
+`COPY_SRC` path are available. Strict forced-FL9_1 coverage checks raw source
+and partial-copy destination words, sampled pixels, untouched borders, row
+padding and sentinels. The complete strict private HAL suite passed 507/507;
+the complete strict public DX11 suite passed 131/131 on the RTX 3090 Ti.
+Historical driver behavior remains unverified; see `FL9_1_PROGRESS.md`.
+
+The Rg16Snorm path now also supports query-gated multi-mip sampled uploads
+and same-format mip copies when the selected device reports
+`TEXTURE2D | MIP` and the backend path is enabled. `SHADER_SAMPLE` remains
+independent: the RTX 3090 Ti reports point-only support at forced FL9_1.
+Strict public tests sample mip 1 and verify partial mip-1 copy/readback with
+padded rows. Historical FL9_1 behavior remains unverified; results are in
+`FL9_1_PROGRESS.md`.
+
 The selected FL9_1 public projection now separately enables a proven direct
 `vertex_index` read from `vec2f`, `vec3f` or `vec4f` values. Core and HAL
 reject helper, computed, pointer-escaping and write cases; Naga lowers the

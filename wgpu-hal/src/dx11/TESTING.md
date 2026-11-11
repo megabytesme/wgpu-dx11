@@ -1008,22 +1008,38 @@ format and checks that absent backend support does not project the format.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
-cargo +1.93 test --offline -j32 -p wgpu-hal --lib --features dx11 packed_16bit_sampling_requires_each_selected_device_query_and_backend_path
-cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rgb565_sampled_upload_at_fl91 -- --nocapture --test-threads=1
-cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 packed_16bit_sampling_requires_each_selected_device_query_and_backend_path
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 packed_16bit_gpu_copies_need_only_the_selected_texture2d_query
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rgb565_sampled_upload_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91 -- --nocapture --test-threads=1
 ```
 
-The packed sampled/upload path supports single-mip 2D
-`TEXTURE_BINDING | COPY_DST` resources. RGB5A1 and RGBA4 additionally permit
-same-format GPU texture-to-texture copies when their selected-device query
-reports `TEXTURE2D`; the path does not query or bind `RENDER_TARGET` and remains
-excluded from texture-to-buffer readback. The query-gated B5G6R5 target path
+The packed sampled/upload path supports 2D `TEXTURE_BINDING | COPY_DST`
+resources. RGB5A1 and RGBA4 additionally permit sampled/upload mip chains when
+their selected-device query reports `TEXTURE2D | MIP`, plus same-format GPU
+texture-to-texture copies when the query reports `TEXTURE2D`; neither path
+queries or binds `RENDER_TARGET`. Packed texture-to-buffer readback remains
+separately gated and uses an ordered CPU shadow. The query-gated B5G6R5 target path
 may combine `TEXTURE_BINDING`, `COPY_DST` and `RENDER_ATTACHMENT` as supported
 by the private predicate; it still has no copy-source or direct-readback path.
-None of these paths adds mip-chain support. The strict GPU test verifies a
-partial 2×2 copy at destination origin (1, 1) for RGB5A1 and RGBA4, samples
+RGB565 remains single-mip-only. RGB5A1 and RGBA4 add sampled/upload mip chains
+only when the selected-device query includes `MIP`. The strict GPU test verifies
+a partial 2×2 copy at destination origin (1, 1) for RGB5A1 and RGBA4, samples
 each result into RGBA8, and checks copied colors plus unchanged white border
-texels.
+texels. When the selected packed-format query includes `MIP`, the same test
+also creates a four-level texture, uploads mip 1, copies a partial region,
+checks padded raw-word readback and samples a single-mip view. On the tested
+RTX 3090 Ti forced to FL9_1, both RGB5A1 and RGBA4 reported query mask
+`0x000213A0`; all sample pixels, raw words, preserved texels, row padding and
+sentinels matched. This does not establish behavior on historical FL9_1 GPUs.
+
+The same strict test now reads both packed textures back into a buffer. It
+checks the source words and destination words after the partial GPU copy,
+including zero-initialized destination borders, a nonzero destination-buffer
+offset, 256-byte row pitches, row-padding sentinels and bytes around both
+regions. The path uses the ordered CPU shadow and is enabled only when the
+selected `TEXTURE2D` query, packed GPU-copy implementation and readback-shadow
+gate all permit the format. It does not create a native staging texture.
 
 ### Internal FL9_1 capability projection
 
@@ -2396,6 +2412,19 @@ checks all 64 exact raw texels, untouched zeroes, row padding and sentinels.
 This uses an execution-ordered CPU shadow rather than native staging readback
 and adds one raw CPU allocation per `COPY_SRC` texture.
 
+`public_dx11_rg16_snorm_mip_chain_at_fl91` additionally requires the selected
+format query to include `TEXTURE2D | MIP`; it does not require
+`SHADER_SAMPLE`, so this query can expose mip chains while remaining
+non-filterable. The test uploads three POT mip levels, selects mip 1 with a
+single-mip view, and verifies all 16 output pixels as `[159, 96, 0, 255]`.
+`public_dx11_rg16_snorm_mip_copy_and_readback_at_fl91` uploads mip 1, copies a
+partial region between multi-mip textures and reads the destination back with
+a nonzero offset and padded rows. All 64 raw texels, untouched zeroes, padding
+and sentinels are checked. On the RTX 3090 Ti at requested/actual FL9_1, the
+format mask is `0x00021122`: MIP is present and `SHADER_SAMPLE` is absent.
+These tests demonstrate this driver's point-only mip path, not historical
+hardware.
+
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_snorm_sampled_uploads_at_fl91 -- --exact --nocapture --test-threads=1
@@ -2433,15 +2462,15 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 BC1/BC2/BC3 `COPY_SRC` supports query-gated GPU texture-to-texture copying and
 ordered CPU-shadow texture-to-buffer readback; a native copy to CPU-visible
 staging memory remains unavailable for FL9_x SRV-only textures. R16G16_SNORM
-supports a query-gated same-format GPU texture-to-texture copy, but no render
-target or texture-to-buffer readback path. RG8_SNORM texture-to-texture copy and raw readback use an
+supports query-gated same-format GPU texture copies and ordered CPU-shadow
+texture-to-buffer readback, but no render-target path. RG8_SNORM texture-to-texture copy and raw readback use an
 execution-ordered CPU byte shadow because valid FL9_1 native GPU copies failed
 on the development driver. RGBA8_SNORM supports same-format GPU texture
 copies when the selected device reports `TEXTURE2D` and raw-byte
 texture-to-buffer readback through a separate ordered shadow path. Direct
-GPU-to-staging reads remain rejected for this SRV-only format. RGB5A1 and RGBA4 remain
-non-renderable and lack texture-to-buffer readback, but support query-gated
-same-format GPU copies. R8_UNORM,
+GPU-to-staging reads remain rejected for this SRV-only format. RGB5A1 and RGBA4
+remain non-renderable, but support query-gated same-format GPU copies and
+ordered CPU-shadow texture-to-buffer readback. R8_UNORM,
 R8G8_UNORM and B5G6R5 have a narrower query-gated single-mip render-target,
 copy and readback path described below. RG8_UNORM linear filtering has visual
 execution coverage; R8_UNORM and the SNORM formats have query-backed

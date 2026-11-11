@@ -415,6 +415,13 @@ impl crate::Device for Device {
                                 && capabilities.rg8_unorm_mip_chains_supported())
                             || (desc.format == wgt::TextureFormat::Rg8Snorm
                                 && capabilities.rg8_snorm_mip_chains_supported())
+                            || (desc.format == wgt::TextureFormat::Rg16Snorm
+                                && capabilities.rg16_snorm_mip_chains_supported())
+                            || (matches!(
+                                desc.format,
+                                wgt::TextureFormat::Rgb5a1Unorm | wgt::TextureFormat::Rgba4Unorm
+                            ) && capabilities
+                                .packed_16bit_mip_chains_supported(desc.format))
                             || (desc.format == wgt::TextureFormat::Rgba8Snorm
                                 && capabilities.rgba8_snorm_mip_chains_supported())))
                     || !super::capabilities::supported_mip_texture_usage(desc.usage)
@@ -678,7 +685,11 @@ impl crate::Device for Device {
                 || desc.format == wgt::TextureFormat::Rg16Snorm
                     && capabilities.backend.rg16_snorm_shadow_copy_readback
                 || desc.format == wgt::TextureFormat::Rgba8Snorm
-                    && capabilities.backend.rgba8_snorm_shadow_copy_readback)
+                    && capabilities.backend.rgba8_snorm_shadow_copy_readback
+                || matches!(
+                    desc.format,
+                    wgt::TextureFormat::Rgb5a1Unorm | wgt::TextureFormat::Rgba4Unorm
+                ) && capabilities.backend.packed_16bit_shadow_copy_readback)
         {
             texture.copy_shadow = Some(
                 super::texture::Texture2DShadow::zeroed(

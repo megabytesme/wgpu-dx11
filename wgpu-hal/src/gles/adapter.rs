@@ -1006,6 +1006,7 @@ impl super::Adapter {
             instance_index_input: true,
             vertex_uniform_array_indexing: false,
             vertex_index_local_array_indexing: false,
+            vertex_index_vector_indexing: false,
             max_sampled_textures_per_vertex_stage: unsafe {
                 gl.get_parameter_i32(glow::MAX_VERTEX_TEXTURE_IMAGE_UNITS)
             }

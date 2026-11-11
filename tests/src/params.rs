@@ -45,6 +45,7 @@ const LOWEST_DOWNLEVEL_PROPERTIES: wgpu::DownlevelCapabilities = DownlevelCapabi
         vertex_uniform_array_indexing: false,
         fragment_uniform_array_indexing: false,
         vertex_index_local_array_indexing: false,
+        vertex_index_vector_indexing: false,
         max_sampled_texture_sampler_pairs_per_shader_stage: 0,
         max_sampled_textures_per_vertex_stage: 0,
         max_vertex_shader_uniform_vectors: 0,
