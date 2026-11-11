@@ -1,5 +1,20 @@
 # FL9_1 handoff
 
+## Current coordinator checkpoint — query-gated Rg16Snorm texture load — 2026-11-11
+
+The selected-entry fragment 2D `textureLoad` proof now permits query-gated
+`Rg16Snorm`, preserving its narrow selected-resource proof while excluding 3D
+loads and sample-bias-offset. Strict forced-FL9_1 GPU readback passed on the
+RTX 3090 Ti: four SNORM quadrants matched across 64 pixels, and 64
+out-of-bounds loads returned zero. The strict HAL suite passed 509/509 and
+the complete strict public target passed 133/133; Core DX11/DX12 and the
+focused format-matrix tests passed, and affected Clippy, formatting and diff
+checks passed. Exact commands and driver details are in `FL9_1_PROGRESS.md`.
+This does not establish historical-driver support. The current tree remains
+suitable for constrained opt-in applications, not arbitrary wgpu clients;
+see the mission plan and capability matrix for hard FL9_1 limits and remaining
+integration evidence.
+
 ## Current coordinator checkpoint — query-gated sRGB 2D `textureLoad` — 2026-11-11
 
 The narrow selected-entry fragment 2D `textureLoad` path now accepts a

@@ -34388,6 +34388,368 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
 }
 
 #[test]
+fn public_dx11_fragment_rg16_snorm_texture_load_emulation_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().find(|adapter| {
+        let info = adapter.get_info();
+        info.backend == Backend::Dx11
+            && info.driver_info.contains("FL9_1")
+            && info.driver_info.contains("physical")
+    }) else {
+        assert!(
+            !required,
+            "strict mode requires physical FL9_1 D3D11 hardware for Rg16Snorm textureLoad"
+        );
+        println!("SKIP: no physical FL9_1 D3D11 adapter for Rg16Snorm textureLoad test");
+        return;
+    };
+    let info = adapter.get_info();
+    let has_format_feature = adapter
+        .features()
+        .contains(Features::TEXTURE_FORMAT_16BIT_NORM);
+    let format_usages = adapter
+        .get_texture_format_features(TextureFormat::Rg16Snorm)
+        .allowed_usages;
+    let has_sample_upload_path =
+        format_usages.contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=optional Rg16Snorm format-query fragment textureLoad; TEXTURE_FORMAT_16BIT_NORM={has_format_feature} sampled_upload={has_sample_upload_path}",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    if !has_format_feature || !has_sample_upload_path {
+        assert!(
+            !required,
+            "strict mode requires TEXTURE_FORMAT_16BIT_NORM and the query-gated Rg16Snorm TEXTURE_BINDING|COPY_DST path (feature={has_format_feature}, usages={format_usages:?})"
+        );
+        println!(
+            "SKIP: selected FL9_1 adapter lacks optional Rg16Snorm sampled-upload coverage (feature={has_format_feature}, usages={format_usages:?})"
+        );
+        return;
+    }
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 Rg16Snorm textureLoad device"),
+        required_features: Features::TEXTURE_FORMAT_16BIT_NORM,
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request FL9_1 device with queried 16-bit normalized texture support");
+    let uncaptured_errors = Arc::new(std::sync::Mutex::new(Vec::new()));
+    device.on_uncaptured_error({
+        let uncaptured_errors = uncaptured_errors.clone();
+        Arc::new(move |error| uncaptured_errors.lock().unwrap().push(format!("{error:?}")))
+    });
+
+    let source = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 Rg16Snorm textureLoad pattern"),
+        size: Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rg16Snorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let pattern = [-32768i16, 0, 16384, -16384, 32767, 32767, 0, 0];
+    let pattern_bytes: Vec<u8> = pattern
+        .iter()
+        .flat_map(|component| component.to_le_bytes())
+        .collect();
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &pattern_bytes,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(8),
+            rows_per_image: Some(2),
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+    );
+    let source_view = source.create_view(&TextureViewDescriptor::default());
+    let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 Rg16Snorm textureLoad layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: false },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    });
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 Rg16Snorm textureLoad binding"),
+        layout: &bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 7,
+            resource: BindingResource::TextureView(&source_view),
+        }],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 Rg16Snorm textureLoad pipeline layout"),
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 Rg16Snorm textureLoad shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                @group(0) @binding(7) var image: texture_2d<f32>;
+
+                struct VertexOut {
+                    @builtin(position) position: vec4f,
+                    @location(0) coordinate: vec2f,
+                }
+
+                @vertex
+                fn vs(@location(0) position: vec2f) -> VertexOut {
+                    return VertexOut(
+                        vec4f(position, 0.0, 1.0),
+                        vec2f(position.x + 1.0, 1.0 - position.y),
+                    );
+                }
+
+                @fragment
+                fn sample_pattern(@location(0) coordinate: vec2f) -> @location(0) vec4f {
+                    let value = textureLoad(image, vec2i(coordinate), 0);
+                    let mapped = value.rg * 0.5 + vec2f(0.5);
+                    return vec4f(mapped, 0.0, 1.0);
+                }
+
+                @fragment
+                fn load_out_of_bounds() -> @location(0) vec4f {
+                    return textureLoad(image, vec2i(2, 0), 0);
+                }
+            "#
+            .into(),
+        ),
+    });
+    let vertex_attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &vertex_attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let make_pipeline = |fragment_entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 Rg16Snorm textureLoad pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let pipelines = [
+        make_pipeline("sample_pattern"),
+        make_pipeline("load_out_of_bounds"),
+    ];
+    let vertices = [-1.0f32, -1.0, -1.0, 3.0, 3.0, -1.0];
+    let vertex_bytes: Vec<u8> = vertices
+        .iter()
+        .flat_map(|value| value.to_ne_bytes())
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 Rg16Snorm fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("mapped Rg16Snorm fullscreen triangle")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+
+    let targets = [
+        device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 Rg16Snorm in-bounds target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        }),
+        device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 Rg16Snorm out-of-bounds target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        }),
+    ];
+    let target_views = targets
+        .each_ref()
+        .map(|target| target.create_view(&TextureViewDescriptor::default()));
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 Rg16Snorm textureLoad readback"),
+        size: 2 * 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 Rg16Snorm textureLoad render and readback"),
+    });
+    for index in 0..2 {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 Rg16Snorm textureLoad pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_views[index],
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipelines[index]);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+        drop(pass);
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &targets[index],
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: index as u64 * 8 * 256,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 Rg16Snorm textureLoad renders");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("Rg16Snorm textureLoad map callback")
+        .expect("map Rg16Snorm textureLoad output");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped Rg16Snorm textureLoad pixels");
+        let expected_quadrants = [
+            [0, 128, 0, 255],
+            [191, 64, 0, 255],
+            [255, 255, 0, 255],
+            [128, 128, 0, 255],
+        ];
+        for y in 0..8 {
+            for x in 0..8 {
+                let in_bounds_offset = y * 256 + x * 4;
+                let quadrant = (usize::from(y >= 4) * 2) + usize::from(x >= 4);
+                for channel in 0..4 {
+                    let observed = pixels[in_bounds_offset + channel];
+                    let expected = expected_quadrants[quadrant][channel];
+                    assert!(
+                        observed.abs_diff(expected) <= 1,
+                        "Rg16Snorm textureLoad pixel ({x}, {y}), channel {channel}: expected {expected}, observed {observed}"
+                    );
+                }
+                let out_of_bounds_offset = 8 * 256 + in_bounds_offset;
+                assert_eq!(
+                    &pixels[out_of_bounds_offset..out_of_bounds_offset + 4],
+                    &[0, 0, 0, 0],
+                    "out-of-bounds Rg16Snorm textureLoad pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    let errors = uncaptured_errors.lock().unwrap().clone();
+    assert!(
+        errors.is_empty(),
+        "Rg16Snorm rendering reported errors: {errors:?}"
+    );
+    println!(
+        "PASS: optional Rg16Snorm format-query coverage executed at forced FL9_1; 64 in-bounds pixels matched all four SNORM quadrants within one byte and 64 out-of-bounds pixels were transparent zero"
+    );
+}
+
+#[test]
 fn public_dx11_texture_load_and_dimensions_share_one_fl91_texture() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

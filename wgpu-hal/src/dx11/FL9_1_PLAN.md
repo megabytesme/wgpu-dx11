@@ -1,5 +1,15 @@
 # FL9_1 completion plan
 
+## Recent continuation — query-gated Rg16Snorm fragment `textureLoad` — 2026-11-11
+
+The narrow selected-entry fragment 2D texture-load subset now accepts
+query-gated `Rg16Snorm` alongside the existing RGBA8, sRGB, R8 and RG8 cases.
+Core and HAL keep the new format out of 3D loads and sample-bias emulation.
+The strict public test requested `TEXTURE_FORMAT_16BIT_NORM`, used the
+selected device's point-only sampled/upload path, and verified all four
+signed RG texels plus out-of-bounds zero at forced FL9_1. Exact commands and
+device evidence are recorded in `FL9_1_PROGRESS.md`.
+
 ## Recent continuation — nonzero-group 2D `textureDimensions` helper — 2026-11-11
 
 The selected-entry fragment 2D `textureDimensions` helper proof now accepts

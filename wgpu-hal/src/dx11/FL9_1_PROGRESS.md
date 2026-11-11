@@ -17234,3 +17234,41 @@ mission cargo wrapper at `E:\Temp\wgpu_mission_cargo.bat`:
 - `cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed.
 
 An initial Core unit command omitted the `wgsl` feature and therefore failed to compile WGSL-based tests; the corrected command above passed. This does not change public adapter selection and does not establish historical FL9_1 driver behavior.
+
+## Query-gated Rg16Snorm 2D fragment `textureLoad` — 2026-11-11
+
+Extended the existing selected-entry Core/HAL format subset to permit
+`Rg16Snorm` for fragment 2D `textureLoad` and its paired dimensions query.
+The selected device must report `TEXTURE_FORMAT_16BIT_NORM` and sampled plus
+upload support. The format is point-only on the development RTX 3090 Ti, so
+the test uses a nonfiltering layout and the backend's texel-center point-load
+emulation. It does not permit the format for 3D load or sample-bias-offset.
+
+The strict public test uploads a 2x2 pattern containing `-32768`, `-16384`,
+`0`, `16384` and `32767` SNORM components. Rendering maps signed values to
+RGBA8 and verifies all 64 pixels across four quadrants within one byte. A
+second selected entry loads out of bounds and verifies all 64 pixels are
+transparent zero. This exercises actual shader execution and readback, not
+only shader compilation or view creation.
+
+Verification used Rust 1.93.1, the Visual Studio x64 environment and the
+mission Cargo wrapper at `E:\Temp\wgpu_mission_cargo.bat`:
+
+- Core DX11 unit suite with WGSL: 128/128 passed after the Core/HAL gate.
+- Core DX12 regression suite: 128/128 passed.
+- Focused HAL format matrix: 1/1 passed; the full strict D3D11 HAL suite
+  passed 509/509.
+- Focused strict public test passed 1/1 on physical NVIDIA GeForce RTX 3090 Ti
+  (`0x10de:0x2203`), driver `32.0.16.2101`, requested/actual FL9_1, software
+  adapter false. The selected adapter reported
+  `TEXTURE_FORMAT_16BIT_NORM=true` and sampled/upload support. All four SNORM
+  output quadrants and all out-of-bounds pixels matched.
+- The complete strict public D3D11 target passed 133/133 test functions.
+  Optional format subcases reported as `SKIP` are not hardware coverage; the
+  included default-isolation test passed.
+- Core, HAL and public-target Clippy passed. HAL emitted six existing
+  warnings in index, transfer and texture code. Workspace format and diff
+  checks passed.
+
+The selected modern NVIDIA driver verifies only this query-enabled path under
+forced FL9_1. Historical FL9_1 optional-format behavior remains unverified.

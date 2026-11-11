@@ -4131,13 +4131,25 @@ cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,w
 
 Core validates the current view before this selected entry point reaches HAL.
 The restricted path accepts a single-mip, single-sample `Rgba8Unorm` 2D view
-or a query-gated `Rgba8UnormSrgb`, `R8Unorm` or `Rg8Unorm` view, and requires
-the parent resource to be single-mip. sRGB requires sampled-resource support
-for that selected format and uses the typed sRGB SRV's RGB linearization;
+or a query-gated `Rgba8UnormSrgb`, `R8Unorm`, `Rg8Unorm` or `Rg16Snorm`
+view, and requires the parent resource to be single-mip. sRGB requires
+sampled-resource support for that selected format and uses the typed sRGB SRV's RGB linearization;
 alpha remains linear. Multi-mip views produce a validation error without an
 internal HAL error. A sibling entry point that does not use `textureLoad` does
-not inherit the selected entry point's view restrictions. sRGB, R8 and RG8
-remain rejected by the separate sample-bias-offset path.
+not inherit the selected entry point's view restrictions. sRGB, R8, RG8 and
+Rg16Snorm remain rejected by the separate sample-bias-offset path.
+
+`Rg16Snorm` 2D loads are query-gated and require the public
+`TEXTURE_FORMAT_16BIT_NORM` feature. They use a nonfiltering layout and the
+existing texel-center point-sample lowering; the path does not require the
+format's `FILTERABLE` flag. The strict public test loads signed RG values,
+maps them into distinguishable RGBA8 colors, checks all 64 pixels, and checks
+out-of-bounds zero behavior:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_rg16_snorm_texture_load_emulation_at_fl91 -- --nocapture --test-threads=1
+```
 
 ### FL9_1 GLSL `outerProduct`
 

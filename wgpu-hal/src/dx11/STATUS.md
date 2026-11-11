@@ -1911,3 +1911,14 @@ continues to validate the actual bound view; HAL keeps sRGB out of 3D load and
 sample-bias-offset paths. Strict forced-FL9_1 RTX readback verified encoded
 `[128, 128, 128, 128]` as linear `[55, 55, 55, 128]` across 64 pixels. This
 does not establish behavior on historical FL9_1 drivers.
+
+## Query-gated Rg16Snorm fragment 2D `textureLoad` — 2026-11-11
+
+Core and HAL now allow `Rg16Snorm` in the existing selected-entry fragment
+2D texture-load emulation, while preserving the separate 3D and sample-bias
+format restrictions. The selected adapter must positively report
+`TEXTURE_FORMAT_16BIT_NORM` and the existing sampled/upload usages; a
+nonfiltering layout is sufficient. Strict RTX 3090 Ti execution at requested
+and actual FL9_1 verified signed RG normalization for four texels across all
+64 output pixels and zero for 64 out-of-bounds pixels. This is optional
+format-query evidence from a modern driver, not historical FL9_1 validation.
