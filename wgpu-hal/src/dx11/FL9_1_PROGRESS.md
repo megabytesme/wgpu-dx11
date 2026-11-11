@@ -2,6 +2,9 @@
 
 ## Restricted fragment explicit LOD zero — 2026-11-11
 
+Implementation checkpoint: `2632f03cdfea9f6d96f1cf94b8caa4164cfd38b5`
+(`dx11: support proven fragment LOD-zero sampling at FL9_1`).
+
 Added a distinct `DownlevelLimits::texture_sample_level_zero_2d_float_fragment`
 capability without enabling general `texture_sample_level`. Core proves a
 selected fragment entry uses only direct, unconditional, positive-literal-zero
