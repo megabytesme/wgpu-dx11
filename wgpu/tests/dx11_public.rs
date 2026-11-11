@@ -31558,7 +31558,7 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
         "FL9_1 3D volume mip support: {}",
         downlevel.limits.texture_3d_mipmaps
     );
-    assert!(!downlevel.limits.texture_3d_texture_copies);
+    assert!(downlevel.limits.texture_3d_texture_copies);
     assert_eq!(
         downlevel.limits.texture_3d_usage_mask,
         (TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST).bits()
@@ -32329,7 +32329,7 @@ fn public_dx11_texture_3d_cpu_shadow_readback_at_fl91() {
     let info = adapter.get_info();
     let downlevel = adapter.get_downlevel_capabilities();
     assert!(downlevel.limits.texture_3d);
-    assert!(!downlevel.limits.texture_3d_texture_copies);
+    assert!(downlevel.limits.texture_3d_texture_copies);
     assert!(downlevel
         .limits
         .supports_texture_to_buffer_copy(TextureFormat::Rgba8Unorm));
@@ -32569,25 +32569,59 @@ fn public_dx11_texture_3d_cpu_shadow_readback_at_fl91() {
     );
 
     let destination = device.create_texture(&TextureDescriptor {
-        label: Some("FL9_1 unsupported 3D texture copy destination"),
+        label: Some("FL9_1 3D shadow-copy destination"),
         size: Extent3d {
-            width: 4,
+            width: 8,
             height: 4,
-            depth_or_array_layers: 4,
+            depth_or_array_layers: 8,
         },
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D3,
         format: TextureFormat::Rgba8Unorm,
-        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    expect_validation_error(&device, "FL9_1 3D texture-to-texture copy", || {
+    let destination_initial = [9u8, 8, 7, 255].repeat(8 * 4 * 8);
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &destination_initial,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(8 * 4),
+            rows_per_image: Some(4),
+        },
+        Extent3d {
+            width: 8,
+            height: 4,
+            depth_or_array_layers: 8,
+        },
+    );
+    let mismatched_2d = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 2D-to-3D copy rejection source"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    expect_validation_error(&device, "FL9_1 mixed 2D/3D texture copy", || {
         let mut invalid_encoder =
             device.create_command_encoder(&CommandEncoderDescriptor::default());
         invalid_encoder.copy_texture_to_texture(
             TexelCopyTextureInfo {
-                texture: &volume,
+                texture: &mismatched_2d,
                 mip_level: 0,
                 origin: Origin3d::ZERO,
                 aspect: TextureAspect::All,
@@ -32601,12 +32635,520 @@ fn public_dx11_texture_3d_cpu_shadow_readback_at_fl91() {
             Extent3d {
                 width: 4,
                 height: 4,
-                depth_or_array_layers: 4,
+                depth_or_array_layers: 1,
             },
         );
         drop(invalid_encoder.finish());
     });
-    println!("PASS: ordered FL9_1 3D upload and full/partial CPU-shadow readback preserved all voxels, nonzero offsets and padded rows; native 3D texture copies remained rejected");
+    expect_validation_error(&device, "FL9_1 out-of-bounds 3D texture copy", || {
+        let mut invalid_encoder =
+            device.create_command_encoder(&CommandEncoderDescriptor::default());
+        invalid_encoder.copy_texture_to_texture(
+            TexelCopyTextureInfo {
+                texture: &volume,
+                mip_level: 0,
+                origin: Origin3d { x: 3, y: 0, z: 0 },
+                aspect: TextureAspect::All,
+            },
+            TexelCopyTextureInfo {
+                texture: &destination,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            Extent3d {
+                width: 2,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+        );
+        drop(invalid_encoder.finish());
+    });
+
+    let copied_readback_offset = 20usize;
+    let copied_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 3D texture-copy readback"),
+        size: 8192,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&copied_readback, 0, &vec![0x5A; 8192]);
+
+    let destination_view = destination.create_view(&TextureViewDescriptor {
+        dimension: Some(TextureViewDimension::D3),
+        ..Default::default()
+    });
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        address_mode_u: AddressMode::ClampToEdge,
+        address_mode_v: AddressMode::ClampToEdge,
+        address_mode_w: AddressMode::ClampToEdge,
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 copied 3D texture layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D3,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 42,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                count: None,
+            },
+        ],
+    });
+    let group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 copied 3D texture bindings"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&destination_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 copied 3D texture pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 copied 3D texture shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var volume: texture_3d<f32>;\n\
+             @group(0) @binding(42) var volume_sampler: sampler;\n\
+             @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return textureSample(volume, volume_sampler, vec3f(3.5 / 8.0, 1.5 / 4.0, 4.5 / 8.0)); }"
+                .into(),
+        ),
+    });
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &[VertexAttribute {
+            format: VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        }],
+    })];
+    let target_state = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 copied 3D texture pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_layout,
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &target_state,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let vertex_data: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 copied 3D texture fullscreen triangle"),
+        size: vertex_data.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("map copied 3D texture fullscreen triangle")
+        .copy_from_slice(&vertex_data);
+    vertex.unmap();
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 copied 3D sample output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let sample_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 copied 3D sample readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let mut copy_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 3D shadow copy then sample"),
+    });
+    copy_encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &volume,
+            mip_level: 0,
+            origin: Origin3d { x: 1, y: 1, z: 1 },
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d { x: 3, y: 1, z: 4 },
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+    );
+    copy_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &copied_readback,
+            layout: TexelCopyBufferLayout {
+                offset: copied_readback_offset as u64,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(4),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 4,
+            depth_or_array_layers: 8,
+        },
+    );
+    {
+        let mut pass = copy_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 sample copied 3D texture"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    copy_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &sample_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let copy_submission = queue.submit([copy_encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    copied_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(copy_submission.clone()),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for 3D shadow copy, readback and sampling");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("3D copied texture readback callback")
+        .expect("map 3D copied texture readback");
+    let copied_pixels = copied_readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped 3D copied texture readback");
+    for z in 0..8usize {
+        for y in 0..4usize {
+            for x in 0..8usize {
+                let expected =
+                    if (3..=4).contains(&x) && (1..=2).contains(&y) && (4..=5).contains(&z) {
+                        [
+                            40 + (z - 4) as u8 * 80,
+                            20 + (y - 1) as u8 * 90,
+                            30 + (x - 3) as u8 * 60,
+                            255,
+                        ]
+                    } else {
+                        [9, 8, 7, 255]
+                    };
+                let offset = copied_readback_offset + z * 1024 + y * 256 + x * 4;
+                assert_eq!(
+                    &copied_pixels[offset..offset + 4],
+                    expected,
+                    "3D copied texture voxel ({x}, {y}, {z})"
+                );
+            }
+            if z != 7 || y != 3 {
+                let padding = copied_readback_offset + z * 1024 + y * 256 + 32;
+                assert!(
+                    copied_pixels[padding..copied_readback_offset + z * 1024 + y * 256 + 256]
+                        .iter()
+                        .all(|byte| *byte == 0x5A)
+                );
+            }
+        }
+    }
+    drop(copied_pixels);
+    copied_readback.unmap();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    sample_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(copy_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for copied 3D sample readback");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("copied 3D sample readback callback")
+        .expect("map copied 3D sample readback");
+    let sampled_pixels = sample_readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped copied 3D sample output");
+    for y in 0..8usize {
+        for x in 0..8usize {
+            let offset = y * 256 + x * 4;
+            assert_eq!(
+                &sampled_pixels[offset..offset + 4],
+                [40, 20, 30, 255],
+                "sampled copied volume output pixel ({x}, {y})"
+            );
+        }
+    }
+    drop(sampled_pixels);
+    sample_readback.unmap();
+
+    if downlevel.limits.texture_3d_mipmaps {
+        let mip_source = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 mipmapped 3D copy source"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 8,
+            },
+            mip_level_count: 2,
+            sample_count: 1,
+            dimension: TextureDimension::D3,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let mip_destination = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 mipmapped 3D copy destination"),
+            size: Extent3d {
+                width: 16,
+                height: 8,
+                depth_or_array_layers: 16,
+            },
+            mip_level_count: 2,
+            sample_count: 1,
+            dimension: TextureDimension::D3,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let mut mip_upload = vec![0xA5; 4 * 4 * 256];
+        for z in 0..4usize {
+            for y in 0..4usize {
+                for x in 0..4usize {
+                    let offset = z * 1024 + y * 256 + x * 4;
+                    mip_upload[offset..offset + 4].copy_from_slice(&[
+                        10 + z as u8 * 40,
+                        20 + y as u8 * 50,
+                        30 + x as u8 * 20,
+                        255,
+                    ]);
+                }
+            }
+        }
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &mip_source,
+                mip_level: 1,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &mip_upload,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(4),
+            },
+            Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 4,
+            },
+        );
+        let mip_readback = device.create_buffer(&BufferDescriptor {
+            label: Some("FL9_1 mipmapped 3D copy readback"),
+            size: 8192,
+            usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&mip_readback, 0, &vec![0x5A; 8192]);
+        let mut mip_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("FL9_1 mipmapped 3D shadow copy"),
+        });
+        mip_encoder.copy_texture_to_texture(
+            TexelCopyTextureInfo {
+                texture: &mip_source,
+                mip_level: 1,
+                origin: Origin3d { x: 1, y: 1, z: 1 },
+                aspect: TextureAspect::All,
+            },
+            TexelCopyTextureInfo {
+                texture: &mip_destination,
+                mip_level: 1,
+                origin: Origin3d { x: 3, y: 1, z: 4 },
+                aspect: TextureAspect::All,
+            },
+            Extent3d {
+                width: 2,
+                height: 2,
+                depth_or_array_layers: 2,
+            },
+        );
+        mip_encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &mip_destination,
+                mip_level: 1,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &mip_readback,
+                layout: TexelCopyBufferLayout {
+                    offset: copied_readback_offset as u64,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(4),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 4,
+                depth_or_array_layers: 8,
+            },
+        );
+        let mip_submission = queue.submit([mip_encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        mip_readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(mip_submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for mipmapped 3D texture copy");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("mipmapped 3D copy readback callback")
+            .expect("map mipmapped 3D copy readback");
+        let mip_pixels = mip_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped mipmapped 3D copy readback");
+        for z in 0..8usize {
+            for y in 0..4usize {
+                for x in 0..8usize {
+                    let expected =
+                        if (3..=4).contains(&x) && (1..=2).contains(&y) && (4..=5).contains(&z) {
+                            [
+                                10 + (z - 3) as u8 * 40,
+                                20 + y as u8 * 50,
+                                30 + (x - 2) as u8 * 20,
+                                255,
+                            ]
+                        } else {
+                            [0; 4]
+                        };
+                    let offset = copied_readback_offset + z * 1024 + y * 256 + x * 4;
+                    assert_eq!(
+                        &mip_pixels[offset..offset + 4],
+                        expected,
+                        "copied mip-1 voxel ({x}, {y}, {z})"
+                    );
+                }
+            }
+        }
+        drop(mip_pixels);
+        mip_readback.unmap();
+        println!("PASS: query-supported FL9_1 mip-1 3D region copy preserved untouched voxels and produced expected readback");
+    } else {
+        assert!(
+            !required,
+            "strict mode requires the queried FL9_1 3D mip capability for mip-copy coverage"
+        );
+        println!(
+            "SKIP: selected FL9_1 device did not query 3D mip support; mip copy not exercised"
+        );
+    }
+    println!("PASS: forced FL9_1 ordered 3D RGBA8 region copy (2x2x2, nonzero XYZ, differing dimensions) preserved all untouched voxels and row padding; destination sampled to 64/64 expected pixels");
 }
 
 #[test]

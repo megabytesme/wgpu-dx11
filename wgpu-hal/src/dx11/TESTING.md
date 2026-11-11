@@ -4719,9 +4719,14 @@ requested/actual FL9_1, the test ordered a padded, nonzero-offset partial
 buffer upload and full-volume readback in one submission. All 64 voxels
 matched the uploaded 2x2x2 pattern or initialized zero. A second copy read a
 2x2x2 region from a nonzero origin into a padded destination with a nonzero
-offset; all destination bytes, including padding, matched. Core continued to
-reject 3D texture-to-texture copy. This verifies an upload-backed CPU shadow,
-not native GPU 3D readback or readback of GPU-written 3D resources.
+offset; all destination bytes, including padding, matched. The strict public
+3D copy case seeds a differently sized destination with nonzero values, copies
+a partial region between volumes at nonzero XYZ origins, verifies every
+destination voxel and padded readback byte, rejects an out-of-bounds request,
+and samples the copied volume. The selected RTX 3090 Ti also passed queried
+mip-1 copy coverage. The result is an ordered CPU-shadow fallback followed by
+`UpdateSubresource`, not native GPU-to-GPU copy. It does not establish copying
+from GPU-written volume data or historical FL9_1 driver behavior.
 
 ### Public D24S8 depth-fail stencil remapping at FL9_1
 

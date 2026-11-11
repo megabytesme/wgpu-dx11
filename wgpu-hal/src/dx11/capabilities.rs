@@ -356,6 +356,7 @@ pub(super) struct BackendCapabilities {
     pub bgra8_multisample_resolve: bool,
     pub texture_3d_sampling: bool,
     pub texture_3d_upload: bool,
+    pub texture_3d_texture_copies: bool,
     pub texture_3d_mipmaps: bool,
     pub alpha_to_coverage: bool,
     pub vertex_buffers: u32,
@@ -511,6 +512,7 @@ impl BackendCapabilities {
         bgra8_multisample_resolve: true,
         texture_3d_sampling: true,
         texture_3d_upload: true,
+        texture_3d_texture_copies: true,
         texture_3d_mipmaps: true,
         alpha_to_coverage: false,
         vertex_buffers: crate::MAX_VERTEX_BUFFERS as u32,
@@ -728,6 +730,10 @@ impl Capabilities {
             && matches!(self.driver.rgba8, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0)
     }
 
+    pub fn texture_3d_texture_copies(&self) -> bool {
+        self.texture_3d_format_mask() != 0 && self.backend.texture_3d_texture_copies
+    }
+
     pub fn r8_unorm_mip_chains_supported(&self) -> bool {
         let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_MIP.0) as u32;
         self.r8_unorm_mip_chain_path_available()
@@ -885,7 +891,7 @@ impl Capabilities {
                     .bits(),
                 texture_to_buffer_copy_format_mask: self.texture_to_buffer_copy_format_mask(),
                 max_texture_to_buffer_copy_layers: if cube_texture_sampling { 6 } else { 1 },
-                texture_3d_texture_copies: false,
+                texture_3d_texture_copies: self.texture_3d_texture_copies(),
                 npot_texture_3d: false,
                 max_texture_cube_dimension: if cube_texture_sampling {
                     self.hardware.texture_cube_dimension
@@ -2738,7 +2744,7 @@ mod tests {
         assert!(projection.capabilities.downlevel.limits.texture_3d);
         assert_eq!(projection.capabilities.limits.max_texture_dimension_3d, 256);
         assert!(
-            !projection
+            projection
                 .capabilities
                 .downlevel
                 .limits
@@ -2780,6 +2786,19 @@ mod tests {
         let mut disabled_mips = mip_supported;
         disabled_mips.backend.texture_3d_mipmaps = false;
         assert!(!disabled_mips.texture_3d_mipmaps());
+
+        let mut disabled_copies = supported;
+        disabled_copies.backend.texture_3d_texture_copies = false;
+        assert!(!disabled_copies.texture_3d_texture_copies());
+        assert!(
+            !disabled_copies
+                .wgpu_projection()
+                .expect("FL9_1 projection")
+                .capabilities
+                .downlevel
+                .limits
+                .texture_3d_texture_copies
+        );
 
         for query in [
             Query::Unavailable(-1),
@@ -3125,7 +3144,7 @@ mod tests {
             (wgt::TextureUsages::RENDER_ATTACHMENT | wgt::TextureUsages::TRANSIENT_ATTACHMENT)
                 .bits()
         );
-        assert!(!exposed.downlevel.limits.texture_3d_texture_copies);
+        assert!(exposed.downlevel.limits.texture_3d_texture_copies);
         assert!(!exposed.downlevel.limits.npot_texture_3d);
         assert!(
             !exposed

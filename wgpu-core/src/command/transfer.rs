@@ -629,6 +629,7 @@ pub(crate) fn validate_copy_within_same_texture<T>(
     dst: &wgt::TexelCopyTextureInfo<T>,
     format: wgt::TextureFormat,
     array_layer_count: u32,
+    is_3d: bool,
 ) -> Result<(), TransferError> {
     let src_aspects = hal::FormatAspects::new(format, src.aspect);
     let dst_aspects = hal::FormatAspects::new(format, dst.aspect);
@@ -637,8 +638,9 @@ pub(crate) fn validate_copy_within_same_texture<T>(
         return Ok(());
     }
 
-    if src.origin.z >= dst.origin.z + array_layer_count
-        || dst.origin.z >= src.origin.z + array_layer_count
+    if !is_3d
+        && (src.origin.z >= dst.origin.z + array_layer_count
+            || dst.origin.z >= src.origin.z + array_layer_count)
     {
         // Copying between non-overlapping layer ranges is okay.
         return Ok(());
@@ -1508,6 +1510,7 @@ pub(super) fn copy_texture_to_texture(
             destination,
             src_texture.desc.format,
             array_layer_count,
+            src_texture.desc.dimension == wgt::TextureDimension::D3,
         )?;
     }
 
@@ -1547,9 +1550,10 @@ pub(super) fn copy_texture_to_texture(
         return Ok(());
     }
 
-    if !state.device.downlevel.limits.texture_3d_texture_copies
-        && (src_texture.desc.dimension == wgt::TextureDimension::D3
-            || dst_texture.desc.dimension == wgt::TextureDimension::D3)
+    let src_is_3d = src_texture.desc.dimension == wgt::TextureDimension::D3;
+    let dst_is_3d = dst_texture.desc.dimension == wgt::TextureDimension::D3;
+    if src_is_3d != dst_is_3d
+        || (src_is_3d && !state.device.downlevel.limits.texture_3d_texture_copies)
     {
         return Err(TransferError::UnsupportedTexture3DCopy.into());
     }

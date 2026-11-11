@@ -4,7 +4,8 @@ use super::{
     device::NativeDevice,
     hal_index::IndexBinding,
     hal_transfer::{
-        BufferToTexture, BufferToTexture3D, Texture3DToBuffer, TextureToBuffer, TextureToTexture,
+        BufferToTexture, BufferToTexture3D, Texture3DToBuffer, Texture3DToTexture3D,
+        TextureToBuffer, TextureToTexture,
     },
     hal_uniform::UniformBinding,
 };
@@ -208,6 +209,7 @@ pub(super) enum NativeCommand {
     BufferToTexture(BufferToTexture),
     BufferToTexture3D(BufferToTexture3D),
     Texture3DToBuffer(Texture3DToBuffer),
+    Texture3DToTexture3D(Texture3DToTexture3D),
     TextureToBuffer(TextureToBuffer),
     TextureToTexture(TextureToTexture),
     #[cfg(test)]
@@ -695,6 +697,7 @@ impl CommandBuffer {
                     NativeCommand::BufferToTexture(copy) => copy.execute(context)?,
                     NativeCommand::BufferToTexture3D(copy) => copy.execute(context)?,
                     NativeCommand::Texture3DToBuffer(copy) => copy.execute(context)?,
+                    NativeCommand::Texture3DToTexture3D(copy) => copy.execute(context)?,
                     NativeCommand::TextureToBuffer(copy) => copy.execute(context)?,
                     NativeCommand::TextureToTexture(copy) => copy.execute(context)?,
                     #[cfg(test)]

@@ -432,13 +432,21 @@ untouched voxels across 128 pixels. Buffer-to-volume upload currently stages
 through a mapped buffer and `UpdateSubresource`. `COPY_SRC` uses an
 execution-ordered CPU shadow because 10Level9 does not provide a safe native
 3D texture-to-buffer copy path; buffer-to-volume uploads update both the GPU
-resource and shadow from the staged source. Strict public FL9_1 readback
-verified all 64 voxels after a partial padded upload and a separate partial
-region readback, preserving nonzero source/destination offsets and every byte
-of destination row padding. This path adds a full volume CPU allocation and a
-temporary region copy, and is valid only because
-3D render/storage writes and texture-to-texture copies remain unavailable.
-Render attachments and storage remain unavailable.
+resource and shadow from the staged source. Same-format 3D-to-3D copies are
+now exposed through a CPU-shadow fallback when the selected RGBA8 volume path
+is available. The source requires `COPY_SRC` and the destination requires
+`COPY_DST`; same-mip self-copy and mixed dimensions are rejected. Replay copies
+the requested region from the source shadow, updates the destination shadow if
+present, and uploads the packed region with `UpdateSubresource` and a non-null
+destination box. This is not a native GPU copy and cannot consume GPU-written
+volume data. Strict public FL9_1 coverage seeds a differently sized
+destination with nonzero values, copies a partial 2×2×2 region at nonzero XYZ
+origins, checks preserved outside voxels and readback padding, rejects an
+out-of-bounds copy, then samples the destination; all voxels and 64 output
+pixels matched on the RTX 3090 Ti. A query-supported mip-1 copy also preserved
+untouched voxels. This path adds a full source shadow when `COPY_SRC` is
+requested plus a temporary allocation and CPU copy per 3D copy. Render
+attachments and storage remain unavailable.
 The private HAL transfer regression additionally uploads a padded, nonzero-
 offset 2×2×2 region at volume origin (1,1,1), samples every slice and verifies
 all 64 target pixels, including 56 initialized untouched voxels. It passed on

@@ -1,3 +1,42 @@
+## Same-format 3D RGBA8 region copies — 2026-11-11
+
+Core now permits compatible 3D-to-3D texture copies behind the explicit
+`texture_3d_texture_copies` downlevel limit. Mixed 2D/3D copies and same-mip
+self-copy are rejected. The HAL replays the copy from the source's ordered CPU
+shadow, updates the destination shadow when present, then uses
+`UpdateSubresource` with a non-null destination box. This intentionally avoids
+native 3D GPU-copy operations restricted by the 10Level9 FL9_1 context; it
+cannot copy data produced by 3D GPU writes.
+
+The strengthened strict public test passed on the RTX 3090 Ti at requested and
+actual FL9_1 (`0x10de:0x2203`, driver `32.0.16.2101`, physical adapter). It
+seeded the destination volume with nonzero texels, copied a padded 2×2×2 region
+between differently sized textures at nonzero XYZ origins, preserved and
+checked every outside voxel and readback-padding byte, rejected an out-of-bounds
+source region, and sampled the destination; all 64 output pixels matched. The
+device also reported the optional 3D mip support used by the mip-1 copy case,
+which preserved untouched voxels.
+
+The final strengthened strict public target passed 139/139 with no skips. The
+focused copy test also passed 1/1. The full private HAL suite passed 510/510,
+Core DX11 fixtures 142/142, and Core DX12 131/131 on the same implementation
+before the final public-test-only assertions were added. Rust 1.93.1 formatting,
+`git diff --check`, and Clippy passed. Clippy reported six existing HAL
+warnings (including `too_many_arguments` and an `unnecessary_unwrap`) and three
+existing Core fixture warnings (`nonminimal_bool`, `single_element_loop` and
+`collapsible_if`); no warning points to the new copy implementation.
+
+The strict public test command was:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+```
+
+The 3D path adds a source-volume shadow when `COPY_SRC` is requested and CPU
+region allocation/copy work per command; 3D render attachments and storage
+remain unavailable.
+
 ## Query-gated 8-bit SNORM fragment `textureLoad` — 2026-11-11
 
 The selected-entry fragment 2D `textureLoad` subset now accepts `Rg8Snorm`
@@ -17462,3 +17501,12 @@ The final full strict public run after strengthening the stage-observable GPU
 assertion passed 139/139. The final targeted public Clippy run also passed;
 it reported six pre-existing HAL warnings in index, transfer and texture
 helpers, with none in the changed test.
+
+Checkpoint commit: `680e0b78e` (`dx11: support FL9_1 mat3 matrix inverse`).
+
+## Lumia CoreWindow runtime retry — 2026-11-11
+
+Retried the read-only Device Portal query `Invoke-LumiaPortal -Path
+'/api/os/devicefamily'` using the configured PowerShell helper. The HTTPS
+request timed out before returning device information. No device settings
+were changed; CoreWindow and ARM32 execution remain externally unverified.

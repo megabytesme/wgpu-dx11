@@ -786,7 +786,9 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     if capabilities.downlevel.limits.texture_3d {
         let mut volume_desc = texture_desc(
             wgt::TextureFormat::Rgba8Unorm,
-            wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+            wgt::TextureUsages::TEXTURE_BINDING
+                | wgt::TextureUsages::COPY_SRC
+                | wgt::TextureUsages::COPY_DST,
         );
         volume_desc.dimension = wgt::TextureDimension::D3;
         volume_desc.size = wgt::Extent3d {
@@ -952,8 +954,101 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         global.command_buffer_drop(command);
         global.command_encoder_drop(encoder);
         global.texture_drop(source_2d);
+
+        let mut destination_desc = volume_desc.clone();
+        destination_desc.usage = wgt::TextureUsages::COPY_DST;
+        let (destination_3d, error) = global.device_create_texture(device, &destination_desc, None);
+        assert!(error.is_none(), "3D copy destination texture: {error:?}");
+        let (encoder, error) = global.device_create_command_encoder(
+            device,
+            &wgt::CommandEncoderDescriptor::default(),
+            None,
+        );
+        assert!(
+            error.is_none(),
+            "3D-to-3D copy validation encoder: {error:?}"
+        );
+        global
+            .command_encoder_copy_texture_to_texture(
+                encoder,
+                &wgt::TexelCopyTextureInfo {
+                    texture: volume,
+                    mip_level: 0,
+                    origin: wgt::Origin3d { x: 1, y: 1, z: 1 },
+                    aspect: wgt::TextureAspect::All,
+                },
+                &wgt::TexelCopyTextureInfo {
+                    texture: destination_3d,
+                    mip_level: 0,
+                    origin: wgt::Origin3d { x: 2, y: 1, z: 1 },
+                    aspect: wgt::TextureAspect::All,
+                },
+                &wgt::Extent3d {
+                    width: 2,
+                    height: 2,
+                    depth_or_array_layers: 2,
+                },
+            )
+            .unwrap();
+        let (command, error) =
+            global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
+        assert!(
+            error.is_none(),
+            "valid 3D-to-3D copy rejected in core/HAL: {error:?}"
+        );
+        global.command_buffer_drop(command);
+        global.command_encoder_drop(encoder);
+        global.texture_drop(destination_3d);
+
+        let (encoder, error) = global.device_create_command_encoder(
+            device,
+            &wgt::CommandEncoderDescriptor::default(),
+            None,
+        );
+        assert!(
+            error.is_none(),
+            "same-subresource 3D copy validation encoder: {error:?}"
+        );
+        global
+            .command_encoder_copy_texture_to_texture(
+                encoder,
+                &wgt::TexelCopyTextureInfo {
+                    texture: volume,
+                    mip_level: 0,
+                    origin: wgt::Origin3d { x: 0, y: 0, z: 0 },
+                    aspect: wgt::TextureAspect::All,
+                },
+                &wgt::TexelCopyTextureInfo {
+                    texture: volume,
+                    mip_level: 0,
+                    origin: wgt::Origin3d { x: 0, y: 0, z: 2 },
+                    aspect: wgt::TextureAspect::All,
+                },
+                &wgt::Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            )
+            .unwrap();
+        let (command, error) =
+            global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
+        assert!(
+            matches!(
+                error,
+                Some((
+                    _,
+                    crate::command::CommandEncoderError::Transfer(
+                        crate::command::TransferError::InvalidCopyWithinSameTexture { .. }
+                    )
+                ))
+            ),
+            "same-mip 3D self-copies must reject even when Z slices do not overlap: {error:?}"
+        );
+        global.command_buffer_drop(command);
+        global.command_encoder_drop(encoder);
         global.texture_drop(volume);
-        std::println!("PASS: queried FL9_1 RGBA8 3D texture/view accepted; unsupported shapes and texture copies rejected by core");
+        std::println!("PASS: queried FL9_1 RGBA8 3D texture/view and 3D-to-3D copy accepted; mixed dimensions and same-mip self-copy rejected by core");
     }
 
     let (single_layer_texture, error) = global.device_create_texture(

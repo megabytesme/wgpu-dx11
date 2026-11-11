@@ -2,18 +2,19 @@
 
 ## Current mission status — 2026-11-11
 
-The latest shader increment adds narrow f32 mat3 inverse alongside the
-existing mat2 path. Strict public forced-FL9_1 execution on the RTX 3090 Ti
-used both matrix shapes in vertex and fragment stages and checked all 64
-pixels; separate mat3 stage outputs matched `[64, 64, 64, 255]`. Core
-independently permits mat2 and mat3 through separate `DownlevelLimits` fields
-and rejects mat4 before HAL. Focused Naga, wgpu-types, Core DX11/DX12 and
-public validation tests passed. The final complete strict public D3D11 target
-passed 139/139 after the strengthened stage-observable GPU assertion,
-including `experimental_dx11_is_not_enabled_by_default`. A final
-public-target Clippy run, formatting and `git diff --check` passed; only
-pre-existing HAL lint warnings were reported. Exact commands are recorded in
-`FL9_1_PROGRESS.md`.
+The latest resource increment adds same-format RGBA8 3D texture-to-texture
+region copies through the ordered CPU-shadow path. The strict public test
+requested and selected FL9_1 on the RTX 3090 Ti, seeded a differently sized
+destination with nonzero data, copied a 2×2×2 region at nonzero XYZ origins,
+verified preserved destination voxels and padded readback, rejected an
+out-of-bounds request, and sampled the copied volume with 64/64 pixels
+matching. Query-supported mip-1 coverage also passed. This fallback uses
+`UpdateSubresource`; native 3D GPU copies and GPU-written 3D source resources
+remain unavailable. The strengthened focused test passed 1/1, then the full
+strict public target passed 139/139 with no skips. The full private HAL suite
+passed 510/510, Core fixture 142/142, and Core DX12 131/131 on the same
+implementation before the final public-test-only assertions. Exact commands
+and Clippy results are recorded in `FL9_1_PROGRESS.md`.
 
 This is a substantial constrained opt-in graphics subset, not feature-complete
 FL9_1 wgpu. The explicit DX11 backend supports public wgpu adapter/device
@@ -23,7 +24,8 @@ and strict GPU readback tests exercise the public path. Recent separate
 reviews found no confirmed Core-valid request that reaches an unsupported HAL
 operation in their reviewed scopes, but the complete API/CTS contract audit is
 still open. Remaining software breadth includes conservative shader subsets
-and 3D GPU copy/attachment paths. Compute/UAV, geometry shaders, MRT, indirect
+and 3D render/storage paths; 3D texture copies are available only through the
+CPU-shadow fallback. Compute/UAV, geometry shaders, MRT, indirect
 execution, occlusion queries, 1D textures and ordinary texture arrays are
 FL9_1/profile or native API exclusions, not a software backlog to bypass. The
 shared CTS lists do not track DX11-specific results; the curated inventory is

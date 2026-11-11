@@ -248,6 +248,22 @@ pub(super) struct Texture3DToBuffer {
     row_bytes: u32,
 }
 
+#[derive(Debug)]
+pub(super) struct Texture3DToTexture3D {
+    _source: ID3D11Texture3D,
+    destination: ID3D11Texture3D,
+    source_shadow: alloc::sync::Arc<Texture3DShadow>,
+    destination_shadow: Option<alloc::sync::Arc<Texture3DShadow>>,
+    source_mip: u32,
+    destination_mip: u32,
+    source_origin: [u32; 3],
+    destination_origin: [u32; 3],
+    extent: [u32; 3],
+    destination_box: D3D11_BOX,
+    row_pitch: u32,
+    depth_pitch: u32,
+}
+
 /// A checked operation retaining a texture, buffer and staging texture.
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -278,6 +294,106 @@ enum TextureToBufferSource {
 }
 
 impl NativeDevice {
+    pub(super) fn prepare_texture_3d_to_texture_3d(
+        &self,
+        source: &NativeTexture,
+        destination: &NativeTexture,
+        region: &crate::TextureCopy,
+    ) -> Result<Texture3DToTexture3D> {
+        if source.dimension != wgt::TextureDimension::D3
+            || destination.dimension != wgt::TextureDimension::D3
+            || source.logical_format != Some(wgt::TextureFormat::Rgba8Unorm)
+            || destination.logical_format != Some(wgt::TextureFormat::Rgba8Unorm)
+            || source.format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || destination.format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || !source.usage.contains(wgt::TextureUses::COPY_SRC)
+            || !destination.usage.contains(wgt::TextureUses::COPY_DST)
+            || region.src_base.array_layer != 0
+            || region.dst_base.array_layer != 0
+            || region.src_base.aspect != crate::FormatAspects::COLOR
+            || region.dst_base.aspect != crate::FormatAspects::COLOR
+            || region.size.width == 0
+            || region.size.height == 0
+            || region.size.depth == 0
+        {
+            return Err(invalid());
+        }
+
+        let source_desc = self.texture_3d_desc(source)?;
+        let destination_desc = self.texture_3d_desc(destination)?;
+        if region.src_base.mip_level >= source_desc.MipLevels
+            || region.dst_base.mip_level >= destination_desc.MipLevels
+        {
+            return Err(invalid());
+        }
+        let source_dimensions = [
+            (source_desc.Width >> region.src_base.mip_level).max(1),
+            (source_desc.Height >> region.src_base.mip_level).max(1),
+            (source_desc.Depth >> region.src_base.mip_level).max(1),
+        ];
+        let destination_dimensions = [
+            (destination_desc.Width >> region.dst_base.mip_level).max(1),
+            (destination_desc.Height >> region.dst_base.mip_level).max(1),
+            (destination_desc.Depth >> region.dst_base.mip_level).max(1),
+        ];
+        let source_origin = [
+            region.src_base.origin.x,
+            region.src_base.origin.y,
+            region.src_base.origin.z,
+        ];
+        let destination_origin = [
+            region.dst_base.origin.x,
+            region.dst_base.origin.y,
+            region.dst_base.origin.z,
+        ];
+        let extent = [region.size.width, region.size.height, region.size.depth];
+        for axis in 0..3 {
+            let source_end = source_origin[axis]
+                .checked_add(extent[axis])
+                .ok_or_else(invalid)?;
+            let destination_end = destination_origin[axis]
+                .checked_add(extent[axis])
+                .ok_or_else(invalid)?;
+            if source_end > source_dimensions[axis]
+                || destination_end > destination_dimensions[axis]
+            {
+                return Err(invalid());
+            }
+        }
+        if source.raw.as_3d()?.as_raw() == destination.raw.as_3d()?.as_raw()
+            && region.src_base.mip_level == region.dst_base.mip_level
+        {
+            return Err(invalid());
+        }
+
+        let source_shadow = source.cpu_shadow.clone().ok_or_else(invalid)?;
+        let row_pitch = region.size.width.checked_mul(4).ok_or_else(invalid)?;
+        let depth_pitch = row_pitch
+            .checked_mul(region.size.height)
+            .ok_or_else(invalid)?;
+        Ok(Texture3DToTexture3D {
+            _source: source.raw.as_3d()?.clone(),
+            destination: destination.raw.as_3d()?.clone(),
+            source_shadow,
+            destination_shadow: destination.cpu_shadow.clone(),
+            source_mip: region.src_base.mip_level,
+            destination_mip: region.dst_base.mip_level,
+            source_origin,
+            destination_origin,
+            extent,
+            destination_box: D3D11_BOX {
+                left: destination_origin[0],
+                right: destination_origin[0] + extent[0],
+                top: destination_origin[1],
+                bottom: destination_origin[1] + extent[1],
+                front: destination_origin[2],
+                back: destination_origin[2] + extent[2],
+            },
+            row_pitch,
+            depth_pitch,
+        })
+    }
+
     pub(super) fn prepare_buffer_to_texture_3d(
         &self,
         source: &NativeBuffer,
@@ -634,6 +750,35 @@ impl NativeDevice {
                     extent: [size.width, size.height],
                 }),
         })
+    }
+}
+
+impl Texture3DToTexture3D {
+    pub(super) fn execute(&self, context: &ID3D11DeviceContext) -> Result<()> {
+        let bytes =
+            self.source_shadow
+                .read_region(self.source_mip, self.source_origin, self.extent)?;
+        if let Some(shadow) = &self.destination_shadow {
+            shadow.write_region(
+                self.destination_mip,
+                self.destination_origin,
+                self.extent,
+                self.row_pitch,
+                self.depth_pitch,
+                &bytes,
+            )?;
+        }
+        unsafe {
+            context.UpdateSubresource(
+                &self.destination,
+                self.destination_mip,
+                Some(&self.destination_box),
+                bytes.as_ptr().cast(),
+                self.row_pitch,
+                self.depth_pitch,
+            );
+        }
+        Ok(())
     }
 }
 

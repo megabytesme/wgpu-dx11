@@ -1812,7 +1812,8 @@ the selected device's RGBA8 query includes `TEXTURE3D | SHADER_SAMPLE` and the
 sampled-upload backend path is present. This narrow path supports POT RGBA8,
 single-sample volumes up to the FL9_1 dimension limit of 256, with
 `TEXTURE_BINDING | COPY_DST` usages. `COPY_SRC` is also accepted when requested
-for an execution-ordered CPU shadow used only for texture-to-buffer readback;
+for an execution-ordered CPU shadow used for texture-to-buffer readback and
+the 3D-to-3D copy fallback;
 it does not enable native 3D GPU copies. Mip chains are exposed only when the
 selected RGBA8 query also includes `D3D11_FORMAT_SUPPORT_MIP` and the backend
 mip path is enabled. Each mip is initialized and uploaded separately; shader
@@ -1822,29 +1823,38 @@ non-suffix 3D views before HAL. Buffer-to-volume uploads use a source buffer
 copy to a CPU-readable staging buffer followed by `Map` and `UpdateSubresource`,
 preserving execution ordering at the cost of a blocking transfer. 3D
 `COPY_SRC` and texture-to-buffer readback are implemented narrowly through
-the ordered CPU shadow, not through native GPU-to-CPU copies. 3D
-texture-to-texture copies, render attachments and storage remain unavailable.
-This fallback respects the 10Level9 FL9_1 context contract: only 2D textures
-and buffers may be copied within GPU-accessible memory, 3D textures cannot be
-copied directly from GPU-accessible to CPU-accessible memory, and mipmapped
-volume textures cannot be copied. The backend retains a zero-initialized CPU
-shadow for `COPY_SRC` volumes;
-ordered buffer-to-volume upload commands update that shadow from the same
-staged source bytes used for the native upload. A later texture-to-buffer
-command copies the requested region from the shadow into the destination
-buffer, preserving row padding and submission ordering. This adds one full
-RGBA8 volume allocation plus a region-sized temporary readback allocation and
-does not support GPU-written 3D resources. Texture-to-texture copies remain
-disabled. If the selected format query lacks MIP support, the public
-descriptor remains single-mip.
+the ordered CPU shadow, not through native GPU-to-CPU copies. Same-format 3D
+texture-to-texture region copies are also exposed through a replay-time
+CPU-shadow fallback when `texture_3d_texture_copies` is true. Source textures
+need `COPY_SRC`; destinations need `COPY_DST`. Core and HAL validate the
+selected mip, bounds and format, reject mixed 2D/3D copies, and reject copies
+within one 3D subresource. The fallback copies the requested voxels from the
+execution-ordered source shadow, updates the destination shadow when one
+exists, then calls `UpdateSubresource` with a non-null 3D destination box.
+This avoids native 3D `CopyResource`/`CopySubresourceRegion` operations that
+the 10Level9 FL9_1 context does not support. It does not support GPU-written
+3D sources, 3D render attachments or storage. `COPY_SRC` retains one full
+RGBA8 volume shadow; each copy also allocates a packed region buffer and costs
+a CPU copy before the native upload. Buffer-to-volume upload still stages
+through a mapped buffer followed by `UpdateSubresource`. 3D texture-to-buffer
+readback copies the requested region from the shadow into the destination
+buffer, preserving row padding and submission ordering. If the selected
+format query lacks MIP support, the public descriptor remains single-mip.
 A strict private test also uploads a padded, nonzero-offset 2×2×2 region to a
 4×4×4 volume at (1,1,1), samples every slice, and checks all 64 pixels,
 including initialized untouched voxels. The RTX 3090 Ti passed at
 requested/actual FL9_1. A separate strict public test checks ordered upload
 followed by full-volume and partial-region CPU-shadow readback, including
 nonzero buffer offsets and padded row/depth layouts; all 64 volume texels and
-all bytes in the partial destination buffer were validated. 3D GPU-to-GPU
-copies remain unavailable.
+all bytes in the partial destination buffer were validated. The strict public
+copy test seeds the destination with nonzero voxels, copies a partial 2×2×2
+region between differently sized volumes at nonzero XYZ origins, verifies all
+destination voxels and readback padding, samples the copied resource, and
+checks an out-of-bounds request is rejected. On the RTX 3090 Ti at requested
+and actual FL9_1, all destination values matched and all 64 sampled pixels
+matched. This is an ordered CPU-shadow/native `UpdateSubresource` fallback,
+not native GPU-to-GPU copying; historical FL9_1 driver behavior remains
+unverified.
 
 The dynamic-uniform pipeline limit is twelve, matching the largest valid
 six-vertex/six-fragment visibility split; one shader stage remains limited to
