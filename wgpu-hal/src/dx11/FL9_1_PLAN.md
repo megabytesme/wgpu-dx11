@@ -2,6 +2,18 @@
 
 ## Latest current state and next queue — 2026-11-11
 
+The selected fragment uniform-array subset now accepts one proven helper
+forwarding form. Core, HAL and the public path agree on a selected fragment
+entry that passes the direct `u32` member of its canonical uniform to one
+straight-line helper; the helper performs one `vec4f` array load and returns it
+directly. Core and HAL tests reject computed, repeated, nested, cross-uniform
+and side-use variants. Strict RTX 3090 Ti execution at requested/actual FL9_1
+verified all 64 output pixels for the helper-forwarded index 23. This is a
+small compiler-boundary expansion, not a general relaxation of runtime integer
+semantics. Core passed 140/140, private HAL 493/493 and the full public target
+129/129 before the final unused-float-input consistency edge was added; the
+final focused Core and HAL tests passed 1/1 and 2/2, respectively.
+
 Checkpoint `ab926004e` fixes a public Core/HAL mismatch for index buffer
 ranges: offsets remain index-width aligned, but an in-bounds byte size may
 have a trailing partial index. Core clamps draws to the complete indices.
@@ -30,11 +42,13 @@ found no additional confirmed public Core-valid request reaching an
 unsupported HAL path in the reviewed shader, capability/resource and adapter
 paths. They classify one color attachment, no compute/UAV, no geometry stage,
 no ordinary arrays/1D textures and no occlusion queries as native FL9_1
-boundaries. A useful shader candidate is a tightly proven single-mip
-fragment `textureSampleLevel` subset; helper-mediated fragment uniform-array
-reads are a smaller alternative. Choose from a concrete workload before
-expanding shader semantics. `textureGatherCompare` remains gated because
-fixed-point coordinate snapping prevents a general exact emulation proof.
+boundaries. The nearest shader candidate is a tightly proven single-mip
+fragment `textureSampleLevel` subset, but it needs concrete workload demand
+and exact single-mip-view validation. `textureGatherCompare` remains gated
+because fixed-point coordinate snapping prevents a general exact emulation
+proof. Next work should continue the resource/validation contract audit and
+select only Core-valid requests with an implementable FL9_1 behavior; do not
+treat native API limits as software backlog.
 
 Public HWND presentation and the desktop cube example have hardware evidence;
 historical FL9_1 drivers, real Lumia/ARM32 CoreWindow execution and physical

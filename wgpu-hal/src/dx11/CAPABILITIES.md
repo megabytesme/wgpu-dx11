@@ -1286,13 +1286,20 @@ exception permits one or two direct fragment-stage reads from separate
 the existing structure shape with one scalar `u32` index at offset zero and
 the array at offset 16; bindings may be in different groups. The array has
 stride 16 and the structure span must be `16 + 16*N` bytes. Each index may be
-used only for its corresponding read. Computed or cross-binding indices,
-helper calls, extra integer uses/accesses, a third read and other shapes remain
-rejected. Naga emits a signed clamp for
+used only for its corresponding read. In addition, one selected fragment entry
+may forward its direct index through exactly one straight-line helper call.
+The helper must take that `u32`, return the selected `vec4f` array element
+directly, and contain no other operations, reads or calls. The entry must
+return the helper result directly. Computed or cross-binding indices, extra
+integer uses/accesses, additional reads, nested or repeated helper calls, and
+other shapes remain rejected. Core and HAL apply the proof to the selected
+entry point and clamp the helper index to the fixed array bounds. Naga emits a signed clamp for
 `ps_4_0_level_9_1`. FXC accepts the 24-element case and rejects 25 elements;
 the 24-element shader uses 40 Level9 pixel-shader instruction slots. Strict
-public forced-FL9_1 readback checked all 64 pixels for indices zero, one and
-23. This compiler/backend boundary is measured on the RTX 3090 Ti and does
+public forced-FL9_1 readback checked all 64 pixels for direct indices zero,
+one and 23, and all 64 pixels green for helper-forwarded index 23. CPU tests
+cover entry-point selection, the forwarded float index and malformed helper
+shapes. This compiler/backend boundary is measured on the RTX 3090 Ti and does
 not establish historical-driver behavior or general fragment integer support.
 The vertex path also accepts the
 WGSL-valid padded wrapper form where each array element is a 16-byte struct

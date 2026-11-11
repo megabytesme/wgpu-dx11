@@ -16289,3 +16289,54 @@ The public suite includes one optional Float16 vertex-input capability skip
 inside a passing test function. The DX12 check, affected Clippy targets,
 formatting and whitespace checks passed. Clippy retained existing warnings in
 unrelated HAL code; no warning originated in the new RG8 path or public test.
+
+## Forwarded fragment uniform-array index — 2026-11-11
+
+Extended the narrow fragment uniform-array indexing exception to one selected
+entry-point helper call. The fragment entry must pass the direct `u32` index
+member of the same uniform to one straight-line helper and return its result
+directly. The helper must take that `u32`, load exactly one `vec4f` element
+from the matching uniform array, and return the load. Computed or
+cross-uniform indices, extra integer uses, other loads, repeated/nested calls,
+control flow and other shapes remain rejected. The existing signed clamp keeps
+the dynamic index within `[0, N - 1]`. Core and HAL proofs remain selected-
+entry-specific. A previously unnecessary HAL rejection of unused floating
+fragment inputs was removed; both layers now agree on that harmless interface
+case.
+
+Added synthetic Core tests for accepted forwarding (including an unused float
+input), disabled capability rejection and malformed nearby shapes. HAL tests
+exercise the production proof, selected sibling isolation, signed HLSL clamp,
+FXC compilation at `ps_4_0_level_9_1` and negative shapes. The strict public
+GPU test performs a second draw through the helper at index 23 and verifies all
+64 readback pixels are `[0, 255, 0, 255]`.
+
+Validation on the current Windows host, using Rust 1.93.1 and Visual Studio
+x64 tools:
+
+```powershell
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,glsl,wgsl,std --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_fragment_uniform_array -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93.1 check --offline -j16 -p wgpu-hal --no-default-features --features dx12
+```
+
+The full suites passed before the last unused-float-input parity adjustment:
+Core 140/140, private HAL 493/493, strict public `dx11_public` 129/129.
+After that adjustment the focused Core test passed 1/1 and HAL helper tests
+passed 2/2. The dedicated strict public uniform-array target passed 1/1 on
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, physical
+hardware, software=false, requested/actual FL9_1. The helper index 23 output
+matched green in all 64 pixels. Two query-dependent subcases skipped within
+the earlier full public target (R8G8 vertex input and Rg8Unorm mip support);
+they were not counted as GPU execution evidence. The DX12 HAL check, Core/HAL
+Clippy and rustfmt passed; Clippy reports existing warnings in unrelated
+fixture and D3D11 helper code. `git diff --check` passed before documentation
+updates; it will be rerun for the final checkpoint.
+
+This is a bounded shader compiler/validation expansion and does not make the
+backend a general wgpu implementation. The broader Core/HAL contract audit,
+historical driver testing, Lumia/CoreWindow execution and physical device-loss
+verification remain open.

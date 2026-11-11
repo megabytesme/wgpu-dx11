@@ -3754,9 +3754,15 @@ from separate `array<vec4f, N>` uniform bindings for `2 <= N <= 24`. Each
 uses the scalar `u32` index and array in the same uniform structure, with a
 required layout of `16 + 16*N` bytes, the index at byte zero and array at byte
 16. The uniforms may use different groups. The selected fragment entry must
-use each index only for its lookup; computed and cross-binding indices, helper
-calls, additional integer uses, a third read, and other array shapes remain
-rejected. FXC accepts
+use each index only for its lookup; computed and cross-binding indices,
+additional integer uses, a third read, and other array shapes remain rejected.
+One narrow helper form is supported: the entry may forward the same uniform's
+direct index member through one straight-line helper and return that helper
+result. The helper takes one `u32`, reads one array element from the same
+uniform, and directly returns the `vec4f`; nested or repeated calls, computed
+arguments, other reads, helper control flow and additional integer operations
+remain rejected. Core and HAL select the proof for the chosen entry point, and
+the existing bounds clamp remains in effect. FXC accepts
 the generated level-9 shaders for lengths 2 and 24 (40 pixel instruction
 slots at length 24) and rejects length 25 with X5589 for constant register 32
 (the profile limit is 31).
@@ -3778,6 +3784,24 @@ for three index pairs. Both paths require a physical adapter in strict mode.
 This verifies selected nonzero-group bindings and two-read execution on the
 tested driver. This is a narrow compiler/backend subset, not general fragment
 runtime integer support or a historical-driver guarantee.
+
+The helper path uses the same 24-element uniform and a helper that returns
+`params.values[index]`. Its strict readback checks all 64 pixels are green for
+index 23. CPU Core tests reject computed/cross-binding indices, repeated or
+nested calls, extra reads and integer side uses; the HAL test checks selected
+entry isolation, signed clamping and production FXC compilation. Run them
+with:
+
+```powershell
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,glsl,wgsl,std --lib restricted_fragment_uniform_array_indexing_supports_one_forwarded_helper
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl91_fragment_uniform_array_helper -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_fragment_uniform_array -- --nocapture --test-threads=1
+```
+
+The HAL and public GPU checks require a Visual Studio x64 developer shell. The
+public test intentionally fails when strict mode cannot select a physical
+hardware adapter or create the requested FL9_1 device.
 
 The hidden input also consumes one of the sixteen physical D3D input slots.
 Core mirrors HAL's FL9_1 overlap-allocation rules and rejects an exhausted

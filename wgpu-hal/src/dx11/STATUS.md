@@ -1,3 +1,23 @@
+## Selected fragment uniform-array helper — 2026-11-11
+
+Core and the private HAL now accept one constrained helper form for the
+existing direct fragment uniform-array lookup. The selected fragment entry
+must make exactly one call to a straight-line helper, pass the direct `u32`
+index member from the same canonical uniform, and return the helper's result
+directly. The helper takes that `u32`, reads exactly one `vec4f` element from
+the matching uniform array, and returns that load. Computed indices, extra
+integer uses, other reads, nested/repeated calls, control flow and different
+layouts remain rejected. The proof is selected-entry-specific and preserves
+the existing bounds clamp.
+
+Synthetic Core and HAL tests cover helper selection, malformed neighboring
+shapes, and a legal unused floating-point entry input. The HAL test also
+generates level-9 HLSL and compiles it through FXC. Strict public execution on
+the RTX 3090 Ti at requested/actual FL9_1 selected index 23 through the helper
+and verified all 64 readback pixels were `[0, 255, 0, 255]`. This expands only
+the fragment uniform-array subset; it does not enable general runtime integer
+semantics or helper-mediated arbitrary resource access.
+
 ## FL9_1 selected-entry helper pruning — 2026-11-11
 
 The HLSL writer emits regular functions reachable from the selected entry

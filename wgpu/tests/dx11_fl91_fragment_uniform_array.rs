@@ -132,6 +132,15 @@ fn fs() -> @location(0) vec4f {
     return params.values[params.index];
 }
 
+fn load_uniform_value(index: u32) -> vec4f {
+    return params.values[index];
+}
+
+@fragment
+fn fs_helper() -> @location(0) vec4f {
+    return load_uniform_value(params.index);
+}
+
 @fragment
 fn fs_multiple() -> @location(0) vec4f {
     return first_small.values[first_small.index]
@@ -192,6 +201,27 @@ fn fs_multiple() -> @location(0) vec4f {
         fragment: Some(FragmentState {
             module: &shader,
             entry_point: Some("fs_multiple"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let pipeline_helper = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 fragment uniform array helper pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs_helper"),
             compilation_options: PipelineCompilationOptions::default(),
             targets: &targets,
         }),
@@ -371,6 +401,100 @@ fn fs_multiple() -> @location(0) vec4f {
         readback.unmap();
         println!("PASS: fragment uniform array index={index}, all 64 pixels={expected_pixel:?}");
     }
+
+    let mut helper_uniform = vec![0u8; 400];
+    helper_uniform[0..4].copy_from_slice(&23u32.to_ne_bytes());
+    for array_index in 0..24 {
+        let value = if array_index == 23 {
+            [0.0f32, 1.0, 0.0, 1.0]
+        } else {
+            [0.0f32, 0.0, 1.0, 1.0]
+        };
+        let offset = 16 + array_index * 16;
+        for (component, bytes) in value.into_iter().flat_map(f32::to_ne_bytes).enumerate() {
+            helper_uniform[offset + component] = bytes;
+        }
+    }
+    queue.write_buffer(&uniform_buffer, 0, &helper_uniform);
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 fragment uniform array helper draw"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 fragment uniform array helper pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline_helper);
+        pass.set_bind_group(1, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 helper uniform array draw");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("helper uniform array readback callback")
+        .expect("map helper uniform array readback");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped helper readback");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    [0, 255, 0, 255],
+                    "helper-mediated uniform index pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: helper-mediated fragment uniform array index=23, all 64 pixels green");
 
     let make_small_uniform = |index: u32, values: [[f32; 4]; 2]| {
         let mut bytes = vec![0u8; 48];
