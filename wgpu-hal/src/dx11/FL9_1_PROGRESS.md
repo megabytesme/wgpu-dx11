@@ -16695,3 +16695,7 @@ ARM32/CoreWindow execution and physical device-removal/recovery remain external
 verification gaps. Continue with one concrete, user-relevant Core/Naga/HAL
 vertical slice at a time; avoid assigning whole coupled feature families to
 separate implementers.
+
+The configured Lumia Device Portal endpoint at `192.168.1.157` timed out on a
+read-only `/api/os/devicefamily` request from this machine. No device settings
+were changed and no Lumia runtime test was attempted.
