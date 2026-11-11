@@ -380,8 +380,6 @@ pub struct Interface {
     limits: wgt::Limits,
     resources: naga::Arena<Resource>,
     entry_points: FastHashMap<(naga::ShaderStage, String), EntryPoint>,
-    matrix_inverse_in_regular_function: bool,
-    matrix_outer_product_in_regular_function: bool,
     pub(crate) immediate_size: u32,
 }
 
@@ -5377,9 +5375,24 @@ fn entry_point_uses_unsupported_matrix_inverse_2x2(
         return true;
     }
 
-    module.functions.iter().any(|(handle, function)| {
-        function_uses_unsupported_matrix_inverse_2x2(function, &module_info[handle], &module.types)
-    })
+    let mut called_functions = Vec::new();
+    collect_called_functions(&entry_point.function.body, &mut called_functions);
+    let mut visited = FastHashSet::default();
+    while let Some(handle) = called_functions.pop() {
+        if !visited.insert(handle) {
+            continue;
+        }
+        let function = &module.functions[handle];
+        if function_uses_unsupported_matrix_inverse_2x2(
+            function,
+            &module_info[handle],
+            &module.types,
+        ) {
+            return true;
+        }
+        collect_called_functions(&function.body, &mut called_functions);
+    }
+    false
 }
 
 fn function_uses_matrix_outer_product(function: &naga::Function) -> bool {
@@ -7090,14 +7103,6 @@ impl Interface {
             limits,
             resources,
             entry_points,
-            matrix_inverse_in_regular_function: module
-                .functions
-                .iter()
-                .any(|(_, function)| function_uses_matrix_inverse(function)),
-            matrix_outer_product_in_regular_function: module
-                .functions
-                .iter()
-                .any(|(_, function)| function_uses_matrix_outer_product(function)),
             immediate_size,
         }
     }
@@ -7567,7 +7572,7 @@ impl Interface {
         } else if limits.matrix_inverse_2x2 {
             entry_point.unsupported_matrix_inverse_2x2
         } else {
-            entry_point.matrix_inverse_used || self.matrix_inverse_in_regular_function
+            entry_point.matrix_inverse_used
         })
     }
 
@@ -7581,9 +7586,7 @@ impl Interface {
         let Some(entry_point) = self.entry_points.get(&key) else {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
-        Ok(!limits.matrix_outer_product
-            && (entry_point.matrix_outer_product_used
-                || self.matrix_outer_product_in_regular_function))
+        Ok(!limits.matrix_outer_product && entry_point.matrix_outer_product_used)
     }
 
     pub(crate) fn entry_point_uses_unsupported_texture_query(
@@ -12647,8 +12650,6 @@ mod tests {
             limits: wgt::Limits::default(),
             resources: naga::Arena::new(),
             entry_points: crate::FastHashMap::default(),
-            matrix_inverse_in_regular_function: false,
-            matrix_outer_product_in_regular_function: false,
             immediate_size: 0,
         };
         interface.entry_points.insert(
@@ -12686,7 +12687,7 @@ mod tests {
 
     #[cfg(feature = "glsl")]
     #[test]
-    fn unsupported_matrix_inverse_covers_compiled_entry_and_module_functions() {
+    fn unsupported_matrix_inverse_covers_selected_entry_and_reachable_helpers() {
         fn interface(source: &str, stage: naga::ShaderStage) -> Interface {
             let mut parser = naga::front::glsl::Frontend::default();
             let module = parser
@@ -12705,12 +12706,12 @@ mod tests {
             matrix_inverse: false,
             ..Default::default()
         };
-        let module_function = interface(
+        let unused_helper = interface(
             "#version 450\nmat2 invert(mat2 m) { return inverse(m); }\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }",
             naga::ShaderStage::Vertex,
         );
         assert!(
-            module_function
+            !unused_helper
                 .entry_point_uses_unsupported_matrix_inverse(
                     naga::ShaderStage::Vertex,
                     "main",
@@ -12718,7 +12719,7 @@ mod tests {
                 )
                 .unwrap()
         );
-        assert!(!module_function
+        assert!(!unused_helper
             .entry_point_uses_unsupported_matrix_inverse(
                 naga::ShaderStage::Vertex,
                 "main",
@@ -12802,7 +12803,7 @@ mod tests {
             ..Default::default()
         };
 
-        assert!(inverse_2x2_with_unused_3x3
+        assert!(!inverse_2x2_with_unused_3x3
             .entry_point_uses_unsupported_matrix_inverse(
                 naga::ShaderStage::Vertex,
                 "main",
@@ -12891,7 +12892,7 @@ mod tests {
             "#version 450\nmat2 make_outer(vec2 a, vec2 b) { return outerProduct(a, b); }\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }",
             naga::ShaderStage::Vertex,
         );
-        assert!(unused_helper
+        assert!(!unused_helper
             .entry_point_uses_unsupported_matrix_outer_product(
                 naga::ShaderStage::Vertex,
                 "main",

@@ -1,3 +1,16 @@
+## FL9_1 selected-entry helper pruning — 2026-11-11
+
+The HLSL writer emits regular functions reachable from the selected entry
+point(s) only. Core's matrix inverse and outer-product restrictions use the
+same entry-point call graph, so unsupported operations in unused helpers no
+longer reject an otherwise supported pipeline. A reachable mat3 inverse still
+fails as a Core validation error. The strict public mat2 inverse render passed
+all 64 pixels with an unused mat3 helper in the fragment module.
+
+The complete strict public D3D11 target passed 132/132 test functions and the
+strict private HAL suite passed 490/490. Naga passed 163/163, Core passed
+139/139, the DX12 HAL check passed, and affected Clippy and formatting checks
+passed. See `FL9_1_PROGRESS.md` for exact commands and hardware evidence.
 
 ## Zero-input draw range
 
@@ -37,8 +50,8 @@ capability test checks all seven feature-level identities and both sRGB
 formats; the strict public FL9_1 test checks the actual adapter projection and
 Core rejection before HAL. The focused public test passed on the RTX 3090 Ti
 at requested/actual FL9_1 and retained the linear RGBA8 64-pixel blend result.
-The complete strict public target passed 126/126 test functions, and the
-complete strict private HAL library suite passed 478/478. This corrects an
+The complete strict public target passed 132/132 test functions, and the
+complete strict private HAL library suite passed 490/490. This corrects an
 overclaim in capability reporting; it does not change native private-HAL
 blend-state creation.
 
@@ -686,7 +699,8 @@ all out-of-target rectangles. Other backends keep the default true capability.
   CoreWindow construction verifies `Dispatcher.HasThreadAccess` and later
   surface operations are restricted to the captured owner thread; this is a
   safety check, not CoreWindow runtime verification. Public CoreWindow surface
-  capabilities remain withheld.
+  capabilities are exposed for successfully constructed CoreWindow objects;
+  real UWP/Lumia presentation remains unverified.
   A strict hidden HWND clone-sampling test on the RTX at FL9_1 read BGRA
   `[0, 0, 255, 255]`, returned `Ok` from present and resized with the completed
   command buffer retained. Public hidden-HWND presentation, resize and

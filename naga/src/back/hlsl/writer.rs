@@ -61,22 +61,22 @@ fn fl9_literal_mip_level(
     }
 }
 
-fn fl9_collect_called_functions(block: &crate::Block, called: &mut Vec<Handle<crate::Function>>) {
+fn collect_called_functions(block: &crate::Block, called: &mut Vec<Handle<crate::Function>>) {
     for statement in block.iter() {
         match *statement {
             crate::Statement::Call { function, .. } => called.push(function),
-            crate::Statement::Block(ref block) => fl9_collect_called_functions(block, called),
+            crate::Statement::Block(ref block) => collect_called_functions(block, called),
             crate::Statement::If {
                 ref accept,
                 ref reject,
                 ..
             } => {
-                fl9_collect_called_functions(accept, called);
-                fl9_collect_called_functions(reject, called);
+                collect_called_functions(accept, called);
+                collect_called_functions(reject, called);
             }
             crate::Statement::Switch { ref cases, .. } => {
                 for case in cases {
-                    fl9_collect_called_functions(&case.body, called);
+                    collect_called_functions(&case.body, called);
                 }
             }
             crate::Statement::Loop {
@@ -84,27 +84,27 @@ fn fl9_collect_called_functions(block: &crate::Block, called: &mut Vec<Handle<cr
                 ref continuing,
                 ..
             } => {
-                fl9_collect_called_functions(body, called);
-                fl9_collect_called_functions(continuing, called);
+                collect_called_functions(body, called);
+                collect_called_functions(continuing, called);
             }
             _ => {}
         }
     }
 }
 
-fn fl9_reachable_functions(
+fn reachable_regular_functions(
     module: &Module,
     function: &crate::Function,
 ) -> Vec<Handle<crate::Function>> {
     let mut pending = Vec::new();
-    fl9_collect_called_functions(&function.body, &mut pending);
+    collect_called_functions(&function.body, &mut pending);
     let mut reachable = Vec::new();
     while let Some(handle) = pending.pop() {
         if reachable.contains(&handle) {
             continue;
         }
         reachable.push(handle);
-        fl9_collect_called_functions(&module.functions[handle].body, &mut pending);
+        collect_called_functions(&module.functions[handle].body, &mut pending);
     }
     reachable
 }
@@ -1220,7 +1220,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 .filter_map(|(global, _)| (!info[global].is_empty()).then_some(global))
                 .collect::<Vec<_>>();
             let reachable_functions = if combined_texel_load_dimensions_proof {
-                fl9_reachable_functions(module, &entry.function)
+                reachable_regular_functions(module, &entry.function)
             } else if self.options.fl9_texture_dimensions_proof.is_some()
                 || self.options.fl9_texture_dimensions_3d_proof.is_some()
             {
@@ -1248,7 +1248,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     },
                 )?
             } else {
-                fl9_reachable_functions(module, &entry.function)
+                reachable_regular_functions(module, &entry.function)
             };
             for function in &reachable_functions {
                 for (global, _) in module.global_variables.iter() {
@@ -1734,7 +1734,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             let entry = &module.entry_points[entry_index];
             let entry_info = module_info.get_entry_point(entry_index);
             if (self.options.fl9_texture_sample_bias_offset_proof.is_some() || compare_offset_proof)
-                && (!fl9_reachable_functions(module, &entry.function).is_empty()
+                && (!reachable_regular_functions(module, &entry.function).is_empty()
                     || entry.function.body.iter().any(|statement| {
                         !matches!(
                             statement,
@@ -2346,7 +2346,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 ));
             }
             if self.options.fl9_texel_load_proof.is_some() {
-                let reachable = fl9_reachable_functions(module, &entry.function);
+                let reachable = reachable_regular_functions(module, &entry.function);
                 if !fl9_texture_load_function_is_supported(
                     module,
                     &entry.function,
@@ -2454,8 +2454,26 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             self.entry_point_io.insert(index, ep_io);
         }
 
-        // Write all regular functions
+        let selected_reachable_functions = if self.pipeline_options.entry_point.is_none() {
+            module.functions.iter().map(|(handle, _)| handle).collect()
+        } else {
+            let mut reachable = Vec::new();
+            for index in ep_range.clone() {
+                let entry_point = &module.entry_points[index];
+                for function in reachable_regular_functions(module, &entry_point.function) {
+                    if !reachable.contains(&function) {
+                        reachable.push(function);
+                    }
+                }
+            }
+            reachable
+        };
+
+        // Write only regular functions needed by the requested output.
         for (handle, function) in module.functions.iter() {
+            if !selected_reachable_functions.contains(&handle) {
+                continue;
+            }
             if fl9_texel_load_reachable_functions
                 .as_ref()
                 .is_some_and(|reachable| !reachable.contains(&handle))
@@ -7723,7 +7741,7 @@ mod fl9_viewport_tests {
     #[cfg(feature = "glsl-in")]
     #[test]
     fn matrix_inverse_emits_a_mat2_cofactor_lowering() {
-        let source = "#version 450\nvoid main() { mat2 m = mat2(1.0, 2.0, 3.0, 4.0); mat2 inv = inverse(m); gl_Position = vec4(inv[0], 0.0, 1.0); }";
+        let source = "#version 450\nmat3 unused_inverse(mat3 m) { return inverse(m); }\nvoid main() { mat2 m = mat2(1.0, 2.0, 3.0, 4.0); mat2 inv = inverse(m); gl_Position = vec4(inv[0], 0.0, 1.0); }";
         let mut parser = crate::front::glsl::Frontend::default();
         let module = parser
             .parse(
@@ -7751,6 +7769,7 @@ mod fl9_viewport_tests {
         assert!(output.contains("[0][0]) / ("), "{output}");
         assert!(output.contains("[0][0] * _e"), "{output}");
         assert!(output.contains("[1][1] - _e"), "{output}");
+        assert!(!output.contains("unused_inverse"), "{output}");
     }
 
     #[cfg(feature = "glsl-in")]

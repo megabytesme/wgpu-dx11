@@ -16182,3 +16182,40 @@ Implementation checkpoint: `dx11: emulate bounded FL9_1 comparison sample
 offsets`. This is one verified shader subset, not completion of the practical
 FL9_1 support audit. Historical FL9_1 portability and Lumia/CoreWindow runtime
 execution remain external verification gaps.
+
+## Selected-entry HLSL helper emission — 2026-11-11
+
+The shader audit found that the HLSL writer emitted every module helper and
+Core's matrix-inverse/outer-product restrictions scanned helpers outside the
+selected entry point. A valid selected mat2 inverse could therefore be
+rejected because an unused helper contained a mat3 inverse. The writer now
+emits the union of regular functions reachable from the entry points selected
+for compilation. Core uses each selected entry point's reachable call graph
+for matrix inverse and outer product validation. Reachable unsupported
+operations remain rejected before HAL; no hardware capability changed.
+
+The strict public `public_dx11_mat2_matrix_inverse_at_fl91` test passed on
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), with
+requested/actual FL9_1 and `software=false`. Its fragment module included an
+unused mat3 inverse helper; all 64 output pixels still matched
+`[0, 255, 0, 255]`. The public validation test accepted the unused mat3 helper
+and rejected a reachable mat3 inverse as a Core validation error. An initial
+full strict public run passed 131/132 because an older assertion still
+expected unused helpers to be rejected; that assertion was corrected, and the
+final run passed 132/132.
+
+Verification used Rust 1.93.1 and the VS x64 environment. Naga library tests
+passed 163/163; Core tests with the DX11 fixture, GLSL and WGSL features passed
+139/139; strict private HAL tests passed 490/490; strict public D3D11 tests
+passed 132/132 functions, with the two focused matrix-inverse tests separately
+showing physical GPU results; DX12 HAL check passed. Naga, Core and public
+Clippy targets passed, with existing unrelated HAL/fixture warnings. The first
+Naga Clippy invocation enabled `glsl-in` without `wgsl-in`; Naga's shared
+interpolation module is feature-gated on WGSL or SPIR-V input, so that feature
+combination did not compile. Rerunning with `glsl-in,wgsl-in` passed. Rustfmt
+and `git diff --check` passed.
+
+Implementation checkpoint: selected-entry helper pruning (commit hash to be
+recorded immediately after commit). This is a compiler/validation correction,
+not broader WGSL support; the complete public Core/HAL contract audit and
+historical-driver verification remain open.

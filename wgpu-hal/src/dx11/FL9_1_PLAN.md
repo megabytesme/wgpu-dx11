@@ -2,34 +2,42 @@
 
 ## Latest current state and next queue — 2026-11-11
 
-The latest verified shader-surface addition is a query-gated, direct fragment
-depth-comparison texel-offset subset: `textureSampleCompare` and
-`textureSampleCompareLevel`, static offsets only, with one selected 2D
-single-mip/single-sample depth view. Strict readback on the RTX 3090 Ti at
-forced FL9_1 passed for both entry points. See the top of `FL9_1_PROGRESS.md`
-for commands. This does not change the remaining practical-completion audit or
-historical-device verification requirement.
+The latest committed shader addition is query-gated direct fragment
+`textureSampleCompare` and `textureSampleCompareLevel` with one constant
+`i32x2` texel offset. Checkpoint `e9aa5c792a9b173ed04c9d81c90eca04e7ba98ed`
+verified both entry points at requested/actual FL9_1. The current shader
+slice removes false rejection from unreachable helper functions: Naga emits
+only functions reachable from the selected entry points, and Core checks
+matrix inverse and outer product only in the selected entry's call graph.
+Strict public readback verified a supported mat2 inverse with an unused mat3
+inverse helper; reachable mat3 inverse remains a Core validation error.
 
-The current branch is a substantial opt-in public FL9_1 implementation, but
-the practical-completion audit remains open. The Milestone 8 static uniform
-path has verified constant budgets, sparse/stage-specific bindings, ranges,
-updates and near-limit shaders; historical-device portability remains
-unverified. A selected sample-bias-offset audit found and fixed a Core-valid
-single-mip view of a multi-mip parent that HAL had rejected by checking the
-parent mip count. Follow-up shader/pipeline and resource/transfer audits found
-no additional confirmed Core-valid-to-HAL mismatch in their reviewed paths;
-these scoped reviews are not an exhaustive proof. The latest capability
-projection correction explicitly zeros unused compute and storage limits; its
-HAL projection test and strict public readback/integration test passed on the
-RTX 3090 Ti forced to FL9_1. A source audit confirmed that the existing
-CoreWindow dispatcher-thread and lifecycle contract is safe to expose; the
-public capability gate has been removed and the strict desktop HWND path still
-passes. Lumia/UWP CoreWindow runtime verification remains open. The graphics-
-state audit identified sRGB blending as a capability-reporting mismatch:
-FL9_1–FL9_3 hardware blends sRGB targets in sRGB space. Continue auditing
-valid public operations and shader/resource boundary cases.
-Historical FL9_1 hardware and physical device-removal recovery are external
-verification gaps.
+The backend is a substantial opt-in public implementation for a bounded
+FL9_1 graphics subset, not a drop-in backend for arbitrary wgpu programs or a
+WebGPU-conformant implementation. Current support includes multiple bind
+groups and dynamic uniform ranges, selected depth/stencil and MSAA paths,
+query-gated formats, texture transfer/readback and a public textured cube
+example. Compute/UAV, geometry shaders, indirect drawing, occlusion queries,
+ordinary texture arrays and many shader/profile combinations remain
+unavailable or deliberately gated. Distinguish native FL9_1 limits from
+potentially implementable format or shader subsets before selecting work.
+
+Three independent read-only audits found no new confirmed public Core-valid
+request reaching an unsupported HAL path in their reviewed shader,
+capability/resource, and adapter paths. The complete Core/HAL contract matrix
+is still open. Public HWND presentation and the desktop cube example have
+hardware evidence; historical FL9_1 drivers, real Lumia/ARM32 CoreWindow
+execution and physical device removal/recovery remain external verification
+gaps.
+
+Next: keep closing the public projection-to-HAL audit and choose a bounded
+feature only when the selected FL9_1 device can prove it end to end. Current
+format candidates R32_FLOAT sampling and packed-format render targets are not
+supported by the RTX's relevant `CheckFormatSupport` bits. RG8_SNORM copy
+fallback is a possible CPU-shadow investigation, but only if every write path
+can preserve ordered contents. Do not treat 1D/ordinary arrays, 3D GPU copies,
+MRT, compute/UAV, indirect drawing, or occlusion queries as implementation
+backlog where FL9_1 forbids them.
 
 Checkpoint `18afefed1` adds ordered BC1/2/3 CPU-shadow
 texture-to-buffer readback and a direct fragment `textureSampleBias` texel
@@ -59,13 +67,9 @@ Core-valid request that does not already fail validation at a documented
 FL9_1/profile boundary. Historical-device, Lumia/CoreWindow runtime and
 physical device-removal verification remain external gaps.
 
-Next work remains a practical-completion audit, not a claim that the backend is
-finished. Use agents for separate read-only contract/compiler audits, then
-select one concrete vertical feature gap for the coordinator to implement and
-test. Arbitrary dynamic sample bias, SNORM readback and unsupported profile
-operations remain gated. Public adapter support and ordinary wgpu use are
-present behind explicit DX11 selection and remain experimental; historical
-FL9_1 and Lumia runtime verification remain external.
+This older checkpoint records the scope and verification of `18afefed1`; the
+current state and next queue are maintained above. Arbitrary dynamic sample
+bias, SNORM readback and unsupported profile operations remain gated.
 
 ## Earlier current-state checkpoint — 2026-11-10
 

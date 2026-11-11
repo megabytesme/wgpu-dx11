@@ -94,7 +94,7 @@ impl Instance {
         #[cfg(all(windows, feature = "dx11"))]
         if instance_desc.backends.contains(Backends::DX11) {
             log::warn!(
-                "DX11 is experimental and exposes a restricted FL9_1 graphics backend with an owner-thread HWND surface"
+                "DX11 is experimental and exposes a restricted FL9_1 graphics backend with constrained owner-thread HWND and CoreWindow surfaces"
             );
         }
 

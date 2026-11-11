@@ -15886,17 +15886,12 @@ fn public_dx11_gates_matrix_inverse_shape_and_accepts_outer_product_at_fl91() {
             drop(pipeline(&inverse_3x3));
         },
     );
-    expect_validation_error_containing(
-        &device,
-        "unsupported unused FL9_1 mat3 inverse helper",
-        "Matrix inverse",
-        || drop(pipeline(&inverse_3x3_helper)),
-    );
+    drop(pipeline(&inverse_3x3_helper));
     drop(pipeline(&outer_product));
     drop(pipeline(&outer_product_helper));
     drop(pipeline(&ordinary));
     println!(
-        "PASS: Core accepted mat2 inverse in selected/unused helpers, rejected mat3 inverse before HAL, and accepted outer product in selected and helper entries"
+        "PASS: Core accepted mat2 inverse and unreachable mat3 inverse helpers, rejected reachable mat3 inverse before HAL, and accepted outer product in selected and helper entries"
     );
 }
 
@@ -36840,7 +36835,7 @@ fn public_dx11_mat2_matrix_inverse_at_fl91() {
         label: Some("FL9_1 mat2 matrix inverse fragment shader"),
         source: ShaderSource::Glsl {
             shader: std::borrow::Cow::Borrowed(
-                "#version 450\nlayout(location=0) out vec4 color; void main() { mat2 m = mat2(vec2(1.0, 0.0), vec2(1.0, 1.0)); vec2 p = inverse(m) * vec2(2.0, 3.0); color = vec4(p.x + 1.0, p.y / 3.0, 0.0, 1.0); }",
+                "#version 450\nmat3 unused_inverse(mat3 m) { return inverse(m); }\nlayout(location=0) out vec4 color; void main() { mat2 m = mat2(vec2(1.0, 0.0), vec2(1.0, 1.0)); vec2 p = inverse(m) * vec2(2.0, 3.0); color = vec4(p.x + 1.0, p.y / 3.0, 0.0, 1.0); }",
             ),
             stage: naga::ShaderStage::Fragment,
             defines: &[],
@@ -37006,7 +37001,7 @@ fn public_dx11_mat2_matrix_inverse_at_fl91() {
         label: Some("FL9_1 unsupported mat3 matrix inverse fragment shader"),
         source: ShaderSource::Glsl {
             shader: std::borrow::Cow::Borrowed(
-                "#version 450\nlayout(location=0) out vec4 color; void main() { mat3 m = mat3(1.0); mat3 inv = inverse(m); color = vec4(inv[0], 1.0); }",
+                "#version 450\nmat3 apply_inverse(mat3 m) { return inverse(m); }\nlayout(location=0) out vec4 color; void main() { mat3 m = mat3(1.0); mat3 inv = apply_inverse(m); color = vec4(inv[0], 1.0); }",
             ),
             stage: naga::ShaderStage::Fragment,
             defines: &[],
