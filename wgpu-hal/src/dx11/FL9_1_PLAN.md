@@ -2631,8 +2631,9 @@ The selected-entry fragment `textureLoad` subset now also accepts one exact
 helper form: the entry forwards its `@location(0) vec2f` unchanged to one
 straight-line helper, which casts it directly to `vec2i`, performs the only
 single-mip 2D float load and returns that value directly. Core and HAL retain
-the same narrow proof; computed coordinates, nested helpers, branches and
-additional runtime integer operations remain rejected. The strict RTX test
+the same narrow proof and require exactly one helper return; computed
+coordinates, nested helpers, branches, multiple returns and additional runtime
+integer operations remain rejected. The strict RTX test
 checked all 64 pixels in four quadrants against distinct texels from a 2x2
 source at requested/actual FL9_1. This does not generalize dynamic indexing or
 establish historical-driver support.

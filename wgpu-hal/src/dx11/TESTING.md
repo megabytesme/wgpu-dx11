@@ -4397,8 +4397,9 @@ cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,w
 The selected fragment entry may pass its `@location(0) vec2f` coordinate
 unchanged to one straight-line helper. The helper must convert that argument
 directly to `vec2i`, perform the only single-mip 2D float `textureLoad`, and
-return that load directly. Computed coordinates, nested calls, control flow,
-additional resources and unrelated integer operations remain rejected. The
+return that load directly, with exactly one helper return. Computed
+coordinates, nested calls, control flow, multiple returns, additional
+resources and unrelated integer operations remain rejected. The
 Core proof test checks both acceptance and rejection, and the HAL test compiles
 the helper with the actual `ps_4_0_level_9_1` profile. The strict RTX 3090 Ti
 run requested and selected FL9_1 and checked all 64 target pixels: each of

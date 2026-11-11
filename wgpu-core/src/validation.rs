@@ -4511,6 +4511,16 @@ fn entry_point_supports_fl9_dynamic_2d_texture_load_coordinate(
             return false;
         };
         let helper = &module.functions[helper_handle];
+        let mut helper_return = None;
+        for statement in helper.body.iter() {
+            match statement {
+                naga::Statement::Emit(_) => {}
+                naga::Statement::Return { value: Some(value) } if helper_return.is_none() => {
+                    helper_return = Some(*value)
+                }
+                _ => return false,
+            }
+        }
         if arguments.len() != 1
             || !matches!(
                 entry_point.function.expressions[arguments[0]],
@@ -4554,12 +4564,6 @@ fn entry_point_supports_fl9_dynamic_2d_texture_load_coordinate(
                             width: 4
                         }
                     }
-                )
-            })
-            || helper.body.iter().any(|statement| {
-                !matches!(
-                    statement,
-                    naga::Statement::Emit(_) | naga::Statement::Return { .. }
                 )
             })
             || entry_point
@@ -4626,9 +4630,7 @@ fn entry_point_supports_fl9_dynamic_2d_texture_load_coordinate(
         let Some(load_expression) = load_expression else {
             return false;
         };
-        if !helper.body.iter().any(|statement| {
-            matches!(statement, naga::Statement::Return { value: Some(value) } if *value == load_expression)
-        }) {
+        if helper_return != Some(load_expression) {
             return false;
         }
         let image_global = &module.global_variables[image];
@@ -9481,6 +9483,10 @@ mod tests {
             fn load_nested(coord: vec2f) -> vec4f {
                 return load_at(coord);
             }
+            fn load_duplicate_return(coord: vec2f) -> vec4f {
+                return textureLoad(image, vec2i(coord), 0);
+                return vec4f(0.0);
+            }
             @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return load_at(uv);
             }
@@ -9489,6 +9495,9 @@ mod tests {
             }
             @fragment fn nested(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return load_nested(uv);
+            }
+            @fragment fn duplicate_return(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return load_duplicate_return(uv);
             }
             "#,
         )
@@ -9511,7 +9520,7 @@ mod tests {
                 &load_2d_limits,
             )
             .unwrap());
-        for entry in ["computed", "nested"] {
+        for entry in ["computed", "nested", "duplicate_return"] {
             assert!(dynamic_helper_interface
                 .entry_point_uses_unsupported_runtime_integer_semantics(
                     naga::ShaderStage::Fragment,

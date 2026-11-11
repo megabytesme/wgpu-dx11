@@ -1,5 +1,20 @@
 # FL9_1 progress
 
+## Dynamic texture-load proof parity — 2026-11-11
+
+An independent review found Core accepted a helper body with the proven load
+return followed by a second unreachable return, while the HAL proof rejected
+multiple returns. Core now requires exactly one return and that it returns
+the selected `ImageLoad`. A WGSL regression uses the otherwise valid
+unreachable-return form and verifies Core rejects it. No shader capability or
+GPU lowering changed.
+
+The full Core fixture suite passed 141/141, DX12 Core passed 130/130, and the
+strict public FL9_1 texture-load test passed 1/1 on the RTX 3090 Ti at
+requested/actual FL9_1, checking all 320 pixels. Core Clippy, workspace format
+check and `git diff --check` passed; Clippy emitted the existing six HAL
+warnings in unrelated `hal_index.rs`, `hal_transfer.rs` and `texture.rs` code.
+
 ## Forwarded dynamic 2D `textureLoad` coordinate — 2026-11-11
 
 Core and the D3D11 HAL now accept one exact helper form in the existing
