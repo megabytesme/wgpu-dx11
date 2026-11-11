@@ -16147,5 +16147,6 @@ copy, attachment-count, resolve and per-format-copy restrictions are gated.
 These scoped audits do not close the full contract audit; the next useful
 target should be a concrete application workload or an unreviewed API area.
 
-Implementation checkpoint: pending.
+Implementation checkpoint: `18afefed1` (`dx11: add BC readback and bounded
+sample offsets`).
 The mission remains active.

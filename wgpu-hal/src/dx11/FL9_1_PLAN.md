@@ -23,7 +23,7 @@ valid public operations and shader/resource boundary cases.
 Historical FL9_1 hardware and physical device-removal recovery are external
 verification gaps.
 
-The current uncommitted checkpoint adds ordered BC1/2/3 CPU-shadow
+Checkpoint `18afefed1` adds ordered BC1/2/3 CPU-shadow
 texture-to-buffer readback and a direct fragment `textureSampleBias` texel
 offset subset. Strict tests pass on the RTX 3090 Ti at requested/actual
 FL9_1; details are in `FL9_1_PROGRESS.md`. The previous implementation
