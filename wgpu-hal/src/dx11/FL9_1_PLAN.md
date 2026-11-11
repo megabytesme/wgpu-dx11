@@ -19,6 +19,15 @@ best next work remains evidence-led: complete the format-operation matrix,
 then test a real client workload. Native FL9_1 exclusions and missing legacy
 GPU/Lumia execution are not software fixes that agents can safely invent.
 
+The upstream `wgpu-gpu` capability selector now executes on the opt-in DX11
+adapter through `cargo xtask test` with `WGPU_BACKEND=dx11` and strict hardware
+mode. Its limit requirements no longer demand compute/storage, and it declares
+the sampler restrictions imposed by this adapter. The run selected the RTX
+3090 Ti at FL9_1 and passed `[Executed]` 1/1. The xtask build also exposed and
+fixed two stale `DownlevelLimits` test initializers and the trace player's old
+surface-configuration return shape. The entire 1,843-test GPU suite was not
+run; that is a targeted harness-integration result.
+
 The selected fragment uniform-array subset now accepts one proven helper
 forwarding form. Core, HAL and the public path agree on a selected fragment
 entry that passes the direct `u32` member of its canonical uniform to one

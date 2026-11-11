@@ -2100,6 +2100,16 @@ and verify that its adapter report actually selects this fork's DX11 adapter.
 Record passed, failed, skipped and unrun tests separately. A zero-adapter run
 or a skipped test is not a pass. Keep other backend builds and tests working.
 
+The strict `validate_capabilities` selector completed through `cargo xtask
+test` on 2026-11-11. The harness generated its adapter report, selected the
+physical RTX 3090 Ti at requested/actual FL9_1, and marked the test
+`[Executed]`; one selected test passed with no hardware skip. The 1,843 other
+GPU test cases were excluded by the explicit nextest filter, not run or counted
+as skips. This checks the public GPU-test harness and Naga capability
+projection; it does not perform rendering. The test requests only a
+WebGL2-level baseline plus the adapter's sampler restrictions, so compute and
+storage limits do not cause an irrelevant capability skip.
+
 ## 4. WebGPU CTS
 
 The Deno CTS runner has an explicit DX11 path and a strict hardware option.

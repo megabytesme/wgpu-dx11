@@ -16466,3 +16466,41 @@ git diff --check
 This improves one verified format operation only. It does not validate native
 staging-copy behavior on historical FL9_1 drivers, and it does not establish
 that the modern RTX reproduces those drivers' restrictions.
+
+## Upstream GPU-test harness selection — 2026-11-11
+
+Fixed the generic `wgpu-gpu` Naga-capability selector so it no longer asks a
+downlevel adapter for compute/storage limits that the test does not use. It
+now uses the WebGL2 downlevel limit baseline and records the adapter's
+comparison-border and compatible-sampler restrictions. Added the new
+`DownlevelLimits` fields to the shared test baseline and the FL9_1 Core fixture.
+Updated the trace player's surface-configuration handling to accept the
+current `(error, suboptimal)` return value while retaining its previous error
+handling.
+
+Using the Visual Studio x64 environment, Rust 1.93.1, `CARGO_BUILD_JOBS=4`,
+and a temporary `CARGO_TARGET_DIR` on E: because C: had no free space, the
+official xtask generated `.gpuconfig`, built the all-features test targets and
+executed the strict selector:
+
+```powershell
+$env:WGPU_BACKEND = 'dx11'
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 xtask test --no-require-agility-sdk --test wgpu-gpu validate_capabilities -- --nocapture
+```
+
+Nextest ran the `wgpu-info` report generator (1 passed) and selected the
+`wgpu-test::wgpu-gpu` capability case. It logged the experimental backend and
+reported `[Executed] [Dx11/NVIDIA GeForce RTX 3090 Ti/0]`; the selector passed
+1/1 with no hardware skip. The nextest summary lists 1,843 other test cases as
+skipped because the command explicitly filtered to one selector; they were not
+executed. This is adapter/harness capability validation, not a rendered GPU
+workload. The adapter report records vendor/device `0x10de:0x2203`, driver
+`32.0.16.2101`, software=false, and FL9_1.
+
+The first xtask attempts ran out of space on C: during the workspace build.
+After moving the target directory to E: and reducing Cargo build concurrency to
+four, the runner completed. Workspace compilation reported pre-existing
+warnings in `wgpu-types`, D3D11 HAL and Core test fixtures. Targeted Clippy for
+`wgpu-test --all-features --test wgpu-gpu`, formatting checks for the four
+changed Rust files, and `git diff --check` passed.

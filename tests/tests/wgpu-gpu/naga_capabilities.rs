@@ -27,7 +27,7 @@ pub fn validate_capabilities(ctx: TestingContext) {
 }
 
 fn test_limits() -> wgpu::Limits {
-    let mut limits = wgpu::Limits::downlevel_defaults();
+    let mut limits = wgpu::Limits::downlevel_webgl2_defaults();
     limits.max_texture_array_layers = 1;
     limits.max_sampled_textures_per_shader_stage = 8;
     limits.max_dynamic_uniform_buffers_per_pipeline_layout = 2;
@@ -48,6 +48,10 @@ fn test_parameters() -> TestParameters {
         .required_downlevel_caps
         .limits
         .border_addressing_requires_comparison_sampler = true;
+    parameters
+        .required_downlevel_caps
+        .limits
+        .texture_sample_bias_requires_compatible_sampler = true;
     parameters
 }
 

@@ -186,7 +186,8 @@ fn main() {
                                     self.resize_config = Some(config);
                                     break;
                                 } else {
-                                    let error = self.device.configure_surface(surface, &config);
+                                    let (error, _) =
+                                        self.device.configure_surface(surface, &config);
                                     self.configured_surface_id = Some(surface_id);
                                     if let Some(e) = error {
                                         panic!("{e:?}");
@@ -231,7 +232,7 @@ fn main() {
                     },
                     WindowEvent::Resized(_) => {
                         if let Some(config) = self.resize_config.take() {
-                            let error = self.device.configure_surface(surface, &config);
+                            let (error, _) = self.device.configure_surface(surface, &config);
                             if let Some(e) = error {
                                 panic!("{e:?}");
                             }
