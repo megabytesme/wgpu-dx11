@@ -1,3 +1,37 @@
+## Query-gated 8-bit SNORM fragment `textureLoad` — 2026-11-11
+
+The selected-entry fragment 2D `textureLoad` subset now accepts `Rg8Snorm`
+and `Rgba8Snorm`. Core's dimensional whitelist and the HAL's operation-specific
+format matrix were extended together; 3D loads and sample-bias emulation still
+reject both formats. The existing selected-device `TEXTURE2D`/sampled-upload
+projection remains the gate, while the internal load path uses point sampling
+and does not depend on format filterability.
+
+The strict public test requested FL9_1 and selected the physical NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+`software=false`). The adapter reported `TEXTURE_BINDING | COPY_DST` for both
+formats. Signed texel patterns for each format and out-of-bounds loads were
+rendered and read back; all 256 pixels matched, including WGSL's RG8 missing
+channels and alpha-one semantics. This does not establish historical FL9_1
+driver format support.
+
+Validation used Rust 1.93.1 through `E:\Temp\wgpu_mission_cargo.bat` in the
+Visual Studio x64 environment, with `-j8`:
+
+- Core DX11 unit suite: 129/129 passed.
+- Core DX12 regression suite: 128/128 passed.
+- Strict private D3D11 HAL suite: 509/509 passed.
+- Strict public `dx11_public` target: 134/134 test functions passed; optional
+  format branches that log `SKIP` are not counted as hardware coverage.
+- Focused strict 8-bit SNORM public test after final lint cleanup: 1/1 passed,
+  with 256 GPU-readback pixels verified.
+- Core, HAL and public-target Clippy passed. HAL reports six existing
+  warnings in index/transfer/texture code; test compilation additionally
+  reports four existing unnecessary-qualification warnings in `hal_queue.rs`.
+  The first public-target Clippy pass found two new range-loop warnings in the
+  test; they were fixed, and the rerun reports none in the new test.
+- `cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed.
+
 ## Nonzero-group 2D `textureDimensions` helper — 2026-11-11
 
 Core, HAL and Naga now permit the proven query-only helper to reference a 2D

@@ -34750,6 +34750,398 @@ fn public_dx11_fragment_rg16_snorm_texture_load_emulation_at_fl91() {
 }
 
 #[test]
+fn public_dx11_fragment_8bit_snorm_texture_load_emulation_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().find(|adapter| {
+        let info = adapter.get_info();
+        info.backend == Backend::Dx11
+            && info.driver_info.contains("FL9_1")
+            && info.driver_info.contains("physical")
+    }) else {
+        assert!(
+            !required,
+            "strict mode requires physical FL9_1 D3D11 hardware for 8-bit SNORM textureLoad"
+        );
+        println!("SKIP: no physical FL9_1 D3D11 adapter for 8-bit SNORM textureLoad");
+        return;
+    };
+    let info = adapter.get_info();
+    let formats = [TextureFormat::Rg8Snorm, TextureFormat::Rgba8Snorm];
+    let format_features = formats.map(|format| adapter.get_texture_format_features(format));
+    let sampled_upload = format_features.map(|features| {
+        features
+            .allowed_usages
+            .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST)
+    });
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; Rg8Snorm={:?} Rgba8Snorm={:?}",
+        info.name, info.vendor, info.device, info.driver_info, format_features[0], format_features[1]
+    );
+    if sampled_upload.iter().any(|supported| !supported) {
+        assert!(
+            !required,
+            "strict mode requires selected-device Rg8Snorm and Rgba8Snorm sampled/upload support: {format_features:?}"
+        );
+        println!("SKIP: selected FL9_1 device lacks optional 8-bit SNORM sampled/upload support");
+        return;
+    }
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 8-bit SNORM textureLoad device"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request selected FL9_1 device for 8-bit SNORM loads");
+    let uncaptured_errors = Arc::new(std::sync::Mutex::new(Vec::new()));
+    device.on_uncaptured_error({
+        let uncaptured_errors = uncaptured_errors.clone();
+        Arc::new(move |error| uncaptured_errors.lock().unwrap().push(format!("{error:?}")))
+    });
+
+    let rg_pixels: [i8; 8] = [-127, 0, 127, -127, 0, 127, 0, 0];
+    let rgba_pixels: [i8; 16] = [
+        -127, 0, 127, -127, 127, -127, 0, 127, 0, 127, -127, 0, 0, 0, 0, 127,
+    ];
+    let mut rg_data = vec![0; 2 * 256];
+    for y in 0..2 {
+        for x in 0..2 {
+            let offset = y * 256 + x * 2;
+            rg_data[offset] = rg_pixels[(y * 2 + x) * 2] as u8;
+            rg_data[offset + 1] = rg_pixels[(y * 2 + x) * 2 + 1] as u8;
+        }
+    }
+    let mut rgba_data = vec![0; 2 * 256];
+    for y in 0..2 {
+        for x in 0..2 {
+            let offset = y * 256 + x * 4;
+            let pixel = (y * 2 + x) * 4;
+            for channel in 0..4 {
+                rgba_data[offset + channel] = rgba_pixels[pixel + channel] as u8;
+            }
+        }
+    }
+    let data = [&rg_data, &rgba_data];
+    let textures: Vec<_> = formats
+        .into_iter()
+        .zip(data)
+        .map(|(format, data)| {
+            let texture = device.create_texture(&TextureDescriptor {
+                label: Some("FL9_1 8-bit SNORM textureLoad source"),
+                size: Extent3d {
+                    width: 2,
+                    height: 2,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format,
+                usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+                view_formats: &[],
+            });
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                data,
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(2),
+                },
+                Extent3d {
+                    width: 2,
+                    height: 2,
+                    depth_or_array_layers: 1,
+                },
+            );
+            texture
+        })
+        .collect();
+    let views: Vec<_> = textures
+        .iter()
+        .map(|texture| texture.create_view(&TextureViewDescriptor::default()))
+        .collect();
+    let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 8-bit SNORM textureLoad layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: false },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    });
+    let bind_groups: Vec<_> = views
+        .iter()
+        .map(|view| {
+            device.create_bind_group(&BindGroupDescriptor {
+                label: Some("FL9_1 8-bit SNORM textureLoad binding"),
+                layout: &bind_group_layout,
+                entries: &[BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(view),
+                }],
+            })
+        })
+        .collect();
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 8-bit SNORM textureLoad pipeline layout"),
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 8-bit SNORM textureLoad shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                @group(0) @binding(7) var image: texture_2d<f32>;
+
+                struct VertexOut {
+                    @builtin(position) position: vec4f,
+                    @location(0) coordinate: vec2f,
+                }
+
+                @vertex
+                fn vs(@location(0) position: vec2f) -> VertexOut {
+                    return VertexOut(
+                        vec4f(position, 0.0, 1.0),
+                        vec2f(position.x + 1.0, 1.0 - position.y),
+                    );
+                }
+
+                @fragment
+                fn sample_pattern(@location(0) coordinate: vec2f) -> @location(0) vec4f {
+                    return textureLoad(image, vec2i(coordinate), 0) * 0.5 + vec4f(0.5);
+                }
+
+                @fragment
+                fn load_out_of_bounds() -> @location(0) vec4f {
+                    return textureLoad(image, vec2i(2, 0), 0);
+                }
+            "#
+            .into(),
+        ),
+    });
+    let vertex_attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layout = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &vertex_attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let make_pipeline = |fragment_entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 8-bit SNORM textureLoad pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let pipelines = [
+        make_pipeline("sample_pattern"),
+        make_pipeline("load_out_of_bounds"),
+    ];
+    let vertices = [-1.0f32, -1.0, -1.0, 3.0, 3.0, -1.0];
+    let vertex_bytes: Vec<u8> = vertices
+        .iter()
+        .flat_map(|value| value.to_ne_bytes())
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 8-bit SNORM fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("mapped 8-bit SNORM fullscreen triangle")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+    let targets: Vec<_> = (0..4)
+        .map(|_| {
+            device.create_texture(&TextureDescriptor {
+                label: Some("FL9_1 8-bit SNORM textureLoad target"),
+                size: Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+                view_formats: &[],
+            })
+        })
+        .collect();
+    let target_views: Vec<_> = targets
+        .iter()
+        .map(|target| target.create_view(&TextureViewDescriptor::default()))
+        .collect();
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 8-bit SNORM textureLoad readback"),
+        size: 4 * 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 8-bit SNORM textureLoad commands"),
+    });
+    for (case, bind_group) in bind_groups.iter().enumerate() {
+        for (entry_point, pipeline) in pipelines.iter().enumerate() {
+            let output = case * 2 + entry_point;
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 8-bit SNORM textureLoad pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_views[output],
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(pipeline);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.set_vertex_buffer(0, vertex.slice(..));
+            pass.draw(0..3, 0..1);
+            drop(pass);
+            encoder.copy_texture_to_buffer(
+                TexelCopyTextureInfo {
+                    texture: &targets[output],
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyBufferInfo {
+                    buffer: &readback,
+                    layout: TexelCopyBufferLayout {
+                        offset: output as u64 * 8 * 256,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(8),
+                    },
+                },
+                Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+    }
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for 8-bit SNORM textureLoad renders");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("8-bit SNORM textureLoad map callback")
+        .expect("map 8-bit SNORM textureLoad pixels");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped 8-bit SNORM textureLoad pixels");
+        let expected = [
+            [
+                [0, 128, 128, 255],
+                [255, 0, 128, 255],
+                [128, 255, 128, 255],
+                [128, 128, 128, 255],
+            ],
+            [
+                [0, 128, 255, 0],
+                [255, 0, 128, 255],
+                [128, 255, 0, 128],
+                [128, 128, 128, 255],
+            ],
+        ];
+        for case in 0..2 {
+            for entry_point in 0..2 {
+                for y in 0..8 {
+                    for x in 0..8 {
+                        let offset = (case * 2 + entry_point) * 8 * 256 + y * 256 + x * 4;
+                        let expected_pixel = if entry_point == 0 {
+                            expected[case][(usize::from(y >= 4) * 2) + usize::from(x >= 4)]
+                        } else {
+                            [0; 4]
+                        };
+                        for channel in 0..4 {
+                            let observed = pixels[offset + channel];
+                            let expected = expected_pixel[channel];
+                            assert!(
+                                observed.abs_diff(expected) <= 1,
+                                "{:?} textureLoad pixel ({x}, {y}), channel {channel}: expected {expected}, observed {observed}",
+                                formats[case]
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    readback.unmap();
+    let errors = uncaptured_errors.lock().unwrap().clone();
+    assert!(
+        errors.is_empty(),
+        "8-bit SNORM textureLoad errors: {errors:?}"
+    );
+    println!(
+        "PASS: Rg8Snorm and Rgba8Snorm forced-FL9_1 fragment textureLoad matched all four in-bounds texels and out-of-bounds zero; 256 pixels verified across both formats"
+    );
+}
+
+#[test]
 fn public_dx11_texture_load_and_dimensions_share_one_fl91_texture() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

@@ -1393,6 +1393,8 @@ fn fl9_texture_load_format_compatible(
                 | wgt::TextureFormat::Rgba8UnormSrgb
                 | wgt::TextureFormat::R8Unorm
                 | wgt::TextureFormat::Rg8Unorm
+                | wgt::TextureFormat::Rg8Snorm
+                | wgt::TextureFormat::Rgba8Snorm
                 | wgt::TextureFormat::Rg16Snorm
         ),
         naga::ImageDimension::D3 => format == wgt::TextureFormat::Rgba8Unorm,
@@ -1469,22 +1471,30 @@ mod fl9_texture_load_tests {
     use super::fl9_texture_load_format_compatible as compatible;
     use super::fl9_texture_load_resource_view_formats_compatible as resource_view_compatible;
     use naga::ImageDimension::{D2, D3};
-    use wgt::TextureFormat::{R8Unorm, Rg16Snorm, Rg8Unorm, Rgba8Unorm, Rgba8UnormSrgb};
+    use wgt::TextureFormat::{
+        R8Unorm, Rg16Snorm, Rg8Snorm, Rg8Unorm, Rgba8Snorm, Rgba8Unorm, Rgba8UnormSrgb,
+    };
 
     #[test]
     fn fl9_texture_load_format_subset_is_dimension_specific() {
         assert!(compatible(Rgba8Unorm, D2));
         assert!(compatible(R8Unorm, D2));
         assert!(compatible(Rg8Unorm, D2));
+        assert!(compatible(Rg8Snorm, D2));
+        assert!(compatible(Rgba8Snorm, D2));
         assert!(compatible(Rgba8Unorm, D3));
         assert!(!compatible(R8Unorm, D3));
         assert!(!compatible(Rg8Unorm, D3));
+        assert!(!compatible(Rg8Snorm, D3));
+        assert!(!compatible(Rgba8Snorm, D3));
         assert!(compatible(Rgba8UnormSrgb, D2));
         assert!(compatible(Rg16Snorm, D2));
         assert!(!compatible(Rgba8UnormSrgb, D3));
         assert!(!compatible(Rg16Snorm, D3));
         assert!(resource_view_compatible(Rgba8UnormSrgb, Rgba8UnormSrgb, D2));
         assert!(resource_view_compatible(Rg16Snorm, Rg16Snorm, D2));
+        assert!(resource_view_compatible(Rg8Snorm, Rg8Snorm, D2));
+        assert!(resource_view_compatible(Rgba8Snorm, Rgba8Snorm, D2));
         assert!(!resource_view_compatible(Rgba8Unorm, Rgba8UnormSrgb, D2));
         assert!(!resource_view_compatible(Rgba8UnormSrgb, Rgba8Unorm, D2));
     }

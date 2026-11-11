@@ -1,5 +1,15 @@
 # FL9_1 completion plan
 
+## Recent continuation — query-gated 8-bit SNORM fragment `textureLoad` — 2026-11-11
+
+The selected-entry fragment 2D `textureLoad` subset now accepts queried
+`Rg8Snorm` and `Rgba8Snorm` alongside the previously supported formats. The
+point-sample emulation preserves signed channel semantics; the sample-bias
+subset and other operation gates remain unchanged. The strict public GPU test
+verified both formats, all four input texels and out-of-bounds zero at forced
+FL9_1. Core DX11/DX12, the strict private HAL suite and full strict public
+target passed; exact outcomes are in `FL9_1_PROGRESS.md`.
+
 ## Recent continuation — query-gated Rg16Snorm fragment `textureLoad` — 2026-11-11
 
 The narrow selected-entry fragment 2D texture-load subset now accepts

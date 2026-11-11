@@ -1,3 +1,14 @@
+## Query-gated 8-bit SNORM fragment `textureLoad` — 2026-11-11
+
+The selected-entry fragment 2D `textureLoad` path now accepts
+`Rg8Snorm` and `Rgba8Snorm` when the selected device reports sampled upload
+support. The point-sample emulation preserves signed normalized channel
+semantics and leaves the separate sample-bias path unchanged. Core and HAL
+keep the support limited to the existing 2D load subset. The strict public
+RTX 3090 Ti FL9_1 test verified all four input texels and out-of-bounds zero
+for both formats, 256 pixels total. Historical FL9_1 format support remains
+query-dependent and unverified.
+
 ## Nonzero-group 2D `textureDimensions` helpers — 2026-11-11
 
 The selected-entry fragment 2D `textureDimensions` helper proof now accepts

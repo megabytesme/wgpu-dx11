@@ -1,5 +1,24 @@
 # FL9_1 handoff
 
+## Current mission status — 2026-11-11
+
+The latest verified software increment extends the narrow fragment 2D
+`textureLoad` path to query-gated `Rg8Snorm` and `Rgba8Snorm`; strict readback
+matched all 256 tested pixels at requested/actual FL9_1. The strict private
+HAL suite passed 509/509, the strict public target 134/134, and Core DX11/DX12
+passed 129/129 and 128/128. Exact commands and warnings are recorded in
+`FL9_1_PROGRESS.md`.
+
+This is useful constrained opt-in support, not feature-complete FL9_1 wgpu.
+Remaining software work is to close the public Core-to-HAL contract audit and
+implement only additional valid operations with a faithful FL9_1 path.
+Compute/UAV, geometry-class shaders, MRT and ordinary 1D/array texture support
+remain hardware/profile exclusions. Historical FL9_1 drivers, Lumia
+ARM32/CoreWindow execution and physical device-removal recovery remain external
+verification gaps. Use agents for independent audits and isolated consumer
+probes; keep cross-layer Core/Naga/HAL changes and their end-to-end validation
+under the coordinator.
+
 ## Current coordinator checkpoint — query-gated Rg16Snorm texture load — 2026-11-11
 
 The selected-entry fragment 2D `textureLoad` proof now permits query-gated

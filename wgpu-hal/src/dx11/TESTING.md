@@ -4441,6 +4441,21 @@ that `TEXTURE2D` without `SHADER_SAMPLE` is sufficient for point-only R8/RG8
 sampled usage when the backend path is enabled. R8 and RG8 remain unsupported
 by the separate sample-bias-offset emulation.
 
+The separate signed-normalized 8-bit path validates `textureLoad` channel
+conversion for `Rg8Snorm` and `Rgba8Snorm`; it does not rely on filtered
+sampling. Run it in strict hardware mode:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_8bit_snorm_texture_load_emulation_at_fl91 -- --nocapture --test-threads=1
+```
+
+The selected physical FL9_1 adapter must report `TEXTURE_BINDING | COPY_DST`
+for both formats. The test checks all four signed texels and out-of-bounds
+zero for both `Rg8Snorm` and `Rgba8Snorm`, validating 256 readback pixels.
+Historical drivers may report different format support; the test does not
+force a substitute format or a software adapter.
+
 ### Narrow FL9_1 fragment cube `textureDimensions`
 
 ```powershell
