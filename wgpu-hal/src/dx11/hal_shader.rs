@@ -1233,7 +1233,7 @@ mod tests {
     fn fl9_3d_and_cube_texture_dimensions_use_distinct_emulations() {
         let module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var image: texture_3d<f32>;
+            @group(7) @binding(42) var image: texture_3d<f32>;
             @fragment fn dimensions() -> @location(0) vec4f {
                 return vec4f(vec3f(textureDimensions(image)), 1.0);
             }
@@ -1258,8 +1258,8 @@ mod tests {
         assert_eq!(
             proof.binding,
             naga::ResourceBinding {
-                group: 0,
-                binding: 7,
+                group: 7,
+                binding: 42,
             }
         );
         assert!(matches!(proof.kind, Fl9TextureEmulationKind::Dimensions3D));
@@ -1274,7 +1274,7 @@ mod tests {
 
         let sampled_module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var image: texture_3d<f32>;
+            @group(7) @binding(42) var image: texture_3d<f32>;
             @group(0) @binding(42) var image_sampler: sampler;
             @fragment fn dimensions() -> @location(0) vec4f {
                 let size = vec3f(textureDimensions(image));
@@ -1305,7 +1305,7 @@ mod tests {
 
         let helper_module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var image: texture_cube<f32>;
+            @group(7) @binding(42) var image: texture_cube<f32>;
             fn query() -> vec2u { return textureDimensions(image); }
             @fragment fn dimensions() -> @location(0) vec4f {
                 return vec4f(vec2f(query()), 0.0, 1.0);
@@ -1330,8 +1330,8 @@ mod tests {
         assert_eq!(
             helper_proof.binding,
             naga::ResourceBinding {
-                group: 0,
-                binding: 7,
+                group: 7,
+                binding: 42,
             }
         );
         assert!(matches!(
@@ -1365,7 +1365,7 @@ mod tests {
 
         let three_d_helper_module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var volume: texture_3d<f32>;
+            @group(7) @binding(42) var volume: texture_3d<f32>;
             fn query_dimensions() -> vec3u { return textureDimensions(volume); }
             @fragment fn dimensions() -> @location(0) vec4f {
                 return vec4f(vec3f(query_dimensions()) / vec3f(4.0, 2.0, 8.0), 1.0);
@@ -6052,14 +6052,8 @@ fn fl9_texture_dimensions_helper(
         }
     }
     let image = &module.global_variables[image_handle];
-    let image_dimension = match module.types[image.ty].inner {
-        naga::TypeInner::Image { dim, .. } => dim,
-        _ => return None,
-    };
     if image.space != naga::AddressSpace::Handle
-        || !image.binding.is_some_and(|binding| {
-            image_dimension == naga::ImageDimension::D2 || binding.group == 0
-        })
+        || image.binding.is_none()
         || !matches!(
             module.types[image.ty].inner,
             naga::TypeInner::Image {

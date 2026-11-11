@@ -38983,7 +38983,12 @@ fn public_dx11_fragment_texture_dimensions_3d_constant_mip_at_fl91() {
     readback.unmap();
 }
 
-fn run_public_dx11_fragment_texture_dimensions_3d_at_fl91(use_helper: bool) {
+fn run_public_dx11_fragment_texture_dimensions_3d_at_fl91(
+    use_helper: bool,
+    group: u32,
+    texture_binding: u32,
+    sampler_binding: u32,
+) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -39112,9 +39117,9 @@ fn run_public_dx11_fragment_texture_dimensions_3d_at_fl91(use_helper: bool) {
         ),
     });
     let fragment_source = if use_helper {
-        "@group(0) @binding(0) var image: texture_3d<f32>; @group(0) @binding(1) var image_sampler: sampler; fn dimensions() -> vec3u { return textureDimensions(image); } @fragment fn fs() -> @location(0) vec4f { let size = vec3f(dimensions()); return textureSample(image, image_sampler, vec3f(0.5)) * vec4f(size / vec3f(4.0, 4.0, 16.0), 1.0); }"
+        format!("@group({group}) @binding({texture_binding}) var image: texture_3d<f32>; @group(0) @binding({sampler_binding}) var image_sampler: sampler; fn dimensions() -> vec3u {{ return textureDimensions(image); }} @fragment fn fs() -> @location(0) vec4f {{ let size = vec3f(dimensions()); return textureSample(image, image_sampler, vec3f(0.5)) * vec4f(size / vec3f(4.0, 4.0, 16.0), 1.0); }}")
     } else {
-        "@group(0) @binding(0) var image: texture_3d<f32>; @group(0) @binding(1) var image_sampler: sampler; @fragment fn fs() -> @location(0) vec4f { let dimensions = vec3f(textureDimensions(image)); return textureSample(image, image_sampler, vec3f(0.5)) * vec4f(dimensions / vec3f(4.0, 4.0, 16.0), 1.0); }"
+        format!("@group({group}) @binding({texture_binding}) var image: texture_3d<f32>; @group(0) @binding({sampler_binding}) var image_sampler: sampler; @fragment fn fs() -> @location(0) vec4f {{ let dimensions = vec3f(textureDimensions(image)); return textureSample(image, image_sampler, vec3f(0.5)) * vec4f(dimensions / vec3f(4.0, 4.0, 16.0), 1.0); }}")
     };
     let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 3D textureDimensions fragment shader"),
@@ -39171,34 +39176,52 @@ fn run_public_dx11_fragment_texture_dimensions_3d_at_fl91(use_helper: bool) {
         multiview_mask: None,
         cache: None,
     });
-    let bind_group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("FL9_1 3D textureDimensions input"),
-        layout: &pipeline.get_bind_group_layout(0),
-        entries: &[
-            BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::TextureView(&source_view),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::Sampler(&sampler),
-            },
-        ],
-    });
-    let bind_group_shallow = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("FL9_1 3D textureDimensions depth-one input"),
-        layout: &pipeline.get_bind_group_layout(0),
-        entries: &[
-            BindGroupEntry {
-                binding: 0,
-                resource: BindingResource::TextureView(&source_shallow_view),
-            },
-            BindGroupEntry {
-                binding: 1,
-                resource: BindingResource::Sampler(&sampler),
-            },
-        ],
-    });
+    let bind_group_for = |label, view: &TextureView| {
+        if group == 0 {
+            (
+                device.create_bind_group(&BindGroupDescriptor {
+                    label: Some(label),
+                    layout: &pipeline.get_bind_group_layout(0),
+                    entries: &[
+                        BindGroupEntry {
+                            binding: texture_binding,
+                            resource: BindingResource::TextureView(view),
+                        },
+                        BindGroupEntry {
+                            binding: sampler_binding,
+                            resource: BindingResource::Sampler(&sampler),
+                        },
+                    ],
+                }),
+                None,
+            )
+        } else {
+            (
+                device.create_bind_group(&BindGroupDescriptor {
+                    label: Some(label),
+                    layout: &pipeline.get_bind_group_layout(0),
+                    entries: &[BindGroupEntry {
+                        binding: sampler_binding,
+                        resource: BindingResource::Sampler(&sampler),
+                    }],
+                }),
+                Some(device.create_bind_group(&BindGroupDescriptor {
+                    label: Some(label),
+                    layout: &pipeline.get_bind_group_layout(group),
+                    entries: &[BindGroupEntry {
+                        binding: texture_binding,
+                        resource: BindingResource::TextureView(view),
+                    }],
+                })),
+            )
+        }
+    };
+    let (bind_group, bind_group_texture) =
+        bind_group_for("FL9_1 3D textureDimensions input", &source_view);
+    let (bind_group_shallow, bind_group_shallow_texture) = bind_group_for(
+        "FL9_1 3D textureDimensions depth-one input",
+        &source_shallow_view,
+    );
     let vertices = [
         [-1.0_f32, -1.0],
         [0.0, -1.0],
@@ -39252,9 +39275,15 @@ fn run_public_dx11_fragment_texture_dimensions_3d_at_fl91(use_helper: bool) {
         });
         pass.set_pipeline(&pipeline);
         pass.set_bind_group(0, &bind_group, &[]);
+        if let Some(bind_group_texture) = &bind_group_texture {
+            pass.set_bind_group(group, bind_group_texture, &[]);
+        }
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..6, 0..1);
         pass.set_bind_group(0, &bind_group_shallow, &[]);
+        if let Some(bind_group_texture) = &bind_group_shallow_texture {
+            pass.set_bind_group(group, bind_group_texture, &[]);
+        }
         pass.draw(6..12, 0..1);
     }
     encoder.copy_texture_to_buffer(
@@ -39326,16 +39355,35 @@ fn run_public_dx11_fragment_texture_dimensions_3d_at_fl91(use_helper: bool) {
 
 #[test]
 fn public_dx11_fragment_texture_dimensions_3d_at_fl91() {
-    run_public_dx11_fragment_texture_dimensions_3d_at_fl91(false);
+    run_public_dx11_fragment_texture_dimensions_3d_at_fl91(false, 0, 0, 1);
 }
 
 #[test]
 fn public_dx11_fragment_texture_dimensions_3d_helper_at_fl91() {
-    run_public_dx11_fragment_texture_dimensions_3d_at_fl91(true);
+    run_public_dx11_fragment_texture_dimensions_3d_at_fl91(true, 0, 0, 1);
+}
+
+#[test]
+fn public_dx11_fragment_texture_dimensions_3d_nonzero_group_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_3d_at_fl91(false, 2, 42, 1);
+}
+
+#[test]
+fn public_dx11_fragment_texture_dimensions_3d_helper_nonzero_group_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_3d_at_fl91(true, 2, 42, 1);
 }
 
 #[test]
 fn public_dx11_fragment_texture_dimensions_cube_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_cube_at_fl91(0, 7);
+}
+
+#[test]
+fn public_dx11_fragment_texture_dimensions_cube_nonzero_group_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_cube_at_fl91(2, 42);
+}
+
+fn run_public_dx11_fragment_texture_dimensions_cube_at_fl91(group: u32, binding: u32) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -39471,7 +39519,7 @@ fn public_dx11_fragment_texture_dimensions_cube_at_fl91() {
     let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 cube dimensions layout"),
         entries: &[BindGroupLayoutEntry {
-            binding: 7,
+            binding,
             visibility: ShaderStages::FRAGMENT,
             ty: BindingType::Texture {
                 sample_type: TextureSampleType::Float { filterable: true },
@@ -39486,16 +39534,18 @@ fn public_dx11_fragment_texture_dimensions_cube_at_fl91() {
             label: Some(label),
             layout: &layout,
             entries: &[BindGroupEntry {
-                binding: 7,
+                binding,
                 resource: BindingResource::TextureView(view),
             }],
         })
     };
     let large_bind_group = bind_group("FL9_1 8x8 cube dimensions binding", &large_view);
     let small_bind_group = bind_group("FL9_1 4x4 cube dimensions binding", &small_view);
+    let mut bind_group_layouts = vec![None; group as usize + 1];
+    bind_group_layouts[group as usize] = Some(&layout);
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("FL9_1 cube dimensions pipeline layout"),
-        bind_group_layouts: &[Some(&layout)],
+        bind_group_layouts: &bind_group_layouts,
         immediate_size: 0,
     });
     let vertex_shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -39507,17 +39557,11 @@ fn public_dx11_fragment_texture_dimensions_cube_at_fl91() {
     });
     let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 cube dimensions fragment shader"),
-        source: ShaderSource::Wgsl(
-            "@group(0) @binding(7) var image: texture_cube<f32>; @fragment fn fs() -> @location(0) vec4f { let size = vec2f(textureDimensions(image)); return vec4f(size / vec2f(8.0), 0.0, 1.0); }"
-                .into(),
-        ),
+        source: ShaderSource::Wgsl(format!("@group({group}) @binding({binding}) var image: texture_cube<f32>; @fragment fn fs() -> @location(0) vec4f {{ let size = vec2f(textureDimensions(image)); return vec4f(size / vec2f(8.0), 0.0, 1.0); }}").into()),
     });
     let helper_fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 cube dimensions helper fragment shader"),
-        source: ShaderSource::Wgsl(
-            "@group(0) @binding(7) var image: texture_cube<f32>; fn cube_size() -> vec2u { return textureDimensions(image); } @fragment fn fs() -> @location(0) vec4f { let size = vec2f(cube_size()); return vec4f(size / vec2f(8.0), 0.0, 1.0); }"
-                .into(),
-        ),
+        source: ShaderSource::Wgsl(format!("@group({group}) @binding({binding}) var image: texture_cube<f32>; fn cube_size() -> vec2u {{ return textureDimensions(image); }} @fragment fn fs() -> @location(0) vec4f {{ let size = vec2f(cube_size()); return vec4f(size / vec2f(8.0), 0.0, 1.0); }}").into()),
     });
     let attributes = [VertexAttribute {
         format: VertexFormat::Float32x2,
@@ -39619,10 +39663,10 @@ fn public_dx11_fragment_texture_dimensions_cube_at_fl91() {
         });
         pass.set_pipeline(&pipeline);
         pass.set_vertex_buffer(0, vertex.slice(..));
-        pass.set_bind_group(0, &large_bind_group, &[]);
+        pass.set_bind_group(group, &large_bind_group, &[]);
         pass.draw(0..6, 0..1);
         pass.set_pipeline(&helper_pipeline);
-        pass.set_bind_group(0, &small_bind_group, &[]);
+        pass.set_bind_group(group, &small_bind_group, &[]);
         pass.draw(6..12, 0..1);
     }
     encoder.copy_texture_to_buffer(
@@ -39761,10 +39805,7 @@ fn public_dx11_fragment_texture_dimensions_cube_at_fl91() {
     );
     let explicit_mip_fragment = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 constant mip cube dimensions shader"),
-        source: ShaderSource::Wgsl(
-            "const LEVEL: u32 = 1u; @group(0) @binding(7) var image: texture_cube<f32>; @fragment fn fs() -> @location(0) vec4f { let size = vec2f(textureDimensions(image, LEVEL)); return vec4f(size / vec2f(8.0), 0.0, 1.0); }"
-                .into(),
-        ),
+        source: ShaderSource::Wgsl(format!("const LEVEL: u32 = 1u; @group({group}) @binding({binding}) var image: texture_cube<f32>; @fragment fn fs() -> @location(0) vec4f {{ let size = vec2f(textureDimensions(image, LEVEL)); return vec4f(size / vec2f(8.0), 0.0, 1.0); }}").into()),
     });
     let explicit_mip_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some("FL9_1 constant mip cube dimensions pipeline"),
@@ -39809,7 +39850,7 @@ fn public_dx11_fragment_texture_dimensions_cube_at_fl91() {
         });
         pass.set_pipeline(&explicit_mip_pipeline);
         pass.set_vertex_buffer(0, vertex.slice(..));
-        pass.set_bind_group(0, &mipmapped_cube_bind_group, &[]);
+        pass.set_bind_group(group, &mipmapped_cube_bind_group, &[]);
         pass.draw(0..6, 0..1);
         pass.draw(6..12, 0..1);
     }

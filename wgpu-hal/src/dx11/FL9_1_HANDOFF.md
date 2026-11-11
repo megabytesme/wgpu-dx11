@@ -2,13 +2,15 @@
 
 ## Current mission status — 2026-11-11
 
-The latest verified change adds public GPU coverage for a sparse fragment
-uniform at group 2/binding 42. Strict forced-FL9_1 readback on the physical RTX
-3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) matched all 64 pixels. The
-focused test passed 1/1 and the complete strict public D3D11 target passed
-140/140 test functions. Exact commands and existing Clippy warnings are in
-`FL9_1_PROGRESS.md`. Checkpoint: `0465028da` (`dx11: test public nonzero-group
-FL9_1 uniforms`).
+The latest verified change allows selected 3D and cube `textureDimensions`
+queries and helpers to use nonzero bind groups while preserving the group-0
+sampler restriction. Strict forced-FL9_1 readback on the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) passed direct/helper view-transition
+tests, including cube mip-1 output. Naga passed 164 tests, Core DX11 132,
+Core DX12 131, private HAL 510, focused public nonzero-group cases 5, and the
+full public target 143. Three optional capability subcases logged skips; no
+hardware-required test skipped. Clippy, formatting and diff checks passed.
+Exact commands and existing warnings are recorded in `FL9_1_PROGRESS.md`.
 
 The explicit `Backends::DX11` public path is available with a conservative
 FL9_1 projection; default backend selection excludes DX11. This supports

@@ -1,14 +1,20 @@
 # FL9_1 completion plan
 
-## Current coordinator checkpoint — public nonzero-group uniform binding — 2026-11-11
+## Current coordinator checkpoint — nonzero-group 3D/cube dimensions — 2026-11-11
 
-Checkpoint: `0465028da` (`dx11: test public nonzero-group FL9_1 uniforms`).
+Naga, Core and HAL now preserve the logical group/binding identity for selected
+3D and cube `textureDimensions` proofs in any supported bind group. Sparse
+group-2/binding-42 public GPU tests cover direct and helper 3D queries and
+direct/helper cube queries with view transitions. The group-0 sampler
+restriction for optional sampling remains unchanged. Strict RTX 3090 Ti
+FL9_1 readback passed; the cube case also verified constant mip 1.
 
-The public GPU suite now covers a sparse fragment uniform at group 2/binding
-42, closing the public coverage gap found by the uniform audit. Strict
-forced-FL9_1 readback passed on the RTX 3090 Ti and all 64 pixels matched the
-uniform color. The full strict public target passed 140/140 test functions.
-The test fails in strict mode if a physical FL9_1 adapter is unavailable.
+Validation passed: Naga 164/164, Core DX11 132/132, Core DX12 131/131,
+private HAL 510/510, focused nonzero-group public cases 5/5, and the complete
+strict public target 143/143. The full public run logged three optional
+capability subcase skips. Clippy, formatting and diff checks passed; Clippy
+reported six existing HAL warnings. Exact commands and hardware output are in
+`FL9_1_PROGRESS.md`.
 
 The presentation audit confirmed that `Queue::wait_for_idle` currently waits
 for a D3D11 immediate-context event query but does not prove completion of
@@ -23,6 +29,11 @@ compute/UAV, geometry shaders, MRT, indirect draws, 1D textures and ordinary
 texture arrays. Historical FL9_1 devices, Lumia ARM32/CoreWindow and physical
 device-removal recovery remain external verification gaps. Keep arbitrary
 `textureSampleLevel` LOD rejected until its single-mip semantics are proven.
+The next useful shader probe is production Naga lowering and GPU verification
+of vertex-only f32 mat4 inverse; a standalone FXC cofactor prototype compiled
+within the 9_1 vertex instruction and temporary-register budget, but no
+backend support is established yet. Fragment position/front-facing remain
+rejected after FXC profile probes showed no semantics-preserving fallback.
 
 The earlier same-format 3D RGBA8 copy remains a restricted execution-ordered
 CPU-shadow fallback; it cannot consume GPU-written 3D resources. Its

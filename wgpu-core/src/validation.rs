@@ -5520,9 +5520,7 @@ fn entry_point_supports_fl9_texture_dimensions(
     }
     let image = &module.global_variables[image_binding];
     image.space == naga::AddressSpace::Handle
-        && image
-            .binding
-            .is_some_and(|binding| dimension == naga::ImageDimension::D2 || binding.group == 0)
+        && image.binding.is_some()
         && matches!(
             module.types[image.ty].inner,
             naga::TypeInner::Image {
@@ -5752,8 +5750,7 @@ fn entry_point_supports_fl9_texture_dimensions_helper(
     let image_resource_binding = image.binding;
     if sample_binding.is_some_and(|(sample_image, _)| sample_image != image_global)
         || image.space != naga::AddressSpace::Handle
-        || !image_resource_binding
-            .is_some_and(|binding| dimension == naga::ImageDimension::D2 || binding.group == 0)
+        || image_resource_binding.is_none()
         || !matches!(
             module.types[image.ty].inner,
             naga::TypeInner::Image {
@@ -12028,7 +12025,7 @@ mod tests {
         };
         let supported = make_interface(
             r#"
-            @group(0) @binding(7) var image: texture_cube<f32>;
+            @group(7) @binding(42) var image: texture_cube<f32>;
             @group(0) @binding(42) var image_sampler: sampler;
             @group(1) @binding(3) var sibling_image: texture_cube<f32>;
             fn face_dimensions() -> vec2u { return textureDimensions(image); }
@@ -12164,7 +12161,7 @@ mod tests {
 
         let three_d = make_interface(
             r#"
-            @group(0) @binding(0) var image: texture_3d<f32>;
+            @group(7) @binding(42) var image: texture_3d<f32>;
             @fragment fn main() -> @location(0) vec4f {
                 return vec4f(vec3f(textureDimensions(image)), 1.0);
             }
@@ -12193,7 +12190,7 @@ mod tests {
 
         let three_d_with_sample = make_interface(
             r#"
-            @group(0) @binding(0) var image: texture_3d<f32>;
+            @group(7) @binding(42) var image: texture_3d<f32>;
             @group(0) @binding(1) var image_sampler: sampler;
             @fragment fn main() -> @location(0) vec4f {
                 let dimensions = vec3f(textureDimensions(image));
@@ -12219,7 +12216,7 @@ mod tests {
 
         let three_d_query_helper = make_interface(
             r#"
-            @group(0) @binding(0) var image: texture_3d<f32>;
+            @group(7) @binding(42) var image: texture_3d<f32>;
             fn dimensions() -> vec3u { return textureDimensions(image); }
             @fragment fn main() -> @location(0) vec4f {
                 return vec4f(vec3f(dimensions()) / 8.0, 1.0);
@@ -12236,7 +12233,7 @@ mod tests {
 
         let three_d_helper_explicit_level = make_interface(
             r#"
-            @group(0) @binding(0) var image: texture_3d<f32>;
+            @group(7) @binding(42) var image: texture_3d<f32>;
             fn dimensions() -> vec3u { return textureDimensions(image, 0u); }
             @fragment fn main() -> @location(0) vec4f {
                 return vec4f(vec3f(dimensions()) / 8.0, 1.0);
@@ -12411,7 +12408,7 @@ mod tests {
         };
         let cube = make_interface(
             r#"
-            @group(0) @binding(7) var image: texture_cube<f32>;
+            @group(7) @binding(42) var image: texture_cube<f32>;
             @fragment fn main() -> @location(0) vec4f {
                 return vec4f(vec2f(textureDimensions(image)), 0.0, 1.0);
             }

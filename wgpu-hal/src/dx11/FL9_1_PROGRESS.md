@@ -1,3 +1,52 @@
+## Nonzero-group 3D/cube `textureDimensions` — 2026-11-11
+
+Removed the unnecessary group-0 restriction from the selected-entry fragment
+3D and cube `textureDimensions` direct/helper proofs in Naga, Core and HAL.
+Query images retain their exact logical `(group, binding)` identity through
+the shared resource map. The existing sampler group-0 restriction and all
+shader-shape, view and selected-entry checks remain.
+
+Strict public GPU tests on the physical NVIDIA RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`) requested and selected FL9_1 with `software=false`.
+Group-2/binding-42 direct and helper 3D queries each switched from a
+4x2x8 view to 2x4x1 and verified all 64 output pixels, including sampled
+texels. Direct and helper cube queries switched from 8x8 to 4x4 and checked
+all 64 pixels; the same test rendered constant mip 1 from a four-level cube
+and matched `[128, 128, 0, 255]` throughout. The focused nonzero-group public
+filter passed 5/5, including existing 2D and uniform nonzero-group tests.
+
+Full strict validation passed: Naga 164/164, Core DX11 132/132 (with the
+required physical adapter), Core DX12 131/131, private D3D11 HAL 510/510, and
+the complete public D3D11 target 143/143. The full public run logged three
+optional capability subcase skips: R8G8_UNORM and R16G16_FLOAT vertex-input
+support, plus Rg8Unorm mip support. No hardware-required test skipped. Targeted
+Clippy passed with six existing HAL warnings and none in changed code;
+`cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed. One
+intermediate cube run caught a constant-mip pipeline still using group 0; the
+test was corrected to use the parameterized group and rerun successfully.
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public nonzero_group_at_fl91 -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
+An independent queue/surface audit still confirms that D3D11 `wait_for_idle`
+waits for immediate-context command completion but does not prove completion
+of DXGI presentation. That separate contract remains open pending a design
+that handles multiple queued presents and CoreWindow owner-thread behavior.
+
 ## Public nonzero-group uniform binding coverage — 2026-11-11
 
 Added a strict public wgpu GPU test for a sparse fragment uniform at group

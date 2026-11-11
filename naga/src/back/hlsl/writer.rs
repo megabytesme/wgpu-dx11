@@ -521,16 +521,7 @@ fn fl9_texture_dimensions_functions(
         return None;
     };
     let image_global = &module.global_variables[image_handle];
-    let image_group_supported = match module.types[image_global.ty].inner {
-        TypeInner::Image {
-            dim: crate::ImageDimension::D2,
-            ..
-        } => image_global.binding.is_some(),
-        _ => matches!(
-            image_global.binding,
-            Some(crate::ResourceBinding { group: 0, .. })
-        ),
-    };
+    let image_group_supported = image_global.binding.is_some();
     if !image_group_supported
         || !matches!(
             module.types[image_global.ty].inner,
@@ -8931,12 +8922,12 @@ mod fl9_viewport_tests {
     #[test]
     fn fl9_3d_dimensions_helper_lowering_is_scoped_to_the_proven_function() {
         let binding = crate::ResourceBinding {
-            group: 0,
-            binding: 0,
+            group: 7,
+            binding: 42,
         };
         let module = crate::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(0) var volume: texture_3d<f32>;
+            @group(7) @binding(42) var volume: texture_3d<f32>;
             fn dimensions() -> vec3u { return textureDimensions(volume); }
             fn unrelated() -> vec3u { return vec3u(1u, 2u, 3u); }
             @fragment fn main() -> @location(0) vec4f {
@@ -9283,14 +9274,14 @@ mod fl9_viewport_tests {
     #[test]
     fn fl9_cube_texture_dimensions_uses_face_size_metadata() {
         let texture_binding = crate::ResourceBinding {
-            group: 0,
-            binding: 7,
+            group: 7,
+            binding: 42,
         };
         let sampler_binding = crate::ResourceBinding {
             group: 0,
             binding: 42,
         };
-        let source = "@group(0) @binding(7) var cube: texture_cube<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(cube)); return textureSample(cube, smp, vec3f(1.0, 0.0, 0.0)) * vec4f(dimensions / vec2f(8.0), 1.0, 1.0); }";
+        let source = "@group(7) @binding(42) var cube: texture_cube<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(cube)); return textureSample(cube, smp, vec3f(1.0, 0.0, 0.0)) * vec4f(dimensions / vec2f(8.0), 1.0, 1.0); }";
         let mut options = Options {
             direct_sampler_bindings: true,
             fl9_texture_dimensions_proof: Some(texture_binding),
@@ -9320,8 +9311,8 @@ mod fl9_viewport_tests {
         assert!(!output.contains("GetDimensions"), "{output}");
 
         for source in [
-            "@group(0) @binding(7) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(cube, 1u)); return vec4f(dimensions / vec2f(8.0), 0.0, 1.0); }",
-            "const LEVEL: i32 = 1; @group(0) @binding(7) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(cube, LEVEL)); return vec4f(dimensions / vec2f(8.0), 0.0, 1.0); }",
+            "@group(7) @binding(42) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(cube, 1u)); return vec4f(dimensions / vec2f(8.0), 0.0, 1.0); }",
+            "const LEVEL: i32 = 1; @group(7) @binding(42) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(cube, LEVEL)); return vec4f(dimensions / vec2f(8.0), 0.0, 1.0); }",
         ] {
             let explicit_output = translate(source, &options, ShaderStage::Fragment).unwrap();
             assert!(
@@ -9331,20 +9322,20 @@ mod fl9_viewport_tests {
             assert!(!explicit_output.contains("GetDimensions"), "{explicit_output}");
         }
 
-        let explicit_level_and_sample = "@group(0) @binding(7) var cube: texture_cube<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { return textureSample(cube, smp, vec3f(1.0, 0.0, 0.0)) + vec4f(vec2f(textureDimensions(cube, 1u)), 0.0, 1.0); }";
+        let explicit_level_and_sample = "@group(7) @binding(42) var cube: texture_cube<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { return textureSample(cube, smp, vec3f(1.0, 0.0, 0.0)) + vec4f(vec2f(textureDimensions(cube, 1u)), 0.0, 1.0); }";
         assert!(translate(explicit_level_and_sample, &options, ShaderStage::Fragment).is_err());
 
-        let negative_level = "@group(0) @binding(7) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube, -1)), 0.0, 1.0); }";
+        let negative_level = "@group(7) @binding(42) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube, -1)), 0.0, 1.0); }";
         assert!(translate(negative_level, &options, ShaderStage::Fragment).is_err());
 
         for unsupported_level in [
-            "@group(0) @binding(7) var cube: texture_cube<f32>; @fragment fn main(@location(0) input: vec2f) -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube, u32(input.x))), 0.0, 1.0); }",
-            "override LEVEL: u32 = 1u; @group(0) @binding(7) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube, LEVEL)), 0.0, 1.0); }",
+            "@group(7) @binding(42) var cube: texture_cube<f32>; @fragment fn main(@location(0) input: vec2f) -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube, u32(input.x))), 0.0, 1.0); }",
+            "override LEVEL: u32 = 1u; @group(7) @binding(42) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube, LEVEL)), 0.0, 1.0); }",
         ] {
             assert!(translate(unsupported_level, &options, ShaderStage::Fragment).is_err());
         }
 
-        let helper = "@group(0) @binding(7) var cube: texture_cube<f32>; fn unused() -> f32 { return 1.0; } @fragment fn main() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube)), 0.0, 1.0); }";
+        let helper = "@group(7) @binding(42) var cube: texture_cube<f32>; fn unused() -> f32 { return 1.0; } @fragment fn main() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube)), 0.0, 1.0); }";
         let helper_output = translate(helper, &options, ShaderStage::Fragment).unwrap();
         assert!(
             helper_output.contains("TextureCube<float4>"),
@@ -9352,22 +9343,22 @@ mod fl9_viewport_tests {
         );
         assert!(!helper_output.contains("unused"), "{helper_output}");
 
-        let wrong_dimension = "@group(0) @binding(7) var volume: texture_3d<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(volume)), 1.0); }";
+        let wrong_dimension = "@group(7) @binding(42) var volume: texture_3d<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec3f(textureDimensions(volume)), 1.0); }";
         assert!(translate(wrong_dimension, &options, ShaderStage::Fragment).is_err());
     }
 
     #[test]
     fn fl9_cube_texture_dimensions_parameterless_helper_uses_face_size_metadata() {
         let texture_binding = crate::ResourceBinding {
-            group: 0,
-            binding: 7,
+            group: 7,
+            binding: 42,
         };
         let sampler_binding = crate::ResourceBinding {
             group: 0,
             binding: 42,
         };
         let source = r#"
-            @group(0) @binding(7) var cube: texture_cube<f32>;
+            @group(7) @binding(42) var cube: texture_cube<f32>;
             @group(0) @binding(42) var smp: sampler;
             fn query_dimensions() -> vec2u { return textureDimensions(cube); }
             @fragment fn main() -> @location(0) vec4f {

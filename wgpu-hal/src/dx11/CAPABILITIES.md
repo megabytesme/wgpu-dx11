@@ -1630,8 +1630,9 @@ level-less query may share the entry point with exactly one implicit
 `textureSample` of that same texture and one group-0 non-comparison sampler.
 The helper itself remains query-only, but it may coexist with exactly one
 level-less implicit sample of the same image in the selected entry point, using
-one group-0 non-comparison sampler and a `vec2f` coordinate. The 3D and cube
-helper/query paths remain restricted to group 0. This permits the proven
+one group-0 non-comparison sampler and a `vec2f` coordinate. The direct and
+helper query texture may be in any bind group; an optional sample's sampler
+remains group-0-only. This permits the proven
 operations without permitting unrelated selected resources, other image
 operations, control flow, `select`, or runtime integer work. A direct query
 with an explicit mip level remains query-only. The HAL supplies
@@ -1646,8 +1647,8 @@ extra resources and additional image operations. This narrow limit does not
 imply general WebGPU texture-query support.
 
 A separate `texture_dimensions_3d_float_fragment` limit covers one direct
-fragment `textureDimensions` query on a group-0, non-array
-`texture_3d<f32>`, directly converted to `vec3f`. Its optional mip argument
+fragment `textureDimensions` query on a non-array `texture_3d<f32>` in any
+supported bind group, directly converted to `vec3f`. Its optional mip argument
 must be a nonnegative literal or module constant. A query with an explicit
 mip cannot be combined with sampling in the same entry point. The feature is
 exposed only when the selected FL9_1 device passes the existing RGBA8 3D
@@ -1667,7 +1668,9 @@ point with one implicit sample of that same volume
 through one group-0 non-comparison sampler using `vec3f` coordinates. HAL
 supplies the selected view's width, height and depth at the requested mip via
 `b13`, while the shared binding map assigns the ordinary texture and sampler
-registers. A strict RTX 3090 Ti test switched between 4x2x8 and 2x4x1 volumes
+registers. Direct and helper query textures may use any supported group; the
+optional sampler remains group-0-only. Strict RTX 3090 Ti tests switched
+between 4x2x8 and 2x4x1 volumes
 with different texel values; both dimensions and sampled data affected the
 expected 64 readback pixels. A second strict test queried mip 1 of an 8x4x8,
 three-level volume and verified 4x2x4 through GPU readback. Other helpers,
@@ -1966,9 +1969,9 @@ performance.
 ## Narrow FL9_1 fragment cube `textureDimensions`
 
 The separate `texture_dimensions_cube_float_fragment` limit permits one direct
-`textureDimensions` query on one group-0 `texture_cube<f32>` in the selected
-fragment entry point, followed by direct conversion of its `vec2u` result to
-`vec2f`. The query may omit the mip level or use a nonnegative literal or
+`textureDimensions` query on one non-array `texture_cube<f32>` in any supported
+bind group in the selected fragment entry point, followed by direct conversion
+of its `vec2u` result to `vec2f`. The query may omit the mip level or use a nonnegative literal or
 module constant. An explicit-level query cannot coexist with sampling in that
 entry point; a level-less query may retain the existing one implicit sample.
 The result is the selected cube view's face dimensions, not its layer count.
@@ -1983,7 +1986,9 @@ consumes the host-provided dimensions rather than emitting `GetDimensions`,
 which the level-9 profile rejects. HAL supplies the current view's dimensions
 at the selected mip through the existing `b13` emulation constant. Nonzero
 levels still require the selected RGBA8 format to support mip chains; that
-format query remains independent of this shader-query limit. General
+format query remains independent of this shader-query limit. Direct and
+helper query images may use any supported group; an optional sampler remains
+group-0-only. General
 `texture_query` remains false. Strict forced-FL9_1 readback on the RTX 3090 Ti
 verified the 8x8-to-4x4 transition across a direct query and a helper call and
 the constant mip-1 query in an initialized mipmapped cube; all 64 pixels

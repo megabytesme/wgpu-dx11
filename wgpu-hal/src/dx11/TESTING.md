@@ -4553,6 +4553,27 @@ volume with three levels; querying level 1 must produce 4x2x4, normalized to
 evidence for this case. A strict run must be reported as a skip or failure,
 never as a rendering pass, if the prerequisite is unavailable.
 
+### Nonzero-group 3D and cube `textureDimensions`
+
+Core, HAL and Naga proofs cover sparse group-2/binding-42 query textures while
+retaining the existing group-0 restriction for any optional sampler. Strict
+RTX 3090 Ti FL9_1 tests exercise direct and helper 3D queries, plus
+direct/helper cube queries; each switches the selected texture view and checks
+readback. The cube test also validates a constant mip-1 query. The three new
+tests pass; the full public D3D11 target passed 143/143 with three optional
+capability subcase skips.
+
+```powershell
+cargo +1.93.1 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_3d_dimensions_helper_lowering_is_scoped_to_the_proven_function -- --nocapture
+cargo +1.93.1 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_cube_texture_dimensions_parameterless_helper_uses_face_size_metadata -- --nocapture
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_3d_texture_dimensions_has_an_independent_narrow_proof -- --nocapture
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_cube_texture_dimensions_allows_one_parameterless_helper -- --nocapture
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_3d_and_cube_texture_dimensions_use_distinct_emulations -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public nonzero_group_at_fl91 -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+```
+
 ### Narrow FL9_1 `mat2x2<f32>` and `mat3x3<f32>` matrix inverse
 
 ```powershell
