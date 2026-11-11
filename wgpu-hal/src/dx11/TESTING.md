@@ -1,5 +1,28 @@
 # Direct3D 11 validation plan
 
+## Nonzero-group 2D `textureDimensions` helper — 2026-11-11
+
+The narrow helper proof accepts a 2D query texture in a nonzero bind group;
+the helper remains argument-free, straight-line and query-only. Core, HAL and
+Naga tests reject extra used resources and retain the group-0 restriction for
+3D/cube helper queries. The strict public test transitions the group-7
+texture binding from a 16x8 view to an 8x4 view and checks every output pixel.
+
+```powershell
+cargo +1.93.1 test --offline -j16 -p naga --lib --features hlsl-out fl9_texture_dimensions_emits_only_the_selected_query_helper -- --nocapture
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_texture_dimensions_accepts_only_direct_fragment_conversion -- --nocapture
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_dimensions -- --nocapture
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_dimensions_through_selected_helper_compiles_with_fxc -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_helper_nonzero_group_at_fl91 -- --nocapture --test-threads=1
+```
+
+All five targeted invocations passed. The public GPU test selected the NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and
+actual FL9_1 with `software=false`; both view transitions matched all 64
+pixels. The `wgpu-hal` compiler emitted four existing unnecessary-qualification
+warnings in `hal_queue.rs`.
+
 ## BC texture readback and bounded sample-bias offsets — 2026-11-11
 
 The comparison-offset path has a Naga HLSL writer test, selected-entry Core

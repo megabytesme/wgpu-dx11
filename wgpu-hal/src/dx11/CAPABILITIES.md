@@ -1597,8 +1597,8 @@ The D3D11 projection separately enables the narrow
 one selected fragment entry point to query a non-array `texture_2d<f32>` in
 any bind group and directly convert the `vec2u` result to `vec2f`. The query
 may also appear in exactly one reachable helper with no arguments that returns
-the query result; this helper form remains group-0-only. The helper must be
-straight-line, contain no other resource or image operation, and be called
+the query result; a 2D helper may use any texture bind group. The helper must
+be straight-line, contain no other resource or image operation, and be called
 once. Unreachable sibling helpers and their resources are pruned for HLSL
 emission. The optional direct-query mip level must be a non-negative literal
 or direct module `const`; the helper form is level-less only. Dimensions are
@@ -1607,8 +1607,9 @@ level-less query may share the entry point with exactly one implicit
 `textureSample` of that same texture and one group-0 non-comparison sampler.
 The helper itself remains query-only, but it may coexist with exactly one
 level-less implicit sample of the same image in the selected entry point, using
-one group-0 non-comparison sampler and a `vec2f` coordinate. This permits the
-proven operations without permitting unrelated selected resources, other image
+one group-0 non-comparison sampler and a `vec2f` coordinate. The 3D and cube
+helper/query paths remain restricted to group 0. This permits the proven
+operations without permitting unrelated selected resources, other image
 operations, control flow, `select`, or runtime integer work. A direct query
 with an explicit mip level remains query-only. The HAL supplies
 the selected view mip's dimensions through its existing private `b13`

@@ -1,5 +1,16 @@
 # FL9_1 handoff
 
+## Current coordinator progress — nonzero-group 2D query helper — 2026-11-11
+
+The current working change widens only the narrow 2D `textureDimensions`
+helper proof to allow any texture bind group. Core, HAL and Naga still require
+one argument-free, straight-line query helper with no other used resources;
+3D/cube helper paths and associated samplers remain group-0-restricted. Naga,
+Core, HAL proof, FXC and the strict public RTX test passed. The GPU test used
+group 7/binding 42, transitioned a 16x8 view to an 8x4 view, and matched all
+64 pixels. Full private/public and DX12 regressions remain to be run before
+this worktree slice is checkpointed.
+
 ## Current coordinator checkpoint — 2026-11-11
 
 The newest verified software slice extends the narrow fragment 2D

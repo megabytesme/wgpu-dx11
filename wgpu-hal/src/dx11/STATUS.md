@@ -1,3 +1,16 @@
+## Nonzero-group 2D `textureDimensions` helpers — 2026-11-11
+
+The selected-entry fragment 2D `textureDimensions` helper proof now accepts
+the queried texture from any bind group, matching the existing direct-query
+path and shared logical resource map. Core, private HAL and Naga retain the
+same one-helper, query-only restrictions; other used resources remain
+rejected. 3D/cube helper paths and any sampler used alongside the query retain
+their previous group-0 restrictions. Strict RTX 3090 Ti FL9_1 rendering used
+group 7/binding 42, transitioned from a 16x8 view to an 8x4 view, and matched
+all 64 pixels for both draws. Targeted Core, HAL and FXC tests passed. This is
+not general texture-query support and does not enable historical-driver
+claims.
+
 ## Query-gated R8/RG8 fragment `textureLoad` — 2026-11-11
 
 The restricted fragment 2D `textureLoad` emulation now accepts `R8Unorm` in

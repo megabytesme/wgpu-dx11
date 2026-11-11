@@ -5743,9 +5743,11 @@ fn entry_point_supports_fl9_texture_dimensions_helper(
     };
     let sample_sampler = sample_binding.map(|(_, sampler)| sampler);
     let image = &module.global_variables[image_global];
+    let image_resource_binding = image.binding;
     if sample_binding.is_some_and(|(sample_image, _)| sample_image != image_global)
         || image.space != naga::AddressSpace::Handle
-        || !matches!(image.binding, Some(naga::ResourceBinding { group: 0, .. }))
+        || !image_resource_binding
+            .is_some_and(|binding| dimension == naga::ImageDimension::D2 || binding.group == 0)
         || !matches!(
             module.types[image.ty].inner,
             naga::TypeInner::Image {
@@ -11515,7 +11517,7 @@ mod tests {
 
         let helper_dimensions = make_interface(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(7) @binding(42) var image: texture_2d<f32>;
             @group(1) @binding(9) var sibling_image: texture_2d<f32>;
             fn dimensions_helper() -> vec2u { return textureDimensions(image); }
             fn sibling_helper() -> u32 { return textureNumLevels(sibling_image); }
@@ -11541,6 +11543,20 @@ mod tests {
                 "sibling",
                 &narrow,
             )
+            .unwrap());
+
+        let helper_with_extra_resource = make_interface(
+            r#"
+            @group(7) @binding(42) var image: texture_2d<f32>;
+            @group(3) @binding(9) var<uniform> extra: vec4f;
+            fn dimensions_helper() -> vec2u { return textureDimensions(image); }
+            @fragment fn fs() -> @location(0) vec4f {
+                return vec4f(vec2f(dimensions_helper()) / vec2f(16.0), extra.x, 1.0);
+            }
+            "#,
+        );
+        assert!(helper_with_extra_resource
+            .entry_point_uses_unsupported_texture_query(naga::ShaderStage::Fragment, "fs", &narrow,)
             .unwrap());
 
         for source in [

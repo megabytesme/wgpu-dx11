@@ -1024,7 +1024,7 @@ mod tests {
     fn fl9_texture_dimensions_accepts_one_selected_helper() {
         let module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(7) @binding(7) var image: texture_2d<f32>;
             @group(1) @binding(9) var sibling_image: texture_2d<f32>;
             fn dimensions_helper() -> vec2u { return textureDimensions(image); }
             fn unused_helper() -> u32 { return textureNumLevels(sibling_image); }
@@ -1051,7 +1051,7 @@ mod tests {
         assert_eq!(
             proof.binding,
             naga::ResourceBinding {
-                group: 0,
+                group: 7,
                 binding: 7
             }
         );
@@ -1108,6 +1108,14 @@ mod tests {
             fn query() -> vec2u { return textureDimensions(image, 0u); }
             @fragment fn fs() -> @location(0) vec4f {
                 return vec4f(vec2f(query()), 0.0, 1.0);
+            }
+            "#,
+            r#"
+            @group(7) @binding(0) var image: texture_2d<f32>;
+            @group(3) @binding(1) var<uniform> extra: vec4f;
+            fn query() -> vec2u { return textureDimensions(image); }
+            @fragment fn fs() -> @location(0) vec4f {
+                return vec4f(vec2f(query()), extra.x, 1.0);
             }
             "#,
         ] {
@@ -6022,13 +6030,16 @@ fn fl9_texture_dimensions_helper(
     };
     let mut sampler_identity = None;
     for (global, variable) in module.global_variables.iter() {
-        if variable.binding.is_none_or(|binding| binding.group != 0)
-            || global == image_handle
+        let Some(resource_binding) = variable.binding else {
+            continue;
+        };
+        if global == image_handle
             || (entry_info[global].is_empty() && helper_info[global].is_empty())
         {
             continue;
         }
-        if variable.space != naga::AddressSpace::Handle
+        if resource_binding.group != 0
+            || variable.space != naga::AddressSpace::Handle
             || !matches!(
                 module.types[variable.ty].inner,
                 naga::TypeInner::Sampler { comparison: false }
@@ -6041,8 +6052,14 @@ fn fl9_texture_dimensions_helper(
         }
     }
     let image = &module.global_variables[image_handle];
+    let image_dimension = match module.types[image.ty].inner {
+        naga::TypeInner::Image { dim, .. } => dim,
+        _ => return None,
+    };
     if image.space != naga::AddressSpace::Handle
-        || !matches!(image.binding, Some(naga::ResourceBinding { group: 0, .. }))
+        || !image.binding.is_some_and(|binding| {
+            image_dimension == naga::ImageDimension::D2 || binding.group == 0
+        })
         || !matches!(
             module.types[image.ty].inner,
             naga::TypeInner::Image {

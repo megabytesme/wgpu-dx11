@@ -3730,7 +3730,7 @@ mod tests {
     fn fl91_texture_dimensions_through_selected_helper_compiles_with_fxc() {
         let module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(7) @binding(7) var image: texture_2d<f32>;
             @group(1) @binding(9) var sibling_image: texture_2d<f32>;
             fn dimensions_helper() -> vec2u { return textureDimensions(image); }
             fn unused_helper() -> vec2u { return textureDimensions(sibling_image); }
@@ -3751,7 +3751,7 @@ mod tests {
         .validate(&module)
         .unwrap();
         let binding = naga::ResourceBinding {
-            group: 0,
+            group: 7,
             binding: 7,
         };
         let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(

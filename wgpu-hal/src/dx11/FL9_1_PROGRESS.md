@@ -1,3 +1,23 @@
+## Nonzero-group 2D `textureDimensions` helper — 2026-11-11
+
+Core, HAL and Naga now permit the proven query-only helper to reference a 2D
+float texture in any bind group. The helper still takes no arguments,
+contains one direct level-less `textureDimensions` query, returns it directly,
+and is called once by the selected fragment entry. Other used resources are
+rejected. 3D/cube helper restrictions and group-0 sampler requirements remain
+unchanged.
+
+The strict public test rendered through group 7/binding 42, switched the bound
+view from 16x8 to 8x4, and verified all 64 pixels for both draws. Hardware was
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, requested
+and actual FL9_1, `software=false`.
+
+Targeted checks passed: Naga 1/1, Core 1/1, HAL helper/proof tests 4/4, HAL
+FXC compilation 1/1, and strict public GPU rendering 1/1. The HAL unit-test
+build reported four pre-existing unnecessary-qualification warnings in
+`hal_queue.rs`. Full D3D11 suites, DX12 Core regression, Clippy and final diff
+checks remain pending.
+
 ## Query-gated Rg8 fragment `textureLoad` — 2026-11-11
 
 The restricted fragment 2D `textureLoad` path now accepts `Rg8Unorm` as well

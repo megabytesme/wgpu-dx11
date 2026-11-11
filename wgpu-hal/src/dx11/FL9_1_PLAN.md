@@ -1,5 +1,17 @@
 # FL9_1 completion plan
 
+## Recent continuation — nonzero-group 2D `textureDimensions` helper — 2026-11-11
+
+The selected-entry fragment 2D `textureDimensions` helper proof now accepts
+the query texture from any bind group, matching direct 2D queries and the
+shared logical resource map. The helper stays argument-free, straight-line,
+query-only and rejects other used resources. 3D/cube helper queries and
+samplers used with the query remain group-0-restricted. Core, HAL, Naga and
+FXC checks passed; strict public FL9_1 rendering on the RTX 3090 Ti transitioned
+group 7/binding 42 between 16x8 and 8x4 views and matched all 64 pixels.
+Historical driver behavior remains unverified. Exact commands are in
+`TESTING.md` and `FL9_1_PROGRESS.md`.
+
 ## Recent continuation — query-gated R8/RG8 fragment `textureLoad` — 2026-11-11
 
 The narrow 2D fragment `textureLoad` path now permits query-gated `R8Unorm`

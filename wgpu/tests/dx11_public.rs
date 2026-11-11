@@ -34797,6 +34797,11 @@ fn public_dx11_fragment_texture_dimensions_nonzero_group_at_fl91() {
     run_public_dx11_fragment_texture_dimensions_emulation_at_fl91(7, 42, false);
 }
 
+#[test]
+fn public_dx11_fragment_texture_dimensions_helper_nonzero_group_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_emulation_at_fl91(7, 42, true);
+}
+
 fn run_public_dx11_fragment_texture_dimensions_emulation_at_fl91(
     group: u32,
     binding: u32,

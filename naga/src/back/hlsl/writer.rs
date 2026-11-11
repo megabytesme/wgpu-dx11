@@ -521,22 +521,31 @@ fn fl9_texture_dimensions_functions(
         return None;
     };
     let image_global = &module.global_variables[image_handle];
-    if !matches!(
-        image_global.binding,
-        Some(crate::ResourceBinding { group: 0, .. })
-    ) || !matches!(
-        module.types[image_global.ty].inner,
+    let image_group_supported = match module.types[image_global.ty].inner {
         TypeInner::Image {
-            dim: crate::ImageDimension::D2
-                | crate::ImageDimension::D3
-                | crate::ImageDimension::Cube,
-            arrayed: false,
-            class: crate::ImageClass::Sampled {
-                kind: ScalarKind::Float,
-                multi: false
+            dim: crate::ImageDimension::D2,
+            ..
+        } => image_global.binding.is_some(),
+        _ => matches!(
+            image_global.binding,
+            Some(crate::ResourceBinding { group: 0, .. })
+        ),
+    };
+    if !image_group_supported
+        || !matches!(
+            module.types[image_global.ty].inner,
+            TypeInner::Image {
+                dim: crate::ImageDimension::D2
+                    | crate::ImageDimension::D3
+                    | crate::ImageDimension::Cube,
+                arrayed: false,
+                class: crate::ImageClass::Sampled {
+                    kind: ScalarKind::Float,
+                    multi: false
+                }
             }
-        }
-    ) {
+        )
+    {
         return None;
     }
     let dimensions_size = match module.types[image_global.ty].inner {
@@ -8432,7 +8441,7 @@ mod fl9_viewport_tests {
     #[test]
     fn fl9_texture_dimensions_emits_only_the_selected_query_helper() {
         let texture_binding = crate::ResourceBinding {
-            group: 0,
+            group: 7,
             binding: 7,
         };
         let sibling_binding = crate::ResourceBinding {
@@ -8440,7 +8449,7 @@ mod fl9_viewport_tests {
             binding: 2,
         };
         let source = r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(7) @binding(7) var image: texture_2d<f32>;
             @group(1) @binding(2) var sibling_image: texture_2d<f32>;
             fn query_dimensions() -> vec2u { return textureDimensions(image); }
             fn unused_query() -> vec2u { return textureDimensions(sibling_image); }
@@ -8479,7 +8488,7 @@ mod fl9_viewport_tests {
         assert!(!output.contains("register(t1)"), "{output}");
 
         let direct = r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(7) @binding(7) var image: texture_2d<f32>;
             @group(1) @binding(2) var sibling_image: texture_2d<f32>;
             fn unused_query() -> vec2u { return textureDimensions(sibling_image); }
             @fragment fn main() -> @location(0) vec4f {
