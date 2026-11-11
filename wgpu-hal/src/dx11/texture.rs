@@ -1506,6 +1506,8 @@ impl NativeDevice {
         let sampled_mip_shape = layers == 1 && mip_levels > 1 && sample_count == 1;
         let packed_sampled_mip_chain = sampled_mip_shape
             && match format {
+                DXGI_FORMAT_B5G6R5_UNORM => super::capabilities::Capabilities::query(self)
+                    .packed_16bit_mip_chains_supported(wgt::TextureFormat::Rgb5g6b5Unorm),
                 DXGI_FORMAT_B5G5R5A1_UNORM => super::capabilities::Capabilities::query(self)
                     .packed_16bit_mip_chains_supported(wgt::TextureFormat::Rgb5a1Unorm),
                 DXGI_FORMAT_B4G4R4A4_UNORM => super::capabilities::Capabilities::query(self)
@@ -1519,6 +1521,7 @@ impl NativeDevice {
                     | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
                     | DXGI_FORMAT_R16G16_SNORM
+                    | DXGI_FORMAT_B5G6R5_UNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
             ) || packed_sampled_mip_chain);
         let uncompressed_sampled = matches!(

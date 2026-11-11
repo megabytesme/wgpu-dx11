@@ -419,7 +419,9 @@ impl crate::Device for Device {
                                 && capabilities.rg16_snorm_mip_chains_supported())
                             || (matches!(
                                 desc.format,
-                                wgt::TextureFormat::Rgb5a1Unorm | wgt::TextureFormat::Rgba4Unorm
+                                wgt::TextureFormat::Rgb5g6b5Unorm
+                                    | wgt::TextureFormat::Rgb5a1Unorm
+                                    | wgt::TextureFormat::Rgba4Unorm
                             ) && capabilities
                                 .packed_16bit_mip_chains_supported(desc.format))
                             || (desc.format == wgt::TextureFormat::Rgba8Snorm

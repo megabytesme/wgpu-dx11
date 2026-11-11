@@ -1,3 +1,13 @@
+## RGB565 query-gated sampled mip chains — 2026-11-11
+
+RGB565 now follows the existing packed-format mip path: Core capability
+projection, HAL validation and native texture construction require both the
+backend path and the selected device's positive `TEXTURE2D | MIP` query. The
+RTX 3090 Ti reports `0x0026F3A0` at requested and actual FL9_1. Strict public
+coverage samples mip 1 using implicit derivatives and verifies the raw packed
+word and readback sentinels. This is query-selected evidence for this driver;
+historical FL9_1 behavior remains unverified.
+
 ## RGB5A1/RGBA4 ordered texture-to-buffer readback — 2026-11-11
 
 The selected-device format query and existing same-format GPU `COPY_SRC`
@@ -286,9 +296,10 @@ the creating thread. CoreWindow runtime behavior remains unverified. The
 backend exposes the native-only `TEXTURE_FORMAT_16BIT_NORM` feature only when
 a selected-device query reports
 the required 2D format support. The native-only `TEXTURE_FORMAT_16BIT_PACKED`
-feature covers query-backed single-mip RGB565, RGB5A1 and RGBA4 sampled
-uploads. RGB565 additionally has queried render-target and copy/readback
-support; RGB5A1 and RGBA4 additionally have query-gated same-format GPU
+feature covers query-backed RGB565, RGB5A1 and RGBA4 sampled uploads and
+sampled mip chains when each selected query also reports `MIP`. RGB565
+additionally has queried render-target and copy/readback support; RGB5A1 and
+RGBA4 additionally have query-gated same-format GPU
 texture copies and ordered CPU-shadow texture-to-buffer readback, but no
 render-target support.
 R8_UNORM and R8G8_UNORM

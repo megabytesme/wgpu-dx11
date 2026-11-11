@@ -1039,23 +1039,24 @@ cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,w
 ```
 
 The packed sampled/upload path supports 2D `TEXTURE_BINDING | COPY_DST`
-resources. RGB5A1 and RGBA4 additionally permit sampled/upload mip chains when
-their selected-device query reports `TEXTURE2D | MIP`, plus same-format GPU
-texture-to-texture copies when the query reports `TEXTURE2D`; neither path
-queries or binds `RENDER_TARGET`. Packed texture-to-buffer readback remains
-separately gated and uses an ordered CPU shadow. The query-gated B5G6R5 target path
-may combine `TEXTURE_BINDING`, `COPY_DST` and `RENDER_ATTACHMENT` as supported
-by the private predicate; it still has no copy-source or direct-readback path.
-RGB565 remains single-mip-only. RGB5A1 and RGBA4 add sampled/upload mip chains
-only when the selected-device query includes `MIP`. The strict GPU test verifies
+resources. RGB565, RGB5A1 and RGBA4 additionally permit sampled/upload mip
+chains when their selected-device query reports `TEXTURE2D | MIP`. RGB5A1 and
+RGBA4 permit same-format GPU texture-to-texture copies when their query reports
+`TEXTURE2D`; their texture-to-buffer readback uses a separate ordered CPU
+shadow. RGB565 copy-source and texture-to-buffer paths require the queried
+render-target support. RGB565 may combine `TEXTURE_BINDING`, `COPY_DST` and
+`RENDER_ATTACHMENT` when the private predicate permits it.
+The strict GPU test verifies
 a partial 2×2 copy at destination origin (1, 1) for RGB5A1 and RGBA4, samples
 each result into RGBA8, and checks copied colors plus unchanged white border
 texels. When the selected packed-format query includes `MIP`, the same test
 also creates a four-level texture, uploads mip 1, copies a partial region,
 checks padded raw-word readback and samples a single-mip view. On the tested
-RTX 3090 Ti forced to FL9_1, both RGB5A1 and RGBA4 reported query mask
-`0x000213A0`; all sample pixels, raw words, preserved texels, row padding and
-sentinels matched. This does not establish behavior on historical FL9_1 GPUs.
+RTX 3090 Ti forced to FL9_1, RGB565 reported query mask `0x0026F3A0`, while
+RGB5A1 and RGBA4 reported `0x000213A0`; the RGB565 test sampled its uploaded
+mip 1 through implicit derivatives and verified the packed green word, and all
+sample pixels, raw words, preserved texels, row padding and sentinels matched.
+This does not establish behavior on historical FL9_1 GPUs.
 
 The same strict test now reads both packed textures back into a buffer. It
 checks the source words and destination words after the partial GPU copy,

@@ -1,6 +1,6 @@
 # FL9_1 completion plan
 
-## Latest continuation — helper-contained sample-bias offset — 2026-11-11
+## Recent continuation — helper-contained sample-bias offset — 2026-11-11
 
 The bounded fragment `textureSampleBias` constant-offset path now accepts one
 coordinate-forwarding helper in addition to its direct-entry form. Core, HAL
@@ -13,16 +13,20 @@ for each of the two tested view shapes. Exact commands and results are in
 
 ## Latest current state — 2026-11-11
 
-RGB5A1 and RGBA4 now also have query-gated sampled/upload mip chains. The
+RGB565, RGB5A1 and RGBA4 now have query-gated sampled/upload mip chains. The
 selected device must report `TEXTURE2D | MIP`, and the native constructor and
-capability projection use the same backend gate. Strict forced-FL9_1 tests
-uploaded mip 1, copied a partial region, checked padded raw-shadow readback and
-sampled a single-mip view for both formats. The RTX query was `0x000213A0` for
-each; historical drivers remain unverified. The final strict private HAL suite
+capability projection use the same per-format backend gate. The RTX query was
+`0x0026F3A0` for B5G6R5 and `0x000213A0` for B5G5R5A1/B4G4R4A4 at requested
+and actual FL9_1. Strict public coverage samples the uploaded RGB565 mip 1
+through implicit derivatives and verifies its packed word and row sentinels;
+RGB5A1/RGBA4 tests upload mip 1, copy a partial region, check padded
+raw-shadow readback and sample a single-mip view. Historical drivers remain
+unverified. The final strict private HAL suite
 passed 508/508 and the public D3D11 target passed 131/131 on the RTX 3090 Ti;
 the public default-enumeration isolation test passed 1/1. The initial full
-public run exposed a stale assertion that expected RGB5A1/RGBA4 to remain
-single-mip-only; it was corrected while retaining that restriction for RGB565.
+public run exposed stale assertions that expected the newly query-gated packed
+formats to remain single-mip-only; they were corrected while retaining
+single-mip reporting when a device query or backend path lacks mip support.
 
 RGB5A1 and RGBA4 texture-to-buffer readback now uses a separately gated,
 execution-ordered CPU shadow after the selected `TEXTURE2D` query and GPU

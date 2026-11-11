@@ -757,6 +757,7 @@ impl Capabilities {
 
     pub fn packed_16bit_mip_chains_supported(&self, format: wgt::TextureFormat) -> bool {
         let query = match format {
+            wgt::TextureFormat::Rgb5g6b5Unorm => self.driver.rgb565_unorm,
             wgt::TextureFormat::Rgb5a1Unorm => self.driver.rgb5551_unorm,
             wgt::TextureFormat::Rgba4Unorm => self.driver.rgba4444_unorm,
             _ => return false,
@@ -1333,9 +1334,9 @@ impl Capabilities {
                 self.hardware.rgba8_snorm_mipmapped_texture && self.backend.rgba8_snorm_sampled_mips
             }
             wgt::TextureFormat::Rg16Snorm => self.rg16_snorm_mip_chains_supported(),
-            wgt::TextureFormat::Rgb5a1Unorm | wgt::TextureFormat::Rgba4Unorm => {
-                self.packed_16bit_mip_chains_supported(format)
-            }
+            wgt::TextureFormat::Rgb5g6b5Unorm
+            | wgt::TextureFormat::Rgb5a1Unorm
+            | wgt::TextureFormat::Rgba4Unorm => self.packed_16bit_mip_chains_supported(format),
             _ => false,
         };
         let allowed = wgt::TextureUses::COPY_SRC
@@ -1809,7 +1810,9 @@ impl Capabilities {
                     wgt::TextureFormat::Rg8Unorm => self.rg8_unorm_mip_chains_supported(),
                     wgt::TextureFormat::Rg8Snorm => self.rg8_snorm_mip_chains_supported(),
                     wgt::TextureFormat::Rg16Snorm => self.rg16_snorm_mip_chains_supported(),
-                    wgt::TextureFormat::Rgb5a1Unorm | wgt::TextureFormat::Rgba4Unorm => {
+                    wgt::TextureFormat::Rgb5g6b5Unorm
+                    | wgt::TextureFormat::Rgb5a1Unorm
+                    | wgt::TextureFormat::Rgba4Unorm => {
                         self.packed_16bit_mip_chains_supported(format)
                     }
                     wgt::TextureFormat::Rgba8Snorm => self.rgba8_snorm_mip_chains_supported(),
@@ -3753,6 +3756,7 @@ mod tests {
         let mip = D3D11_FORMAT_SUPPORT_MIP.0 as u32;
 
         for format in [
+            wgt::TextureFormat::Rgb5g6b5Unorm,
             wgt::TextureFormat::Rgb5a1Unorm,
             wgt::TextureFormat::Rgba4Unorm,
         ] {
@@ -3795,24 +3799,6 @@ mod tests {
                 Err(UnsupportedShape)
             );
         }
-
-        set_packed_format_query(
-            &mut caps,
-            wgt::TextureFormat::Rgb5g6b5Unorm,
-            Query::Value(texture2d | mip),
-        );
-        assert!(!caps.packed_16bit_mip_chains_supported(wgt::TextureFormat::Rgb5g6b5Unorm));
-        assert_eq!(
-            caps.check_private_texture_2d(
-                wgt::TextureFormat::Rgb5g6b5Unorm,
-                usage,
-                [8, 8],
-                1,
-                2,
-                1
-            ),
-            Err(UnsupportedShape)
-        );
     }
 
     #[test]
@@ -6136,8 +6122,8 @@ mod tests {
                 | FormatCaps::SAMPLED_LINEAR
                 | FormatCaps::COPY_DST
                 | FormatCaps::COLOR_ATTACHMENT
-                | FormatCaps::SINGLE_MIP_ONLY
         ));
+        assert!(!projected.contains(FormatCaps::SINGLE_MIP_ONLY));
         assert!(projected.contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
         assert!(projected.contains(FormatCaps::COPY_SRC));
         assert_eq!(

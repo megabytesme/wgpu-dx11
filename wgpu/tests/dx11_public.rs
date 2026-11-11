@@ -13637,12 +13637,6 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
         assert!(capabilities
             .flags
             .contains(TextureFormatFeatureFlags::FILTERABLE));
-        assert_eq!(
-            capabilities
-                .flags
-                .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY),
-            format == TextureFormat::Rgb5g6b5Unorm
-        );
         assert!(capabilities
             .allowed_usages
             .contains(TextureUsages::COPY_SRC));
@@ -13654,6 +13648,9 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
         );
         capabilities
     });
+    let rgb565_has_mip_chain = !format_capabilities[0]
+        .flags
+        .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY);
     let available_features = adapter.features();
     assert!(available_features.contains(Features::TEXTURE_FORMAT_16BIT_PACKED));
     println!(
@@ -13703,6 +13700,15 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
             ],
         ),
     ] {
+        let sample_mip_one = format == TextureFormat::Rgb5g6b5Unorm && rgb565_has_mip_chain;
+        let mip_level_count = if sample_mip_one { 2 } else { 1 };
+        let texture_usage = TextureUsages::TEXTURE_BINDING
+            | TextureUsages::COPY_DST
+            | if sample_mip_one {
+                TextureUsages::COPY_SRC
+            } else {
+                TextureUsages::empty()
+            };
         let texture = device.create_texture(&TextureDescriptor {
             label: Some("FL9_1 B5G6R5 sampled texture"),
             size: Extent3d {
@@ -13710,11 +13716,11 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
                 height: 2,
                 depth_or_array_layers: 1,
             },
-            mip_level_count: 1,
+            mip_level_count,
             sample_count: 1,
             dimension: TextureDimension::D2,
             format,
-            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            usage: texture_usage,
             view_formats: &[],
         });
         let mut upload = vec![0; 2 * 256];
@@ -13743,6 +13749,30 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
                 depth_or_array_layers: 1,
             },
         );
+        let mip_one_texel = 0x07E0u16;
+        if sample_mip_one {
+            let mut mip_upload = vec![0; 256];
+            mip_upload[..2].copy_from_slice(&mip_one_texel.to_le_bytes());
+            queue.write_texture(
+                TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 1,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                &mip_upload,
+                TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(1),
+                },
+                Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         let image_view = texture.create_view(&TextureViewDescriptor::default());
         let sampler = device.create_sampler(&SamplerDescriptor {
             mag_filter: FilterMode::Nearest,
@@ -13785,17 +13815,16 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
                 },
             ],
         });
-        let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("RGB565 sampled-upload shader"),
-        source: ShaderSource::Wgsl(
+        let shader_source =
             "struct VOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }\n\
              @group(0) @binding(7) var image: texture_2d<f32>;\n\
              @group(0) @binding(42) var image_sampler: sampler;\n\
              @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VOut { var out: VOut; out.position = vec4f(position, 0.5, 1.0); out.uv = uv; return out; }\n\
-             @fragment fn fs(input: VOut) -> @location(0) vec4f { return textureSample(image, image_sampler, input.uv); }"
-                .into(),
-        ),
-    });
+             @fragment fn fs(input: VOut) -> @location(0) vec4f { return textureSample(image, image_sampler, input.uv); }";
+        let shader = device.create_shader_module(ShaderModuleDescriptor {
+            label: Some("RGB565 sampled-upload shader"),
+            source: ShaderSource::Wgsl(shader_source.into()),
+        });
         let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("RGB565 sampled-upload pipeline layout"),
             bind_group_layouts: &[Some(&layout)],
@@ -13860,8 +13889,9 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
             view_formats: &[],
         });
         let target_view = target.create_view(&TextureViewDescriptor::default());
+        let uv_span = if sample_mip_one { 16.0 } else { 2.0 };
         let vertices: Vec<u8> = [
-            -1.0f32, -1.0, 0.0, 1.0, 3.0, -1.0, 2.0, 1.0, -1.0, 3.0, 0.0, -1.0,
+            -1.0f32, -1.0, 0.0, 1.0, 3.0, -1.0, uv_span, 1.0, -1.0, 3.0, 0.0, -1.0,
         ]
         .into_iter()
         .flat_map(f32::to_ne_bytes)
@@ -13880,10 +13910,17 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
         vertex_buffer.unmap();
         let readback = device.create_buffer(&BufferDescriptor {
             label: Some("RGB565 sampled-upload readback"),
-            size: 8 * 256,
+            size: 9 * 256,
             usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
-            mapped_at_creation: false,
+            mapped_at_creation: true,
         });
+        let sentinel = vec![0xA5; 9 * 256];
+        readback
+            .slice(..)
+            .get_mapped_range_mut()
+            .expect("mapped readback buffer")
+            .copy_from_slice(&sentinel);
+        readback.unmap();
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
             label: Some("RGB565 sampled-upload encoder"),
         });
@@ -13930,6 +13967,29 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
                 depth_or_array_layers: 1,
             },
         );
+        if sample_mip_one {
+            encoder.copy_texture_to_buffer(
+                TexelCopyTextureInfo {
+                    texture: &texture,
+                    mip_level: 1,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyBufferInfo {
+                    buffer: &readback,
+                    layout: TexelCopyBufferLayout {
+                        offset: (8 * 256) as u64,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(1),
+                    },
+                },
+                Extent3d {
+                    width: 1,
+                    height: 1,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
         let submission = queue.submit([encoder.finish()]);
         let (sender, receiver) = std::sync::mpsc::channel();
         readback
@@ -13950,7 +14010,11 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
             for y in 0..8 {
                 for x in 0..8 {
                     let quad = usize::from(x >= 4) + 2 * usize::from(y >= 4);
-                    let expected = expected_colors[quad];
+                    let expected = if sample_mip_one {
+                        [0, 255, 0, 255]
+                    } else {
+                        expected_colors[quad]
+                    };
                     let offset = y * 256 + x * 4;
                     assert_eq!(
                         &data[offset..offset + 4],
@@ -13959,10 +14023,19 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
                     );
                 }
             }
+            if sample_mip_one {
+                assert_eq!(
+                    &data[8 * 256..8 * 256 + 2],
+                    &mip_one_texel.to_le_bytes(),
+                    "RGB565 mip 1 raw readback"
+                );
+                assert!(data[8 * 256 + 2..9 * 256].iter().all(|byte| *byte == 0xA5));
+            }
         }
         readback.unmap();
         println!(
-            "PASS: FL9_1 {format_name} padded upload, native SRV sampling and RGBA8 readback; all 64 pixels matched expected color and alpha quadrants"
+            "PASS: FL9_1 {format_name} padded upload, native SRV sampling and RGBA8 readback; mip-1 sampled={}, all 64 pixels matched expected output",
+            sample_mip_one
         );
     }
 }

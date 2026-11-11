@@ -17041,3 +17041,21 @@ Verification used Rust 1.93.1, MSVC and bounded `-j4` Cargo jobs:
 - Naga Clippy and Core Clippy passed. HAL and public-target Clippy passed with existing warnings in unrelated D3D11 queue, transfer, index and texture code; no warning points at the new helper proof. `cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed.
 
 The Visual Studio developer shell continues to print `vError: Unknown error` in its banner while successfully exposing MSVC `link.exe`; all listed Cargo commands completed. The bounded helper subset is an extension of the existing private FL9_1 feature, not a broader sample-offset capability.
+
+
+## Query-gated RGB565 sampled mip chains — 2026-11-11
+
+The packed 16-bit mip path now handles RGB565 alongside RGB5A1 and RGBA4. The selected device must report `TEXTURE2D | MIP`, and the existing backend implementation gate must be enabled. Core's per-format feature projection, HAL descriptor validation and native texture creation all use that same predicate. Devices without a positive query or enabled backend support retain `SINGLE_MIP_ONLY`.
+
+The RTX 3090 Ti reports B5G6R5 format support `0x0026F3A0` at requested and actual FL9_1. The strict public test uploads a red 2x2 RGB565 base mip and a green 1x1 second mip, then renders with `textureSample` and a UV footprint large enough to select mip 1 by implicit derivatives. All 64 output pixels were green. It separately copied mip 1 into a padded readback region and checked the packed green word and every padding/sentinel byte. RGB5A1 and RGBA4 retain their separate selected query behavior and mip tests.
+
+Verification with Rust 1.93.1, MSVC and bounded `-j4` Cargo jobs:
+
+- Focused private packed-mip capability test: 1/1 passed across synthetic positive, missing-bit, unavailable-query and backend-disabled cases for RGB565, RGB5A1 and RGBA4.
+- Strict private D3D11 HAL suite: 508/508 passed on the physical RTX 3090 Ti. An initial rerun found the RGB565 color-attachment fixture still expected `SINGLE_MIP_ONLY` despite its synthetic query containing MIP; the fixture now asserts the correct query-derived result, and the full rerun passed.
+- Strict public D3D11 suite: 131/131 passed on the physical RTX 3090 Ti. The focused RGB565 packed-format test passed after the final test cleanup; RGB565 mip 1 was selected and all 64 pixels matched.
+- Public default D3D11 enumeration isolation test: 1/1 passed; DX11 remains opt-in.
+- Core DX11: 128/128 passed. Core DX12 regression: 127/127 passed.
+- HAL Clippy and public-target Clippy passed. Existing HAL warnings are confined to older index, transfer and texture code; the new public test has no Clippy warning. `cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed.
+
+This verifies the query-enabled path on the selected modern NVIDIA driver under forced FL9_1, not the behavior of historical FL9_1 hardware. The format's mip path is sampled/upload and selected readback; no new mip generation or broad packed-format exposure is introduced.
