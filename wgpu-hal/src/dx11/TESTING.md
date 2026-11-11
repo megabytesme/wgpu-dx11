@@ -167,6 +167,26 @@ does not reproduce this negative-query case; the complete strict public suite
 passed with its existing selected-device formats and reported no change to
 the RTX projection.
 
+## Strict public format and view projection matrix
+
+The strict public test compares selected-device format usage reports with
+Core/HAL texture and view creation. It checks all 15 nonempty combinations of
+copy-source, copy-destination, sampled and render-attachment usage across 21
+formats, then creates canonical D2 views for each advertised sampled,
+attachment and combined view usage. It also checks transient usage, one mip
+contract per format, and 2x/4x/8x/16x attachment sample-count contracts.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_format_usage_projection_matches_core_creation_at_fl91 -- --nocapture --test-threads=1
+```
+
+The RTX 3090 Ti at requested/actual FL9_1 passed 197 advertised usage
+combinations, 128 unreported-usage rejections, 197 view-usage checks, 21 mip
+contracts and 40 sample-count contracts. Separate strict tests execute actual
+operations for query-advertised format families; view creation alone is not
+counted as proof of rendering or transfer execution.
+
 ## Multisample blending with a partial write mask
 
 The strict public GPU test queries RGBA8 blendability and each supported

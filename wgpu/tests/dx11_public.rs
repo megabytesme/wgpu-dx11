@@ -37497,10 +37497,15 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
     let mut exposed_formats = 0usize;
     let mut accepted_usage_combinations = 0usize;
     let mut validation_rejections = 0usize;
+    let mut view_checks = 0usize;
     let mut mip_checks = 0usize;
     let mut sample_count_checks = 0usize;
 
-    let create_texture = |format, usage, mip_level_count, sample_count| {
+    let create_texture = |format: TextureFormat,
+                          usage: TextureUsages,
+                          mip_level_count: u32,
+                          sample_count: u32,
+                          view_usages: [Option<TextureUsages>; 3]| {
         let internal_scope = device.push_error_scope(ErrorFilter::Internal);
         let validation_scope = device.push_error_scope(ErrorFilter::Validation);
         let texture = device.create_texture(&TextureDescriptor {
@@ -37517,6 +37522,18 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
             usage,
             view_formats: &[],
         });
+        let views: Vec<_> = view_usages
+            .into_iter()
+            .flatten()
+            .map(|usage| {
+                texture.create_view(&TextureViewDescriptor {
+                    dimension: Some(TextureViewDimension::D2),
+                    usage: Some(usage),
+                    ..Default::default()
+                })
+            })
+            .collect();
+        drop(views);
         drop(texture);
         let validation = poll_ready(validation_scope.pop());
         let internal = poll_ready(internal_scope.pop());
@@ -37546,7 +37563,16 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
                 .filter(|(index, _)| mask & (1 << index) != 0)
                 .fold(TextureUsages::empty(), |usage, (_, bit)| usage | *bit);
             let reported = allowed.contains(usage);
-            let (validation, internal) = create_texture(format, usage, 1, 1);
+            let viewable_usage = usage
+                & allowed
+                & (TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT);
+            let view_usages = [
+                TextureUsages::TEXTURE_BINDING,
+                TextureUsages::RENDER_ATTACHMENT,
+                TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT,
+            ]
+            .map(|candidate| (reported && viewable_usage.contains(candidate)).then_some(candidate));
+            let (validation, internal) = create_texture(format, usage, 1, 1, view_usages);
             assert!(
                 internal.is_none(),
                 "{format:?} usage {usage:?} reached an internal HAL/device error: {internal:?}"
@@ -37557,6 +37583,7 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
                     "adapter reported {format:?} usage {usage:?}, but Core rejected creation: {validation:?}"
                 );
                 accepted_usage_combinations += 1;
+                view_checks += view_usages.iter().flatten().count();
             } else {
                 assert!(
                     matches!(validation, Some(Error::Validation { .. })),
@@ -37569,7 +37596,7 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
         if allowed.contains(TextureUsages::RENDER_ATTACHMENT) {
             let transient_usage =
                 TextureUsages::RENDER_ATTACHMENT | TextureUsages::TRANSIENT_ATTACHMENT;
-            let (validation, internal) = create_texture(format, transient_usage, 1, 1);
+            let (validation, internal) = create_texture(format, transient_usage, 1, 1, [None; 3]);
             assert!(
                 internal.is_none(),
                 "{format:?} transient attachment reached an internal error: {internal:?}"
@@ -37595,7 +37622,7 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
             let single_mip_only = features
                 .flags
                 .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY);
-            let (validation, internal) = create_texture(format, usage, 2, 1);
+            let (validation, internal) = create_texture(format, usage, 2, 1, [None; 3]);
             assert!(
                 internal.is_none(),
                 "{format:?} two-mip usage {usage:?} reached an internal error: {internal:?}"
@@ -37631,8 +37658,13 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
                         .contains(TextureFormatFeatureFlags::MULTISAMPLE_X16),
                     _ => unreachable!(),
                 };
-                let (validation, internal) =
-                    create_texture(format, TextureUsages::RENDER_ATTACHMENT, 1, sample_count);
+                let (validation, internal) = create_texture(
+                    format,
+                    TextureUsages::RENDER_ATTACHMENT,
+                    1,
+                    sample_count,
+                    [None; 3],
+                );
                 assert!(
                     internal.is_none(),
                     "{format:?} sample_count={sample_count} reached an internal error: {internal:?}"
@@ -37659,10 +37691,11 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
     );
     assert!(accepted_usage_combinations > 0);
     assert!(validation_rejections > 0);
+    assert!(view_checks > 0);
     assert!(mip_checks > 0);
     assert!(sample_count_checks > 0);
     println!(
-        "PASS: checked {exposed_formats} projected formats, {accepted_usage_combinations} advertised usage combinations, {validation_rejections} unreported usage rejections, {mip_checks} mip contracts and {sample_count_checks} sample-count contracts through Core on the selected physical FL9_1 device"
+        "PASS: checked {exposed_formats} projected formats, {accepted_usage_combinations} advertised usage combinations, {validation_rejections} unreported usage rejections, {view_checks} canonical D2 view usages, {mip_checks} mip contracts and {sample_count_checks} sample-count contracts through Core on the selected physical FL9_1 device"
     );
 }
 

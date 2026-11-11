@@ -823,12 +823,13 @@ Verification:
 - Targeted `cargo +1.93 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public` passed. Existing HAL warnings remain for argument counts and one boolean expression; no new warning was reported for this test.
 
 The independent Core/HAL projection audit confirmed that the 21-format table
-currently verifies 189 advertised usage combinations, 136 rejected
-combinations, 21 mip rules and 40 sample-count rules through creation only.
-It did not find a confirmed execution mismatch in the inspected transfer,
-attachment or resolve paths. The next task is a compact public operation matrix
-for a few combined usages, beginning with RGBA8/BGRA8, so advertised
-capabilities are exercised rather than only instantiated.
+now verifies 197 advertised usage combinations, 128 rejected combinations,
+197 canonical view usages, 21 mip rules and 40 sample-count rules. It did not
+find a confirmed execution mismatch in the inspected transfer, attachment or
+resolve paths. Seven common color formats have separate
+upload/copy/readback/sample/attachment execution coverage; SNORM, BC, packed
+and depth paths are covered by dedicated tests. Further work should target
+concrete workload gaps rather than duplicate the format-creation matrix.
 
 The panic reachability review found no valid public path to the current
 compute, pipeline-cache, ray-tracing or acceleration-structure panic stubs;
@@ -16648,3 +16649,26 @@ cmd.exe /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\
 ```
 
 Checkpoint: `65c423bdf63e14f1249275a8f1604d1b42e75004` (`dx11: record public FL9_1 HWND example run`).
+
+## Public texture-view projection matrix — 2026-11-11
+
+Extended `public_dx11_format_usage_projection_matches_core_creation_at_fl91`
+to create canonical D2 views for each advertised sampled, render-attachment,
+and combined sampled/attachment usage subset. Texture and view creation are
+both checked through Core validation and HAL internal error scopes, including
+the advertised depth formats' default aspect behavior.
+
+The strict test passed on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, software=false) at requested/actual FL9_1. It checked 21
+formats, 197 advertised texture-usage combinations, 128 unreported usage
+rejections, 197 canonical view usages, 21 mip contracts, and 40 sample-count
+contracts. An initial compile exposed only closure-parameter type inference in
+the test; explicit types fixed it. Rustfmt, the targeted strict test and
+targeted Clippy passed. Clippy emitted six existing HAL warnings in
+`hal_index.rs`, `hal_transfer.rs` and `texture.rs`.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_format_usage_projection_matches_core_creation_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 clippy --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+```

@@ -24,6 +24,11 @@ three textured, indexed, depth-tested frames through an HWND surface. This
 adds desktop-example execution evidence, not historical-driver or Lumia
 CoreWindow evidence.
 
+The public format projection test also creates canonical D2 views for every
+advertised sampled, render-attachment, and combined view-usage subset across
+the 21-format matrix. The RTX passed all 197 view-usage checks without Core
+validation or HAL internal errors.
+
 ## Previous checkpoint — 2026-11-11
 
 RGBA8_SNORM now has ordered raw-byte texture-to-buffer readback through the
