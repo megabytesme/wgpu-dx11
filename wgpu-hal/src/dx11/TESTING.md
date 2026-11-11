@@ -4640,3 +4640,22 @@ draws the three complete indices and verifies all 64 output pixels. A four-
 index draw is rejected by Core when its command encoder is finished. The
 range start must still be aligned, and the slice must stay within its backing
 allocation.
+
+### Direct vertex-indexed float-vector reads
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 dx11::shader::tests::fl91_naga_vertex_index_compare_select_fxc_probe -- --exact --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+The FXC probe compiles the static compare/select lowering for `vec2f`, `vec3f`
+and `vec4f` at `vs_4_0_level_9_1`; it also checks that the out-of-range
+fallback selects the final component, matching Naga's restricted-index
+behavior. The public test selects the RTX 3090 Ti at requested/actual FL9_1,
+renders both the existing local-array triangle and the new direct
+vertex-indexed float-vector triangle, and verifies 64/64 white pixels for each.
+Core rejects helper-forwarded, computed and write forms. This is a narrow
+shader subset, not evidence that every FL9_1 compiler or historical device
+supports the same behavior.

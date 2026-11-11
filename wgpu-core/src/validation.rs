@@ -307,6 +307,7 @@ struct EntryPoint {
     frexp_fraction_only_runtime_integer_semantics: bool,
     unsupported_runtime_integer_indexing: bool,
     vertex_index_local_array_indexing_used: bool,
+    vertex_index_vector_indexing_used: bool,
     matrix_inverse_used: bool,
     unsupported_matrix_inverse_2x2: bool,
     matrix_outer_product_used: bool,
@@ -507,6 +508,7 @@ fn function_uses_unsupported_runtime_integer_indexing(
     function: &naga::Function,
     function_info: &naga::valid::FunctionInfo,
     allowed_local_access: Option<naga::Handle<naga::Expression>>,
+    allowed_vector_indexing: bool,
     budget: &mut usize,
 ) -> bool {
     let Some(remaining) = budget.checked_sub(function.expressions.len()) else {
@@ -521,6 +523,8 @@ fn function_uses_unsupported_runtime_integer_indexing(
         Some(handle) != allowed_local_access
             && function_info[handle].ref_count != 0
             && !kinds.is_const(index)
+            && !(allowed_vector_indexing
+                && dynamic_access_base_is_float_vector(module, function_info, base))
             && dynamic_access_base_is_unsupported_composite(module, function_info, base)
             && dynamic_access_has_uniform_origin_bounded(
                 module,
@@ -530,6 +534,39 @@ fn function_uses_unsupported_runtime_integer_indexing(
                 budget,
             ) != Some(true)
     })
+}
+
+fn dynamic_access_base_is_float_vector(
+    module: &naga::Module,
+    function_info: &naga::valid::FunctionInfo,
+    base: naga::Handle<naga::Expression>,
+) -> bool {
+    let is_float_vector = |inner: &naga::TypeInner| {
+        matches!(
+            inner,
+            naga::TypeInner::Vector {
+                scalar: naga::Scalar {
+                    kind: naga::ScalarKind::Float,
+                    width: 4,
+                },
+                ..
+            }
+        )
+    };
+    match function_info[base].ty.inner_with(&module.types) {
+        inner if is_float_vector(inner) => true,
+        naga::TypeInner::Pointer { base, .. } => is_float_vector(&module.types[*base].inner),
+        naga::TypeInner::ValuePointer {
+            size: Some(_),
+            scalar:
+                naga::Scalar {
+                    kind: naga::ScalarKind::Float,
+                    width: 4,
+                },
+            ..
+        } => true,
+        _ => false,
+    }
 }
 
 fn dynamic_access_base_is_unsupported_composite(
@@ -648,6 +685,72 @@ fn supported_vertex_index_local_array_access(
     candidate
 }
 
+fn supported_vertex_index_vector_indexing(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+    function_info: &naga::valid::FunctionInfo,
+) -> bool {
+    if entry_point.stage != naga::ShaderStage::Vertex
+        || !block_is_straight_line_read_only(&entry_point.function.body)
+    {
+        return false;
+    }
+
+    let function = &entry_point.function;
+    let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+    let mut found = false;
+    let mut count = 0usize;
+    for (handle, expression) in function.expressions.iter() {
+        let naga::Expression::Access { base, index } = *expression else {
+            continue;
+        };
+        if !dynamic_access_base_is_float_vector(module, function_info, base)
+            || function_info[handle].ref_count == 0
+            || kinds.is_const(index)
+        {
+            continue;
+        }
+
+        found = true;
+        count += 1;
+        if count > 16
+            || !expression_is_supported_vertex_index_argument(module, function, index)
+            || block_uses_dynamic_access_as_pointer(
+                module,
+                function,
+                function_info,
+                &function.body,
+                handle,
+            )
+        {
+            return false;
+        }
+
+        let load_count = function
+            .expressions
+            .iter()
+            .filter(|(_, expression)| {
+                matches!(
+                    expression,
+                    naga::Expression::Load { pointer }
+                        if pointer_path_contains(function, *pointer, handle)
+                )
+            })
+            .count();
+        let access_is_value = matches!(
+            function_info[handle].ty.inner_with(&module.types),
+            naga::TypeInner::Scalar(naga::Scalar {
+                kind: naga::ScalarKind::Float,
+                width: 4,
+            })
+        );
+        if (access_is_value && load_count != 0) || (!access_is_value && load_count != 1) {
+            return false;
+        }
+    }
+    found
+}
+
 fn dynamic_access_has_uniform_origin_bounded(
     module: &naga::Module,
     function: &naga::Function,
@@ -719,22 +822,25 @@ fn entry_point_uses_unsupported_runtime_integer_indexing(
     module_info: &naga::valid::ModuleInfo,
     entry_point: &naga::EntryPoint,
     entry_point_info: &naga::valid::FunctionInfo,
-) -> (bool, bool) {
+) -> (bool, bool, bool) {
     let allowed_local_access =
         supported_vertex_index_local_array_access(module, entry_point, entry_point_info);
+    let allowed_vector_indexing =
+        supported_vertex_index_vector_indexing(module, entry_point, entry_point_info);
     let mut budget = 65_536;
     if function_uses_unsupported_runtime_integer_indexing(
         module,
         &entry_point.function,
         entry_point_info,
         allowed_local_access,
+        allowed_vector_indexing,
         &mut budget,
     ) {
-        return (true, false);
+        return (true, false, false);
     }
     let mut pending = Vec::new();
     if !collect_called_functions_bounded(&entry_point.function.body, &mut pending, &mut budget) {
-        return (true, false);
+        return (true, false, false);
     }
     let mut visited = FastHashSet::default();
     while let Some(handle) = pending.pop() {
@@ -742,7 +848,7 @@ fn entry_point_uses_unsupported_runtime_integer_indexing(
             continue;
         }
         if visited.len() > 1024 {
-            return (true, false);
+            return (true, false, false);
         }
         let function = &module.functions[handle];
         if function_uses_unsupported_runtime_integer_indexing(
@@ -750,15 +856,20 @@ fn entry_point_uses_unsupported_runtime_integer_indexing(
             function,
             &module_info[handle],
             None,
+            false,
             &mut budget,
         ) {
-            return (true, false);
+            return (true, false, false);
         }
         if !collect_called_functions_bounded(&function.body, &mut pending, &mut budget) {
-            return (true, false);
+            return (true, false, false);
         }
     }
-    (false, allowed_local_access.is_some())
+    (
+        false,
+        allowed_local_access.is_some(),
+        allowed_vector_indexing,
+    )
 }
 
 fn pointer_path_contains(
@@ -1348,6 +1459,7 @@ fn entry_point_uses_unsupported_fragment_helper_integer_semantics(
         &entry_point.function,
         entry_point_info,
         false,
+        false,
         &[],
         Some(&proof.entry_integer_expressions),
         None,
@@ -1367,6 +1479,7 @@ fn entry_point_uses_unsupported_fragment_helper_integer_semantics(
         module,
         helper,
         &module_info[proof.helper],
+        false,
         false,
         &[true],
         Some(&proof.helper_integer_expressions),
@@ -2672,6 +2785,7 @@ fn function_uses_unsupported_integer_semantics(
     function: &naga::Function,
     function_info: &naga::valid::FunctionInfo,
     vertex_entry: bool,
+    supported_vector_indexing: bool,
     supported_index_parameters: &[bool],
     supported_fragment_index_expressions: Option<&FastHashSet<naga::Handle<naga::Expression>>>,
     supported_fragment_frexp_result: Option<naga::Handle<naga::Expression>>,
@@ -2708,6 +2822,16 @@ fn function_uses_unsupported_integer_semantics(
     *budget -= function.expressions.len();
     let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
     function.expressions.iter().any(|(handle, expression)| {
+        if supported_vector_indexing
+            && matches!(
+                *expression,
+                naga::Expression::Access { base, index }
+                    if dynamic_access_base_is_float_vector(module, function_info, base)
+                        && expression_is_supported_vertex_index_argument(module, function, index)
+            )
+        {
+            return false;
+        }
         let integer_operation = match *expression {
             naga::Expression::Binary { left, right, .. } => {
                 expression_may_contain_integer(module, function_info, left, budget)
@@ -2849,6 +2973,8 @@ fn entry_point_uses_unsupported_integer_semantics(
     }
 
     let vertex_entry = entry_point.stage == naga::ShaderStage::Vertex;
+    let supported_vector_indexing =
+        supported_vertex_index_vector_indexing(module, entry_point, entry_point_info);
     let fragment_index_proof = fragment_uniform_array_indexing_proof(
         module,
         entry_point_info,
@@ -2868,6 +2994,7 @@ fn entry_point_uses_unsupported_integer_semantics(
         &entry_point.function,
         entry_point_info,
         vertex_entry,
+        supported_vector_indexing,
         &[],
         fragment_index_proof
             .as_ref()
@@ -2941,6 +3068,7 @@ fn entry_point_uses_unsupported_integer_semantics(
                 module,
                 function,
                 info,
+                false,
                 false,
                 &parameter_origins,
                 None,
@@ -7621,13 +7749,16 @@ impl Interface {
                         info,
                     )
                     .is_some());
-            let (unsupported_runtime_integer_indexing, vertex_index_local_array_indexing_used) =
-                entry_point_uses_unsupported_runtime_integer_indexing(
-                    module,
-                    module_info,
-                    entry_point,
-                    info,
-                );
+            let (
+                unsupported_runtime_integer_indexing,
+                vertex_index_local_array_indexing_used,
+                vertex_index_vector_indexing_used,
+            ) = entry_point_uses_unsupported_runtime_integer_indexing(
+                module,
+                module_info,
+                entry_point,
+                info,
+            );
             let texture_load_used = entry_point_uses_texture_load(module, entry_point);
             let (
                 fl9_texture_load_2d_supported,
@@ -7721,6 +7852,7 @@ impl Interface {
                 frexp_fraction_only_runtime_integer_semantics,
                 unsupported_runtime_integer_indexing,
                 vertex_index_local_array_indexing_used,
+                vertex_index_vector_indexing_used,
                 matrix_inverse_used: entry_point_uses_matrix_inverse(module, entry_point),
                 unsupported_matrix_inverse_2x2: entry_point_uses_unsupported_matrix_inverse_2x2(
                     module,
@@ -8324,7 +8456,9 @@ impl Interface {
                         _ => false,
                     })
                 || (entry_point.vertex_index_local_array_indexing_used
-                    && !limits.vertex_index_local_array_indexing)))
+                    && !limits.vertex_index_local_array_indexing))
+            || (entry_point.vertex_index_vector_indexing_used
+                && !limits.vertex_index_vector_indexing))
     }
 
     pub(crate) fn entry_point_uses_unsupported_matrix_aggregate_store(
@@ -14137,6 +14271,20 @@ mod tests {
                 let y = vec3f(-3.0, 1.0, 1.0);
                 return vec4f(x[index], y[index], 0.0, 1.0);
             }
+            fn vector_component(value: vec3f, index: u32) -> f32 { return value[index]; }
+            @vertex fn bad_vertex_index_dynamic_vector_helper(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                let x = vec3f(-1.0, 3.0, -1.0);
+                return vec4f(vector_component(x, index), 0.0, 0.0, 1.0);
+            }
+            @vertex fn bad_vertex_index_dynamic_vector_computed(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                let x = vec3f(-1.0, 3.0, -1.0);
+                return vec4f(x[index + 1u], 0.0, 0.0, 1.0);
+            }
+            @vertex fn bad_vertex_index_dynamic_vector_store(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                var x = vec3f(-1.0, 3.0, -1.0);
+                x[index] = 0.0;
+                return vec4f(x, 1.0);
+            }
             @fragment fn float_override() -> @location(0) vec4f {
                 return vec4f(tint, 0.0, 0.0, 1.0);
             }
@@ -14243,6 +14391,21 @@ mod tests {
             vertex_index_local_array_indexing: true,
             ..Default::default()
         };
+        let vector_index_limit = wgt::DownlevelLimits {
+            runtime_integer_shader_operations: false,
+            vertex_index_vector_indexing: true,
+            ..Default::default()
+        };
+        let vector_entry_index = module
+            .entry_points
+            .iter()
+            .position(|entry| entry.name == "bad_vertex_index_dynamic_vector")
+            .unwrap();
+        assert!(super::supported_vertex_index_vector_indexing(
+            &module,
+            &module.entry_points[vector_entry_index],
+            info.get_entry_point(vector_entry_index),
+        ));
         assert!(!interface
             .entry_point_uses_unsupported_runtime_integer_semantics(
                 naga::ShaderStage::Vertex,
@@ -14316,6 +14479,36 @@ mod tests {
                         naga::ShaderStage::Fragment,
                         entry,
                         &frexp_fraction_limit,
+                    )
+                    .unwrap(),
+                "{entry}"
+            );
+        }
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Vertex,
+                "bad_vertex_index_dynamic_vector",
+                &fl91,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Vertex,
+                "bad_vertex_index_dynamic_vector",
+                &vector_index_limit,
+            )
+            .unwrap());
+        for entry in [
+            "bad_vertex_index_dynamic_vector_helper",
+            "bad_vertex_index_dynamic_vector_computed",
+            "bad_vertex_index_dynamic_vector_store",
+        ] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_runtime_integer_semantics(
+                        naga::ShaderStage::Vertex,
+                        entry,
+                        &vector_index_limit,
                     )
                     .unwrap(),
                 "{entry}"

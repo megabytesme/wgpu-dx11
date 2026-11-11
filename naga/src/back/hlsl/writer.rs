@@ -6315,6 +6315,58 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         return Ok(());
                     }
 
+                    if self.options.fl9_vertex_index_vector_indexing {
+                        let base_inner = func_ctx.info[base].ty.inner_with(&module.types);
+                        let vector_size = match *base_inner {
+                            TypeInner::Vector {
+                                size,
+                                scalar:
+                                    Scalar {
+                                        kind: ScalarKind::Float,
+                                        width: 4,
+                                    },
+                            } => Some(size),
+                            TypeInner::Pointer { base, .. } => match module.types[base].inner {
+                                TypeInner::Vector {
+                                    size,
+                                    scalar:
+                                        Scalar {
+                                            kind: ScalarKind::Float,
+                                            width: 4,
+                                        },
+                                } => Some(size),
+                                _ => None,
+                            },
+                            TypeInner::ValuePointer {
+                                size: Some(size),
+                                scalar:
+                                    Scalar {
+                                        kind: ScalarKind::Float,
+                                        width: 4,
+                                    },
+                                ..
+                            } => Some(size),
+                            _ => None,
+                        };
+
+                        if let Some(size) = vector_size {
+                            let size = size as u8;
+                            for component in (0..size - 1).rev() {
+                                write!(self.out, "((float(")?;
+                                self.write_expr(module, index, func_ctx)?;
+                                write!(self.out, ") == {component}.0) ? ")?;
+                                self.write_expr(module, base, func_ctx)?;
+                                write!(self.out, ".{} : ", back::COMPONENTS[component as usize])?;
+                            }
+                            self.write_expr(module, base, func_ctx)?;
+                            write!(self.out, ".{}", back::COMPONENTS[(size - 1) as usize])?;
+                            for _ in 1..size {
+                                write!(self.out, ")")?;
+                            }
+                            return Ok(());
+                        }
+                    }
+
                     let resolved = func_ctx.resolve_type(base, &module.types);
 
                     let (indexing_binding_array, non_uniform_qualifier) = match *resolved {

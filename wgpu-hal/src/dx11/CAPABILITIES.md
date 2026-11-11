@@ -806,6 +806,25 @@ The controlled core fixture now also injects a removed-device result from
 FL9_1, but the HRESULT is synthetic; actual device removal and recovery remain
 unverified.
 
+## Direct FL9_1 vertex-index float-vector reads
+
+`DownlevelLimits::vertex_index_vector_indexing` is false by default and is
+enabled by the selected FL9_1 D3D11 projection after its backend proof. Noop
+reports it as well because it does not compile or execute native shaders. Core
+and HAL independently prove the selected vertex entry point contains only
+direct, read-only `@builtin(vertex_index)` accesses to `vec2f`, `vec3f` or
+`vec4f` values in a straight-line body, with no more than sixteen accesses.
+Naga lowers the indices to static HLSL swizzle comparisons; it does not emit
+dynamic vector indexing that the Level 9 FXC profile rejects. Restrict
+behavior maps invalid
+indices to an in-bounds component, using the final component as the fallback.
+Helpers, computed indices, stores, pointer escapes, control flow and other
+dynamic indexing remain rejected. The public strict FL9_1 test rendered the
+three-vertex vector-indexed triangle and verified all 64 pixels on an RTX 3090
+Ti. An FXC probe compiled vec2/vec3/vec4 lowering as `vs_4_0_level_9_1` and
+asserted the final-component fallbacks. This verifies the selected compiler
+and driver path, not historical FL9_1 hardware.
+
 For FL9_1/9_2, default buffers have exactly one native vertex or index bind:
 copy-only, mapped and uniform-source buffers use an internal vertex bind, while
 index buffers use an index bind. This does not add a logical wgpu usage. Staging

@@ -16855,3 +16855,33 @@ for general blending and primitive ordering, so neither input is being
 emulated speculatively.
 
 References: [10Level9 pixel-shader restriction](https://learn.microsoft.com/en-us/windows/uwp/gaming/simple-port-from-direct3d-9-to-11-1-part-2--rendering), [HLSL semantic availability](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-semantics).
+
+## Direct FL9_1 vertex-indexed float-vector reads — 2026-11-11
+
+Added a default-false `DownlevelLimits::vertex_index_vector_indexing` limit.
+The opt-in D3D11 FL9_1 projection enables it; Core and HAL independently
+require a selected straight-line vertex entry with direct read-only
+`vertex_index` accesses to float vectors. The limit does not enable computed
+indices, helper forwarding, stores, pointer escapes or other runtime integer
+operations. Naga's HLSL writer lowers the proven vec2/vec3/vec4 accesses to
+static compare/select expressions. The final vector component is the fallback
+for indices not equal to the preceding component values, matching the HLSL
+backend's existing restricted-index policy. A read-only review caught this
+boundary case before checkpoint; an FXC source assertion now checks the vec3
+and vec4 fallback branches.
+
+Verification used Rust 1.93.1, MSVC, offline Cargo and bounded `-j4` builds:
+
+- `cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 -- --nocapture --test-threads=1`: strict hardware suite passed 503/503. Hardware tests used the RTX 3090 Ti at requested/actual FL9_1; no WARP substitution.
+- `cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1`: strict public target passed 129/129 functions. Three optional format/vertex-input subcases reported recognized skips because the RTX did not expose those queried capabilities.
+- `cargo +1.93.1 test --offline -j4 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib`: 128/128 passed. The first invocation omitted the test-required `std` feature and failed to compile the test harness; the corrected command above passed.
+- `cargo +1.93.1 test --offline -j4 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib`: 127/127 passed, confirming DX12's HLSL option remains disabled.
+- `cargo +1.93.1 test --offline -j4 -p naga --lib`: 163/163 passed.
+- `cargo +1.93.1 test --offline -j4 -p wgpu-types --lib vertex_index_vector_indexing_is_a_subset_capability`: 1/1 passed.
+- Focused HAL FXC probe: 1/1 passed; FXC compiled static lowering for vec2/vec3/vec4 at `vs_4_0_level_9_1` (1,076-byte DXBC), while the unlowered dynamic vector access retained the expected X3548 rejection.
+- Focused strict public rendering: 1/1 passed on `NVIDIA GeForce RTX 3090 Ti` (`0x10de:0x2203`, driver `32.0.16.2101`), with requested/actual FL9_1 and software=false. The existing local-array triangle and the new vec3-indexed triangle each produced 64/64 expected white pixels; helper, computed and write forms were rejected by Core.
+- Targeted `wgpu`, `wgpu-core`, `wgpu-hal` and `wgpu-types` Clippy checks passed. Existing warnings remain in HAL and `wgpu-types`; no warning points into the new lowering or validation code. `naga` Clippy passed without warnings. Workspace formatting and `git diff --check` passed.
+
+This is compiler and RTX evidence for a narrowly enabled path, not proof for
+historical FL9_1 drivers. The backend remains opt-in; ordinary default backend
+selection is unchanged.

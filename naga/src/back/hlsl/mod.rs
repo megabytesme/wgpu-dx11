@@ -595,6 +595,10 @@ pub struct Options {
     /// backend-provided `NAGA_VERTEX_INDEX` input semantic.
     pub fl9_vertex_index_input: bool,
 
+    /// Lower proven FL9 vertex-indexed float-vector reads to static swizzles.
+    /// The caller must reject all other dynamic vector accesses for the selected entry point.
+    pub fl9_vertex_index_vector_indexing: bool,
+
     /// Function parameters proven by the backend to be used only as bounded
     /// uniform-array indices or forwarded to another proven parameter. These
     /// HLSL parameters use `float` for the FL9 emulated-index path.
@@ -668,6 +672,7 @@ impl Default for Options {
             fl9_viewport_transform: None,
             fl9_instance_index_input: false,
             fl9_vertex_index_input: false,
+            fl9_vertex_index_vector_indexing: false,
             fl9_uniform_index_arguments: Vec::new(),
             sampler_buffer_binding_map: alloc::collections::BTreeMap::default(),
             immediates_target: None,

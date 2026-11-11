@@ -2,6 +2,17 @@
 
 ## Latest current state — 2026-11-11
 
+The selected FL9_1 public projection now separately enables a proven direct
+`vertex_index` read from `vec2f`, `vec3f` or `vec4f` values. Core and HAL
+reject helper, computed, pointer-escaping and write cases; Naga lowers the
+accepted access to static swizzles with the restricted-index fallback. FXC
+accepted all three vector sizes at `vs_4_0_level_9_1`, and strict RTX 3090 Ti
+readback verified the vec3 fullscreen triangle. The complete strict private
+HAL suite passed 503/503, the public target 129/129, Core passed 128/128 with
+DX11 and 127/127 with DX12, Naga 163/163, and the focused wgpu-types test
+passed 1/1. Historical FL9_1 hardware remains unverified; commands and
+diagnostics are recorded in `FL9_1_PROGRESS.md`.
+
 Query-gated `Rg16Snorm` same-format texture-to-texture `COPY_SRC` is now
 implemented without render-target binding or a CPU shadow. The strict public
 test partially copies a 4×4 region at nonzero destination origin, samples both
@@ -141,7 +152,8 @@ The current tree's narrowly proven direct `vertex_index` lookup into a
 locally initialized `array<vec2f, 3>` also passes the strict WebGPU CTS
 `basic:fullscreen_quad` selector on the physical RTX 3090 Ti at requested and
 actual FL9_1 (1/1, zero skips). This does not enable general dynamic vector
-indexing; the separate vector-index form remains rejected by FXC with X3548.
+indexing; a separately gated direct vertex-index float-vector form is now
+accepted, while raw unlowered vector indexing still fails FXC with X3548.
 The fresh command and hardware evidence are recorded in `FL9_1_PROGRESS.md`.
 
 Public HWND presentation and the desktop cube example have hardware evidence;

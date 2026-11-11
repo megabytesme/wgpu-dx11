@@ -891,6 +891,7 @@ impl Capabilities {
                 vertex_uniform_array_indexing: self.backend.vertex_uniform_array_indexing,
                 fragment_uniform_array_indexing: self.backend.fragment_uniform_array_indexing,
                 vertex_index_local_array_indexing: self.backend.vertex_index_local_array_indexing,
+                vertex_index_vector_indexing: true,
                 max_sampled_textures_per_vertex_stage: if self.backend.vertex_texture_sampling {
                     self.backend.sampled_textures_per_group
                 } else {

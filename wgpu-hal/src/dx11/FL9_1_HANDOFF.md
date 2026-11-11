@@ -2,6 +2,14 @@
 
 ## Current coordinator checkpoint — 2026-11-11
 
+The latest focused shader increment enables direct `vertex_index` reads from
+float vectors for the opt-in FL9_1 projection. Core/HAL proofs and Naga's
+static-swizzle lowering agree on the narrowly accepted entry point; helpers,
+computed accesses, pointer escapes and writes remain rejected. The FXC probe
+covers vec2/vec3/vec4 and the strict public RTX readback covers the vec3
+rendering case. Full-suite results and exact commands are recorded in
+`FL9_1_PROGRESS.md`.
+
 The strict BC readback and bounded fragment sample-bias offset slices are
 implemented and tested. BC readback uses an execution-ordered CPU shadow; it
 avoids a prohibited FL9_x staging copy but adds CPU memory and depends on every

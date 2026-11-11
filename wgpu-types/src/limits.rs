@@ -1229,6 +1229,10 @@ pub struct DownlevelLimits {
     /// other runtime indexing operations.
     #[cfg_attr(feature = "serde", serde(default))]
     pub vertex_index_local_array_indexing: bool,
+    /// Whether vertex entry points may read float vector components using a direct
+    /// `@builtin(vertex_index)` value. Other dynamic vector indexing remains unavailable.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub vertex_index_vector_indexing: bool,
     /// Maximum number of sampled texture bindings statically used by a vertex shader.
     ///
     /// This can be lower than [`Limits::max_sampled_textures_per_shader_stage`], which also
@@ -1631,6 +1635,7 @@ impl Default for DownlevelLimits {
             vertex_uniform_array_indexing: false,
             fragment_uniform_array_indexing: false,
             vertex_index_local_array_indexing: false,
+            vertex_index_vector_indexing: false,
             max_sampled_textures_per_vertex_stage: 16,
             max_sampled_texture_sampler_pairs_per_shader_stage: u32::MAX,
             max_vertex_shader_uniform_vectors: u32::MAX,
@@ -1901,6 +1906,7 @@ impl DownlevelLimits {
             && (!required.fragment_uniform_array_indexing || self.fragment_uniform_array_indexing)
             && (!required.vertex_index_local_array_indexing
                 || self.vertex_index_local_array_indexing)
+            && (!required.vertex_index_vector_indexing || self.vertex_index_vector_indexing)
             && self.max_sampled_textures_per_vertex_stage
                 >= required.max_sampled_textures_per_vertex_stage
             && self.max_sampled_texture_sampler_pairs_per_shader_stage
@@ -2718,6 +2724,7 @@ mod tests {
             vertex_uniform_array_indexing: false,
             fragment_uniform_array_indexing: false,
             vertex_index_local_array_indexing: false,
+            vertex_index_vector_indexing: false,
             max_sampled_textures_per_vertex_stage: 4,
             max_sampled_texture_sampler_pairs_per_shader_stage: 16,
             max_vertex_shader_uniform_vectors: 4,
@@ -2805,6 +2812,7 @@ mod tests {
             vertex_uniform_array_indexing: false,
             fragment_uniform_array_indexing: false,
             vertex_index_local_array_indexing: false,
+            vertex_index_vector_indexing: false,
             max_sampled_textures_per_vertex_stage: 3,
             max_sampled_texture_sampler_pairs_per_shader_stage: 16,
             max_vertex_shader_uniform_vectors: 3,
@@ -2872,6 +2880,10 @@ mod tests {
         }));
         assert!(!available.check_limits(&DownlevelLimits {
             max_sampled_texture_sampler_pairs_per_shader_stage: 17,
+            ..required.clone()
+        }));
+        assert!(!available.check_limits(&DownlevelLimits {
+            vertex_index_vector_indexing: true,
             ..required.clone()
         }));
 
@@ -3986,6 +3998,19 @@ mod tests {
         assert!(available.check_limits(&required));
         assert!(!DownlevelLimits::default().check_limits(&required));
         assert!(!DownlevelLimits::default().vertex_index_local_array_indexing);
+    }
+
+    #[test]
+    fn vertex_index_vector_indexing_is_a_subset_capability() {
+        let required = DownlevelLimits {
+            vertex_index_vector_indexing: true,
+            ..DownlevelLimits::default()
+        };
+        let mut available = required.clone();
+        assert!(available.check_limits(&required));
+        available.vertex_index_vector_indexing = false;
+        assert!(!available.check_limits(&required));
+        assert!(!DownlevelLimits::default().vertex_index_vector_indexing);
     }
 
     #[test]

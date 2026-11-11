@@ -44,6 +44,10 @@ Bottom level categories:
 
 ### Added/New Features
 
+#### General
+
+- Add a downlevel capability limit for direct `vertex_index` reads from float vectors.
+
 #### Hal
 
 - Represent each BC1/2/3 UNORM and sRGB cube-texture format independently in downlevel limits.

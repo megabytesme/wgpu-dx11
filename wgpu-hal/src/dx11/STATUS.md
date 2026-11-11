@@ -1791,6 +1791,21 @@ verified all 64 pixels on the RTX 3090 Ti at requested/actual FL9_1. This is a
 compiler/backend subset, not general runtime integer support, and historical
 FL9_1 hardware remains unverified.
 
+## Direct FL9_1 vertex-index float-vector read
+
+The selected FL9_1 projection now also enables
+`DownlevelLimits::vertex_index_vector_indexing`. Core and HAL accept only
+direct read-only `vertex_index` access to float vectors in a straight-line
+vertex entry; helpers, computed indices, stores and pointer escapes remain
+rejected. Naga emits static swizzle comparisons instead of dynamic vector
+indexing. The lowering preserves Naga's restricted-index behavior by selecting
+the last vector component for indices outside the in-range component cases.
+An FXC probe accepted vec2/vec3/vec4 lowering at `vs_4_0_level_9_1`, and a
+strict public RTX 3090 Ti test verified all 64 pixels of the vec3-indexed
+triangle. The capability defaults false; noop reports it because it does not
+compile or execute native shaders, and DX12 leaves the HLSL lowering disabled.
+This is not general runtime integer support or historical-hardware evidence.
+
 ## Direct FL9_1 fragment `frexp` fraction
 
 The selected FL9_1 fragment profile permits a direct scalar `frexp(value).fract`

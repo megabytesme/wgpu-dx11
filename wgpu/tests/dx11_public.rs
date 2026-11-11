@@ -2336,6 +2336,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     assert!(!downlevel.limits.texture_sample_level);
     assert!(downlevel.limits.texture_sample_level_zero_2d_float_fragment);
     assert!(downlevel.limits.vertex_index_local_array_indexing);
+    assert!(downlevel.limits.vertex_index_vector_indexing);
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} type={:?} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
         info.name, info.vendor, info.device, info.device_type, info.driver, info.driver_info
@@ -2522,6 +2523,20 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
                  let y = vec3f(-3.0, 1.0, 1.0);\n\
                  return vec4f(x[index], y[index], 0.0, 1.0);\n\
              }\n\
+             fn vector_component(value: vec3f, index: u32) -> f32 { return value[index]; }\n\
+             @vertex fn dynamic_vector_index_helper(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {\n\
+                 let x = vec3f(-1.0, 3.0, -1.0);\n\
+                 return vec4f(vector_component(x, index), 0.0, 0.0, 1.0);\n\
+             }\n\
+             @vertex fn dynamic_vector_index_computed(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {\n\
+                 let x = vec3f(-1.0, 3.0, -1.0);\n\
+                 return vec4f(x[index + 1u], 0.0, 0.0, 1.0);\n\
+             }\n\
+             @vertex fn dynamic_vector_index_store(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {\n\
+                 var x = vec3f(-1.0, 3.0, -1.0);\n\
+                 x[index] = 0.0;\n\
+                 return vec4f(x, 1.0);\n\
+             }\n\
              @fragment fn fs() -> @location(0) vec4f { return vec4f(1.0); }"
                 .into(),
         ),
@@ -2557,12 +2572,19 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         || drop(create_array_index_pipeline("helper_index")),
     );
     drop(create_array_index_pipeline("static_index"));
-    expect_validation_error_containing(
-        &device,
-        "dynamic vector indexing in selected vertex entry",
-        "UnsupportedRuntimeIntegerShaderOperations",
-        || drop(create_array_index_pipeline("dynamic_vector_index")),
-    );
+    let vector_index_pipeline = create_array_index_pipeline("dynamic_vector_index");
+    for entry_point in [
+        "dynamic_vector_index_helper",
+        "dynamic_vector_index_computed",
+        "dynamic_vector_index_store",
+    ] {
+        expect_validation_error_containing(
+            &device,
+            &format!("unsupported vertex-index vector form {entry_point}"),
+            "UnsupportedRuntimeIntegerShaderOperations",
+            || drop(create_array_index_pipeline(entry_point)),
+        );
+    }
     let local_target = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 fullscreen local-array target"),
         size: Extent3d {
@@ -2579,7 +2601,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     });
     let local_readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 fullscreen local-array readback"),
-        size: 8 * 256,
+        size: 2 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -2628,6 +2650,47 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             depth_or_array_layers: 1,
         },
     );
+    {
+        let mut pass = local_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 fullscreen vector-index pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &local_target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&vector_index_pipeline);
+        pass.draw(0..3, 0..1);
+    }
+    local_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &local_target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &local_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 8 * 256,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
     let local_submission = queue.submit([local_encoder.finish()]);
     let (local_sender, local_receiver) = std::sync::mpsc::channel();
     local_readback
@@ -2658,12 +2721,17 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
                     &[255, 255, 255, 255],
                     "fullscreen local-array pixel ({x}, {y})"
                 );
+                assert_eq!(
+                    &pixels[8 * 256 + offset..8 * 256 + offset + 4],
+                    &[255, 255, 255, 255],
+                    "fullscreen vector-index pixel ({x}, {y})"
+                );
             }
         }
     }
     local_readback.unmap();
     println!(
-        "PASS: FL9_1 rendered a direct vertex_index local-array fullscreen triangle with 64/64 white pixels; helper and dynamic-vector forms remain rejected"
+        "PASS: FL9_1 rendered direct vertex_index local-array and float-vector fullscreen triangles with 64/64 white pixels each; helper, computed and store vector forms were rejected"
     );
 
     let matrix_shader = device.create_shader_module(ShaderModuleDescriptor {

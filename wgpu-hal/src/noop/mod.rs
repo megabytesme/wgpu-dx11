@@ -226,6 +226,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 vertex_uniform_array_indexing: false,
                 fragment_uniform_array_indexing: false,
                 vertex_index_local_array_indexing: false,
+                vertex_index_vector_indexing: true,
                 max_sampled_textures_per_vertex_stage: 16,
                 max_sampled_texture_sampler_pairs_per_shader_stage: u32::MAX,
                 max_vertex_shader_uniform_vectors: u32::MAX,

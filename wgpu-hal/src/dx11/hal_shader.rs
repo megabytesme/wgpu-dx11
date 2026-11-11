@@ -8365,6 +8365,8 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
         naga::ShaderStage::Vertex,
         input_options,
     );
+    let allowed_vector_indexing = input_options.vertex_index_vector_indexing
+        && supported_vertex_index_vector_indexing(module, function, function_info, input_options);
     let budget = core::cell::Cell::new(limit);
     let Some(remaining) = budget.get().checked_sub(module.global_variables.len()) else {
         return true;
@@ -8801,6 +8803,10 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                     naga::Expression::Access { base, index } => {
                         function_info[handle].ref_count != 0
                             && allowed_local_array_access != Some(handle)
+                            && !(function_handle.is_none()
+                                && allowed_vector_indexing
+                                && dynamic_access_base_is_float_vector(module, function_info, base)
+                                && is_vertex_index_expression(module, function, index))
                             && !kinds.is_const(index)
                             && dynamic_access_base_is_unsupported_composite(
                                 module,
@@ -9262,6 +9268,7 @@ struct DynamicAccessFunctionMode<'a> {
     mode: DynamicAccessMode,
     supported_builtin_arguments: &'a [bool],
     allowed_local_access: Option<naga::Handle<naga::Expression>>,
+    allowed_vector_indexing: bool,
     allowed_fragment_access:
         Option<&'a alloc::collections::BTreeSet<naga::Handle<naga::Expression>>>,
 }
@@ -9307,6 +9314,8 @@ fn has_unsupported_dynamic_access(
     } else {
         None
     };
+    let allowed_vector_indexing = input_options.vertex_index_vector_indexing
+        && supported_vertex_index_vector_indexing(module, function, function_info, input_options);
     let mut pending = alloc::vec![(None, Vec::new())];
     let mut visited = Vec::new();
     while let Some((function_handle, parameter_origins)) = pending.pop() {
@@ -9340,6 +9349,7 @@ fn has_unsupported_dynamic_access(
                 } else {
                     None
                 },
+                allowed_vector_indexing: function_handle.is_none() && allowed_vector_indexing,
                 allowed_fragment_access: allowed_fragment_access
                     .as_ref()
                     .and_then(|proof| proof.accesses_for(function_handle)),
@@ -9419,6 +9429,14 @@ fn fl9_uniform_index_helper_arguments(
         } else {
             None
         };
+        let allowed_vector_indexing = function_handle.is_none()
+            && mode.input_options.vertex_index_vector_indexing
+            && supported_vertex_index_vector_indexing(
+                module,
+                function,
+                function_info,
+                mode.input_options,
+            );
         if function_has_unsupported_dynamic_access(
             module,
             function,
@@ -9427,6 +9445,7 @@ fn fl9_uniform_index_helper_arguments(
                 mode,
                 supported_builtin_arguments: &parameter_origins,
                 allowed_local_access,
+                allowed_vector_indexing,
                 allowed_fragment_access: None,
             },
         ) {
@@ -9666,6 +9685,103 @@ fn block_is_straight_line_read_only(block: &naga::Block) -> bool {
     })
 }
 
+fn dynamic_access_base_is_float_vector(
+    module: &naga::Module,
+    function_info: &naga::valid::FunctionInfo,
+    base: naga::Handle<naga::Expression>,
+) -> bool {
+    let is_float_vector = |inner: &naga::TypeInner| {
+        matches!(
+            inner,
+            naga::TypeInner::Vector {
+                scalar: naga::Scalar {
+                    kind: naga::ScalarKind::Float,
+                    width: 4,
+                },
+                ..
+            }
+        )
+    };
+    match function_info[base].ty.inner_with(&module.types) {
+        inner if is_float_vector(inner) => true,
+        naga::TypeInner::Pointer { base, .. } => is_float_vector(&module.types[*base].inner),
+        naga::TypeInner::ValuePointer {
+            size: Some(_),
+            scalar:
+                naga::Scalar {
+                    kind: naga::ScalarKind::Float,
+                    width: 4,
+                },
+            ..
+        } => true,
+        _ => false,
+    }
+}
+
+fn supported_vertex_index_vector_indexing(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    input_options: Fl9ShaderInputOptions,
+) -> bool {
+    if !input_options.vertex_index_input || !block_is_straight_line_read_only(&function.body) {
+        return false;
+    }
+
+    let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+    let mut found = false;
+    let mut count = 0usize;
+    for (handle, expression) in function.expressions.iter() {
+        let naga::Expression::Access { base, index } = *expression else {
+            continue;
+        };
+        if !dynamic_access_base_is_float_vector(module, function_info, base)
+            || function_info[handle].ref_count == 0
+            || kinds.is_const(index)
+        {
+            continue;
+        }
+
+        found = true;
+        count += 1;
+        if count > 16
+            || !is_vertex_index_expression(module, function, index)
+            || block_uses_dynamic_access_as_pointer(
+                module,
+                function,
+                function_info,
+                &function.body,
+                handle,
+            )
+        {
+            return false;
+        }
+
+        let load_count = function
+            .expressions
+            .iter()
+            .filter(|(_, expression)| {
+                matches!(
+                    expression,
+                    naga::Expression::Load { pointer }
+                        if pointer_path_contains(function, *pointer, handle)
+                )
+            })
+            .count();
+        let access_is_value = matches!(
+            function_info[handle].ty.inner_with(&module.types),
+            naga::TypeInner::Scalar(naga::Scalar {
+                kind: naga::ScalarKind::Float,
+                width: 4,
+            })
+        );
+        if (access_is_value && load_count != 0) || (!access_is_value && load_count != 1) {
+            return false;
+        }
+    }
+    found
+}
+
 fn supported_vertex_index_local_array_access(
     module: &naga::Module,
     function: &naga::Function,
@@ -9769,6 +9885,7 @@ fn function_has_unsupported_dynamic_access(
             },
         supported_builtin_arguments,
         allowed_local_access,
+        allowed_vector_indexing,
         allowed_fragment_access,
     } = function_mode;
     let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
@@ -9777,6 +9894,9 @@ fn function_has_unsupported_dynamic_access(
             return false;
         };
         if Some(handle) == allowed_local_access
+            || (allowed_vector_indexing
+                && dynamic_access_base_is_float_vector(module, function_info, base)
+                && is_vertex_index_expression(module, function, index))
             || allowed_fragment_access.is_some_and(|accesses| accesses.contains(&handle))
         {
             return false;
@@ -11477,6 +11597,16 @@ impl ShaderModule {
             .ok_or(crate::PipelineError::EntryPoint(stage))?;
         let profile =
             selected_shader_profile(stage).ok_or(crate::PipelineError::EntryPoint(stage))?;
+        let entry_info = info.get_entry_point(entry_index);
+        input_options.vertex_index_vector_indexing =
+            matches!(profile, ShaderProfile::VertexLevel9_1)
+                && input_options.vertex_index_input
+                && supported_vertex_index_vector_indexing(
+                    &module,
+                    &module.entry_points[entry_index].function,
+                    entry_info,
+                    input_options,
+                );
         if matches!(
             profile,
             ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
@@ -11497,7 +11627,6 @@ impl ShaderModule {
                 )?;
             }
         }
-        let entry_info = info.get_entry_point(entry_index);
         let mut sample_bias_offset_expression = None;
         if let Some(proof) = fl9_texture_emulation_binding(&module, &info, stage, entry)? {
             match proof.kind {

@@ -43,6 +43,7 @@ pub(super) struct Fl9ShaderInputOptions {
     pub viewport_transform: bool,
     pub instance_index_input: bool,
     pub vertex_index_input: bool,
+    pub vertex_index_vector_indexing: bool,
     pub texel_load_binding: Option<naga::ResourceBinding>,
     pub texel_load_coordinate_conversion: Option<naga::Handle<naga::Expression>>,
     pub texture_dimensions_binding: Option<naga::ResourceBinding>,
@@ -460,6 +461,8 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         fl9_instance_index_input: input_options.instance_index_input
             && stage == naga::ShaderStage::Vertex,
         fl9_vertex_index_input: input_options.vertex_index_input
+            && stage == naga::ShaderStage::Vertex,
+        fl9_vertex_index_vector_indexing: input_options.vertex_index_vector_indexing
             && stage == naga::ShaderStage::Vertex,
         fl9_texel_load_proof: input_options.texel_load_binding,
         fl9_texture_dimensions_proof: input_options.texture_dimensions_binding,
@@ -1207,6 +1210,87 @@ mod tests {
             "FXC accepted vs_4_0_level_9_1 probe; DXBC size={} bytes. This is compiler evidence only, not enabled backend support.",
             bytecode.len()
         );
+    }
+
+    #[test]
+    fn fl91_naga_vertex_index_compare_select_fxc_probe() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @vertex fn main(@builtin(vertex_index) id: u32) -> @builtin(position) vec4f {
+                let a = vec2f(1.0, 2.0);
+                let x = vec3f(-1.0, 3.0, -1.0);
+                let y = vec3f(-3.0, 1.0, 1.0);
+                let z = vec4f(4.0, 5.0, 6.0, 7.0);
+                return vec4f(x[id] + a[id], y[id], z[id], 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let options = Fl9ShaderInputOptions {
+            vertex_index_input: true,
+            vertex_index_vector_indexing: true,
+            ..Default::default()
+        };
+        let (hlsl, entry) = translate_naga_with_viewport_and_fl9_inputs(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "main",
+            ShaderProfile::VertexLevel9_1,
+            &[],
+            options,
+        )
+        .unwrap();
+
+        println!("Generated HLSL for vs_4_0_level_9_1 probe:\n{hlsl}");
+        assert!(hlsl.contains("NAGA_VERTEX_INDEX"), "{hlsl}");
+        assert!(hlsl.contains("== 1.0"), "{hlsl}");
+        assert!(hlsl.contains("== 2.0"), "{hlsl}");
+        assert!(hlsl.contains("== 0.0"), "{hlsl}");
+        assert!(hlsl.contains(".w"), "{hlsl}");
+        assert!(hlsl.contains(".z"), "{hlsl}");
+        assert!(hlsl.contains(".y"), "{hlsl}");
+        assert!(hlsl.contains(".x"), "{hlsl}");
+        assert!(hlsl.contains("x.x : x.z"), "{hlsl}");
+        assert!(hlsl.contains("z.x : z.w"), "{hlsl}");
+        assert!(!hlsl.contains("[naga_fl9_vertex_index]"), "{hlsl}");
+        assert!(
+            hlsl.contains("?"),
+            "expected select to consume comparisons:\n{hlsl}"
+        );
+
+        let bytecode =
+            compile_hlsl(&hlsl, &entry, ShaderProfile::VertexLevel9_1).unwrap_or_else(|error| {
+                panic!("FXC rejected vs_4_0_level_9_1 probe: {error:?}\n{hlsl}")
+            });
+        println!(
+            "FXC accepted the proven static-swizzle lowering at vs_4_0_level_9_1; DXBC size={} bytes.",
+            bytecode.len()
+        );
+
+        let (unlowered, unlowered_entry) = translate_naga_with_viewport_and_fl9_inputs(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "main",
+            ShaderProfile::VertexLevel9_1,
+            &[],
+            Fl9ShaderInputOptions {
+                vertex_index_input: true,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert!(unlowered.contains("x[min(uint(id), 2u)]"), "{unlowered}");
+        let error = compile_hlsl(&unlowered, &unlowered_entry, ShaderProfile::VertexLevel9_1)
+            .expect_err("raw dynamic vector indexing should remain outside the FL9_1 profile");
+        assert!(error.message.contains("X3548"), "{error:?}\n{unlowered}");
     }
 
     #[test]
