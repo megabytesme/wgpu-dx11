@@ -2,21 +2,22 @@
 
 ## Current mission status — 2026-11-11
 
-The latest resource increment adds same-format RGBA8 3D texture-to-texture
-region copies through the ordered CPU-shadow path. The strict public test
-requested and selected FL9_1 on the RTX 3090 Ti, seeded a differently sized
-destination with nonzero data, copied a 2×2×2 region at nonzero XYZ origins,
-verified preserved destination voxels and padded readback, rejected an
-out-of-bounds request, and sampled the copied volume with 64/64 pixels
-matching. Query-supported mip-1 coverage also passed. This fallback uses
-`UpdateSubresource`; native 3D GPU copies and GPU-written 3D source resources
-remain unavailable. The test also chains two copies, drops source/intermediate/
-destination and bind-group wrappers before submit, and verifies full-volume
-readback plus sampling. The strengthened focused test passed 1/1, and the full
-strict public target passed 139/139 with no skips. The full private HAL suite
-passed 510/510, Core fixture 142/142, and Core DX12 131/131. Exact commands
-and Clippy results are recorded in `FL9_1_PROGRESS.md`.
-Checkpoint: `74c011a50` (`dx11: add ordered FL9_1 3D texture copies`).
+The latest verified change adds public GPU coverage for a sparse fragment
+uniform at group 2/binding 42. Strict forced-FL9_1 readback on the physical RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) matched all 64 pixels. The
+focused test passed 1/1 and the complete strict public D3D11 target passed
+140/140 test functions. Exact commands and existing Clippy warnings are in
+`FL9_1_PROGRESS.md`.
+
+The explicit `Backends::DX11` public path is available with a conservative
+FL9_1 projection; default backend selection excludes DX11. This supports
+constrained opt-in applications, not arbitrary wgpu workloads. One confirmed
+queue contract gap remains: D3D11 `wait_for_idle` drains immediate-context
+commands but does not prove completion of pending DXGI presentation. Closing
+it requires a presentation-aware completion design and desktop/UWP validation.
+The earlier 3D RGBA8 copy path remains a CPU-shadow fallback and cannot copy
+GPU-written 3D resources. Historical FL9_1 drivers, Lumia ARM32/CoreWindow and
+physical device-removal recovery remain external verification gaps.
 
 This is a substantial constrained opt-in graphics subset, not feature-complete
 FL9_1 wgpu. The explicit DX11 backend supports public wgpu adapter/device

@@ -1,6 +1,34 @@
+## Public nonzero-group uniform binding coverage — 2026-11-11
+
+Added a strict public wgpu GPU test for a sparse fragment uniform at group
+2/binding 42. The test exercises layout creation, shader translation, compact
+native constant-buffer mapping, public bind-group setup, rendering and
+readback; all 64 pixels matched `[64, 128, 191, 255]` on the physical RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) with requested and actual
+FL9_1. The focused test passed 1/1. The complete strict public D3D11 target
+passed 140/140 test functions. Targeted public Clippy passed with six existing
+HAL warnings; `cargo +1.93.1 fmt --all -- --check` and `git diff --check`
+passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_nonzero_group_sparse_uniform_renders_at_fl91 -- --exact --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
+An independent queue/surface review confirmed the known `wait_for_idle`
+presentation gap: the D3D11 event query proves immediate-context work
+completion, not DXGI presentation completion. A correct fix needs explicit
+swapchain completion tracking and desktop/UWP evidence; existing present
+smoke tests do not close it. No queue code changed in this checkpoint.
+
 ## Same-format 3D RGBA8 region copies — 2026-11-11
 
 Checkpoint: `74c011a50` (`dx11: add ordered FL9_1 3D texture copies`).
+The chained-copy lifetime/readback follow-up is checkpointed at `731c79e9f`.
 
 Core now permits compatible 3D-to-3D texture copies behind the explicit
 `texture_3d_texture_copies` downlevel limit. Mixed 2D/3D copies and same-mip

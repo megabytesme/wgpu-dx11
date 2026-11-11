@@ -3090,6 +3090,7 @@ cargo +1.93 test --offline -j16 -p wgpu-types --features serde shader_uniform_ve
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_enforces_fl91_aggregate_uniform_constants -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_uses_255_vertex_uniform_vectors_with_post_encoding_queue_write_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_nonzero_group_sparse_uniform_renders_at_fl91 -- --exact --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_vertex_constant_profile_boundary_creates_on_hardware -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_vertex_c254_and_pixel_c31_change_rendered_output -- --nocapture --test-threads=1
 cargo test --offline -p wgpu-hal --lib --no-default-features --features dx11 fl91_sparse_uniform_ranges -- --nocapture --test-threads=1
@@ -3124,7 +3125,10 @@ The remaining hardware tests verify
 sparse static ranges,
 GPU-upload ordering, vertex/fragment use, padded and nested matrix
 structures, array stride, pipeline and group transitions, and coexistence with
-sampled textures. The multi-group test binds one group at two indices with
+sampled textures. The public `public_dx11_nonzero_group_sparse_uniform_renders_at_fl91`
+case binds a fragment uniform at group 2/binding 42 through the public API and
+checks every output pixel, covering Core-to-HAL group-index and register
+translation. The multi-group test binds one group at two indices with
 different dynamic offsets, switches pipeline register plans, tests layout
 prefix invalidation and checks all pixels after direct and indexed draws.
 The scratch test reads back both distinct GPU constant-buffer snapshots.

@@ -1,32 +1,30 @@
 # FL9_1 completion plan
 
-## Current coordinator checkpoint — 3D RGBA8 region copy — 2026-11-11
+## Current coordinator checkpoint — public nonzero-group uniform binding — 2026-11-11
 
-Checkpoint: `74c011a50` (`dx11: add ordered FL9_1 3D texture copies`).
+The public GPU suite now covers a sparse fragment uniform at group 2/binding
+42, closing the public coverage gap found by the uniform audit. Strict
+forced-FL9_1 readback passed on the RTX 3090 Ti and all 64 pixels matched the
+uniform color. The full strict public target passed 140/140 test functions.
+The test fails in strict mode if a physical FL9_1 adapter is unavailable.
 
-The public/Core/HAL path supports same-format 3D RGBA8 region copies through
-execution-ordered CPU shadows and native `UpdateSubresource`, avoiding the
-10Level9 native 3D GPU-copy restrictions. The strict RTX 3090 Ti test passed at
-requested and actual FL9_1 with nonzero source/destination origins, a
-destination seeded with nonzero voxels, bounds rejection, padded readback,
-sampling verification and query-supported mip-1 coverage. A follow-up test
-records two dependent copies, drops texture/view/bind-group wrappers before
-submit, then verifies full-volume readback and sampling. The full strict public
-target passed 139/139 with no skips after this was added. The private HAL suite
-passed 510/510, Core fixture 142/142, and Core DX12 131/131 on the same
-implementation.
+The presentation audit confirmed that `Queue::wait_for_idle` currently waits
+for a D3D11 immediate-context event query but does not prove completion of
+DXGI presentation. Correct closure requires presentation-aware tracking and a
+safe wait design, not another event query. It remains an open contract item
+pending desktop and UWP validation.
 
-This is CPU work and a packed region allocation per copy, not native GPU-to-GPU
-transfer; it cannot consume GPU-written 3D resources. 3D rendering, storage
-and native copies remain unavailable. The physical Lumia CoreWindow check was
-retried but Device Portal timed out; historical hardware, ARM32 execution and
-physical device-removal recovery remain external gaps. Independent pipeline,
-resource and public-path reviews found no confirmed Core-valid request reaching
-an unsupported HAL path in their scopes. The next bounded verification is a
-strict public GPU test with a uniform binding in a nonzero bind group; private
-HAL coverage already exercises this shape. Keep arbitrary `textureSampleLevel`
-LOD rejected until the single-mip view and sampler-clamp ordering is proven
-from the API contract. The exhaustive public API/CTS audit remains open.
+The explicit `Backends::DX11` public path is usable with its conservative
+FL9_1 projection; DX11 remains excluded from default backend selection. This
+is not general wgpu completeness. Fundamental FL9_1 exclusions remain
+compute/UAV, geometry shaders, MRT, indirect draws, 1D textures and ordinary
+texture arrays. Historical FL9_1 devices, Lumia ARM32/CoreWindow and physical
+device-removal recovery remain external verification gaps. Keep arbitrary
+`textureSampleLevel` LOD rejected until its single-mip semantics are proven.
+
+The earlier same-format 3D RGBA8 copy remains a restricted execution-ordered
+CPU-shadow fallback; it cannot consume GPU-written 3D resources. Its
+implementation and test checkpoints are `74c011a50` and `731c79e9f`.
 
 ## Recent continuation — BGRA8 multisample resolve counts — 2026-11-11
 
