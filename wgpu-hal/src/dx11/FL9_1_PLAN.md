@@ -8,8 +8,16 @@ already considered all six formats, but five formats mapped to zero in
 `DownlevelLimits` and were therefore not projected through Core. The strict
 RTX test now reports cube mask `0x0003ff1f` at requested/actual FL9_1 and
 uploads/readbacks all six faces for each BC format. Raw block verification
-uses the ordered CPU shadow; per-variant cube sampling and historical-driver
-execution remain unverified.
+uses the ordered CPU shadow. The latest strict RTX run also samples all six
+BC1/2/3 UNORM and sRGB cube formats, checking each face's decoded value in the
+output; historical-driver execution remains unverified.
+
+The separately gated fragment `textureSampleLevel(..., 0.0)` subset now also
+accepts one proven straight-line helper that forwards the entry point's
+`vec2f` coordinate directly. Core and HAL reject nested helpers, helper
+computation or control flow, dynamic or nonzero LOD, and incompatible
+resources. Strict public execution matched all 64 expected pixels through
+both direct and helper paths on the forced-FL9_1 RTX 3090 Ti.
 
 ## Previous checkpoint — 2026-11-11
 

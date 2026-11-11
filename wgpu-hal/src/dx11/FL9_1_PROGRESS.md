@@ -16586,3 +16586,48 @@ Formatting and `git diff --check` passed. Clippy passed for `wgpu-types`,
 `wgpu-hal` with DX11 tests, and the public BC target. Its warnings are existing
 serde-gated unused imports and unrelated D3D11 HAL lints; no new warning came
 from the changed cube-mask code or test.
+
+## LOD-zero helper sampling and BC cube output — 2026-11-11
+
+Extended the separately gated fragment literal-LOD-zero sample to one
+straight-line helper. Core and HAL require a single top-level helper call, one
+`vec2f` argument forwarded unchanged, one directly returned `vec4f` sample,
+literal positive zero, and a bound non-array `texture_2d<f32>` with a regular
+sampler. HAL records whether the expression belongs to the selected entry or
+its helper and lowers only that expression in the cloned compile module.
+Nested/dynamic helpers, control flow, transformed coordinates, multiple calls
+and unsupported LOD values remain rejected. The public strict test rendered
+both direct and helper forms and verified the expected two-color 8x8 pattern
+(64/64 pixels for each).
+
+The BC cube test now samples every advertised BC1/2/3 UNORM and sRGB cube
+format on each of its six faces. The forced-FL9_1 RTX 3090 Ti reported cube
+mask `0x0003ff1f`; all six formats passed decoded output-color checks (two-byte
+channel tolerance) and their existing raw face upload/readback checks.
+
+Verification on NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, physical adapter, software=false, requested/actual FL9_1):
+
+- Focused public API rendering: 1/1 passed, with both LOD-zero forms executed.
+- Complete strict `dx11_public`: 129/129 test functions passed. Three optional
+  subcases were capability-skipped: R8G8_UNORM vertex input, R16G16_FLOAT
+  vertex input, and R8G8_UNORM mip support.
+- `dx11_bc_subset`: 1/1 passed, including sampled output for all six BC cube
+  formats and faces.
+- Core D3D11 fixture library: 141/141 passed; private D3D11 HAL suite: 501/501
+  passed, including hardware rendering and FXC proof tests.
+- Core DX12 regression suite: 130/130 passed. The first invocation omitted
+  the required `wgsl,std` test features and failed at compile time; the
+  corrected command passed.
+- Core, HAL and public-test Clippy targets, Rust 1.93.1 formatting, and
+  `git diff --check` passed. Clippy reported existing warnings in HAL helper
+  code and Core fixture tests; changed code introduced no warnings.
+
+```powershell
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_subset -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j4 -p wgpu-core --no-default-features --features dx11-test-fixture,glsl,wgsl,std --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j4 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+```

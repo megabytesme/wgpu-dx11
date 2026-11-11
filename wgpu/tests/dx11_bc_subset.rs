@@ -47,6 +47,34 @@ fn bc_color_block(format: TextureFormat, color: u16) -> Vec<u8> {
     block
 }
 
+fn bc_cube_expected_sample(format: TextureFormat, color: u16) -> [u8; 4] {
+    let srgb = matches!(
+        format,
+        TextureFormat::Bc1RgbaUnormSrgb
+            | TextureFormat::Bc2RgbaUnormSrgb
+            | TextureFormat::Bc3RgbaUnormSrgb
+    );
+    let channel = |value: u32, max: u32| {
+        let encoded = value as f32 / max as f32;
+        let linear = if srgb {
+            if encoded <= 0.04045 {
+                encoded / 12.92
+            } else {
+                ((encoded + 0.055) / 1.055).powf(2.4)
+            }
+        } else {
+            encoded
+        };
+        (linear * 255.0).round() as u8
+    };
+    [
+        channel(u32::from((color >> 11) & 0x1f), 0x1f),
+        channel(u32::from((color >> 5) & 0x3f), 0x3f),
+        channel(u32::from(color & 0x1f), 0x1f),
+        255,
+    ]
+}
+
 fn sentinel_readback(device: &Device, size: u64, label: &str) -> Buffer {
     let buffer = device.create_buffer(&BufferDescriptor {
         label: Some(label),
@@ -843,6 +871,135 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
         (TextureFormat::Bc2RgbaUnormSrgb, srgb_available),
         (TextureFormat::Bc3RgbaUnormSrgb, srgb_available),
     ];
+    let cube_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 compressed cube sampling layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: false },
+                    view_dimension: TextureViewDimension::Cube,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                count: None,
+            },
+        ],
+    });
+    let cube_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 compressed cube sampling pipeline layout"),
+        bind_group_layouts: &[Some(&cube_layout)],
+        immediate_size: 0,
+    });
+    let cube_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 compressed cube sampling shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                struct VertexIn { @location(0) position: vec2f, @location(1) direction: vec3f }
+                struct VertexOut { @builtin(position) position: vec4f, @location(0) direction: vec3f }
+                @group(0) @binding(0) var image: texture_cube<f32>;
+                @group(0) @binding(1) var nearest: sampler;
+                @vertex fn vs(input: VertexIn) -> VertexOut {
+                    return VertexOut(vec4f(input.position, 0.0, 1.0), input.direction);
+                }
+                @fragment fn fs(input: VertexOut) -> @location(0) vec4f {
+                    return textureSample(image, nearest, input.direction);
+                }
+            "#
+            .into(),
+        ),
+    });
+    let cube_attributes = [
+        VertexAttribute {
+            format: VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        },
+        VertexAttribute {
+            format: VertexFormat::Float32x3,
+            offset: 8,
+            shader_location: 1,
+        },
+    ];
+    let cube_vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 20,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &cube_attributes,
+    })];
+    let cube_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 compressed cube sampling pipeline"),
+        layout: Some(&cube_pipeline_layout),
+        vertex: VertexState {
+            module: &cube_shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &cube_vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &cube_shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    const CUBE_DIRECTIONS: [[f32; 3]; 6] = [
+        [1.0, 0.0, 0.0],
+        [-1.0, 0.0, 0.0],
+        [0.0, 1.0, 0.0],
+        [0.0, -1.0, 0.0],
+        [0.0, 0.0, 1.0],
+        [0.0, 0.0, -1.0],
+    ];
+    let mut cube_vertex_data = Vec::with_capacity(6 * 6 * 5);
+    for (face, direction) in CUBE_DIRECTIONS.into_iter().enumerate() {
+        let left = -1.0 + face as f32 * 0.25;
+        let right = left + 0.25;
+        let positions = [
+            [left, -1.0],
+            [right, -1.0],
+            [right, 1.0],
+            [left, -1.0],
+            [right, 1.0],
+            [left, 1.0],
+        ];
+        for position in positions {
+            cube_vertex_data.extend_from_slice(&[
+                position[0],
+                position[1],
+                direction[0],
+                direction[1],
+                direction[2],
+            ]);
+        }
+    }
+    let cube_vertex_bytes = cube_vertex_data
+        .iter()
+        .flat_map(|value| value.to_ne_bytes())
+        .collect::<Vec<_>>();
+    let cube_vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 compressed cube sampling face directions"),
+        size: cube_vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    cube_vertex
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map BC cube sampling vertices")
+        .copy_from_slice(&cube_vertex_bytes);
+    cube_vertex.unmap();
+    let cube_pixel_readback = sentinel_readback(&device, 8 * 256, "FL9_1 BC cube sampled pixels");
     for (format, feature_available) in cube_formats {
         let caps = adapter.get_texture_format_features(format);
         let cube_mask = cube_limits.texture_cube_format_mask;
@@ -902,6 +1059,24 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
             format,
             usage: required_usage,
             view_formats: &[],
+        });
+        let cube_view = cube.create_view(&TextureViewDescriptor {
+            dimension: Some(TextureViewDimension::Cube),
+            ..Default::default()
+        });
+        let cube_bind_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("FL9_1 compressed cube sampling resources"),
+            layout: &cube_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(&cube_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
         });
         let block_size = match format {
             TextureFormat::Bc1RgbaUnorm | TextureFormat::Bc1RgbaUnormSrgb => 8,
@@ -965,11 +1140,60 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
                 },
             );
         }
+        {
+            let mut pass = cube_encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 compressed cube sampling pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&cube_pipeline);
+            pass.set_bind_group(0, &cube_bind_group, &[]);
+            pass.set_vertex_buffer(0, cube_vertex.slice(..));
+            pass.draw(0..36, 0..1);
+        }
+        cube_encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &cube_pixel_readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
         let submission = queue.submit([cube_encoder.finish()]);
         let (sender, receiver) = std::sync::mpsc::channel();
+        let sampled_sender = sender.clone();
         output
             .slice(..)
             .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        cube_pixel_readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| {
+                sampled_sender.send(result).unwrap()
+            });
         device
             .poll(PollType::Wait {
                 submission_index: Some(submission),
@@ -980,6 +1204,10 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
             .recv_timeout(Duration::from_secs(10))
             .expect("compressed cube readback callback")
             .expect("map compressed cube readback");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("compressed cube sampled-pixel callback")
+            .expect("map compressed cube sampled pixels");
         let bytes = output.slice(..).get_mapped_range().unwrap();
         for face in 0..6 {
             let blocks = std::array::from_fn(|_| face_blocks[face].clone());
@@ -988,7 +1216,39 @@ fn public_dx11_bc1_bc2_bc3_unorm_and_srgb_subsets_at_fl91() {
         }
         drop(bytes);
         output.unmap();
-        println!("PASS: {format:?} compressed cube readback covered all six faces");
+        {
+            let pixels = cube_pixel_readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped compressed cube sampled pixels");
+            for y in 0..8 {
+                for face in 0..6 {
+                    let color = 0xf800u16 ^ (face as u16 * 0x111);
+                    let expected = bc_cube_expected_sample(format, color);
+                    let offset = y * 256 + face * 4;
+                    for channel in 0..4 {
+                        let actual = i16::from(pixels[offset + channel]);
+                        let expected = i16::from(expected[channel]);
+                        assert!(
+                            (actual - expected).abs() <= 2,
+                            "{format:?} sampled cube face {face} at ({face}, {y}) channel {channel}: expected {expected}±2, got {actual}"
+                        );
+                    }
+                }
+                let row_end = y * 256 + 8 * 4;
+                let padded_row_end = (y + 1) * 256;
+                assert!(
+                    pixels[row_end..padded_row_end]
+                        .iter()
+                        .all(|&byte| byte == 0xcd),
+                    "{format:?} sampled cube readback row {y} padding was modified"
+                );
+            }
+        }
+        cube_pixel_readback.unmap();
+        println!(
+            "PASS: {format:?} compressed cube sampling and raw readback verified all six faces"
+        );
     }
 
     if srgb_available {

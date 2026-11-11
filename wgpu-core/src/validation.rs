@@ -3609,24 +3609,146 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
     module: &naga::Module,
     entry_point: &naga::EntryPoint,
 ) -> Option<Vec<SamplingPair>> {
-    if entry_point.stage != naga::ShaderStage::Fragment
-        || entry_point.function.body.iter().any(|statement| {
-            !matches!(
-                statement,
-                naga::Statement::Emit(_) | naga::Statement::Return { .. }
-            )
-        })
-        || entry_point
+    if entry_point.stage != naga::ShaderStage::Fragment {
+        return None;
+    }
+
+    if entry_point
+        .function
+        .body
+        .iter()
+        .any(|statement| matches!(statement, naga::Statement::Call { .. }))
+    {
+        if entry_point
             .function
             .expressions
             .iter()
             .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
+        {
+            return None;
+        }
+        let mut call = None;
+        let mut returned_value = None;
+        for statement in entry_point.function.body.iter() {
+            match statement {
+                naga::Statement::Emit(_) => {}
+                naga::Statement::Call {
+                    function,
+                    arguments,
+                    result: Some(result),
+                } if call.is_none() => {
+                    call = Some((*function, arguments.as_slice(), *result));
+                }
+                naga::Statement::Return { value: Some(value) } if returned_value.is_none() => {
+                    returned_value = Some(*value);
+                }
+                _ => return None,
+            }
+        }
+
+        let (helper, arguments, call_result) = call?;
+        let returned_value = returned_value?;
+        if arguments.len() != 1
+            || entry_point.function.arguments.len() != 1
+            || !fl9_is_float_vector(
+                module,
+                entry_point.function.arguments[0].ty,
+                naga::VectorSize::Bi,
+            )
+            || !fl9_is_float_vector(
+                module,
+                entry_point.function.result.as_ref()?.ty,
+                naga::VectorSize::Quad,
+            )
+            || !matches!(
+                entry_point.function.expressions[arguments[0]],
+                naga::Expression::FunctionArgument(0)
+            )
+            || returned_value != call_result
+            || !matches!(
+                entry_point.function.expressions[call_result],
+                naga::Expression::CallResult(function) if function == helper
+            )
+            || entry_point
+                .function
+                .expressions
+                .iter()
+                .any(|(_, expression)| !match expression {
+                    naga::Expression::FunctionArgument(_) => true,
+                    naga::Expression::CallResult(function) => *function == helper,
+                    _ => false,
+                })
+        {
+            return None;
+        }
+
+        let helper_function = &module.functions[helper];
+        if helper_function.arguments.len() != 1
+            || !fl9_is_float_vector(
+                module,
+                helper_function.arguments[0].ty,
+                naga::VectorSize::Bi,
+            )
+            || !fl9_is_float_vector(
+                module,
+                helper_function.result.as_ref()?.ty,
+                naga::VectorSize::Quad,
+            )
+        {
+            return None;
+        }
+        let mut sample_result = None;
+        for statement in helper_function.body.iter() {
+            match statement {
+                naga::Statement::Emit(_) => {}
+                naga::Statement::Return { value: Some(value) } if sample_result.is_none() => {
+                    sample_result = Some(*value);
+                }
+                _ => return None,
+            }
+        }
+        let sample_result = sample_result?;
+        if helper_function
+            .expressions
+            .iter()
+            .any(|(handle, expression)| {
+                !matches!(
+                    expression,
+                    naga::Expression::FunctionArgument(_)
+                        | naga::Expression::GlobalVariable(_)
+                        | naga::Expression::Literal(_)
+                        | naga::Expression::ImageSample { .. }
+                ) || (matches!(expression, naga::Expression::ImageSample { .. })
+                    && handle != sample_result)
+            })
+        {
+            return None;
+        }
+        let pair = fl9_texture_sample_level_zero_pair(
+            module,
+            &helper_function.expressions,
+            sample_result,
+            Some(0),
+        )?;
+        return Some(alloc::vec![pair]);
+    }
+
+    if entry_point.function.body.iter().any(|statement| {
+        !matches!(
+            statement,
+            naga::Statement::Emit(_) | naga::Statement::Return { .. }
+        )
+    }) || entry_point
+        .function
+        .expressions
+        .iter()
+        .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
     {
         return None;
     }
 
     let mut pairs = Vec::new();
-    for (_, expression) in entry_point.function.expressions.iter() {
+    for (handle, expression) in entry_point.function.expressions.iter() {
         if !matches!(
             expression,
             naga::Expression::ImageSample {
@@ -3636,73 +3758,97 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
         ) {
             continue;
         }
-        let naga::Expression::ImageSample {
-            image,
-            sampler,
-            gather: None,
-            coordinate: _,
-            array_index: None,
-            offset: None,
-            level: naga::SampleLevel::Exact(level),
-            depth_ref: None,
-            clamp_to_edge: false,
-        } = expression
-        else {
-            return None;
-        };
-
-        if !matches!(
-            entry_point.function.expressions[*level],
-            naga::Expression::Literal(naga::Literal::F32(value)) if value.to_bits() == 0
-        ) {
-            return None;
-        }
-        let naga::Expression::GlobalVariable(image) = entry_point.function.expressions[*image]
-        else {
-            return None;
-        };
-        let naga::Expression::GlobalVariable(sampler) = entry_point.function.expressions[*sampler]
-        else {
-            return None;
-        };
-        let image_global = &module.global_variables[image];
-        let sampler_global = &module.global_variables[sampler];
-        if image_global.space != naga::AddressSpace::Handle
-            || sampler_global.space != naga::AddressSpace::Handle
-            || !matches!(
-                module.types[image_global.ty].inner,
-                naga::TypeInner::Image {
-                    dim: naga::ImageDimension::D2,
-                    arrayed: false,
-                    class: naga::ImageClass::Sampled {
-                        kind: naga::ScalarKind::Float,
-                        multi: false,
-                    },
-                }
-            )
-            || !matches!(
-                module.types[sampler_global.ty].inner,
-                naga::TypeInner::Sampler { comparison: false }
-            )
-        {
-            return None;
-        }
-        let image = image_global.binding.as_ref()?;
-        let sampler = sampler_global.binding.as_ref()?;
-        pairs.push(SamplingPair {
-            texture_group: image.group,
-            texture_binding: image.binding,
-            sampler_group: sampler.group,
-            sampler_binding: sampler.binding,
-        });
+        pairs.push(fl9_texture_sample_level_zero_pair(
+            module,
+            &entry_point.function.expressions,
+            handle,
+            None,
+        )?);
     }
-
     if pairs.is_empty() {
         return None;
     }
     pairs.sort_unstable();
     pairs.dedup();
     Some(pairs)
+}
+
+fn fl9_is_float_vector(
+    module: &naga::Module,
+    ty: naga::Handle<naga::Type>,
+    size: naga::VectorSize,
+) -> bool {
+    matches!(
+        module.types[ty].inner,
+        naga::TypeInner::Vector { size: actual_size, scalar }
+            if actual_size == size && scalar.kind == naga::ScalarKind::Float && scalar.width == 4
+    )
+}
+
+fn fl9_texture_sample_level_zero_pair(
+    module: &naga::Module,
+    expressions: &naga::Arena<naga::Expression>,
+    sample: naga::Handle<naga::Expression>,
+    coordinate_argument: Option<u32>,
+) -> Option<SamplingPair> {
+    let naga::Expression::ImageSample {
+        image,
+        sampler,
+        coordinate,
+        array_index: None,
+        offset: None,
+        level: naga::SampleLevel::Exact(level),
+        depth_ref: None,
+        gather: None,
+        clamp_to_edge: false,
+    } = expressions[sample]
+    else {
+        return None;
+    };
+    if !matches!(
+        expressions[level],
+        naga::Expression::Literal(naga::Literal::F32(value)) if value.to_bits() == 0
+    ) || coordinate_argument.is_some_and(|index| {
+        !matches!(expressions[coordinate], naga::Expression::FunctionArgument(arg) if arg == index)
+    }) {
+        return None;
+    }
+    let naga::Expression::GlobalVariable(image) = expressions[image] else {
+        return None;
+    };
+    let naga::Expression::GlobalVariable(sampler) = expressions[sampler] else {
+        return None;
+    };
+    let image_global = &module.global_variables[image];
+    let sampler_global = &module.global_variables[sampler];
+    if image_global.space != naga::AddressSpace::Handle
+        || sampler_global.space != naga::AddressSpace::Handle
+        || !matches!(
+            module.types[image_global.ty].inner,
+            naga::TypeInner::Image {
+                dim: naga::ImageDimension::D2,
+                arrayed: false,
+                class: naga::ImageClass::Sampled {
+                    kind: naga::ScalarKind::Float,
+                    multi: false,
+                },
+            }
+        )
+        || !matches!(
+            module.types[sampler_global.ty].inner,
+            naga::TypeInner::Sampler { comparison: false }
+        )
+    {
+        return None;
+    }
+    let image = image_global.binding.as_ref()?;
+    let sampler = sampler_global.binding.as_ref()?;
+    Some(SamplingPair {
+        texture_group: image.group,
+        texture_binding: image.binding,
+        sampler_group: sampler.group,
+        sampler_binding: sampler.binding,
+    })
 }
 
 fn function_uses_texture_gather(function: &naga::Function) -> bool {
@@ -10365,6 +10511,15 @@ mod tests {
             fn exact_helper(uv: vec2f) -> vec4f {
                 return textureSampleLevel(image, smp, uv, 0.0);
             }
+            fn dynamic_helper(uv: vec2f, level: f32) -> vec4f {
+                return textureSampleLevel(image, smp, uv, level);
+            }
+            fn nested_helper(uv: vec2f) -> vec4f {
+                return exact_helper(uv);
+            }
+            fn transformed_helper(uv: vec2f) -> vec4f {
+                return textureSampleLevel(image, smp, uv + vec2f(0.0), 0.0);
+            }
             @fragment fn level_zero(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleLevel(image, smp, uv, 0.0);
             }
@@ -10384,6 +10539,18 @@ mod tests {
             @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return exact_helper(uv);
             }
+            @fragment fn helper_dynamic(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return dynamic_helper(uv, 0.0);
+            }
+            @fragment fn helper_nested(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return nested_helper(uv);
+            }
+            @fragment fn helper_transformed(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return transformed_helper(uv);
+            }
+            @fragment fn helper_twice(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return exact_helper(uv) + exact_helper(uv);
+            }
             @fragment fn control_flow(@location(0) uv: vec2f) -> @location(0) vec4f {
                 if uv.x > 0.5 {
                     return textureSampleLevel(image, smp, uv, 0.0);
@@ -10392,6 +10559,9 @@ mod tests {
             }
             @fragment fn implicit(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSample(image, smp, uv);
+            }
+            @fragment fn mixed(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSample(image, smp, uv) + textureSampleLevel(image, smp, uv, 0.0);
             }
             "#,
         )
@@ -10436,7 +10606,10 @@ mod tests {
             "level_nonzero",
             "level_dynamic",
             "level_zero_with_offset",
-            "helper",
+            "helper_dynamic",
+            "helper_nested",
+            "helper_transformed",
+            "helper_twice",
             "control_flow",
         ] {
             assert!(
@@ -10459,6 +10632,34 @@ mod tests {
                     .is_empty()
             );
         }
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_level(
+                naga::ShaderStage::Fragment,
+                "helper",
+                &restricted,
+            )
+            .unwrap());
+        assert_eq!(
+            interface
+                .entry_point_fl9_texture_sample_level_zero_pairs(
+                    naga::ShaderStage::Fragment,
+                    "helper",
+                )
+                .unwrap(),
+            alloc::vec![SamplingPair {
+                texture_group: 2,
+                texture_binding: 7,
+                sampler_group: 2,
+                sampler_binding: 42,
+            }]
+        );
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_level(
+                naga::ShaderStage::Fragment,
+                "mixed",
+                &restricted,
+            )
+            .unwrap());
         assert!(!interface
             .entry_point_uses_unsupported_texture_sample_level(
                 naga::ShaderStage::Fragment,

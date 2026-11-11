@@ -525,16 +525,19 @@ fractional bias, derivative helpers and entry-point isolation; this does not
 claim full biased or explicit-gradient sampling support.
 
 General `textureSampleLevel` remains restricted. A separate narrow
-`texture_sample_level_zero_2d_float_fragment` limit allows only a direct,
+`texture_sample_level_zero_2d_float_fragment` limit allows either one direct,
 unconditional fragment `textureSampleLevel(texture_2d<f32>, sampler, uv,
-0.0)` expression. Naga validates and lowers that proven operation to implicit
-sampling; one-mip views make the selected mip equivalent, while Core checks
-the currently bound view and an equal-min/mag, anisotropy-1 sampler at draw
-time. Dynamic or non-positive-zero LOD, helpers, control flow, other resource
-shapes and incompatible bindings remain rejected. The generic
+0.0)` expression or the same operation returned through one straight-line
+helper that forwards its `vec2f` argument unchanged. Naga validates and lowers
+that proven operation to implicit sampling; one-mip views make the selected
+mip equivalent, while Core checks the currently bound view and an
+equal-min/mag, anisotropy-1 sampler at draw time. Dynamic or non-positive-zero
+LOD, nested helpers, helper computation or control flow, other resource shapes
+and incompatible bindings remain rejected. The generic
 `texture_sample_level` limit stays false. FXC's X4532 diagnostic remains for
-unlowered explicit LOD. Strict public readback checked 64/64 pixels at
-requested/actual FL9_1 and two invalid binding cases were rejected before HAL.
+unlowered explicit LOD. Strict public readback checked 64/64 pixels for both
+direct and helper forms at requested/actual FL9_1; invalid helper shapes and
+incompatible bindings are rejected before HAL.
 
 WGSL `textureGather` has its own selected-entry downlevel limit. HLSL Gather
 is available to graphics stages at SM4.1 (FL10_1), while compute gather4

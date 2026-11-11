@@ -2750,8 +2750,10 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
              struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
              @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(vec4f(position, 0.0, 1.0), uv); }\n\
              fn sample_exact(uv: vec2f, lod: f32) -> vec4f { return textureSampleLevel(image, smp, uv, lod); }\n\
+             fn sample_zero(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, uv, 0.0); }\n\
              @fragment fn exact_direct(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, 0.0); }\n\
              @fragment fn exact_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_exact(uv, uv.x); }\n\
+             @fragment fn exact_helper_zero(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_zero(uv); }\n\
              @fragment fn implicit(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSample(image, smp, uv); }"
                 .into(),
         ),
@@ -2802,6 +2804,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         })
     };
     let sample_level_pipeline = create_sample_level_pipeline("exact_direct");
+    let sample_level_helper_pipeline = create_sample_level_pipeline("exact_helper_zero");
     expect_validation_error_containing(
         &device,
         "helper explicit texture sample level",
@@ -2985,6 +2988,87 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     }
     sample_level_readback.unmap();
     println!("PASS: direct fragment textureSampleLevel(..., 0.0) lowered for the one-mip view; all 64 pixels sampled the two-color pattern {expected_level_zero:?}");
+
+    let mut helper_encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    {
+        let mut pass = helper_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 helper explicit LOD zero rendering pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &sample_level_target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&sample_level_helper_pipeline);
+        pass.set_bind_group(2, &level_zero_group, &[]);
+        pass.set_vertex_buffer(0, sample_level_vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    helper_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &sample_level_target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &sample_level_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let helper_submission = queue.submit([helper_encoder.finish()]);
+    let (helper_sender, helper_receiver) = std::sync::mpsc::channel();
+    sample_level_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| {
+            helper_sender.send(result).unwrap()
+        });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(helper_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for helper explicit LOD zero GPU execution");
+    helper_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("helper explicit LOD zero map callback")
+        .expect("map helper explicit LOD zero output");
+    {
+        let pixels = sample_level_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped helper explicit LOD zero output");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let expected = expected_level_zero[usize::from(x >= 4)];
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    expected,
+                    "helper explicit level-zero sample pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    sample_level_readback.unmap();
+    println!("PASS: one straight-line helper forwarded textureSampleLevel(..., 0.0) and all 64 GPU-read pixels matched the expected pattern");
 
     let expect_sample_level_draw_rejection =
         |group: &BindGroup, label: &str, expected_error: &str| {

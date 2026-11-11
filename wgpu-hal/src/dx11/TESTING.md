@@ -798,18 +798,21 @@ unlowered literal and dynamic explicit LOD with
 `X4532: texlod not supported on this target` for both
 `ps_4_0_level_9_1` and `ps_4_0_level_9_3`. A separate downlevel limit permits
 only a direct, unconditional fragment sample of `texture_2d<f32>` with literal
-positive `0.0`; Naga is validated first and HAL lowers that exact operation to
-implicit sampling. The currently selected view must expose one mip, and the
-bound regular sampler must have equal min/mag filters and effective
-anisotropy 1. Dynamic, negative-zero, nonzero or fractional LOD, helpers,
-control flow, other texture shapes, comparison samplers and incompatible draw
-bindings remain rejected. Core checks the currently bound view and sampler
-before each draw. The strict public test verified 64/64 pixels on the RTX
-3090 Ti at requested/actual FL9_1 and verified two-mip and mismatched-filter
-bindings fail before drawing. CPU-only Core and HAL tests cover proof shape,
-entry-point selection, Naga lowering and FXC acceptance. This does not enable
-the general `texture_sample_level` capability, which remains available only at
-FL10_0 and above in the generic downlevel model.
+positive `0.0`, or that same operation returned through one straight-line
+helper that forwards its `vec2f` coordinate unchanged. Naga is validated first
+and HAL lowers only the proven sample expression to implicit sampling. The
+currently selected view must expose one mip, and the bound regular sampler
+must have equal min/mag filters and effective anisotropy 1. Dynamic,
+negative-zero, nonzero or fractional LOD, nested helpers, helper computation
+or control flow, other texture shapes, comparison samplers and incompatible
+draw bindings remain rejected. Core checks the currently bound view and
+sampler before each draw. The strict public test verified all 64 pixels for
+both direct and helper forms on the RTX 3090 Ti at requested/actual FL9_1 and
+verified two-mip and mismatched-filter bindings fail before drawing. CPU-only
+Core and HAL tests cover proof shape, entry-point selection, Naga lowering and
+FXC acceptance. This does not enable the general `texture_sample_level`
+capability, which remains available only at FL10_0 and above in the generic
+downlevel model.
 
 FXC also rejects `GetDimensions`-based HLSL emitted for `textureDimensions`,
 level-specific dimensions and `textureNumLevels` with X3548 under both
