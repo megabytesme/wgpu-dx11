@@ -310,7 +310,7 @@ pub(super) struct BackendCapabilities {
     pub r8_unorm_copy_source: bool,
     pub rg8_unorm_copy_source: bool,
     pub rgb565_copy_source: bool,
-    pub rg8_snorm_texture_to_texture_copy: bool,
+    pub rg8_snorm_shadow_copy_readback: bool,
     pub rgba8_snorm_texture_to_texture_copy: bool,
     pub rgb5551_texture_to_texture_copy: bool,
     pub rgba4444_texture_to_texture_copy: bool,
@@ -456,7 +456,7 @@ impl BackendCapabilities {
         r8_unorm_copy_source: true,
         rg8_unorm_copy_source: true,
         rgb565_copy_source: true,
-        rg8_snorm_texture_to_texture_copy: false,
+        rg8_snorm_shadow_copy_readback: true,
         rgba8_snorm_texture_to_texture_copy: true,
         rgb5551_texture_to_texture_copy: true,
         rgba4444_texture_to_texture_copy: true,
@@ -1110,6 +1110,7 @@ impl Capabilities {
             wgt::TextureFormat::Bgra8UnormSrgb,
             wgt::TextureFormat::R8Unorm,
             wgt::TextureFormat::Rg8Unorm,
+            wgt::TextureFormat::Rg8Snorm,
             wgt::TextureFormat::Rgb5g6b5Unorm,
             wgt::TextureFormat::Bc1RgbaUnorm,
             wgt::TextureFormat::Bc1RgbaUnormSrgb,
@@ -1368,7 +1369,7 @@ impl Capabilities {
         let copy_source_implemented = match format {
             wgt::TextureFormat::R8Unorm => self.backend.r8_unorm_copy_source,
             wgt::TextureFormat::Rg8Unorm => self.backend.rg8_unorm_copy_source,
-            wgt::TextureFormat::Rg8Snorm => self.backend.rg8_snorm_texture_to_texture_copy,
+            wgt::TextureFormat::Rg8Snorm => self.backend.rg8_snorm_shadow_copy_readback,
             wgt::TextureFormat::Rgba8Snorm => self.backend.rgba8_snorm_texture_to_texture_copy,
             wgt::TextureFormat::Bc1RgbaUnorm => self.backend.bc1_texture_to_texture_copy,
             wgt::TextureFormat::Bc2RgbaUnorm => self.backend.bc2_texture_to_texture_copy,
@@ -1517,7 +1518,7 @@ impl Capabilities {
                     && !(format == wgt::TextureFormat::Rgba8Snorm
                         && self.backend.rgba8_snorm_texture_to_texture_copy)
                     && !(format == wgt::TextureFormat::Rg8Snorm
-                        && self.backend.rg8_snorm_texture_to_texture_copy)
+                        && self.backend.rg8_snorm_shadow_copy_readback)
                     && !(format == wgt::TextureFormat::Rgb5a1Unorm
                         && self.backend.rgb5551_texture_to_texture_copy)
                     && !(format == wgt::TextureFormat::Rgba4Unorm
@@ -1783,7 +1784,7 @@ impl Capabilities {
                 let copy_source_implemented = match format {
                     wgt::TextureFormat::R8Unorm => self.backend.r8_unorm_copy_source,
                     wgt::TextureFormat::Rg8Unorm => self.backend.rg8_unorm_copy_source,
-                    wgt::TextureFormat::Rg8Snorm => self.backend.rg8_snorm_texture_to_texture_copy,
+                    wgt::TextureFormat::Rg8Snorm => self.backend.rg8_snorm_shadow_copy_readback,
                     wgt::TextureFormat::Rgba8Snorm => {
                         self.backend.rgba8_snorm_texture_to_texture_copy
                     }
@@ -4446,6 +4447,7 @@ mod tests {
                     format,
                     wgt::TextureFormat::R8Unorm
                         | wgt::TextureFormat::Rg8Unorm
+                        | wgt::TextureFormat::Rg8Snorm
                         | wgt::TextureFormat::Rgba8Snorm
                         | wgt::TextureFormat::Bc1RgbaUnorm
                         | wgt::TextureFormat::Bc2RgbaUnorm
@@ -5976,6 +5978,10 @@ mod tests {
             wgt::TextureUses::RESOURCE,
             wgt::TextureUses::COPY_DST,
             sampled_upload,
+            wgt::TextureUses::COPY_SRC,
+            wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST,
+            wgt::TextureUses::COPY_SRC | wgt::TextureUses::RESOURCE,
+            wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE,
         ] {
             assert_eq!(
                 caps.check_private_texture_2d(format, usage, [7, 5], 1, 1, 1),
@@ -5983,10 +5989,8 @@ mod tests {
             );
         }
         for usage in [
-            wgt::TextureUses::COPY_SRC,
             wgt::TextureUses::COLOR_TARGET,
             wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
-            wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST,
         ] {
             assert_eq!(
                 caps.check_private_texture_2d(format, usage, [7, 5], 1, 1, 1),
@@ -6365,30 +6369,35 @@ mod tests {
     }
 
     #[test]
-    fn rg8_snorm_texture_copy_source_stays_disabled_without_verified_backend_support() {
+    fn rg8_snorm_shadow_copy_source_requires_texture_query_and_separates_filterability() {
         use TextureRejection::*;
 
         let format = wgt::TextureFormat::Rg8Snorm;
-        let usage =
-            wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST | wgt::TextureUses::COPY_SRC;
         let texture2d = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
         let shader_sample = D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32;
         let mut caps = model(FeatureLevel::L9_1);
         caps.driver.rg8_snorm = Query::Value(texture2d | shader_sample);
 
-        assert_eq!(
-            caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
-            Err(UnsupportedUsage),
-            "a positive format query cannot substitute for verified copy behavior"
-        );
-        assert!(!caps
+        for usage in [
+            wgt::TextureUses::COPY_SRC,
+            wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST,
+            wgt::TextureUses::COPY_SRC | wgt::TextureUses::RESOURCE,
+            wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE,
+        ] {
+            assert_eq!(
+                caps.check_private_texture_2d(format, usage, [8, 8], 1, 1, 1),
+                Ok(()),
+                "CPU-shadow copies need TEXTURE2D, but not RENDER_TARGET"
+            );
+        }
+        assert!(caps
             .texture_format_capabilities(format)
             .contains(crate::TextureFormatCapabilities::COPY_SRC));
         assert_eq!(
             caps.texture_to_buffer_copy_format_mask()
                 & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
-            0,
-            "GPU texture-copy support must not enable CPU readback"
+            wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+            "the execution-ordered CPU shadow also supports raw-byte readback"
         );
 
         let mut unavailable = caps;
@@ -6396,6 +6405,33 @@ mod tests {
         assert!(!unavailable
             .texture_format_capabilities(format)
             .contains(crate::TextureFormatCapabilities::COPY_SRC));
+        assert_eq!(
+            unavailable.texture_to_buffer_copy_format_mask()
+                & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
+            0
+        );
+
+        let mut no_texture2d = caps;
+        no_texture2d.driver.rg8_snorm = Query::Value(shader_sample);
+        assert_eq!(
+            no_texture2d.check_private_texture_2d(
+                format,
+                wgt::TextureUses::COPY_SRC,
+                [8, 8],
+                1,
+                1,
+                1,
+            ),
+            Err(DriverFormatUnsupported)
+        );
+        let mut no_shader_sample = caps;
+        no_shader_sample.driver.rg8_snorm = Query::Value(texture2d);
+        assert!(no_shader_sample
+            .texture_format_capabilities(format)
+            .contains(crate::TextureFormatCapabilities::COPY_SRC));
+        assert!(!no_shader_sample
+            .texture_format_capabilities(format)
+            .contains(crate::TextureFormatCapabilities::SAMPLED_LINEAR));
     }
 
     #[test]

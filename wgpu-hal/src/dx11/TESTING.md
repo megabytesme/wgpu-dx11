@@ -2365,8 +2365,9 @@ BC1/BC2/BC3 `COPY_SRC` is limited to GPU texture-to-texture copying; a controlle
 texture-to-buffer attempt fails core validation because FL9_x cannot safely
 copy an SRV-only BC texture to CPU-visible memory. R16G16_SNORM still does not
 support render-target, copy-source or readback operations in this private
-subset. RG8_SNORM remains sampled/upload-only because valid FL9_1 GPU copies
-failed on the development driver; RGBA8_SNORM supports same-format GPU texture
+subset. RG8_SNORM texture-to-texture copy and raw readback now use an
+execution-ordered CPU byte shadow because valid FL9_1 native GPU copies failed
+on the development driver; RGBA8_SNORM supports same-format GPU texture
 copies only when the selected device reports `TEXTURE2D`. Their readback masks
 remain clear and texture-to-buffer readback is still rejected. RGB5A1 and RGBA4 remain
 non-renderable and lack texture-to-buffer readback, but support query-gated
@@ -2403,25 +2404,33 @@ cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx1
 cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_snorm_copy public_dx11_rgba8_snorm_texture_copy_then_sample_at_fl91 -- --nocapture --test-threads=1
 ```
 
-### RG8_SNORM GPU texture copy boundary
+### RG8_SNORM shadow copy and raw readback
 
-`CheckFormatSupport(TEXTURE2D)` is not sufficient evidence that the backend's
-copy operation is safe. A strict forced-FL9_1 probe selected the RTX 3090 Ti
-(`0x10de:0x2203`, driver `32.0.16.2101`) and exercised RG8_SNORM upload,
-sampling, RGBA8 render and readback. Those operations verified all 16 output
-pixels when copies were omitted. Submitting a valid full
-`CopySubresourceRegion` removed the device with `E_INVALIDARG`; replacing it
-diagnostically with `CopyResource` produced the same result. RG8_SNORM
-`COPY_SRC` is therefore disabled in both the private validation model and
-public capability projection. The test does not establish a universal FL9_1
-limitation; other device and driver behavior remains unverified. A separate
-Core fixture checks that a synthetically cleared texture-to-buffer format-mask
-bit rejects readback before HAL.
+The RTX 3090 Ti's selected FL9_1 format query includes `TEXTURE2D` and
+`SHADER_SAMPLE`, but a valid native `CopySubresourceRegion` and diagnostic
+`CopyResource` both returned `E_INVALIDARG`. The backend therefore does not
+issue native texture-copy calls for RG8_SNORM. When `TEXTURE2D` is positively
+reported, a `COPY_SRC` resource retains an execution-ordered raw-byte shadow.
+Queue writes, buffer-to-texture updates and texture copies modify it at command
+replay time; texture copies also update the native destination with
+`UpdateSubresource`. Texture-to-buffer readback emits the exact signed
+normalized encoding from that shadow. No render-target bind flag or RTV is
+created for this path. Other driver results and historical FL9_1 hardware
+remain unverified.
+
+The synthetic capability test confirms that a missing `TEXTURE2D` query keeps
+`COPY_SRC` and the readback mask clear, while the presence or absence of
+`SHADER_SAMPLE` affects filterability independently. The strict public test
+requires the complete copy/upload/sample usage union and filterability, then
+checks padded queue upload, an execution-ordered partial buffer upload,
+partial texture copy, exact padded source/destination readback, preserved
+destination bytes and signed sampling from the native copy destination.
 
 ```powershell
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib rg8_snorm_shadow_copy_source_requires_texture_query_and_separates_filterability -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib rg8_snorm_shadow_preserves_raw_signed_bytes_and_partial_copies -- --nocapture --test-threads=1
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
-cargo +1.93.1 test --offline -j2 -p wgpu-hal --lib --no-default-features --features dx11 rg8_snorm_texture_copy_source_stays_disabled_without_verified_backend_support -- --exact --nocapture
-cargo +1.93.1 test --offline -j2 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,wgsl,std instance::dx11_fixture_tests::fl91_core_format_mask_rejects_texture_readback_before_hal -- --exact --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_rg8_snorm_shadow_copy_and_readback_at_fl91 -- --exact --nocapture --test-threads=1
 ```
 
 Run the controlled core copy/readback boundary test with strict physical
@@ -4455,3 +4464,18 @@ cargo +1.93.1 clippy --offline -j16 -p wgpu --no-default-features --features dx1
 
 Both Clippy targets passed with existing HAL `too_many_arguments` warnings
 only. Workspace formatting and `git diff --check` passed.
+
+### Odd-sized indexed buffer ranges
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib private_device_creates_copy_buffers_and_submits_through_hal -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_index_ranges -- --nocapture --test-threads=1
+```
+
+The strict public test selects the physical RTX 3090 Ti at requested/actual
+FL9_1. It binds a 13-byte Uint32 index slice backed by a 16-byte allocation,
+draws the three complete indices and verifies all 64 output pixels. A four-
+index draw is rejected by Core when its command encoder is finished. The
+range start must still be aligned, and the slice must stay within its backing
+allocation.

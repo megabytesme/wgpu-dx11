@@ -2,15 +2,19 @@
 
 ## Latest current state and next queue — 2026-11-11
 
-The latest committed shader addition is query-gated direct fragment
-`textureSampleCompare` and `textureSampleCompareLevel` with one constant
-`i32x2` texel offset. Checkpoint `e9aa5c792a9b173ed04c9d81c90eca04e7ba98ed`
-verified both entry points at requested/actual FL9_1. The current shader
-slice removes false rejection from unreachable helper functions: Naga emits
-only functions reachable from the selected entry points, and Core checks
-matrix inverse and outer product only in the selected entry's call graph.
-Strict public readback verified a supported mat2 inverse with an unused mat3
-inverse helper; reachable mat3 inverse remains a Core validation error.
+Checkpoint `ab926004e` fixes a public Core/HAL mismatch for index buffer
+ranges: offsets remain index-width aligned, but an in-bounds byte size may
+have a trailing partial index. Core clamps draws to the complete indices.
+Strict public FL9_1 rendering verified a 13-byte Uint32 range draws three
+indices and rejects a four-index draw.
+
+The current uncommitted RG8_SNORM change adds an execution-ordered raw-byte
+shadow for partial texture copies and readback. It fixes a HAL format-query
+mask mismatch that incorrectly required an RTV despite the fallback. Strict
+FL9_1 public rendering verifies padded uploads, partial uploads/copies,
+preserved bytes and sampled output; the complete private and public suites
+passed after aligning their format expectations. This change still needs its
+verified checkpoint commit.
 
 The backend is a substantial opt-in public implementation for a bounded
 FL9_1 graphics subset, not a drop-in backend for arbitrary wgpu programs or a
@@ -22,22 +26,28 @@ ordinary texture arrays and many shader/profile combinations remain
 unavailable or deliberately gated. Distinguish native FL9_1 limits from
 potentially implementable format or shader subsets before selecting work.
 
-Three independent read-only audits found no new confirmed public Core-valid
-request reaching an unsupported HAL path in their reviewed shader,
-capability/resource, and adapter paths. The complete Core/HAL contract matrix
-is still open. Public HWND presentation and the desktop cube example have
-hardware evidence; historical FL9_1 drivers, real Lumia/ARM32 CoreWindow
-execution and physical device removal/recovery remain external verification
-gaps.
+The complete Core/HAL contract matrix is still open. Recent read-only reviews
+found no additional confirmed public Core-valid request reaching an
+unsupported HAL path in the reviewed shader, capability/resource and adapter
+paths. They classify one color attachment, no compute/UAV, no geometry stage,
+no ordinary arrays/1D textures and no occlusion queries as native FL9_1
+boundaries. A useful shader candidate is a tightly proven single-mip
+fragment `textureSampleLevel` subset; helper-mediated fragment uniform-array
+reads are a smaller alternative. Choose from a concrete workload before
+expanding shader semantics. `textureGatherCompare` remains gated because
+fixed-point coordinate snapping prevents a general exact emulation proof.
 
-Next: keep closing the public projection-to-HAL audit and choose a bounded
-feature only when the selected FL9_1 device can prove it end to end. Current
-format candidates R32_FLOAT sampling and packed-format render targets are not
-supported by the RTX's relevant `CheckFormatSupport` bits. RG8_SNORM copy
-fallback is a possible CPU-shadow investigation, but only if every write path
-can preserve ordered contents. Do not treat 1D/ordinary arrays, 3D GPU copies,
-MRT, compute/UAV, indirect drawing, or occlusion queries as implementation
-backlog where FL9_1 forbids them.
+Public HWND presentation and the desktop cube example have hardware evidence;
+historical FL9_1 drivers, real Lumia/ARM32 CoreWindow execution and physical
+device removal/recovery remain external verification gaps.
+
+Next: checkpoint the now verified RG8_SNORM fallback, then continue the
+remaining Core/HAL audit and choose a shader expansion from demonstrated
+application demand. Current format candidates R32_FLOAT sampling and packed
+format render targets are not supported by the RTX's relevant
+`CheckFormatSupport` bits. Do not treat 1D/ordinary arrays, 3D GPU copies, MRT,
+compute/UAV, indirect drawing or occlusion queries as software backlog where
+FL9_1 forbids them.
 
 Checkpoint `18afefed1` adds ordered BC1/2/3 CPU-shadow
 texture-to-buffer readback and a direct fragment `textureSampleBias` texel

@@ -16215,7 +16215,77 @@ interpolation module is feature-gated on WGSL or SPIR-V input, so that feature
 combination did not compile. Rerunning with `glsl-in,wgsl-in` passed. Rustfmt
 and `git diff --check` passed.
 
-Implementation checkpoint: selected-entry helper pruning (commit hash to be
-recorded immediately after commit). This is a compiler/validation correction,
+Implementation checkpoint: `32851e3fc294de1621287a240193f5eb59c9740e`
+(`dx11: prune unreachable HLSL helpers for selected entries`). This is a
+compiler/validation correction,
 not broader WGSL support; the complete public Core/HAL contract audit and
 historical-driver verification remain open.
+
+## Follow-up contract fixes — 2026-11-11
+
+Commit `ab926004e` resolves the index-range mismatch. The HAL still requires an
+index-width-aligned offset and checks the range against the backing allocation,
+but now accepts a trailing partial index. Strict public rendering at forced
+FL9_1 verified a 13-byte Uint32 range draws its three complete indices into
+all 64 pixels; finishing a four-index command encoder produced the expected
+Core validation error.
+
+RG8_SNORM `COPY_SRC` now uses an execution-ordered byte shadow because the
+RTX's forced-FL9_1 native texture copy returns `E_INVALIDARG`. A subsequent
+HAL texture-creation gate also incorrectly required the absent
+`RENDER_TARGET` bit (`0x4000`) even though the shadow fallback needs only the
+query-positive `TEXTURE2D` bit. The gate now matches capability projection and
+does not create an RTV. The shadow tracks zero initialization and queue upload
+updates; partial texture copy updates the shadow and native destination with
+`UpdateSubresource`, and texture-to-buffer readback returns exact raw SNORM
+bytes.
+
+Strict RG8 public GPU execution passed twice on NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1 and
+`software=false`. The final run verified padded and partial source uploads,
+partial texture copy to a different-sized resource, exact padded readback of
+source and destination, unchanged destination texels, and sampling from the
+copied native destination. The full private HAL suite passed 491/491 after
+updating format-projection expectations; the complete public target passed
+129/129 test functions in strict mode. One in-test optional Float16 vertex
+format case printed a capability skip; it is not counted as a hardware pass.
+
+The first full HAL rerun exposed two stale test expectations that still
+described RG8_SNORM COPY_SRC as unsupported. Those expectations were updated;
+the four focused RG8 HAL cases and the rerun full suite passed. The external
+adapter audit found no additional mismatch in the reviewed dynamic-state,
+render-pass, bundle, mapping, error, and HWND paths. CoreWindow on a real UWP
+device, historical drivers, and physical device removal remain external
+verification gaps.
+
+The shader audit recommends a bounded single-mip direct fragment
+`textureSampleLevel` lowering as the most useful next slice when a workload
+needs it: equal min/mag filters, anisotropy one, straight-line selected-entry
+shape, and actual single-mip view validation would be required. A helper-based
+fragment uniform-array read is a smaller alternative. General
+`textureGatherCompare` emulation remains gated because fixed-point sample
+coordinate snapping prevents a general exactness proof. R32_FLOAT sampling and
+RGB5A1/RGBA4 render targets remain unavailable on the current RTX queries.
+
+Verification commands for this checkpoint, using Rust 1.93.1 and the Visual
+Studio x64 environment:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib rg8_snorm -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_index_ranges -- --nocapture --test-threads=1
+cargo +1.93.1 check --offline -j16 -p wgpu-hal --no-default-features --features dx12
+cargo +1.93.1 clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+cargo +1.93.1 clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+rustfmt +1.93.1 --check --edition 2021 wgpu-hal/src/dx11/hal_device.rs wgpu-hal/src/dx11/hal_transfer.rs wgpu-hal/src/dx11/texture.rs wgpu-hal/src/dx11/capabilities.rs wgpu-hal/tests/dx11/r8_texture.rs wgpu/tests/dx11_public.rs
+git diff --check
+```
+
+Results: private HAL 491/491; strict public D3D11 129/129 test functions; the
+focused RG8 private cases 4/4; and the strict odd-sized index integration 1/1.
+The public suite includes one optional Float16 vertex-input capability skip
+inside a passing test function. The DX12 check, affected Clippy targets,
+formatting and whitespace checks passed. Clippy retained existing warnings in
+unrelated HAL code; no warning originated in the new RG8 path or public test.

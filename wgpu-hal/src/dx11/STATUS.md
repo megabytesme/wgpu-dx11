@@ -12,6 +12,32 @@ strict private HAL suite passed 490/490. Naga passed 163/163, Core passed
 139/139, the DX12 HAL check passed, and affected Clippy and formatting checks
 passed. See `FL9_1_PROGRESS.md` for exact commands and hardware evidence.
 
+## RG8_SNORM shadow copy and raw readback — 2026-11-11
+
+RG8_SNORM `COPY_SRC` is now projected only when the selected device reports
+`TEXTURE2D`. The backend does not attach an RTV or issue native texture-copy
+commands for this format: an execution-ordered CPU shadow tracks initial
+zeroing, queue uploads and buffer-to-texture updates, and a region copy writes
+both the shadow and the native destination with `UpdateSubresource`. Raw
+texture-to-buffer readback uses the same shadow and preserves the exact signed
+byte representation. Self-copy within the same subresource remains rejected.
+The strict public test checks padded and partial uploads, exact source and
+destination bytes, untouched regions and sampling from the copied native
+destination. The strict public RG8_SNORM test passed on the RTX 3090 Ti at
+requested/actual FL9_1, and the complete strict private HAL and public D3D11
+suites passed 491/491 and 129/129. One optional Float16 vertex-input case
+printed a selected-device capability skip. The selected RTX driver's native
+copy failure and historical FL9_1 behavior remain distinct; see `TESTING.md`
+for the query gate and test results.
+
+## Odd-sized index ranges — 2026-11-11
+
+Commit `ab926004e` accepts in-bounds index ranges whose offset is aligned but
+whose byte size ends with a partial index, matching Core's complete-index
+counting. The strict public FL9_1 test rendered all 64 pixels from the three
+complete Uint32 indices in a 13-byte range; a four-index draw was rejected
+when the command encoder was finished.
+
 ## Zero-input draw range
 
 For nonindexed draws with no per-vertex inputs and no `vertex_index` use, HAL

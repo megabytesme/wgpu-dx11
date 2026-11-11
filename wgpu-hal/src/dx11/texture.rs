@@ -102,7 +102,7 @@ pub struct NativeTexture {
     sample_count: u32,
     pub(super) usage: wgt::TextureUses,
     pub(super) cpu_shadow: Option<Arc<Texture3DShadow>>,
-    pub(super) bc_shadow: Option<Arc<Texture2DShadow>>,
+    pub(super) copy_shadow: Option<Arc<Texture2DShadow>>,
 }
 
 #[derive(Debug)]
@@ -298,7 +298,8 @@ impl Texture2DShadow {
             || mip_levels > width.max(height).ilog2() + 1
             || !matches!(
                 format,
-                DXGI_FORMAT_BC1_UNORM
+                DXGI_FORMAT_R8G8_SNORM
+                    | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_BC1_UNORM_SRGB
                     | DXGI_FORMAT_BC2_UNORM
                     | DXGI_FORMAT_BC2_UNORM_SRGB
@@ -566,7 +567,7 @@ impl NativeTexture {
             sample_count: 1,
             usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::PRESENT,
             cpu_shadow: None,
-            bc_shadow: None,
+            copy_shadow: None,
         })
     }
 
@@ -869,7 +870,7 @@ impl NativeDevice {
             sample_count: 1,
             usage: wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE,
             cpu_shadow: None,
-            bc_shadow: None,
+            copy_shadow: None,
         })
     }
 
@@ -984,7 +985,7 @@ impl NativeDevice {
             sample_count,
             usage: wgt::TextureUses::DEPTH_STENCIL_READ | wgt::TextureUses::DEPTH_STENCIL_WRITE,
             cpu_shadow: None,
-            bc_shadow: None,
+            copy_shadow: None,
         })
     }
 
@@ -1050,6 +1051,7 @@ impl NativeDevice {
                     | DXGI_FORMAT_R24G8_TYPELESS
                     | DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_UNORM
+                    | DXGI_FORMAT_R8G8_SNORM
                     | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_BC1_UNORM_SRGB
@@ -1647,7 +1649,7 @@ impl NativeDevice {
                     }
             },
             cpu_shadow: None,
-            bc_shadow: None,
+            copy_shadow: None,
         })
     }
 
@@ -2265,7 +2267,7 @@ impl NativeDevice {
         };
         let raw = texture.raw.as_2d()?;
         let context = self.immediate_context();
-        if let Some(shadow) = &texture.bc_shadow {
+        if let Some(shadow) = &texture.copy_shadow {
             shadow.write_region(mip, layer, origin, extent, row_pitch, bytes)?;
         }
         unsafe {
@@ -2583,6 +2585,44 @@ mod tests {
             expected.extend_from_slice(&alloc::vec![0x22; row_bytes as usize]);
             assert_eq!(readback, expected);
         }
+        Ok(())
+    }
+
+    #[test]
+    fn rg8_snorm_shadow_preserves_raw_signed_bytes_and_partial_copies() -> Result<()> {
+        let source = Texture2DShadow::zeroed(4, 3, 1, 1, DXGI_FORMAT_R8G8_SNORM)?;
+        let mut upload = alloc::vec![0xee; 30];
+        let rows = [
+            [0x80, 0x7f, 0xc0, 0x40, 0x20, 0xe0, 0x01, 0xff],
+            [0x7f, 0x80, 0x40, 0xc0, 0xe0, 0x20, 0xfe, 0x02],
+            [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88],
+        ];
+        for (row, values) in rows.iter().enumerate() {
+            let start = row * 10;
+            upload[start..start + 8].copy_from_slice(values);
+        }
+        source.write_region(0, 0, [0, 0], [4, 3], 10, &upload)?;
+
+        let patch = [0x80, 0x7f, 0x7f, 0x80, 0x40, 0xc0, 0xc0, 0x40];
+        source.write_region(0, 0, [1, 1], [2, 2], 4, &patch)?;
+
+        let destination = Texture2DShadow::zeroed(6, 4, 1, 1, DXGI_FORMAT_R8G8_SNORM)?;
+        destination.copy_region_from(&source, 0, 0, [1, 0], 0, 0, [2, 1], [2, 3])?;
+        let actual = destination.read_region(0, 0, [0, 0], [6, 4])?;
+        let mut expected = alloc::vec![0; 6 * 4 * 2];
+        for row in 0..3usize {
+            let dst = ((row + 1) * 6 + 2) * 2;
+            expected[dst..dst + 4].copy_from_slice(&rows[row][2..6]);
+            if row == 1 {
+                expected[dst..dst + 4].copy_from_slice(&patch[..4]);
+            } else if row == 2 {
+                expected[dst..dst + 4].copy_from_slice(&patch[4..]);
+            }
+        }
+        assert_eq!(actual, expected);
+        assert!(source
+            .copy_region_from(&source, 0, 0, [0, 0], 0, 0, [1, 0], [2, 2])
+            .is_err());
         Ok(())
     }
 

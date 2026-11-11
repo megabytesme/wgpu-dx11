@@ -17,7 +17,7 @@ use windows::{
                 D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
                 D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
             },
-            Dxgi::Common::{DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC},
+            Dxgi::Common::{DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM, DXGI_SAMPLE_DESC},
         },
     },
 };
@@ -117,14 +117,16 @@ pub(super) struct TextureToTexture {
     source_subresource: u32,
     destination_subresource: u32,
     source_box: D3D11_BOX,
+    destination_box: D3D11_BOX,
     destination_origin: [u32; 2],
+    row_pitch: u32,
     shadow_copy: Option<Texture2DShadowCopy>,
 }
 
 #[derive(Debug)]
 struct Texture2DShadowCopy {
     source: alloc::sync::Arc<Texture2DShadow>,
-    destination: alloc::sync::Arc<Texture2DShadow>,
+    destination: Option<alloc::sync::Arc<Texture2DShadow>>,
     source_mip: u32,
     source_layer: u32,
     source_origin: [u32; 2],
@@ -132,21 +134,52 @@ struct Texture2DShadowCopy {
     destination_layer: u32,
     destination_origin: [u32; 2],
     extent: [u32; 2],
+    emulate_native_copy: bool,
 }
 
 impl TextureToTexture {
     pub(super) fn execute(&self, context: &ID3D11DeviceContext) -> Result<()> {
         if let Some(copy) = &self.shadow_copy {
-            copy.destination.copy_region_from(
-                &copy.source,
-                copy.source_mip,
-                copy.source_layer,
-                copy.source_origin,
-                copy.destination_mip,
-                copy.destination_layer,
-                copy.destination_origin,
-                copy.extent,
-            )?;
+            if copy.emulate_native_copy {
+                let bytes = copy.source.read_region(
+                    copy.source_mip,
+                    copy.source_layer,
+                    copy.source_origin,
+                    copy.extent,
+                )?;
+                if let Some(destination) = &copy.destination {
+                    destination.write_region(
+                        copy.destination_mip,
+                        copy.destination_layer,
+                        copy.destination_origin,
+                        copy.extent,
+                        self.row_pitch,
+                        &bytes,
+                    )?;
+                }
+                unsafe {
+                    context.UpdateSubresource(
+                        &self.destination,
+                        self.destination_subresource,
+                        Some(&self.destination_box),
+                        bytes.as_ptr().cast(),
+                        self.row_pitch,
+                        0,
+                    );
+                }
+                return Ok(());
+            } else if let Some(destination) = &copy.destination {
+                destination.copy_region_from(
+                    &copy.source,
+                    copy.source_mip,
+                    copy.source_layer,
+                    copy.source_origin,
+                    copy.destination_mip,
+                    copy.destination_layer,
+                    copy.destination_origin,
+                    copy.extent,
+                )?;
+            }
         }
         unsafe {
             context.CopySubresourceRegion(
@@ -400,8 +433,8 @@ impl NativeDevice {
         if !texture_formats_copy_compatible(source_format, self.texture_desc(destination)?.Format) {
             return Err(invalid());
         }
-        let source_shadow = source.bc_shadow.clone();
-        let destination_shadow = destination.bc_shadow.clone();
+        let source_shadow = source.copy_shadow.clone();
+        let destination_shadow = destination.copy_shadow.clone();
         let (source, src_size, source_subresource) = self.texture_copy_texture_source(
             source,
             region.src_base.mip_level,
@@ -426,10 +459,10 @@ impl NativeDevice {
         {
             return Err(invalid());
         }
-        let shadow_copy = match (source_shadow, destination_shadow) {
-            (Some(source), Some(destination)) => Some(Texture2DShadowCopy {
-                source,
-                destination,
+        let shadow_copy = if source_format == DXGI_FORMAT_R8G8_SNORM {
+            Some(Texture2DShadowCopy {
+                source: source_shadow.ok_or_else(invalid)?,
+                destination: destination_shadow,
                 source_mip: region.src_base.mip_level,
                 source_layer: region.src_base.array_layer,
                 source_origin: [region.src_base.origin.x, region.src_base.origin.y],
@@ -437,17 +470,36 @@ impl NativeDevice {
                 destination_layer: region.dst_base.array_layer,
                 destination_origin: [region.dst_base.origin.x, region.dst_base.origin.y],
                 extent: [region.size.width, region.size.height],
-            }),
-            (None, Some(_)) => return Err(invalid()),
-            _ => None,
+                emulate_native_copy: true,
+            })
+        } else {
+            match (source_shadow, destination_shadow) {
+                (Some(source), destination) => Some(Texture2DShadowCopy {
+                    source,
+                    destination,
+                    source_mip: region.src_base.mip_level,
+                    source_layer: region.src_base.array_layer,
+                    source_origin: [region.src_base.origin.x, region.src_base.origin.y],
+                    destination_mip: region.dst_base.mip_level,
+                    destination_layer: region.dst_base.array_layer,
+                    destination_origin: [region.dst_base.origin.x, region.dst_base.origin.y],
+                    extent: [region.size.width, region.size.height],
+                    emulate_native_copy: false,
+                }),
+                (None, Some(_)) => return Err(invalid()),
+                (None, None) => None,
+            }
         };
+        let row_pitch = block.row_bytes(region.size.width)?;
         Ok(TextureToTexture {
             source,
             destination,
             source_subresource,
             destination_subresource,
             source_box,
+            destination_box,
             destination_origin: [destination_box.left, destination_box.top],
+            row_pitch,
             shadow_copy,
         })
     }
@@ -462,8 +514,8 @@ impl NativeDevice {
         let base = &region.texture_base;
         let size = &region.size;
         let layout = &region.buffer_layout;
-        let compressed_shadow = texture.bc_shadow.clone();
-        if compressed_shadow.is_none() {
+        let copy_shadow = texture.copy_shadow.clone();
+        if copy_shadow.is_none() {
             self.validate_texture_readback_source(texture)?;
         }
         let (source, dimensions, source_subresource) =
@@ -477,7 +529,7 @@ impl NativeDevice {
             copy_layout(layout, size.width, size.height, block)?;
         let native_destination =
             self.texture_copy_buffer_destination(destination, u64::from(offset), total as usize)?;
-        let source = if let Some(shadow) = compressed_shadow {
+        let source = if let Some(shadow) = copy_shadow {
             TextureToBufferSource::Shadow {
                 shadow,
                 mip: base.mip_level,
@@ -572,7 +624,7 @@ impl NativeDevice {
             row_pitch: pitch,
             source_size: total as usize,
             shadow_write: texture
-                .bc_shadow
+                .copy_shadow
                 .clone()
                 .map(|shadow| Texture2DShadowWrite {
                     shadow,

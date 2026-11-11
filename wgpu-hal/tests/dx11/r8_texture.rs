@@ -121,6 +121,7 @@ fn sample_upload(
                 wgt::TextureFormat::Bc1RgbaUnorm
                     | wgt::TextureFormat::Bc2RgbaUnorm
                     | wgt::TextureFormat::Bc3RgbaUnorm
+                    | wgt::TextureFormat::Rg8Snorm
                     | wgt::TextureFormat::Rgba8Snorm
             ) {
                 format_support & D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32 != 0

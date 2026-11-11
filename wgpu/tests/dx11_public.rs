@@ -12004,6 +12004,529 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
 }
 
 #[test]
+fn public_dx11_rg8_snorm_shadow_copy_and_readback_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapter = poll_ready(instance.enumerate_adapters(Backends::DX11))
+        .into_iter()
+        .find(|adapter| adapter.get_info().device_type != DeviceType::Cpu);
+    let Some(adapter) = adapter else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical FL9_1 D3D11 adapter for RG8_SNORM shadow copy");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    const USAGE: TextureUsages = TextureUsages::COPY_SRC
+        .union(TextureUsages::COPY_DST)
+        .union(TextureUsages::TEXTURE_BINDING);
+    let format_features = adapter.get_texture_format_features(TextureFormat::Rg8Snorm);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; Rg8Snorm={format_features:?}; operations=ordered-padded-upload→partial-shadow-copy→exact-buffer-readback→sampled-render",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    if !format_features.allowed_usages.contains(USAGE)
+        || !format_features
+            .flags
+            .contains(TextureFormatFeatureFlags::FILTERABLE)
+    {
+        assert!(
+            !required,
+            "strict hardware must expose query-positive RG8_SNORM shadow copy/readback and filtering: {format_features:?}"
+        );
+        println!(
+            "SKIP: selected FL9_1 device lacks required RG8_SNORM usage/filtering: {format_features:?}"
+        );
+        return;
+    }
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 RG8_SNORM shadow copy/readback"),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request selected physical FL9_1 adapter");
+
+    const SRC_WIDTH: u32 = 6;
+    const SRC_HEIGHT: u32 = 4;
+    const DST_WIDTH: u32 = 8;
+    const DST_HEIGHT: u32 = 6;
+    const ROW_PITCH: u32 = 256;
+    const READBACK_OFFSET: u64 = 16;
+
+    let source_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("RG8_SNORM source raw-byte readback"),
+        size: READBACK_OFFSET + ROW_PITCH as u64 * SRC_HEIGHT as u64,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let vertices = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0];
+    let vertex_bytes: Vec<u8> = vertices.into_iter().flat_map(f32::to_ne_bytes).collect();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("RG8_SNORM sample fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map RG8_SNORM fullscreen triangle before texture creation")
+        .copy_from_slice(&vertex_bytes);
+    vertex_buffer.unmap();
+
+    let source = device.create_texture(&TextureDescriptor {
+        label: Some("RG8_SNORM shadow source"),
+        size: Extent3d {
+            width: SRC_WIDTH,
+            height: SRC_HEIGHT,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rg8Snorm,
+        usage: USAGE,
+        view_formats: &[],
+    });
+    let destination = device.create_texture(&TextureDescriptor {
+        label: Some("RG8_SNORM shadow partial-copy destination"),
+        size: Extent3d {
+            width: DST_WIDTH,
+            height: DST_HEIGHT,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rg8Snorm,
+        usage: USAGE,
+        view_formats: &[],
+    });
+    let source_row_pitch = SRC_WIDTH * 2 + 4;
+    let mut upload = vec![0xA5; (source_row_pitch * SRC_HEIGHT) as usize];
+    let mut expected_source = vec![0; (SRC_WIDTH * SRC_HEIGHT * 2) as usize];
+    for y in 0..SRC_HEIGHT {
+        for x in 0..SRC_WIDTH {
+            let pixel = [(x as i8 * 19 - 45) as u8, (y as i8 * 27 - 39) as u8];
+            let upload_offset = (y * source_row_pitch + x * 2) as usize;
+            upload[upload_offset..upload_offset + 2].copy_from_slice(&pixel);
+            let expected_offset = ((y * SRC_WIDTH + x) * 2) as usize;
+            expected_source[expected_offset..expected_offset + 2].copy_from_slice(&pixel);
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &upload,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(source_row_pitch),
+            rows_per_image: Some(SRC_HEIGHT),
+        },
+        Extent3d {
+            width: SRC_WIDTH,
+            height: SRC_HEIGHT,
+            depth_or_array_layers: 1,
+        },
+    );
+    let patch = [0x80, 0x7f, 0x7f, 0x80, 0x40, 0xc0, 0xc0, 0x40];
+    let mut patch_upload = vec![0xE7; 24];
+    patch_upload[..4].copy_from_slice(&patch[..4]);
+    patch_upload[12..16].copy_from_slice(&patch[4..]);
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: Origin3d { x: 2, y: 1, z: 0 },
+            aspect: TextureAspect::All,
+        },
+        &patch_upload,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(12),
+            rows_per_image: Some(2),
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+    );
+    for y in 1..=2u32 {
+        for x in 2..=3u32 {
+            let patch_offset = (((y - 1) * 2 + (x - 2)) * 2) as usize;
+            let source_offset = ((y * SRC_WIDTH + x) * 2) as usize;
+            expected_source[source_offset..source_offset + 2]
+                .copy_from_slice(&patch[patch_offset..patch_offset + 2]);
+        }
+    }
+
+    let destination_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("RG8_SNORM destination raw-byte readback"),
+        size: READBACK_OFFSET + ROW_PITCH as u64 * DST_HEIGHT as u64,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let vertex_attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &vertex_attributes,
+    })];
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("RG8_SNORM shadow sampling layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: false },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 42,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                count: None,
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("RG8_SNORM shadow pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("sample signed values after RG8_SNORM shadow copy"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.0, 1.0); }\n\
+             @group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @group(0) @binding(42) var smp: sampler;\n\
+             @fragment fn fs() -> @location(0) vec4f {\n\
+                 let value = textureSample(image, smp, vec2f(0.4375, 0.41666666)).rg;\n\
+                 return vec4f(value * 0.5 + vec2f(0.5), 0.0, 1.0);\n\
+             }"
+                .into(),
+        ),
+    });
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        address_mode_u: AddressMode::ClampToEdge,
+        address_mode_v: AddressMode::ClampToEdge,
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("RG8_SNORM post-copy sampling pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let destination_view = destination.create_view(&TextureViewDescriptor::default());
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("RG8_SNORM copied texture bindings"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&destination_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("RGBA8 render target for RG8_SNORM shadow verification"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let target_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("RG8_SNORM rendered sample readback"),
+        size: ROW_PITCH as u64 * 4,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    let submit_validation = device.push_error_scope(ErrorFilter::Validation);
+    let submit_internal = device.push_error_scope(ErrorFilter::Internal);
+    let submit_oom = device.push_error_scope(ErrorFilter::OutOfMemory);
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("RG8_SNORM ordered copy, readback and sample"),
+    });
+    encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: Origin3d { x: 1, y: 0, z: 0 },
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d { x: 2, y: 1, z: 0 },
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 4,
+            height: 3,
+            depth_or_array_layers: 1,
+        },
+    );
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &source_readback,
+            layout: TexelCopyBufferLayout {
+                offset: READBACK_OFFSET,
+                bytes_per_row: Some(ROW_PITCH),
+                rows_per_image: Some(SRC_HEIGHT),
+            },
+        },
+        Extent3d {
+            width: SRC_WIDTH,
+            height: SRC_HEIGHT,
+            depth_or_array_layers: 1,
+        },
+    );
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &destination_readback,
+            layout: TexelCopyBufferLayout {
+                offset: READBACK_OFFSET,
+                bytes_per_row: Some(ROW_PITCH),
+                rows_per_image: Some(DST_HEIGHT),
+            },
+        },
+        Extent3d {
+            width: DST_WIDTH,
+            height: DST_HEIGHT,
+            depth_or_array_layers: 1,
+        },
+    );
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("RG8_SNORM copied texture sample pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &target_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(ROW_PITCH),
+                rows_per_image: Some(4),
+            },
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+    );
+    queue.submit([encoder.finish()]);
+    device
+        .poll(PollType::Wait {
+            submission_index: None,
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for RG8_SNORM shadow copy submission");
+    let submit_oom_error = poll_ready(submit_oom.pop());
+    let submit_internal_error = poll_ready(submit_internal.pop());
+    let submit_validation_error = poll_ready(submit_validation.pop());
+    assert!(
+        submit_oom_error.is_none()
+            && submit_internal_error.is_none()
+            && submit_validation_error.is_none(),
+        "RG8_SNORM copy submission failed: OOM={submit_oom_error:?}, internal={submit_internal_error:?}, validation={submit_validation_error:?}"
+    );
+    let buffers = [&source_readback, &destination_readback, &target_readback];
+    let (sender, receiver) = std::sync::mpsc::channel();
+    for (index, buffer) in buffers.iter().enumerate() {
+        let sender = sender.clone();
+        buffer.slice(..).map_async(MapMode::Read, move |result| {
+            sender.send((index, result)).unwrap();
+        });
+    }
+    drop(sender);
+    device
+        .poll(PollType::Wait {
+            submission_index: None,
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for RG8_SNORM shadow transfer and render");
+    for _ in 0..buffers.len() {
+        let (_, result) = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("RG8_SNORM readback map callback");
+        result.expect("map RG8_SNORM readback");
+    }
+
+    {
+        let data = source_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped source bytes");
+        assert!(data[..READBACK_OFFSET as usize]
+            .iter()
+            .all(|value| *value == 0));
+        for y in 0..SRC_HEIGHT as usize {
+            let start = READBACK_OFFSET as usize + y * ROW_PITCH as usize;
+            let row_bytes = (SRC_WIDTH * 2) as usize;
+            assert_eq!(
+                &data[start..start + row_bytes],
+                &expected_source[y * row_bytes..(y + 1) * row_bytes],
+                "raw signed source row {y}"
+            );
+            assert!(data[start + row_bytes..start + ROW_PITCH as usize]
+                .iter()
+                .all(|value| *value == 0));
+        }
+    }
+    source_readback.unmap();
+
+    let mut expected_destination = vec![0; (DST_WIDTH * DST_HEIGHT * 2) as usize];
+    for row in 0..3usize {
+        let source_start = row * SRC_WIDTH as usize * 2 + 2;
+        let destination_start = ((row + 1) * DST_WIDTH as usize + 2) * 2;
+        expected_destination[destination_start..destination_start + 8]
+            .copy_from_slice(&expected_source[source_start..source_start + 8]);
+    }
+    {
+        let data = destination_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped destination bytes");
+        assert!(data[..READBACK_OFFSET as usize]
+            .iter()
+            .all(|value| *value == 0));
+        for y in 0..DST_HEIGHT as usize {
+            let start = READBACK_OFFSET as usize + y * ROW_PITCH as usize;
+            let row_bytes = (DST_WIDTH * 2) as usize;
+            assert_eq!(
+                &data[start..start + row_bytes],
+                &expected_destination[y * row_bytes..(y + 1) * row_bytes],
+                "raw signed destination row {y}"
+            );
+            assert!(data[start + row_bytes..start + ROW_PITCH as usize]
+                .iter()
+                .all(|value| *value == 0));
+        }
+    }
+    destination_readback.unmap();
+
+    {
+        let data = target_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped sampled output");
+        for y in 0..4usize {
+            for x in 0..4usize {
+                let offset = y * ROW_PITCH as usize + x * 4;
+                let expected = [0u8, 255, 0, 255];
+                for channel in 0..4 {
+                    assert!(
+                        data[offset + channel].abs_diff(expected[channel]) <= 1,
+                        "sampled RG8_SNORM pixel ({x}, {y}) channel {channel}: expected {}, got {}",
+                        expected[channel],
+                        data[offset + channel]
+                    );
+                }
+            }
+        }
+    }
+    target_readback.unmap();
+    println!(
+        "PASS: RG8_SNORM exact raw source/destination bytes, padded rows, partial-copy borders, and copied/untouched GPU samples verified"
+    );
+}
+
+#[test]
 fn public_dx11_r8_rg8_rgb565_copy_and_readback_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

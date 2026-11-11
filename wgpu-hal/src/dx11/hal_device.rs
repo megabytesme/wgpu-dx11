@@ -355,7 +355,9 @@ impl crate::Device for Device {
                 | wgt::TextureFormat::Rgb5a1Unorm
                 | wgt::TextureFormat::Rgba4Unorm
         ) || (desc.format == wgt::TextureFormat::Rgba8Snorm
-            && capabilities.backend.rgba8_snorm_texture_to_texture_copy);
+            && capabilities.backend.rgba8_snorm_texture_to_texture_copy)
+            || (desc.format == wgt::TextureFormat::Rg8Snorm
+                && capabilities.backend.rg8_snorm_shadow_copy_readback);
         let supported = wgt::TextureUses::TRANSIENT
             | if depth {
                 wgt::TextureUses::DEPTH_STENCIL_READ
@@ -601,6 +603,7 @@ impl crate::Device for Device {
                             | wgt::TextureFormat::Bc3RgbaUnormSrgb
                             | wgt::TextureFormat::Rgb5a1Unorm
                             | wgt::TextureFormat::Rgba4Unorm
+                            | wgt::TextureFormat::Rg8Snorm
                             | wgt::TextureFormat::Rgba8Snorm
                     )
                     && (!cube || cube_readback))
@@ -646,6 +649,7 @@ impl crate::Device for Device {
                                     | wgt::TextureFormat::Bc3RgbaUnormSrgb
                                     | wgt::TextureFormat::Rgb5a1Unorm
                                     | wgt::TextureFormat::Rgba4Unorm
+                                    | wgt::TextureFormat::Rg8Snorm
                                     | wgt::TextureFormat::Rgba8Snorm
                             )),
                     format,
@@ -655,7 +659,7 @@ impl crate::Device for Device {
         };
         texture.logical_format = Some(desc.format);
         if desc.usage.contains(wgt::TextureUses::COPY_SRC)
-            && matches!(
+            && (matches!(
                 desc.format,
                 wgt::TextureFormat::Bc1RgbaUnorm
                     | wgt::TextureFormat::Bc2RgbaUnorm
@@ -663,9 +667,10 @@ impl crate::Device for Device {
                     | wgt::TextureFormat::Bc1RgbaUnormSrgb
                     | wgt::TextureFormat::Bc2RgbaUnormSrgb
                     | wgt::TextureFormat::Bc3RgbaUnormSrgb
-            )
+            ) || desc.format == wgt::TextureFormat::Rg8Snorm
+                && capabilities.backend.rg8_snorm_shadow_copy_readback)
         {
-            texture.bc_shadow = Some(
+            texture.copy_shadow = Some(
                 super::texture::Texture2DShadow::zeroed(
                     desc.size.width,
                     desc.size.height,
