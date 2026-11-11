@@ -16699,3 +16699,15 @@ separate implementers.
 The configured Lumia Device Portal endpoint at `192.168.1.157` timed out on a
 read-only `/api/os/devicefamily` request from this machine. No device settings
 were changed and no Lumia runtime test was attempted.
+
+## Public pipeline contract audit — 2026-11-11
+
+An independent read-only review of public pipeline, render-pass, draw and
+state-transition paths found no confirmed Core-valid operation that reaches
+an unsupported D3D11 path or is misexecuted. One color target is the FL9_1
+contract; multiview, alpha-to-coverage and other unsupported combinations
+remain gated. Existing tests cover topology/index handling, viewport/scissor,
+depth/stencil, blend, culling, wireframe, MSAA resolve, bundles and pipeline
+transitions. The audit ran no Cargo tests. It found one stale capability-doc
+phrase implying the public adapter was not yet exposed; the wording now
+describes the actual explicit opt-in contract.
