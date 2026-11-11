@@ -16713,3 +16713,18 @@ phrase implying the public adapter was not yet exposed; the wording now
 describes the actual explicit opt-in contract.
 
 Checkpoint: `5f579f4d9e4b5221bd318acb6124e821e909ec58` (`dx11: clarify FL9_1 pass exposure and audit`).
+
+## Level 9 fragment system-value boundary — 2026-11-11
+
+Microsoft documents that 9_x pixel shaders cannot read `SV_Position`; the
+private FXC proof test `fl91_fragment_position_is_rejected_by_fxc` confirms
+the current `ps_4_0_level_9_1` compiler boundary, and Core rejects the selected
+entry before HAL. `front_facing` is also not native to this profile: Microsoft
+documents `VFACE` only for Shader Model 3.0 and `SV_IsFrontFace` as a
+Direct3D 10 system value. The private FXC test
+`fl91_fragment_front_facing_is_rejected_by_fxc` and Core selected-entry gate
+agree. A two-pass front/back specialization is not currently semantics-safe
+for general blending and primitive ordering, so neither input is being
+emulated speculatively.
+
+References: [10Level9 pixel-shader restriction](https://learn.microsoft.com/en-us/windows/uwp/gaming/simple-port-from-direct3d-9-to-11-1-part-2--rendering), [HLSL semantic availability](https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-semantics).
