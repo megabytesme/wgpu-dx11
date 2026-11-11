@@ -16675,6 +16675,18 @@ cargo +1.93.1 clippy --offline -j4 -p wgpu --no-default-features --features dx11
 
 Checkpoint: `261d90eef3e449a69100a0a090f09b6166a92ac3` (`dx11: verify advertised texture view usages`).
 
+## Capability documentation consistency follow-up — 2026-11-11
+
+A read-only resource audit found a stale sentence in the 3D texture contract:
+it said `COPY_SRC` and CPU readback were unavailable, then described the
+already implemented query-gated CPU-shadow path. Updated the summary to state
+the actual boundary: ordered upload and CPU-shadow texture-to-buffer readback
+are exposed for the narrow RGBA8 path, while native GPU-to-CPU 3D copies,
+texture-to-texture copies, render attachments and storage remain unavailable.
+No implementation or capability projection changed. The relevant 3D coverage
+is the existing strict public upload/readback test documented in
+`TESTING.md`.
+
 ## Public mip-chain and multisample view creation follow-up — 2026-11-11
 
 Extended the same format-projection test to create canonical D2 views for

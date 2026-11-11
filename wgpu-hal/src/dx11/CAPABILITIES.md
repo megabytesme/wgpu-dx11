@@ -1735,12 +1735,14 @@ resource views must include the resource's lowest mip, as required by the
 non-suffix 3D views before HAL. Buffer-to-volume uploads use a source buffer
 copy to a CPU-readable staging buffer followed by `Map` and `UpdateSubresource`,
 preserving execution ordering at the cost of a blocking transfer. 3D
-`COPY_SRC`, texture-to-texture copies, render attachments, storage and CPU
-readback remain unavailable. This is also required by the 10Level9 FL9_1
-context contract: only 2D textures and buffers may be copied within
-GPU-accessible memory, 3D textures cannot be copied from GPU-accessible to
-CPU-accessible memory, and mipmapped volume textures cannot be copied. The
-backend instead retains a zero-initialized CPU shadow for `COPY_SRC` volumes;
+`COPY_SRC` and texture-to-buffer readback are implemented narrowly through
+the ordered CPU shadow, not through native GPU-to-CPU copies. 3D
+texture-to-texture copies, render attachments and storage remain unavailable.
+This fallback respects the 10Level9 FL9_1 context contract: only 2D textures
+and buffers may be copied within GPU-accessible memory, 3D textures cannot be
+copied directly from GPU-accessible to CPU-accessible memory, and mipmapped
+volume textures cannot be copied. The backend retains a zero-initialized CPU
+shadow for `COPY_SRC` volumes;
 ordered buffer-to-volume upload commands update that shadow from the same
 staged source bytes used for the native upload. A later texture-to-buffer
 command copies the requested region from the shadow into the destination
