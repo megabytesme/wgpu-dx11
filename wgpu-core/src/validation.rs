@@ -4457,17 +4457,12 @@ fn fl9_sample_offset_in_range(
 
 fn entry_point_supports_fl9_dynamic_2d_texture_load_coordinate(
     module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
     entry_point: &naga::EntryPoint,
     entry_point_info: &naga::valid::FunctionInfo,
 ) -> bool {
     if entry_point.stage != naga::ShaderStage::Fragment
         || entry_point.function.arguments.len() != 1
-        || entry_point.function.body.iter().any(|statement| {
-            !matches!(
-                statement,
-                naga::Statement::Emit(_) | naga::Statement::Return { .. }
-            )
-        })
         || !matches!(
             entry_point.function.arguments[0].binding,
             Some(naga::Binding::Location { location: 0, .. })
@@ -4483,6 +4478,210 @@ fn entry_point_supports_fl9_dynamic_2d_texture_load_coordinate(
             }
         )
     {
+        return false;
+    }
+
+    if entry_point
+        .function
+        .body
+        .iter()
+        .any(|statement| matches!(statement, naga::Statement::Call { .. }))
+    {
+        let mut call = None;
+        let mut returned = None;
+        for statement in entry_point.function.body.iter() {
+            match statement {
+                naga::Statement::Emit(_) => {}
+                naga::Statement::Call {
+                    function,
+                    arguments,
+                    result: Some(result),
+                } if call.is_none() => call = Some((*function, arguments, *result)),
+                naga::Statement::Return { value: Some(value) } if returned.is_none() => {
+                    returned = Some(*value)
+                }
+                _ => return false,
+            }
+        }
+
+        let Some((helper_handle, arguments, call_result)) = call else {
+            return false;
+        };
+        let Some(returned) = returned else {
+            return false;
+        };
+        let helper = &module.functions[helper_handle];
+        if arguments.len() != 1
+            || !matches!(
+                entry_point.function.expressions[arguments[0]],
+                naga::Expression::FunctionArgument(0)
+            )
+            || returned != call_result
+            || !matches!(
+                entry_point.function.expressions[call_result],
+                naga::Expression::CallResult(function) if function == helper_handle
+            )
+            || !entry_point.function.result.as_ref().is_some_and(|result| {
+                matches!(
+                    module.types[result.ty].inner,
+                    naga::TypeInner::Vector {
+                        size: naga::VectorSize::Quad,
+                        scalar: naga::Scalar {
+                            kind: naga::ScalarKind::Float,
+                            width: 4
+                        }
+                    }
+                )
+            })
+            || helper.arguments.len() != 1
+            || !matches!(
+                module.types[helper.arguments[0].ty].inner,
+                naga::TypeInner::Vector {
+                    size: naga::VectorSize::Bi,
+                    scalar: naga::Scalar {
+                        kind: naga::ScalarKind::Float,
+                        width: 4
+                    }
+                }
+            )
+            || !helper.result.as_ref().is_some_and(|result| {
+                matches!(
+                    module.types[result.ty].inner,
+                    naga::TypeInner::Vector {
+                        size: naga::VectorSize::Quad,
+                        scalar: naga::Scalar {
+                            kind: naga::ScalarKind::Float,
+                            width: 4
+                        }
+                    }
+                )
+            })
+            || helper.body.iter().any(|statement| {
+                !matches!(
+                    statement,
+                    naga::Statement::Emit(_) | naga::Statement::Return { .. }
+                )
+            })
+            || entry_point
+                .function
+                .expressions
+                .iter()
+                .any(|(_, expression)| {
+                    !matches!(
+                        expression,
+                        naga::Expression::FunctionArgument(0) | naga::Expression::CallResult(_)
+                    )
+                })
+        {
+            return false;
+        }
+
+        let helper_info = &module_info[helper_handle];
+        let expression_kinds = naga::proc::ExpressionKindTracker::from_arena(&helper.expressions);
+        let mut coordinate_conversion = None;
+        let mut image_binding = None;
+        let mut load_expression = None;
+        for (handle, expression) in helper.expressions.iter() {
+            if helper_info[handle].ref_count == 0 {
+                continue;
+            }
+            match expression {
+                naga::Expression::ImageLoad {
+                    image,
+                    array_index: None,
+                    sample: None,
+                    level: Some(level),
+                    coordinate,
+                } => {
+                    if coordinate_conversion.replace(*coordinate).is_some()
+                        || !matches!(
+                            helper.expressions[*level],
+                            naga::Expression::Literal(naga::Literal::U32(0))
+                                | naga::Expression::Literal(naga::Literal::I32(0))
+                        )
+                    {
+                        return false;
+                    }
+                    load_expression = Some(handle);
+                    let naga::Expression::GlobalVariable(global) = helper.expressions[*image]
+                    else {
+                        return false;
+                    };
+                    image_binding = Some(global);
+                }
+                naga::Expression::ImageLoad { .. }
+                | naga::Expression::ImageSample { .. }
+                | naga::Expression::ImageQuery { .. }
+                | naga::Expression::Select { .. } => return false,
+                _ => {}
+            }
+        }
+
+        let Some(coordinate) = coordinate_conversion else {
+            return false;
+        };
+        let Some(image) = image_binding else {
+            return false;
+        };
+        let Some(load_expression) = load_expression else {
+            return false;
+        };
+        if !helper.body.iter().any(|statement| {
+            matches!(statement, naga::Statement::Return { value: Some(value) } if *value == load_expression)
+        }) {
+            return false;
+        }
+        let image_global = &module.global_variables[image];
+        let naga::Expression::As {
+            expr: source,
+            kind: naga::ScalarKind::Sint,
+            convert: Some(4),
+        } = helper.expressions[coordinate]
+        else {
+            return false;
+        };
+        if !matches!(
+            helper.expressions[source],
+            naga::Expression::FunctionArgument(0)
+        ) || helper_info[coordinate].ref_count != 1
+            || !matches!(
+                module.types[image_global.ty].inner,
+                naga::TypeInner::Image {
+                    dim: naga::ImageDimension::D2,
+                    arrayed: false,
+                    class: naga::ImageClass::Sampled {
+                        kind: naga::ScalarKind::Float,
+                        multi: false,
+                    },
+                }
+            )
+            || image_global.space != naga::AddressSpace::Handle
+            || !matches!(
+                image_global.binding,
+                Some(naga::ResourceBinding { group: 0, .. })
+            )
+        {
+            return false;
+        }
+
+        let mut budget = 65_536usize;
+        return !helper.expressions.iter().any(|(handle, _)| {
+            handle != coordinate
+                && !expression_kinds.is_const(handle)
+                && type_may_contain_integer(
+                    module,
+                    helper_info[handle].ty.inner_with(&module.types),
+                    &mut budget,
+                )
+        });
+    }
+
+    if entry_point.function.body.iter().any(|statement| {
+        !matches!(
+            statement,
+            naga::Statement::Emit(_) | naga::Statement::Return { .. }
+        )
+    }) {
         return false;
     }
 
@@ -7436,6 +7635,7 @@ impl Interface {
             let fl9_texture_load_dynamic_coordinate_supported = fl9_texture_load_2d_supported
                 && entry_point_supports_fl9_dynamic_2d_texture_load_coordinate(
                     module,
+                    module_info,
                     entry_point,
                     info,
                 );
@@ -9271,6 +9471,56 @@ mod tests {
                 &restricted_fl9_limits,
             )
             .unwrap());
+
+        let dynamic_helper_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            fn load_at(coord: vec2f) -> vec4f {
+                return textureLoad(image, vec2i(coord), 0);
+            }
+            fn load_nested(coord: vec2f) -> vec4f {
+                return load_at(coord);
+            }
+            @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return load_at(uv);
+            }
+            @fragment fn computed(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return load_at(uv + vec2f(1.0));
+            }
+            @fragment fn nested(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return load_nested(uv);
+            }
+            "#,
+        )
+        .unwrap();
+        let dynamic_helper_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&dynamic_helper_module)
+        .unwrap();
+        let dynamic_helper_interface = Interface::new(
+            &dynamic_helper_module,
+            &dynamic_helper_info,
+            wgt::Limits::defaults(),
+        );
+        assert!(!dynamic_helper_interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "helper",
+                &load_2d_limits,
+            )
+            .unwrap());
+        for entry in ["computed", "nested"] {
+            assert!(dynamic_helper_interface
+                .entry_point_uses_unsupported_runtime_integer_semantics(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &load_2d_limits,
+                )
+                .unwrap());
+        }
+
         assert!(!interface
             .entry_point_uses_unsupported_fl9_texture_load(
                 naga::ShaderStage::Fragment,

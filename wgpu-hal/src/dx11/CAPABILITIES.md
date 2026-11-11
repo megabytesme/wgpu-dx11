@@ -680,17 +680,20 @@ projection separately permits one fragment-only subset through
 `DownlevelLimits::texture_load_2d_float_fragment`: a selected entry point may
 load one single-mip, non-arrayed `texture_2d<f32>`. Constant-coordinate loads
 may occur through validated straight-line helpers that directly reference the
-same image. For a direct load in the entry point only, one `@location(0) vec2f`
-argument may be converted directly to `vec2i` and used as the coordinate;
-coordinate arithmetic and other runtime integer operations remain rejected.
+same image. For a dynamic coordinate, one `@location(0) vec2f` argument may
+be converted directly to `vec2i` in the entry point, or passed unchanged to
+one straight-line helper that directly returns the sole load. Coordinate
+arithmetic, nested or computed helpers and other runtime integer operations
+remain rejected.
 Core rejects control flow, additional bound globals, other image operations,
 additional images and non-fragment stages before HAL. The private path maps the
 resource to `t0` and emulates point sampling at texel centers with an internal
 sampler at `s15` and dimensions at `b13`. The shader returns zero for
 out-of-bounds coordinates and nonzero mip requests. Strict public tests on a
 physical RTX 3090 Ti explicitly restricted to FL9_1 validated the constant
-coordinate cases and 16 distinct texels plus 48 out-of-bounds pixels for the
-interpolated coordinate case. Core checks the actual bound view for the
+coordinate cases, 16 distinct texels plus 48 out-of-bounds pixels for direct
+interpolated coordinates, and four source texels across four target quadrants
+through the helper form. Core checks the actual bound view for the
 selected entry point before draw execution: it must be a single-mip,
 single-sample `Rgba8Unorm` 2D view. Incompatible formats and mip ranges produce
 a validation error instead of a late HAL error; sibling entry points without

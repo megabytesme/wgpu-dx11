@@ -641,6 +641,53 @@ mod tests {
             options,
         ));
 
+        let helper = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            fn load_at(coord: vec2f) -> vec4f {
+                return textureLoad(image, vec2i(coord), 0);
+            }
+            @fragment fn fs(@location(0) coord: vec2f) -> @location(0) vec4f {
+                return load_at(coord);
+            }
+            "#,
+        )
+        .unwrap();
+        let helper_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&helper)
+        .unwrap();
+        let helper_proof =
+            fl9_texture_emulation_binding(&helper, &helper_info, naga::ShaderStage::Fragment, "fs")
+                .unwrap()
+                .expect("one straight-line helper may forward the dynamic load coordinate");
+        let helper_conversion = helper_proof
+            .coordinate_conversion
+            .expect("the helper's direct float-to-integer coordinate cast is proven");
+        let helper_bindings = [ShaderBinding {
+            binding: helper_proof.binding,
+            slot: 0,
+            kind: ShaderBindingKind::TextureFloat,
+        }];
+        let helper_bytecode = compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &helper,
+            &helper_info,
+            naga::ShaderStage::Fragment,
+            "fs",
+            ShaderProfile::PixelLevel9_1,
+            &helper_bindings,
+            Fl9ShaderInputOptions {
+                texel_load_binding: Some(helper_proof.binding),
+                texel_load_coordinate_conversion: Some(helper_conversion),
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("the dynamic-coordinate helper should compile for ps_4_0_level_9_1");
+        assert!(helper_bytecode.starts_with(b"DXBC"));
+
         let computed = naga::front::wgsl::parse_str(&source("coord + vec2f(1.0)")).unwrap();
         let computed_info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
@@ -6953,6 +7000,7 @@ fn fl9_texture_emulation_binding(
     let mut load_count = 0;
     let mut dimensions_query_count = 0;
     let mut texture_load_coordinate_conversion = None;
+    let mut texture_load_expression = None;
     let mut mip_level = 0;
     let mut has_explicit_mip_level = false;
     let mut image_identity = None;
@@ -6996,6 +7044,7 @@ fn fl9_texture_emulation_binding(
                     ));
                 }
                 load_count += 1;
+                texture_load_expression = Some(handle);
                 if let naga::Expression::As {
                     expr,
                     kind: naga::ScalarKind::Sint,
@@ -7577,32 +7626,47 @@ fn fl9_texture_emulation_binding(
                     "D3D11 FL9 texture emulation image has an invalid type".into(),
                 ));
             };
+            let coordinate_conversion =
+                if matches!(kind, Fl9TextureEmulationKind::Load) && load_count == 1 {
+                    let direct = reachable_functions.is_empty()
+                        && function.arguments.len() == 1
+                        && matches!(
+                            function.arguments[0].binding,
+                            Some(naga::Binding::Location { location: 0, .. })
+                        )
+                        && matches!(
+                            module.types[function.arguments[0].ty].inner,
+                            naga::TypeInner::Vector {
+                                size: naga::VectorSize::Bi,
+                                scalar: naga::Scalar {
+                                    kind: naga::ScalarKind::Float,
+                                    width: 4,
+                                },
+                            }
+                        );
+                    let helper = reachable_functions.len() == 1
+                        && texture_load_expression.is_some_and(|load_expression| {
+                            fl9_texture_load_coordinate_helper(
+                                module,
+                                function,
+                                reachable_functions[0],
+                                load_expression,
+                                texture_load_coordinate_conversion,
+                            )
+                        });
+                    if direct || helper {
+                        texture_load_coordinate_conversion
+                    } else {
+                        None
+                    }
+                } else {
+                    None
+                };
             Ok(Some(Fl9TextureEmulation {
                 binding,
                 kind,
                 sample_expression,
-                coordinate_conversion: if matches!(kind, Fl9TextureEmulationKind::Load)
-                    && load_count == 1
-                    && reachable_functions.is_empty()
-                    && function.arguments.len() == 1
-                    && matches!(
-                        function.arguments[0].binding,
-                        Some(naga::Binding::Location { location: 0, .. })
-                    )
-                    && matches!(
-                        module.types[function.arguments[0].ty].inner,
-                        naga::TypeInner::Vector {
-                            size: naga::VectorSize::Bi,
-                            scalar: naga::Scalar {
-                                kind: naga::ScalarKind::Float,
-                                width: 4,
-                            },
-                        }
-                    ) {
-                    texture_load_coordinate_conversion
-                } else {
-                    None
-                },
+                coordinate_conversion,
                 dimension: dim,
                 mip_level,
                 has_implicit_sample: sample_count != 0,
@@ -7620,6 +7684,108 @@ fn fl9_texture_emulation_binding(
             "D3D11 FL9 texture emulation cannot be resolved to a direct image binding".into(),
         )),
     }
+}
+
+fn fl9_texture_load_coordinate_helper(
+    module: &naga::Module,
+    entry: &naga::Function,
+    helper_handle: naga::Handle<naga::Function>,
+    load_expression: naga::Handle<naga::Expression>,
+    coordinate_conversion: Option<naga::Handle<naga::Expression>>,
+) -> bool {
+    let Some(coordinate_conversion) = coordinate_conversion else {
+        return false;
+    };
+    let helper = &module.functions[helper_handle];
+    if entry.arguments.len() != 1
+        || !matches!(
+            entry.arguments[0].binding,
+            Some(naga::Binding::Location { location: 0, .. })
+        )
+        || !fl9_is_float_vector(module, entry.arguments[0].ty, naga::VectorSize::Bi)
+        || !entry
+            .result
+            .as_ref()
+            .is_some_and(|result| fl9_is_float_vector(module, result.ty, naga::VectorSize::Quad))
+        || helper.arguments.len() != 1
+        || !fl9_is_float_vector(module, helper.arguments[0].ty, naga::VectorSize::Bi)
+        || !helper
+            .result
+            .as_ref()
+            .is_some_and(|result| fl9_is_float_vector(module, result.ty, naga::VectorSize::Quad))
+    {
+        return false;
+    }
+
+    let mut call = None;
+    let mut returned = None;
+    for statement in entry.body.iter() {
+        match statement {
+            naga::Statement::Emit(_) => {}
+            naga::Statement::Call {
+                function,
+                arguments,
+                result: Some(result),
+            } if call.is_none() => call = Some((*function, arguments, *result)),
+            naga::Statement::Return { value: Some(value) } if returned.is_none() => {
+                returned = Some(*value)
+            }
+            _ => return false,
+        }
+    }
+    let Some((called, arguments, call_result)) = call else {
+        return false;
+    };
+    if called != helper_handle
+        || arguments.len() != 1
+        || !matches!(
+            entry.expressions[arguments[0]],
+            naga::Expression::FunctionArgument(0)
+        )
+        || returned != Some(call_result)
+        || !matches!(
+            entry.expressions[call_result],
+            naga::Expression::CallResult(function) if function == helper_handle
+        )
+    {
+        return false;
+    }
+
+    let mut helper_return = None;
+    for statement in helper.body.iter() {
+        match statement {
+            naga::Statement::Emit(_) => {}
+            naga::Statement::Return { value: Some(value) } if helper_return.is_none() => {
+                helper_return = Some(*value)
+            }
+            _ => return false,
+        }
+    }
+    if helper_return != Some(load_expression)
+        || !matches!(
+            helper.expressions[load_expression],
+            naga::Expression::ImageLoad {
+                level: Some(level),
+                ..
+            } if matches!(
+                helper.expressions[level],
+                naga::Expression::Literal(naga::Literal::U32(0))
+                    | naga::Expression::Literal(naga::Literal::I32(0))
+            )
+        )
+        || !matches!(
+            helper.expressions[coordinate_conversion],
+            naga::Expression::As {
+                expr,
+                kind: naga::ScalarKind::Sint,
+                convert: Some(4),
+            } if matches!(helper.expressions[expr], naga::Expression::FunctionArgument(0))
+        )
+    {
+        return false;
+    }
+
+    true
 }
 
 fn reachable_function<F>(

@@ -32999,9 +32999,12 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
              fn inner_load() -> vec4f { return textureLoad(image, vec2i(1, 0), 0); }\n\
              fn nested_load() -> vec4f { return inner_load(); }\n\
              fn unused_sibling() -> vec4f { if true { return textureLoad(sibling_image, vec2i(0), 0); } return vec4f(0.0); }\n\
-             @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }\n\
+             struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
+             @vertex fn vs(@location(0) p: vec2f) -> VertexOut { return VertexOut(vec4f(p, 0.0, 1.0), vec2f(p.x + 1.0, 1.0 - p.y)); }\n\
+             fn load_at(coord: vec2f) -> vec4f { return textureLoad(image, vec2i(coord), 0); }\n\
              @fragment fn inside() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 0); }\n\
              @fragment fn through_nested_helper() -> @location(0) vec4f { return nested_load(); }\n\
+             @fragment fn through_dynamic_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return load_at(uv); }\n\
              @fragment fn outside() -> @location(0) vec4f { return textureLoad(image, vec2i(2, 0), 0); }\n\
              @fragment fn invalid_level() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 1); }"
                 .into(),
@@ -33050,6 +33053,7 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
         make_pipeline("outside"),
         make_pipeline("invalid_level"),
         make_pipeline("through_nested_helper"),
+        make_pipeline("through_dynamic_helper"),
     ];
     let vertices = [-1.0f32, -1.0, -1.0, 3.0, 3.0, -1.0];
     let vertex_bytes: Vec<u8> = vertices
@@ -33125,23 +33129,38 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
             usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
             view_formats: &[],
         }),
+        device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 dynamic-helper textureLoad target"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        }),
     ];
     let target_views = [
         targets[0].create_view(&TextureViewDescriptor::default()),
         targets[1].create_view(&TextureViewDescriptor::default()),
         targets[2].create_view(&TextureViewDescriptor::default()),
         targets[3].create_view(&TextureViewDescriptor::default()),
+        targets[4].create_view(&TextureViewDescriptor::default()),
     ];
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 textureLoad readback"),
-        size: 4 * 8 * 256,
+        size: 5 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 textureLoad render and readback"),
     });
-    for index in 0..4 {
+    for index in 0..5 {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
             label: Some("FL9_1 textureLoad pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
@@ -33216,6 +33235,7 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
                 let outside = 8 * 256 + inside;
                 let invalid_level = 16 * 256 + inside;
                 let nested = 24 * 256 + inside;
+                let dynamic_helper = 32 * 256 + inside;
                 assert_eq!(
                     &pixels[inside..inside + 4],
                     &[0, 255, 0, 255],
@@ -33225,6 +33245,17 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
                     &pixels[nested..nested + 4],
                     &[0, 255, 0, 255],
                     "nested-helper textureLoad output ({x}, {y})"
+                );
+                let dynamic_expected: &[u8; 4] = match (x < 4, y < 4) {
+                    (true, true) => &[255, 0, 0, 255],
+                    (false, true) => &[0, 255, 0, 255],
+                    (true, false) => &[0, 0, 255, 255],
+                    (false, false) => &[255, 255, 0, 255],
+                };
+                assert_eq!(
+                    &pixels[dynamic_helper..dynamic_helper + 4],
+                    dynamic_expected,
+                    "dynamic-helper textureLoad output ({x}, {y})"
                 );
                 assert_eq!(
                     &pixels[outside..outside + 4],
@@ -33240,7 +33271,7 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: direct and nested-helper FL9_1 fragment textureLoad produced green in-bounds texels and zero out-of-bounds/nonzero-mip texels across 256 readback pixels");
+    println!("PASS: direct and nested-helper FL9_1 fragment textureLoad produced expected in-bounds, out-of-bounds and nonzero-mip pixels; one helper also converted the interpolated vec2 coordinate and matched all four 4x4 texture quadrants across 320 readback pixels");
 }
 
 #[test]

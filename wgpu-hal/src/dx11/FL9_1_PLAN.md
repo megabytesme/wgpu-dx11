@@ -2625,6 +2625,18 @@ boundary, using agents for independent audits and probes rather than splitting
 one Core/Naga/HAL vertical change. Historical FL9_1 and Lumia/CoreWindow
 runtime verification remain external requirements.
 
+## Coordinator continuation — forwarded dynamic 2D `textureLoad` coordinate — 2026-11-11
+
+The selected-entry fragment `textureLoad` subset now also accepts one exact
+helper form: the entry forwards its `@location(0) vec2f` unchanged to one
+straight-line helper, which casts it directly to `vec2i`, performs the only
+single-mip 2D float load and returns that value directly. Core and HAL retain
+the same narrow proof; computed coordinates, nested helpers, branches and
+additional runtime integer operations remain rejected. The strict RTX test
+checked all 64 pixels in four quadrants against distinct texels from a 2x2
+source at requested/actual FL9_1. This does not generalize dynamic indexing or
+establish historical-driver support.
+
 ## Core/HAL textureLoad view contract — 2026-11-10
 
 A follow-up Core-to-HAL audit found that the selected-entry 2D `textureLoad`

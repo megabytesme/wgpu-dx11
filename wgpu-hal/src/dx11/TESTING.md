@@ -4385,6 +4385,27 @@ strict public `dx11_public` suite. This does not enable general
 `texture_query`, dynamic texture-load coordinates in the combined proof,
 helper calls or other image-operation compositions.
 
+### Dynamic 2D `textureLoad` coordinate through one helper
+
+```powershell
+cargo +1.93.1 test --offline -j4 -p wgpu-core --no-default-features --features dx11-test-fixture,glsl,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific -- --nocapture
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --no-default-features --features dx11 --lib fl9_2d_texture_load_allows_only_direct_dynamic_coordinate_cast -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_load_emulation_at_fl91 -- --nocapture --test-threads=1
+```
+
+The selected fragment entry may pass its `@location(0) vec2f` coordinate
+unchanged to one straight-line helper. The helper must convert that argument
+directly to `vec2i`, perform the only single-mip 2D float `textureLoad`, and
+return that load directly. Computed coordinates, nested calls, control flow,
+additional resources and unrelated integer operations remain rejected. The
+Core proof test checks both acceptance and rejection, and the HAL test compiles
+the helper with the actual `ps_4_0_level_9_1` profile. The strict RTX 3090 Ti
+run requested and selected FL9_1 and checked all 64 target pixels: each of
+four 4x4 quadrants matched a distinct texel from the 2x2 source. This is
+physical-GPU evidence for the exact form, not historical-driver compatibility
+or general dynamic texture-load support.
+
 A third compatible strict CTS operation now passes on the physical RTX:
 
 ```powershell

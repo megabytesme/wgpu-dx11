@@ -1,5 +1,42 @@
 # FL9_1 progress
 
+## Forwarded dynamic 2D `textureLoad` coordinate — 2026-11-11
+
+Core and the D3D11 HAL now accept one exact helper form in the existing
+fragment-only 2D `textureLoad` subset. The entry point forwards its
+`@location(0) vec2f` argument unchanged to one straight-line helper; that
+helper directly converts it to `vec2i`, performs the sole single-mip
+`texture_2d<f32>` load and returns the value directly. Computed coordinates,
+nested helpers, control flow and other runtime integer operations remain
+rejected. Core's selected-entry validation uses Naga's validated module info;
+the HAL independently proves the same shape and compiles it for
+`ps_4_0_level_9_1`.
+
+Focused Core and HAL proof tests passed. The strict public RTX 3090 Ti test
+requested and selected FL9_1 (`0x10de:0x2203`, driver `32.0.16.2101`,
+`software=false`) and rendered a patterned 2x2 texture through the helper to
+an 8x8 target. All 64 pixels matched their expected quadrant colors. This
+modern GPU result does not establish behavior on historical FL9_1 drivers.
+
+```text
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,glsl,wgsl,std --lib -- --test-threads=1
+# 141 passed.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+# 501 passed; strict hardware environment and FL9_1 GPU cases executed on the RTX 3090 Ti.
+WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+# 129 passed on the physical GPU; optional IA/mipmap subcases logged SKIP and are not GPU passes.
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+# 130 passed.
+cargo +1.93.1 clippy --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,glsl,wgsl,std --lib
+cargo +1.93.1 clippy --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests
+cargo +1.93.1 clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+# All checks passed. Clippy reported existing HAL warnings outside this change.
+```
+
+The full strict public run also passed `experimental_dx11_is_not_enabled_by_default`.
+
 ## Restricted fragment explicit LOD zero — 2026-11-11
 
 Implementation checkpoint: `2632f03cdfea9f6d96f1cf94b8caa4164cfd38b5`
