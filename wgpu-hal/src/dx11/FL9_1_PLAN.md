@@ -1,5 +1,19 @@
 # FL9_1 completion plan
 
+## Recent continuation — query-gated R8 fragment `textureLoad` — 2026-11-11
+
+The narrow 2D fragment `textureLoad` path now permits query-gated `R8Unorm`
+views alongside its existing `Rgba8Unorm` views. Core validates the selected
+binding and the single-mip parent requirement; HAL retains defensive
+operation-specific format checks so 3D loads and sample-bias offsets do not
+inherit the R8 allowance. The internal point sampler allows this path when
+the selected R8 query lacks `SHADER_SAMPLE`, but the resource must still be
+valid for sampled upload. Strict RTX 3090 Ti FL9_1 readback matched normalized
+R8 values and WGSL's zero G/B, one alpha and out-of-bounds zero semantics.
+The separate sample-bias R8 rejection remains covered. Historical hardware
+behavior is unverified; detailed commands and suite counts are in
+`FL9_1_PROGRESS.md`.
+
 ## Recent continuation — helper-contained sample-bias offset — 2026-11-11
 
 The bounded fragment `textureSampleBias` constant-offset path now accepts one

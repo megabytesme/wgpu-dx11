@@ -60,6 +60,19 @@ fn public_dx11_2d_texture_load_uses_varying_coordinates_at_fl91() {
         println!("SKIP: selected adapter does not expose the restricted 2D textureLoad path");
         return;
     }
+    let r8_format = adapter.get_texture_format_features(TextureFormat::R8Unorm);
+    if !r8_format
+        .allowed_usages
+        .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST)
+    {
+        assert!(
+            !required,
+            "strict mode requires the selected device's query-gated R8Unorm sampled-upload path"
+        );
+        println!("SKIP: selected adapter does not support sampled R8Unorm uploads");
+        return;
+    }
+    println!("R8Unorm sampled-upload projection for point-sampled textureLoad: {r8_format:?}");
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public DX11 FL9_1 dynamic 2D textureLoad"),
         required_features: Features::empty(),
@@ -121,7 +134,7 @@ fn public_dx11_2d_texture_load_uses_varying_coordinates_at_fl91() {
             binding: 0,
             visibility: ShaderStages::FRAGMENT,
             ty: BindingType::Texture {
-                sample_type: TextureSampleType::Float { filterable: true },
+                sample_type: TextureSampleType::Float { filterable: false },
                 view_dimension: TextureViewDimension::D2,
                 multisampled: false,
             },
@@ -328,8 +341,8 @@ fn fs_unused() -> @location(0) vec4f {
     }
     readback.unmap();
 
-    let incompatible_texture = device.create_texture(&TextureDescriptor {
-        label: Some("unsupported R8 view for the restricted FL9_1 textureLoad path"),
+    let r8_texture = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 R8 textureLoad source"),
         size: Extent3d {
             width: 4,
             height: 4,
@@ -339,16 +352,45 @@ fn fs_unused() -> @location(0) vec4f {
         sample_count: 1,
         dimension: TextureDimension::D2,
         format: TextureFormat::R8Unorm,
-        usage: TextureUsages::TEXTURE_BINDING,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
     });
-    let incompatible_view = incompatible_texture.create_view(&TextureViewDescriptor::default());
-    let incompatible_group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("unsupported R8 textureLoad group"),
+    let r8_view = r8_texture.create_view(&TextureViewDescriptor::default());
+    let r8_pixels: Vec<u8> = (0..4)
+        .flat_map(|y| (0..4).map(move |x| (17 + x * 31 + y * 47) as u8))
+        .collect();
+    let r8_upload: Vec<u8> = (0..4)
+        .flat_map(|y| {
+            let mut row = vec![0; 256];
+            row[..4].copy_from_slice(&r8_pixels[y * 4..y * 4 + 4]);
+            row
+        })
+        .collect();
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &r8_texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &r8_upload,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(4),
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+    );
+    let r8_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 R8 textureLoad group"),
         layout: &bind_group_layout,
         entries: &[BindGroupEntry {
             binding: 0,
-            resource: BindingResource::TextureView(&incompatible_view),
+            resource: BindingResource::TextureView(&r8_view),
         }],
     });
     let assert_incompatible_texture_load_view = |group: &BindGroup, label: &'static str| {
@@ -391,10 +433,89 @@ fn fs_unused() -> @location(0) vec4f {
             "{label} produced the wrong validation error: {validation_error:?}"
         );
     };
-    assert_incompatible_texture_load_view(
-        &incompatible_group,
-        "reject R8 view for restricted FL9_1 textureLoad",
+    let mut r8_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 R8 textureLoad render and readback"),
+    });
+    {
+        let mut pass = r8_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 R8 textureLoad pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &r8_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    r8_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
     );
+    let r8_submission = queue.submit([r8_encoder.finish()]);
+    let (r8_sender, r8_receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| r8_sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(r8_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 R8 textureLoad");
+    r8_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("R8 textureLoad map callback")
+        .expect("map R8 textureLoad output");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped R8 textureLoad output");
+        for y in 0..8 {
+            for x in 0..8 {
+                let expected: &[u8] = if x < 4 && y < 4 {
+                    &[r8_pixels[y * 4 + x], 0, 0, 255]
+                } else {
+                    &[0, 0, 0, 0]
+                };
+                let output_offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[output_offset..output_offset + 4],
+                    expected,
+                    "R8 textureLoad channel mapping at ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
 
     let mipmapped_texture = device.create_texture(&TextureDescriptor {
         label: Some("multi-mip texture for restricted FL9_1 textureLoad validation"),
@@ -422,6 +543,23 @@ fn fs_unused() -> @location(0) vec4f {
     assert_incompatible_texture_load_view(
         &mipmapped_group,
         "reject multi-mip view for restricted FL9_1 textureLoad",
+    );
+    let selected_mip_view = mipmapped_texture.create_view(&TextureViewDescriptor {
+        base_mip_level: 1,
+        mip_level_count: Some(1),
+        ..Default::default()
+    });
+    let selected_mip_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("selected mip from multi-mip textureLoad group"),
+        layout: &bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 0,
+            resource: BindingResource::TextureView(&selected_mip_view),
+        }],
+    });
+    assert_incompatible_texture_load_view(
+        &selected_mip_group,
+        "reject single-mip view from multi-mip texture for restricted FL9_1 textureLoad",
     );
 
     let safe_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -468,7 +606,7 @@ fn fs_unused() -> @location(0) vec4f {
             multiview_mask: None,
         });
         pass.set_pipeline(&safe_pipeline);
-        pass.set_bind_group(0, &incompatible_group, &[]);
+        pass.set_bind_group(0, &r8_group, &[]);
         pass.set_vertex_buffer(0, vertex_buffer.slice(..));
         pass.draw(0..3, 0..1);
     }
@@ -488,5 +626,6 @@ fn fs_unused() -> @location(0) vec4f {
         "unrelated entry point must not inherit the other entry point's textureLoad restrictions"
     );
     println!("PASS: dynamic 2D textureLoad mapped 16 coordinates to distinct texels and returned zero for 48 out-of-bounds pixels");
-    println!("PASS: Core rejects incompatible textureLoad views as validation errors for the selected entry point");
+    println!("PASS: R8Unorm textureLoad returned normalized red, zero green/blue, opaque alpha and zero for out-of-bounds coordinates across 64 readback pixels");
+    println!("PASS: Core rejects multi-mip resources, including single-mip subviews, before HAL textureLoad execution");
 }

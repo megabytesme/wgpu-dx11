@@ -285,6 +285,7 @@ fn fl91_core_empty_unmap_and_mapped_write_flush_failure_cleans_up() {
                     shader_dynamic_loops: false,
                     frexp_fraction_only_fragment: false,
                     vertex_index_input: false,
+                    vertex_index_vector_indexing: false,
                     vertex_base_vertex_input: false,
                     vertex_base_instance_input: false,
                     vertex_point_size_output: false,

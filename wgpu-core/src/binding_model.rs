@@ -1370,6 +1370,7 @@ pub struct BindGroup {
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Fl9TextureLoadViewCompatibility {
     pub d2: bool,
+    pub d2_rgba8: bool,
     pub d3: bool,
     pub d2_depth: bool,
 }
@@ -1381,7 +1382,21 @@ pub(crate) fn sampled_view_mip_count(view: &TextureView) -> u32 {
         .saturating_sub(view.selector.mips.start)
 }
 
-pub(crate) fn sampled_view_fl9_texture_load_compatible(
+fn fl9_texture_load_format_compatible(
+    format: wgt::TextureFormat,
+    dimension: naga::ImageDimension,
+) -> bool {
+    match dimension {
+        naga::ImageDimension::D2 => matches!(
+            format,
+            wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::R8Unorm
+        ),
+        naga::ImageDimension::D3 => format == wgt::TextureFormat::Rgba8Unorm,
+        _ => false,
+    }
+}
+
+fn sampled_view_fl9_texture_view_compatible(
     view: &TextureView,
     dimension: naga::ImageDimension,
 ) -> bool {
@@ -1390,8 +1405,7 @@ pub(crate) fn sampled_view_fl9_texture_load_compatible(
         naga::ImageDimension::D3 => wgt::TextureViewDimension::D3,
         _ => return false,
     };
-    view.desc.format == wgt::TextureFormat::Rgba8Unorm
-        && view.desc.dimension == expected_dimension
+    view.desc.dimension == expected_dimension
         && view.parent.desc.sample_count == 1
         && sampled_view_mip_count(view) == 1
         && view
@@ -1400,11 +1414,22 @@ pub(crate) fn sampled_view_fl9_texture_load_compatible(
             .contains(wgt::TextureUsages::TEXTURE_BINDING)
 }
 
+pub(crate) fn sampled_view_fl9_texture_load_compatible(
+    view: &TextureView,
+    dimension: naga::ImageDimension,
+) -> bool {
+    fl9_texture_load_format_compatible(view.desc.format, dimension)
+        && view.parent.desc.mip_level_count == 1
+        && sampled_view_fl9_texture_view_compatible(view, dimension)
+}
+
 pub(crate) fn sampled_view_fl9_texture_load_view_compatibility(
     view: &TextureView,
 ) -> Fl9TextureLoadViewCompatibility {
     Fl9TextureLoadViewCompatibility {
         d2: sampled_view_fl9_texture_load_compatible(view, naga::ImageDimension::D2),
+        d2_rgba8: view.desc.format == wgt::TextureFormat::Rgba8Unorm
+            && sampled_view_fl9_texture_view_compatible(view, naga::ImageDimension::D2),
         d3: sampled_view_fl9_texture_load_compatible(view, naga::ImageDimension::D3),
         d2_depth: matches!(
             view.desc.format,
@@ -1418,6 +1443,23 @@ pub(crate) fn sampled_view_fl9_texture_load_view_compatibility(
                 .desc
                 .usage
                 .contains(wgt::TextureUsages::TEXTURE_BINDING),
+    }
+}
+
+#[cfg(test)]
+mod fl9_texture_load_tests {
+    use super::fl9_texture_load_format_compatible as compatible;
+    use naga::ImageDimension::{D2, D3};
+    use wgt::TextureFormat::{R8Unorm, Rg8Unorm, Rgba8Unorm, Rgba8UnormSrgb};
+
+    #[test]
+    fn fl9_texture_load_format_subset_is_dimension_specific() {
+        assert!(compatible(Rgba8Unorm, D2));
+        assert!(compatible(R8Unorm, D2));
+        assert!(compatible(Rgba8Unorm, D3));
+        assert!(!compatible(R8Unorm, D3));
+        assert!(!compatible(Rgba8UnormSrgb, D2));
+        assert!(!compatible(Rg8Unorm, D2));
     }
 }
 

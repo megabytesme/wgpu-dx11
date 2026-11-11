@@ -634,7 +634,7 @@ impl Binder {
                 binding: binding.binding,
             })?;
 
-        if compatibility.len() == 1 && compatibility[0].d2 {
+        if compatibility.len() == 1 && compatibility[0].d2_rgba8 {
             Ok(())
         } else {
             Err(DrawError::IncompatibleTextureSampleBiasOffsetView {

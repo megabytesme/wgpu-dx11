@@ -1,3 +1,17 @@
+## Query-gated R8 fragment `textureLoad` — 2026-11-11
+
+The restricted fragment 2D `textureLoad` emulation now accepts `R8Unorm` in
+addition to `Rgba8Unorm`. Core checks the selected bound view and requires a
+single-mip parent; HAL independently keeps the format allowance limited to
+2D `Load` and `LoadDimensions`, leaving 3D load and sample-bias offset on
+their previous format restrictions. The selected R8 texture still requires
+the device's `TEXTURE2D` query and sampled-upload backend path. It does not
+require `SHADER_SAMPLE` because the emulation uses a point sampler. Strict
+forced-FL9_1 RTX readback verified all 16 in-bounds texels as normalized
+red/zero green/zero blue/one alpha and all 48 out-of-bounds results as zero.
+R8 sample-bias remains rejected, and historical FL9_1 drivers remain
+unverified.
+
 ## RGB565 query-gated sampled mip chains — 2026-11-11
 
 RGB565 now follows the existing packed-format mip path: Core capability

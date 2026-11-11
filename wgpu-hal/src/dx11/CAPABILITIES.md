@@ -712,16 +712,22 @@ Core rejects control flow, additional bound globals, other image operations,
 additional images and non-fragment stages before HAL. The private path maps the
 resource to `t0` and emulates point sampling at texel centers with an internal
 sampler at `s15` and dimensions at `b13`. The shader returns zero for
-out-of-bounds coordinates and nonzero mip requests. Strict public tests on a
-physical RTX 3090 Ti explicitly restricted to FL9_1 validated the constant
-coordinate cases, 16 distinct texels plus 48 out-of-bounds pixels for direct
-interpolated coordinates, and four source texels across four target quadrants
-through the helper form. Core checks the actual bound view for the
-selected entry point before draw execution: it must be a single-mip,
-single-sample `Rgba8Unorm` 2D view. Incompatible formats and mip ranges produce
-a validation error instead of a late HAL error; sibling entry points without
-`textureLoad` do not inherit this restriction. This does not enable general
-texture-load support or establish compatibility with historical 9_1 hardware.
+out-of-bounds coordinates and nonzero mip requests. The 2D path also accepts
+query-gated `R8Unorm` views when the selected device reports `TEXTURE2D` and
+the sampled-upload backend path is enabled. The internal point sampler means
+`SHADER_SAMPLE`/filterability is not required for that load emulation. WGSL
+`r8unorm` channel semantics are preserved: normalized red, zero green and
+blue, and alpha one. Core checks the currently bound view and parent resource
+for the selected entry point before drawing: it must be a single-mip,
+single-sample 2D view of a single-mip resource, with `Rgba8Unorm` or
+query-gated `R8Unorm` format. The separate sample-bias-offset emulation still
+requires RGBA8. Unsupported formats and mip ranges produce a validation error
+instead of a late HAL error; sibling entry points without `textureLoad` do
+not inherit this restriction. Strict public readback on the RTX 3090 Ti at
+requested/actual FL9_1 validated all 16 patterned R8 texels, including their
+four-channel conversion, plus 48 out-of-bounds zero results. This does not
+enable general texture-load support or establish compatibility with
+historical 9_1 hardware.
 
 A separate `texture_load_3d_float_fragment` limit covers one fragment
 `textureLoad` from a single-mip, non-arrayed `texture_3d<f32>`. The selected

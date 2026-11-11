@@ -78,6 +78,25 @@ struct BoundGroup {
     ranges: Vec<windows::Win32::Graphics::Direct3D11::D3D11_BOX>,
 }
 
+fn fl9_texture_emulation_format_supported(
+    kind: super::hal_shader::Fl9TextureEmulationKind,
+    dimension: naga::ImageDimension,
+    format: wgt::TextureFormat,
+) -> bool {
+    use super::hal_shader::Fl9TextureEmulationKind as Kind;
+    use naga::ImageDimension::{D2, D3};
+    use wgt::TextureFormat::{R8Unorm, Rgba8Unorm};
+
+    match kind {
+        Kind::Load | Kind::LoadDimensions => {
+            dimension == D2 && matches!(format, Rgba8Unorm | R8Unorm)
+        }
+        Kind::Load3D => dimension == D3 && format == Rgba8Unorm,
+        Kind::SampleBiasOffset => dimension == D2 && format == Rgba8Unorm,
+        _ => true,
+    }
+}
+
 fn instance_range_fits(
     offset: u32,
     length: u64,
@@ -223,13 +242,6 @@ impl RenderState {
             load.kind,
             super::hal_shader::Fl9TextureEmulationKind::SampleCompareOffset
         );
-        let rgba8_load = matches!(
-            load.kind,
-            super::hal_shader::Fl9TextureEmulationKind::Load
-                | super::hal_shader::Fl9TextureEmulationKind::Load3D
-                | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions
-                | super::hal_shader::Fl9TextureEmulationKind::SampleBiasOffset
-        );
         let expected_dimension = match load.dimension {
             naga::ImageDimension::D2 => wgt::TextureViewDimension::D2,
             naga::ImageDimension::D3 => wgt::TextureViewDimension::D3,
@@ -239,8 +251,9 @@ impl RenderState {
         let dimensions_3d = expected_dimension == wgt::TextureViewDimension::D3;
         let max_dimension = if dimensions_3d { 256 } else { 2048 };
         (texture.dimension == expected_dimension
-            && (!rgba8_load || texture.logical_format == Some(wgt::TextureFormat::Rgba8Unorm))
-            && texture.logical_format.is_some()
+            && texture.logical_format.is_some_and(|format| {
+                fl9_texture_emulation_format_supported(load.kind, load.dimension, format)
+            })
             && texture.sample_count == 1
             && (!single_mip_resource || texture.mip_count == 1)
             && (texture.depth == depth_comparison)
@@ -2493,6 +2506,23 @@ mod tests {
     };
     use alloc::vec;
     use core::{num::NonZeroU64, time::Duration};
+
+    #[test]
+    fn fl9_texture_emulation_format_matrix_is_narrow() {
+        use super::super::hal_shader::Fl9TextureEmulationKind as Kind;
+        use super::fl9_texture_emulation_format_supported as supported;
+        use naga::ImageDimension::{D2, D3};
+        use wgt::TextureFormat::{R8Unorm, Rg8Unorm, Rgba8Unorm, Rgba8UnormSrgb};
+
+        assert!(supported(Kind::Load, D2, Rgba8Unorm));
+        assert!(supported(Kind::Load, D2, R8Unorm));
+        assert!(supported(Kind::LoadDimensions, D2, R8Unorm));
+        assert!(supported(Kind::Load3D, D3, Rgba8Unorm));
+        assert!(!supported(Kind::Load3D, D3, R8Unorm));
+        assert!(!supported(Kind::Load, D2, Rg8Unorm));
+        assert!(!supported(Kind::Load, D2, Rgba8UnormSrgb));
+        assert!(!supported(Kind::SampleBiasOffset, D2, R8Unorm));
+    }
 
     #[test]
     fn indexed_points_detect_index_independent_vertex_ranges() {

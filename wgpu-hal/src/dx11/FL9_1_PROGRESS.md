@@ -1,3 +1,46 @@
+## Query-gated R8 fragment `textureLoad` — 2026-11-11
+
+The restricted fragment 2D `textureLoad` path now accepts `R8Unorm` as well
+as `Rgba8Unorm`, gated by the selected device's sampled-texture capability and
+the backend's upload path. The internal texel-center point sampler does not
+need `SHADER_SAMPLE`; the strict public test confirmed that the RTX 3090 Ti's
+R8 projection supports the required `TEXTURE_BINDING | COPY_DST` usages.
+Readback verified all 16 in-bounds R8 texels as normalized red with zero green
+and blue and alpha one, plus all 48 out-of-bounds results as zero. R8 remains
+rejected for sample-bias and 3D load. Core now rejects one-mip views whose
+parent resource has multiple mips, matching the HAL resource restriction.
+
+Validation completed on 2026-11-11:
+
+- Strict `dx11_fl91_texture_load_dynamic`: 1/1 test passed on the physical
+  RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested and actual
+  FL9_1, software=false.
+- Strict private D3D11 HAL tests: 509/509 passed.
+- Strict public `dx11_public`: 131/131 passed. Several optional format or
+  input-assembler subcases logged SKIP because the selected FL9_1 projection
+  did not expose those optional capabilities; they are not hardware passes.
+- Core `dx11-test-fixture` library tests: 142/142 passed.
+- Core DX12 library regression tests: 131/131 passed.
+- HAL, Core and wgpu targeted Clippy checks completed successfully. Clippy
+  reported six existing HAL warnings in indexed draw, transfer and texture
+  helpers; none are in this change.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+
+The Core fixture test build exposed an older test-only `DownlevelLimits`
+initializer missing `vertex_index_vector_indexing`; it was completed with
+`false` so the fixture suite could compile. No historical FL9_1 device was
+available, and this driver's forced-FL9_1 behavior does not establish legacy
+driver behavior.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --tests -- --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_texture_load_dynamic -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,glsl,wgsl,std --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+```
+
 ## Query-gated packed 16-bit mip chains — 2026-11-11
 
 The internal capability projection and native 2D texture constructor now

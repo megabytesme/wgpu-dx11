@@ -4089,10 +4089,12 @@ cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,w
 ```
 
 Core validates the current view before this selected entry point reaches HAL.
-The restricted path requires a single-mip, single-sample `Rgba8Unorm` 2D
-view. The test verifies that R8 and multi-mip views report validation errors
-without an internal HAL error, while a sibling entry point that does not use
-`textureLoad` can draw with the same layout and R8 view.
+The restricted path accepts a single-mip, single-sample `Rgba8Unorm` 2D view
+or a query-gated `R8Unorm` view, and requires the parent resource to be
+single-mip. Multi-mip views produce a validation error without an internal HAL
+error. A sibling entry point that does not use `textureLoad` does not inherit
+the selected entry point's view restrictions. R8 remains rejected by the
+separate sample-bias-offset path.
 
 ### FL9_1 GLSL `outerProduct`
 
@@ -4364,6 +4366,24 @@ FL9_1 drivers are not represented by the RTX result.
 The same strict public test submits a draw with a two-mip 3D view and verifies
 Core reports `IncompatibleTextureLoadView` with no internal HAL error. The
 selected shader entry and currently bound view determine this check.
+
+The bounded 2D path also accepts query-gated `R8Unorm` views. Run the strict
+public test for interpolated-coordinate reads:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_texture_load_dynamic -- --nocapture --test-threads=1
+```
+
+Core and HAL require a single-mip, single-sample view whose parent texture is
+also single-mip. The selected R8 format must expose `TEXTURE_BINDING | COPY_DST`
+through the selected-device query and backend upload path; filterability is
+not required because the emulation uses the internal point sampler. The strict
+RTX 3090 Ti FL9_1 readback checked all 16 patterned in-bounds texels as
+`[R, 0, 0, 255]` and all 48 out-of-bounds pixels as zero. A synthetic
+capability test separately verifies that `TEXTURE2D` without
+`SHADER_SAMPLE` is sufficient for point-only R8 sampled usage. R8 remains
+unsupported by the separate sample-bias-offset emulation.
 
 ### Narrow FL9_1 fragment cube `textureDimensions`
 
