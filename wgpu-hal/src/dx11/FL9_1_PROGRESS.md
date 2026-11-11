@@ -16631,3 +16631,5 @@ cargo +1.93.1 test --offline -j4 -p wgpu-core --no-default-features --features d
 cargo +1.93.1 test --offline -j4 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
 cargo +1.93.1 test --offline -j4 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
 ```
+
+Checkpoint: `eb2ee4b0d2c54c9e92d38c1db2895ef1734bad20` (`dx11: verify helper LOD-zero and BC cube sampling`).
