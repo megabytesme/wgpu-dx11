@@ -33,6 +33,7 @@ const SPECIAL_FIRST_INSTANCE: &str = "first_instance";
 const SPECIAL_OTHER: &str = "other";
 const FL9_VIEWPORT_PARAMS: &str = "naga_fl9_viewport_params";
 const FL9_VIEWPORT_ADJUST: &str = "naga_fl9_viewport_adjust";
+const FL9_TEXEL_LOAD_MAX_UNIFORM_BUFFERS: usize = 6;
 
 fn signed_index_max(length: u32) -> Option<i32> {
     i32::try_from(length.checked_sub(1)?).ok()
@@ -633,18 +634,8 @@ fn fl9_texture_dimensions_functions(
             unreachable!()
         };
         let sampler_global = &module.global_variables[sampler_handle];
-        let sampler_group_supported = match module.types[image_global.ty].inner {
-            TypeInner::Image {
-                dim: crate::ImageDimension::D2,
-                ..
-            } => sampler_global.binding.is_some(),
-            _ => matches!(
-                sampler_global.binding,
-                Some(crate::ResourceBinding { group: 0, .. })
-            ),
-        };
         if sampler_global.space != crate::AddressSpace::Handle
-            || !sampler_group_supported
+            || sampler_global.binding.is_none()
             || !matches!(
                 module.types[sampler_global.ty].inner,
                 TypeInner::Sampler { comparison: false }
@@ -910,9 +901,7 @@ fn fl9_texture_num_levels_functions(
         };
         let sampler_global = &module.global_variables[sampler_handle];
         if sampler_global.space != crate::AddressSpace::Handle
-            || !sampler_global.binding.is_some_and(|binding| {
-                coordinate_size == crate::VectorSize::Bi || binding.group == 0
-            })
+            || sampler_global.binding.is_none()
             || !matches!(
                 module.types[sampler_global.ty].inner,
                 TypeInner::Sampler { comparison: false }
@@ -936,7 +925,7 @@ fn fl9_texture_num_levels_functions(
 fn fl9_texture_load_function_is_supported(
     module: &Module,
     function: &crate::Function,
-    texture: Handle<crate::GlobalVariable>,
+    textures: &[Handle<crate::GlobalVariable>],
     allow_dimensions_query: bool,
 ) -> bool {
     if function.body.iter().any(|statement| {
@@ -966,7 +955,7 @@ fn fl9_texture_load_function_is_supported(
                 sample: None,
                 level: Some(_),
                 ..
-            } if matches!(function.expressions[image], crate::Expression::GlobalVariable(global) if global == texture) =>
+            } if matches!(function.expressions[image], crate::Expression::GlobalVariable(global) if textures.contains(&global)) =>
                 {}
             crate::Expression::ImageLoad { .. }
             | crate::Expression::ImageSample { .. }
@@ -977,13 +966,27 @@ fn fl9_texture_load_function_is_supported(
             } if allow_dimensions_query
                 && matches!(
                     function.expressions[image],
-                    crate::Expression::GlobalVariable(global) if global == texture
+                    crate::Expression::GlobalVariable(global) if textures.len() == 1 && textures.contains(&global)
                 ) => {}
             crate::Expression::ImageQuery { .. } => return false,
             _ => {}
         }
     }
     true
+}
+
+fn fl9_texel_load_bindings(options: &Options) -> Vec<crate::ResourceBinding> {
+    options
+        .fl9_texel_load_proof
+        .into_iter()
+        .chain(options.fl9_texel_load_additional_proofs.iter().copied())
+        .collect()
+}
+
+fn fl9_texel_load_index(options: &Options, binding: crate::ResourceBinding) -> Option<usize> {
+    fl9_texel_load_bindings(options)
+        .iter()
+        .position(|candidate| *candidate == binding)
 }
 
 pub(crate) const MODF_FUNCTION: &str = "naga_modf";
@@ -1320,6 +1323,43 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         fragment_entry_point: Option<&FragmentEntryPoint<'_>>,
     ) -> Result<super::ReflectionInfo, Error> {
         self.reset(module);
+        let texel_load_bindings = fl9_texel_load_bindings(self.options);
+        if (!self.options.fl9_texel_load_additional_proofs.is_empty()
+            && self.options.fl9_texel_load_proof.is_none())
+            || texel_load_bindings.len() > 8
+            || texel_load_bindings
+                .iter()
+                .enumerate()
+                .any(|(index, binding)| texel_load_bindings[..index].contains(binding))
+        {
+            return Err(Error::Custom(
+                "FL9 texel-load proof has missing, duplicate, or excessive texture bindings".into(),
+            ));
+        }
+        let allows_texel_load_uniform = self.options.fl9_texel_load_proof.is_some()
+            && self.options.fl9_texture_dimensions_proof.is_none()
+            && self.options.fl9_texture_dimensions_3d_proof.is_none()
+            && self.options.fl9_texture_num_levels_proof.is_none()
+            && self.options.fl9_texture_base_clamp_proof.is_none()
+            && self.options.fl9_texture_gather_proof.is_none()
+            && self.options.fl9_texture_sample_bias_offset_proof.is_none()
+            && self
+                .options
+                .fl9_texture_sample_compare_offset_proof
+                .is_none()
+            && self.options.fl9_texel_load_proof.is_some_and(|binding| {
+                module.global_variables.iter().any(|(_, global)| {
+                    global.binding == Some(binding)
+                        && matches!(
+                            module.types[global.ty].inner,
+                            TypeInner::Image {
+                                dim: crate::ImageDimension::D2 | crate::ImageDimension::D3,
+                                arrayed: false,
+                                ..
+                            }
+                        )
+                })
+            });
         let combined_texel_load_dimensions_proof =
             matches!(
                 (
@@ -1439,6 +1479,21 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 if !used_globals.contains(&target) {
                     used_globals.push(target);
                 }
+            }
+            let used_uniform_count = used_globals
+                .iter()
+                .filter(|global| {
+                    let variable = &module.global_variables[**global];
+                    variable.space == crate::AddressSpace::Uniform && variable.binding.is_some()
+                })
+                .count();
+            if used_uniform_count > FL9_TEXEL_LOAD_MAX_UNIFORM_BUFFERS
+                || (used_uniform_count > 0 && !allows_texel_load_uniform)
+            {
+                return Err(Error::Custom(
+                    "FL9 texel-load proof supports at most six uniform buffers with a 2D or 3D load"
+                        .into(),
+                ));
             }
             (Some(reachable_functions), Some(used_globals))
         } else {
@@ -1800,6 +1855,46 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     "FL9 texel-load proof requires a fragment entry point".into(),
                 ));
             }
+            if self.options.fl9_texel_load_proof.is_some() {
+                for (slot, load_binding) in texel_load_bindings.iter().enumerate() {
+                    let Some((_, load_global)) = module
+                        .global_variables
+                        .iter()
+                        .find(|&(_, global)| global.binding == Some(*load_binding))
+                    else {
+                        return Err(Error::Custom(
+                            "FL9 texel-load proof binding not found".into(),
+                        ));
+                    };
+                    let is_supported_texture = matches!(
+                        module.types[load_global.ty].inner,
+                        TypeInner::Image {
+                            dim: crate::ImageDimension::D2,
+                            arrayed: false,
+                            class: crate::ImageClass::Sampled {
+                                kind: ScalarKind::Float,
+                                multi: false,
+                            },
+                        }
+                    );
+                    if (texel_load_bindings.len() > 1 && !is_supported_texture)
+                        || !self
+                            .options
+                            .binding_map
+                            .get(load_binding)
+                            .is_some_and(|target| {
+                                target.space == 0
+                                    && target.register as usize == slot
+                                    && target.binding_array_size.is_none()
+                                    && target.dynamic_storage_buffer_offsets_index.is_none()
+                            })
+                    {
+                        return Err(Error::Custom(
+                            "FL9 multi-texture load requires compact consecutive 2D texture registers".into(),
+                        ));
+                    }
+                }
+            }
             let Some((handle, global)) = module
                 .global_variables
                 .iter()
@@ -2022,7 +2117,13 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     None
                 };
             let mut bound_resources = module.global_variables.iter().filter(|&(handle, global)| {
-                global.binding.is_some_and(|candidate| candidate != binding)
+                global.binding.is_some_and(|candidate| {
+                    candidate != binding
+                        && !self
+                            .options
+                            .fl9_texel_load_additional_proofs
+                            .contains(&candidate)
+                }) && !(allows_texel_load_uniform && global.space == crate::AddressSpace::Uniform)
                     && (!(self.options.fl9_texel_load_proof.is_some()
                         || self.options.fl9_texture_base_clamp_proof.is_some()
                         || self.options.fl9_texture_dimensions_proof.is_some()
@@ -2584,16 +2685,29 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             }
             if self.options.fl9_texel_load_proof.is_some() {
                 let reachable = reachable_regular_functions(module, &entry.function);
+                let texture_handles = texel_load_bindings
+                    .iter()
+                    .map(|binding| {
+                        module
+                            .global_variables
+                            .iter()
+                            .find(|&(_, global)| global.binding == Some(*binding))
+                            .map(|(handle, _)| handle)
+                            .ok_or_else(|| {
+                                Error::Custom("FL9 texel-load proof binding not found".into())
+                            })
+                    })
+                    .collect::<Result<Vec<_>, _>>()?;
                 if !fl9_texture_load_function_is_supported(
                     module,
                     &entry.function,
-                    handle,
+                    &texture_handles,
                     combined_texel_load_dimensions_proof,
                 ) || reachable.iter().any(|function| {
                     !fl9_texture_load_function_is_supported(
                         module,
                         &module.functions[*function],
-                        handle,
+                        &texture_handles,
                         combined_texel_load_dimensions_proof,
                     )
                 }) {
@@ -2602,10 +2716,16 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     ));
                 }
                 if module.global_variables.iter().any(|(global, variable)| {
-                    global != handle && variable.binding.is_some() && !entry_info[global].is_empty()
+                    !variable
+                        .binding
+                        .is_some_and(|binding| texel_load_bindings.contains(&binding))
+                        && global != handle
+                        && variable.binding.is_some()
+                        && variable.space != crate::AddressSpace::Uniform
+                        && !entry_info[global].is_empty()
                 }) {
                     return Err(Error::Custom(
-                        "FL9 texel-load proof supports only one selected texture resource".into(),
+                        "FL9 texel-load proof supports only one selected texture and uniform resources".into(),
                     ));
                 }
             } else if self.options.fl9_texture_base_clamp_proof.is_none()
@@ -2632,10 +2752,26 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     "FL9 texture emulation rejects helper functions and control flow".into(),
                 ));
             }
-            writeln!(
-                self.out,
-                "cbuffer naga_fl9_load_dimensions : register(b13) {{ float4 naga_fl9_load_size; }};"
-            )?;
+            if self.options.fl9_texel_load_proof.is_some() {
+                write!(
+                    self.out,
+                    "cbuffer naga_fl9_load_dimensions : register(b13) {{ "
+                )?;
+                for index in 0..texel_load_bindings.len() {
+                    let size_name = if index == 0 {
+                        "naga_fl9_load_size".to_string()
+                    } else {
+                        format!("naga_fl9_load_size_{index}")
+                    };
+                    write!(self.out, "float4 {size_name}; ")?;
+                }
+                writeln!(self.out, "}};")?;
+            } else {
+                writeln!(
+                    self.out,
+                    "cbuffer naga_fl9_load_dimensions : register(b13) {{ float4 naga_fl9_load_size; }};"
+                )?;
+            }
             if self.options.fl9_texel_load_proof.is_some()
                 || self.options.fl9_texture_gather_proof.is_some()
             {
@@ -2645,37 +2781,54 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 )?;
             }
             if self.options.fl9_texel_load_proof.is_some() {
-                let name = &self.names[&NameKey::GlobalVariable(handle)];
-                if is_3d_texel_load {
-                    writeln!(self.out, "float4 naga_fl9_load(float3 p, float mip) {{")?;
-                    writeln!(
-                        self.out,
-                        "    float3 safe_p = clamp(p, float3(0.0, 0.0, 0.0), naga_fl9_load_size.xyz - 1.0);"
-                    )?;
-                    writeln!(
-                        self.out,
-                        "    float4 value = {name}.Sample(naga_fl9_load_sampler, (safe_p + 0.5) / naga_fl9_load_size.xyz);"
-                    )?;
-                    writeln!(
-                        self.out,
-                        "    return (mip == 0.0 && p.x >= 0.0 && p.y >= 0.0 && p.z >= 0.0 && p.x < naga_fl9_load_size.x && p.y < naga_fl9_load_size.y && p.z < naga_fl9_load_size.z) ? value : float4(0.0, 0.0, 0.0, 0.0);"
-                    )?;
-                } else {
-                    writeln!(self.out, "float4 naga_fl9_load(float2 p, float mip) {{")?;
-                    writeln!(
-                        self.out,
-                        "    float2 safe_p = clamp(p, float2(0.0, 0.0), naga_fl9_load_size.xy - 1.0);"
-                    )?;
-                    writeln!(
-                        self.out,
-                        "    float4 value = {name}.Sample(naga_fl9_load_sampler, (safe_p + 0.5) * naga_fl9_load_size.zw);"
-                    )?;
-                    writeln!(
-                        self.out,
-                        "    return (mip == 0.0 && p.x >= 0.0 && p.y >= 0.0 && p.x < naga_fl9_load_size.x && p.y < naga_fl9_load_size.y) ? value : float4(0.0, 0.0, 0.0, 0.0);"
-                    )?;
+                for (load_index, load_binding) in texel_load_bindings.iter().enumerate() {
+                    let Some((image, _)) = module
+                        .global_variables
+                        .iter()
+                        .find(|&(_, global)| global.binding == Some(*load_binding))
+                    else {
+                        return Err(Error::Custom(
+                            "FL9 texel-load proof binding not found".into(),
+                        ));
+                    };
+                    let name = &self.names[&NameKey::GlobalVariable(image)];
+                    let function_name = if load_index == 0 {
+                        "naga_fl9_load".to_string()
+                    } else {
+                        format!("naga_fl9_load_{load_index}")
+                    };
+                    let size_name = if load_index == 0 {
+                        "naga_fl9_load_size".to_string()
+                    } else {
+                        format!("naga_fl9_load_size_{load_index}")
+                    };
+                    if is_3d_texel_load {
+                        writeln!(self.out, "float4 {function_name}(float3 p, float mip) {{")?;
+                        writeln!(
+                            self.out,
+                            "    float3 safe_p = clamp(p, float3(0.0, 0.0, 0.0), {size_name}.xyz - 1.0);"
+                        )?;
+                        writeln!(
+                            self.out,
+                            "    float4 value = {name}.Sample(naga_fl9_load_sampler, (safe_p + 0.5) / {size_name}.xyz);"
+                        )?;
+                        writeln!(
+                            self.out,
+                            "    return (mip == 0.0 && p.x >= 0.0 && p.y >= 0.0 && p.z >= 0.0 && p.x < {size_name}.x && p.y < {size_name}.y && p.z < {size_name}.z) ? value : float4(0.0, 0.0, 0.0, 0.0);"
+                        )?;
+                    } else {
+                        writeln!(self.out, "float4 {function_name}(float2 p, float mip) {{")?;
+                        writeln!(
+                            self.out,
+                            "    float4 value = {name}.Sample(naga_fl9_load_sampler, (p + 0.5) * {size_name}.zw);"
+                        )?;
+                        writeln!(
+                            self.out,
+                            "    return (mip == 0.0 && p.x >= 0.0 && p.y >= 0.0 && p.x < {size_name}.x && p.y < {size_name}.y) ? value : float4(0.0, 0.0, 0.0, 0.0);"
+                        )?;
+                    }
+                    writeln!(self.out, "}}")?;
                 }
-                writeln!(self.out, "}}")?;
             }
         }
 
@@ -7733,17 +7886,21 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         sample: Option<Handle<crate::Expression>>,
         level: Option<Handle<crate::Expression>>,
     ) -> Result<(), Error> {
-        if let Some(binding) = self.options.fl9_texel_load_proof {
+        if self.options.fl9_texel_load_proof.is_some() {
             let crate::Expression::GlobalVariable(handle) = func_ctx.expressions[image] else {
                 return Err(Error::Custom(
                     "FL9 texel-load proof requires a direct global texture".into(),
                 ));
             };
-            if module.global_variables[handle].binding != Some(binding)
-                || array_index.is_some()
-                || sample.is_some()
-                || level.is_none()
-            {
+            let resource_binding = module.global_variables[handle].binding;
+            let Some(load_index) =
+                resource_binding.and_then(|binding| fl9_texel_load_index(self.options, binding))
+            else {
+                return Err(Error::Custom(
+                    "unsupported FL9 texel-load proof operation".into(),
+                ));
+            };
+            if load_index >= 8 || array_index.is_some() || sample.is_some() || level.is_none() {
                 return Err(Error::Custom(
                     "unsupported FL9 texel-load proof operation".into(),
                 ));
@@ -7763,7 +7920,11 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     ));
                 }
             };
-            write!(self.out, "naga_fl9_load({coordinate_type}(")?;
+            if load_index == 0 {
+                write!(self.out, "naga_fl9_load({coordinate_type}(")?;
+            } else {
+                write!(self.out, "naga_fl9_load_{load_index}({coordinate_type}(")?;
+            }
             self.write_expr(module, coordinate, func_ctx)?;
             write!(self.out, "), float(")?;
             self.write_expr(module, level.unwrap(), func_ctx)?;
@@ -9462,10 +9623,10 @@ mod fl9_viewport_tests {
             binding: 7,
         };
         let sampler_binding = crate::ResourceBinding {
-            group: 0,
+            group: 3,
             binding: 42,
         };
-        let source = "@group(0) @binding(7) var volume: texture_3d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { let dimensions = vec3f(textureDimensions(volume)); return textureSample(volume, smp, vec3f(0.5)) * vec4f(dimensions / vec3f(4.0, 2.0, 8.0), 1.0); }";
+        let source = "@group(0) @binding(7) var volume: texture_3d<f32>; @group(3) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { let dimensions = vec3f(textureDimensions(volume)); return textureSample(volume, smp, vec3f(0.5)) * vec4f(dimensions / vec3f(4.0, 2.0, 8.0), 1.0); }";
         let mut options = Options {
             direct_sampler_bindings: true,
             fl9_texture_dimensions_3d_proof: Some(texture_binding),
@@ -9492,7 +9653,7 @@ mod fl9_viewport_tests {
         assert!(output.contains("int3(naga_fl9_load_size.xyz)"), "{output}");
         assert!(output.contains(".Sample("), "{output}");
 
-        let helper = "@group(0) @binding(7) var volume: texture_3d<f32>; @group(0) @binding(42) var smp: sampler; fn sample_volume() -> vec4f { return textureSample(volume, smp, vec3f(0.5)); } @fragment fn main() -> @location(0) vec4f { return sample_volume() * vec4f(vec3f(textureDimensions(volume)) / vec3f(4.0, 2.0, 8.0), 1.0); }";
+        let helper = "@group(0) @binding(7) var volume: texture_3d<f32>; @group(3) @binding(42) var smp: sampler; fn sample_volume() -> vec4f { return textureSample(volume, smp, vec3f(0.5)); } @fragment fn main() -> @location(0) vec4f { return sample_volume() * vec4f(vec3f(textureDimensions(volume)) / vec3f(4.0, 2.0, 8.0), 1.0); }";
         assert!(translate(helper, &options, ShaderStage::Fragment).is_err());
 
         let second_sampler_binding = crate::ResourceBinding {
@@ -9696,7 +9857,7 @@ mod fl9_viewport_tests {
     }
 
     #[test]
-    fn fl9_2d_texture_num_levels_helper_can_sample_from_a_separate_group() {
+    fn fl9_texture_num_levels_helper_can_sample_from_a_separate_group() {
         let texture_binding = crate::ResourceBinding {
             group: 2,
             binding: 7,
@@ -9738,7 +9899,7 @@ mod fl9_viewport_tests {
 
         for image_type in ["texture_3d<f32>", "texture_cube<f32>"] {
             let coordinate = "vec3f(0.5)";
-            let invalid = format!(
+            let source = format!(
                 "@group(2) @binding(7) var image: {image_type}; \
                  @group(3) @binding(42) var smp: sampler; \
                  fn levels_helper() -> u32 {{ return textureNumLevels(image); }} \
@@ -9746,7 +9907,10 @@ mod fl9_viewport_tests {
                      return textureSample(image, smp, {coordinate}) * vec4f(f32(levels_helper())); \
                  }}"
             );
-            assert!(translate(&invalid, &options, ShaderStage::Fragment).is_err());
+            let output = translate(&source, &options, ShaderStage::Fragment).unwrap();
+            assert!(output.contains("register(t0)"), "{output}");
+            assert!(output.contains("register(s3)"), "{output}");
+            assert!(output.contains("image.Sample(smp"), "{output}");
         }
     }
 
@@ -9757,7 +9921,7 @@ mod fl9_viewport_tests {
             binding: 7,
         };
         let sampler_binding = crate::ResourceBinding {
-            group: 0,
+            group: 3,
             binding: 42,
         };
         for (image_type, coordinate, native_type) in [
@@ -9766,7 +9930,7 @@ mod fl9_viewport_tests {
         ] {
             for sample in [false, true] {
                 let sampler = if sample {
-                    "@group(0) @binding(42) var smp: sampler;"
+                    "@group(3) @binding(42) var smp: sampler;"
                 } else {
                     ""
                 };
@@ -9824,10 +9988,10 @@ mod fl9_viewport_tests {
             binding: 42,
         };
         let sampler_binding = crate::ResourceBinding {
-            group: 0,
+            group: 3,
             binding: 42,
         };
-        let source = "@group(7) @binding(42) var cube: texture_cube<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(cube)); return textureSample(cube, smp, vec3f(1.0, 0.0, 0.0)) * vec4f(dimensions / vec2f(8.0), 1.0, 1.0); }";
+        let source = "@group(7) @binding(42) var cube: texture_cube<f32>; @group(3) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(cube)); return textureSample(cube, smp, vec3f(1.0, 0.0, 0.0)) * vec4f(dimensions / vec2f(8.0), 1.0, 1.0); }";
         let mut options = Options {
             direct_sampler_bindings: true,
             fl9_texture_dimensions_proof: Some(texture_binding),
@@ -9868,7 +10032,7 @@ mod fl9_viewport_tests {
             assert!(!explicit_output.contains("GetDimensions"), "{explicit_output}");
         }
 
-        let explicit_level_and_sample = "@group(7) @binding(42) var cube: texture_cube<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { return textureSample(cube, smp, vec3f(1.0, 0.0, 0.0)) + vec4f(vec2f(textureDimensions(cube, 1u)), 0.0, 1.0); }";
+        let explicit_level_and_sample = "@group(7) @binding(42) var cube: texture_cube<f32>; @group(3) @binding(42) var smp: sampler; @fragment fn main() -> @location(0) vec4f { return textureSample(cube, smp, vec3f(1.0, 0.0, 0.0)) + vec4f(vec2f(textureDimensions(cube, 1u)), 0.0, 1.0); }";
         assert!(translate(explicit_level_and_sample, &options, ShaderStage::Fragment).is_err());
 
         let negative_level = "@group(7) @binding(42) var cube: texture_cube<f32>; @fragment fn main() -> @location(0) vec4f { return vec4f(vec2f(textureDimensions(cube, -1)), 0.0, 1.0); }";
@@ -10149,7 +10313,7 @@ mod fl9_viewport_tests {
             "{two_dimensional_output}"
         );
         assert!(
-            two_dimensional_output.contains("(safe_p + 0.5) * naga_fl9_load_size.zw"),
+            two_dimensional_output.contains("(p + 0.5) * naga_fl9_load_size.zw"),
             "{two_dimensional_output}"
         );
     }
@@ -10250,6 +10414,222 @@ mod fl9_viewport_tests {
                 assert!(translate(texture_parameter, &options, ShaderStage::Fragment).is_err());
             }
         }
+    }
+
+    #[test]
+    fn fl9_texel_load_proof_allows_uniform_buffers() {
+        let binding = crate::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let uniform_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 9,
+        };
+        let source = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(9) var<uniform> tint: vec4f;
+            @fragment fn main() -> @location(0) vec4f {
+                return textureLoad(image, vec2i(0), 0) * tint;
+            }
+        "#;
+        let mut options = Options {
+            shader_model: ShaderModel::V5_0,
+            direct_sampler_bindings: true,
+            fl9_texel_load_proof: Some(binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        options.binding_map.insert(
+            uniform_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("register(t0)"), "{output}");
+        assert!(output.contains("register(b0)"), "{output}");
+        assert!(output.contains("register(b13)"), "{output}");
+        assert!(output.contains("register(s15)"), "{output}");
+        assert!(output.contains("naga_fl9_load(float2("), "{output}");
+
+        let two_uniforms = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(9) var<uniform> tint: vec4f;
+            @group(0) @binding(10) var<uniform> extra: vec4f;
+            @fragment fn main() -> @location(0) vec4f {
+                return textureLoad(image, vec2i(0), 0) * tint + extra;
+            }
+        "#;
+        options.binding_map.insert(
+            crate::ResourceBinding {
+                group: 0,
+                binding: 10,
+            },
+            super::super::BindTarget {
+                register: 1,
+                ..Default::default()
+            },
+        );
+        let output = translate(two_uniforms, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("register(b0)"), "{output}");
+        assert!(output.contains("register(b1)"), "{output}");
+        assert!(output.contains("register(b13)"), "{output}");
+
+        let six_uniforms = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(9) var<uniform> tint: vec4f;
+            @group(0) @binding(10) var<uniform> extra0: vec4f;
+            @group(0) @binding(12) var<uniform> extra1: vec4f;
+            @group(0) @binding(14) var<uniform> extra2: vec4f;
+            @group(0) @binding(16) var<uniform> extra3: vec4f;
+            @group(0) @binding(18) var<uniform> extra4: vec4f;
+            @fragment fn main() -> @location(0) vec4f {
+                return textureLoad(image, vec2i(0), 0) * tint + extra0 + extra1 + extra2 + extra3 + extra4;
+            }
+        "#;
+        for (binding, register) in [(12, 2), (14, 3), (16, 4), (18, 5)] {
+            options.binding_map.insert(
+                crate::ResourceBinding { group: 0, binding },
+                super::super::BindTarget {
+                    register,
+                    ..Default::default()
+                },
+            );
+        }
+        let output = translate(six_uniforms, &options, ShaderStage::Fragment).unwrap();
+        for register in 0..6 {
+            assert!(
+                output.contains(&format!("register(b{register})")),
+                "{output}"
+            );
+        }
+        assert!(output.contains("register(b13)"), "{output}");
+
+        let volume_with_uniform = r#"
+            @group(0) @binding(7) var volume: texture_3d<f32>;
+            @group(0) @binding(9) var<uniform> tint: vec4f;
+            @fragment fn main() -> @location(0) vec4f {
+                return textureLoad(volume, vec3i(1, 0, 1), 0) * tint;
+            }
+        "#;
+        let output = translate(volume_with_uniform, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("register(t0)"), "{output}");
+        assert!(output.contains("register(b0)"), "{output}");
+        assert!(output.contains("register(b13)"), "{output}");
+        assert!(output.contains("register(s15)"), "{output}");
+
+        let seven_uniforms = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(9) var<uniform> tint: vec4f;
+            @group(0) @binding(10) var<uniform> extra: vec4f;
+            @group(0) @binding(12) var<uniform> extra1: vec4f;
+            @group(0) @binding(14) var<uniform> extra2: vec4f;
+            @group(0) @binding(16) var<uniform> extra3: vec4f;
+            @group(0) @binding(18) var<uniform> extra4: vec4f;
+            @group(0) @binding(20) var<uniform> extra5: vec4f;
+            @fragment fn main() -> @location(0) vec4f {
+                return textureLoad(image, vec2i(0), 0) * tint + extra + extra1 + extra2 + extra3 + extra4 + extra5;
+            }
+        "#;
+        options.binding_map.insert(
+            crate::ResourceBinding {
+                group: 0,
+                binding: 20,
+            },
+            super::super::BindTarget {
+                register: 6,
+                ..Default::default()
+            },
+        );
+        assert!(translate(seven_uniforms, &options, ShaderStage::Fragment).is_err());
+
+        let volume_with_uniform = r#"
+            @group(0) @binding(7) var volume: texture_3d<f32>;
+            @group(0) @binding(9) var<uniform> tint: vec4f;
+            @fragment fn main() -> @location(0) vec4f {
+                return textureLoad(volume, vec3i(0), 0) * tint;
+            }
+        "#;
+        let output = translate(volume_with_uniform, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("register(t0)"), "{output}");
+        assert!(output.contains("register(b0)"), "{output}");
+        assert!(output.contains("register(b13)"), "{output}");
+        assert!(output.contains("register(s15)"), "{output}");
+    }
+
+    #[test]
+    fn fl9_texel_load_proof_maps_multiple_textures_compactly() {
+        let first = crate::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let second = crate::ResourceBinding {
+            group: 3,
+            binding: 42,
+        };
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texel_load_proof: Some(first),
+            fl9_texel_load_additional_proofs: vec![second],
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            first,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        options.binding_map.insert(
+            second,
+            super::super::BindTarget {
+                register: 1,
+                ..Default::default()
+            },
+        );
+        let source = r#"
+            @group(0) @binding(7) var first_image: texture_2d<f32>;
+            @group(3) @binding(42) var second_image: texture_2d<f32>;
+            @fragment fn main(@location(0) coord: vec2f) -> @location(0) vec4f {
+                return textureLoad(first_image, vec2i(coord), 0)
+                    + textureLoad(second_image, vec2i(coord), 0);
+            }
+        "#;
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(
+            output.contains("first_image.Sample(naga_fl9_load_sampler"),
+            "{output}"
+        );
+        assert!(
+            output.contains("second_image.Sample(naga_fl9_load_sampler"),
+            "{output}"
+        );
+        assert!(output.contains("register(t0)"), "{output}");
+        assert!(output.contains("register(t1)"), "{output}");
+        assert!(output.contains("float4 naga_fl9_load_size_1"), "{output}");
+        assert!(output.contains("naga_fl9_load_1(float2("), "{output}");
+
+        let unlisted = r#"
+            @group(0) @binding(7) var first_image: texture_2d<f32>;
+            @group(3) @binding(42) var second_image: texture_2d<f32>;
+            @group(5) @binding(100) var third_image: texture_2d<f32>;
+            @fragment fn main() -> @location(0) vec4f {
+                return textureLoad(first_image, vec2i(0), 0)
+                    + textureLoad(second_image, vec2i(0), 0)
+                    + textureLoad(third_image, vec2i(0), 0);
+            }
+        "#;
+        assert!(translate(unlisted, &options, ShaderStage::Fragment).is_err());
+        options.fl9_texel_load_additional_proofs.clear();
+        assert!(translate(source, &options, ShaderStage::Fragment).is_err());
     }
 
     #[test]

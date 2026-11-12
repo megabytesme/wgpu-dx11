@@ -1506,6 +1506,7 @@ impl crate::Device for super::Device {
                 sampler_heap_target,
                 direct_sampler_bindings: false,
                 fl9_texel_load_proof: None,
+                fl9_texel_load_additional_proofs: Vec::new(),
                 fl9_texture_gather_proof: None,
                 fl9_texture_dimensions_proof: None,
                 fl9_texture_dimensions_3d_proof: None,

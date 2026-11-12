@@ -1,5 +1,80 @@
 # Direct3D 11 validation plan
 
+## Computed coordinates in one fragment 2D `textureLoad` helper
+
+The selected entry point must pass its `@location(0) vec2f` argument unchanged
+to one straight-line helper. That helper may apply literal-based f32
+arithmetic, composition, splat, component access or swizzle before converting
+the coordinate to `vec2i`, then return the one single-mip 2D float load.
+Entry-point call-site arithmetic, nested calls, control flow, other resources
+and unrelated runtime integer operations remain rejected. The HAL uses the
+same selected-resource proof and compiles the helper with FXC's FL9_1 profile.
+
+Run the proof tests and strict physical-device readback:
+
+```powershell
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl9_2d_texture_load_allows_only_direct_dynamic_coordinate_cast
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_load_ -- --nocapture --test-threads=1
+```
+
+The 2026-11-12 strict run passed both public cases on the physical RTX 3090 Ti
+at requested and actual FL9_1. Group 0/binding 7 and group 1/binding 42 each
+checked all 64 output pixels; the computed helper selected the next texture
+column and returned zero out of bounds. This is not evidence for general
+computed coordinates or historical FL9_1 drivers. Full verification passed
+Naga 171/171, Core DX11 136/136, Core DX12 135/135, private HAL 517/517 and
+public D3D11 153/153 with strict hardware required.
+
+## Fragment 3D `textureLoad` with uniforms
+
+The existing selected-entry, single-image, single-mip fragment 3D
+`textureLoad` proof permits up to six used uniform buffers. Core, Naga and HAL
+retain the 3D capability gate and reserve `b13` for volume dimensions. A strict
+public test binds a sparse tint at group 1/binding 42 and verifies the full
+8x8 readback is `[127, 0, 64, 255]` on forced FL9_1. Seven uniforms, other
+used resource classes and combined load/dimensions with uniforms remain
+unsupported.
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl9_3d_texture_load_selects_a_distinct_single_mip_emulation
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_texel_load_proof_allows_uniform_buffers
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_3d_texture_load_at_fl91 -- --nocapture --test-threads=1
+```
+
+The 2026-11-12 strict run selected the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) and reported requested/actual FL9_1,
+`software=false`. Every output pixel matched; the full strict HAL and public
+suites passed 517/517 and 153/153. Four low-level HAL GPU tests also now fail
+in strict mode when physical hardware is missing instead of silently
+returning success.
+
+## Separate-group 3D/cube query samplers
+
+The restricted 3D/cube `textureDimensions` and `textureNumLevels` proofs may
+coexist with one implicit sample of the queried image using a compatible
+non-comparison sampler in any supported bind group. This includes distinct
+texture and sampler groups. It does not permit extra resources, multiple
+samples, helper sampling or other query/shader shapes.
+
+Run the CPU suites and require physical FL9_1 execution for the public suite:
+
+```powershell
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+The strict run reports adapter name/IDs, driver, requested and actual feature
+level, and checks all 64 rendered pixels for each case. The 2026-11-12 run
+selected the physical RTX 3090 Ti at FL9_1; the full public target passed
+152/152. Historical FL9_1 driver behavior remains unverified.
+
 ### Fragment 2D `textureLoad` in a nonzero bind group
 
 The public regression test declares the texture at group 1/binding 42 and uses
@@ -944,25 +1019,23 @@ General `textureSampleLevel` remains unavailable at FL9_1. FXC rejects
 unlowered literal and dynamic explicit LOD with
 `X4532: texlod not supported on this target` for both
 `ps_4_0_level_9_1` and `ps_4_0_level_9_3`. A separate downlevel limit permits
-only a direct, unconditional fragment sample of `texture_2d<f32>` with literal
-positive `0.0`, or that same operation returned through one straight-line
-helper whose `vec2f` coordinate uses only the input, numeric literals,
-binary/unary arithmetic, composition, splat or swizzle. Naga is validated
-first and HAL lowers only the proven sample expression to implicit sampling.
-The currently selected view must expose one mip, and the bound regular sampler
-must have equal min/mag filters and effective anisotropy 1. Dynamic,
-negative-zero, nonzero or fractional LOD, nested helpers, unsupported helper
-expressions, control flow, other texture shapes, comparison samplers and
-incompatible draw bindings remain rejected. Core checks the currently bound
-view and sampler before each draw and while finishing a render bundle. Strict
-public readback on the RTX 3090 Ti verified all 64 pixels for the direct,
-forwarding-helper and arithmetic-helper forms at requested/actual FL9_1; the
-arithmetic case shifted the sampled coordinate and produced the expected
-uniform right-hand texel. Core's strict hardware fixture rejected a bound
-two-mip view at bundle finish and accepted a one-mip view. CPU-only Core and
-HAL tests cover proof shape, entry-point selection, Naga lowering and FXC
-acceptance. This does not enable the general `texture_sample_level`
-capability, which remains available only at FL10_0 and above in the generic
+an unconditional direct fragment sample of `texture_2d<f32>` when its LOD is a
+finite literal or a side-effect-free scalar expression over direct fragment
+inputs and whitelisted arithmetic. The existing one-straight-line-helper form
+still requires literal positive `0.0`; its `vec2f` coordinate may use the
+validated arithmetic, composition, splat or swizzle subset. Naga is validated
+first and HAL lowers only proven samples to implicit sampling. The currently
+selected view must expose one mip, and the bound regular sampler must have
+equal min/mag filters and effective anisotropy 1, making the explicit LOD
+unobservable for the supported sample. Calls, local loads, control flow,
+`select`, offsets, other texture shapes, comparison samplers and incompatible
+draw bindings remain rejected. Core checks the currently bound view and
+sampler before each draw and while finishing a render bundle. Strict public
+readback on the RTX 3090 Ti verifies all 64 pixels for direct literal-zero,
+direct computed-LOD, forwarding-helper and arithmetic-helper forms at
+requested/actual FL9_1; CPU-only Core and HAL tests cover proof shape,
+entry-point selection and Naga lowering. This does not enable the general
+`texture_sample_level` capability, which remains unavailable in the generic
 downlevel model.
 
 FXC also rejects `GetDimensions`-based HLSL emitted for `textureDimensions`,
@@ -1027,7 +1100,9 @@ It reported the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
 
 The general `DownlevelLimits::texture_gather` stays false. The additional
 `texture_gather_2d_float_fragment` limit proves one direct fragment gather on
-a single-mip `Rgba8Unorm` 2D view with a regular clamp-to-edge sampler. FXC
+a single-mip `Rgba8Unorm` or query-supported `Rgba8UnormSrgb` 2D view with a regular clamp-to-edge sampler. Core checks the live format, mip count and
+sampler at each direct and bundle draw; unsupported formats are rejected
+before HAL. FXC
 rejects native Gather at `ps_4_0_level_9_1`, so the Naga writer emits four
 point samples at texel centers and orders the selected channel according to
 WGSL. Core verifies the selected entry and the currently bound view/sampler;
@@ -1049,9 +1124,12 @@ compiles the restricted output for `ps_4_0_level_9_1` and verifies that a
 conflicting user resource cannot occupy reserved `s15`. The strict public
 test selected the physical RTX 3090 Ti (`0x10de:0x2203`, driver
 `32.0.16.2101`) at requested/actual FL9_1 with `software=false`; all 64
-readback pixels matched `[151, 166, 106, 91]` within one UNORM step. It also
-verified Core rejects helper-reached gather and a multi-mip view before draw
-submission. This does not establish behavior on historical FL9_1 drivers.
+linear-view pixels matched `[151, 166, 106, 91]` within one UNORM step, and
+the query-supported sRGB view matched the decoded linear result
+`[79, 97, 37, 27]` for all 64 pixels within two steps. The same run verified
+Core rejects an unsupported R8 view and a multi-mip view before HAL. It also
+verifies helper-reached gather rejection. This does not establish behavior on
+historical FL9_1 drivers.
 
 A tenth strict public test uploads both `Rg8Snorm` and `Rgba8Snorm`, samples
 them with one non-filtering sampler, converts signed values to visible
@@ -4091,6 +4169,17 @@ opts in; other HLSL backends retain the existing unsigned output. Tests cover
 both emitted forms, FXC compilation for `vs_4_0_level_9_1`, and rejection of
 unsupported shapes in core and HAL.
 
+Direct `instance_index` access to a fixed `array<mat4x4<f32>, N>` is also
+supported for `N <= 63`. The strict test renders two instances using distinct
+translation matrices and reads back both separated triangles plus the clear
+gap. Computed indices, non-square matrices and arrays larger than 63 remain
+rejected; FXC enforces the shader's aggregate FL9_1 constant budget.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_instance_indexed_matrix_uniform_array_at_fl91 -- --nocapture --test-threads=1
+```
+
 ### Direct fragment uniform-array indexing
 
 Core and HAL permit a separate fragment-only subset: up to two direct lookups
@@ -4234,24 +4323,15 @@ public GPU case:
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific
 cargo +1.93 test --offline -j8 -p naga --lib fl9_2d_texel_load_emits_only_proven_reachable_helpers
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_load_emulation_accepts_direct_global_nested_helpers
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texel_load_capacity_compiles_at_eight_images
 cargo +1.93 test --offline -j8 -p wgpu-types --lib restricted_texture_load_does_not_imply_general_texture_load
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_load_emulation_at_fl91 -- --nocapture --test-threads=1
 ```
 
-This is not general `textureLoad` support. It covers one single-mip, non-arrayed `texture_2d<f32>` in a fragment entry point. The selected entry point and its reachable straight-line helpers may directly reference the same global image; helpers cannot receive or return resource handles. Other reachable bound globals, additional image identities, sampling/query operations and control flow are rejected. Unreachable helper functions and helpers used only by sibling entry points do not constrain this shader. Naga emits only the selected entry point reachable helpers and used globals for this proof. The selected-entry proof maps the texture to `t0`; private
-shader emulation point-samples at texel centers using `s15`, reads dimensions
-from `b13`, and yields zero for out-of-bounds coordinates and nonzero mip
-requests. The public test on the physical RTX 3090 Ti at requested/actual
-FL9_1 checks five 8×8 outputs: direct-helper in-bounds green pixels,
-out-of-bounds zero pixels, zero pixels for a nonzero mip request,
-nested-helper in-bounds green pixels and the dynamic-coordinate helper's four
-source quadrants. When the selected device exposes sampled/upload support for
-RGBA8 sRGB, a sixth draw reads encoded `[128, 128, 128, 128]` through the sRGB
-view and verifies linear-target `[55, 55, 55, 128]` across all 64 pixels. The
-broader strict public suite also includes this test. This modern driver result
-does not establish behavior on historical FL9_1 hardware.
+This remains a restricted `textureLoad` subset rather than general texture-load support. It accepts up to eight selected single-mip, non-arrayed `texture_2d<f32>` identities in one fragment entry point, subject to the 64 arithmetic-instruction budget of `ps_4_0_level_9_1`. Core and HAL reject a ninth identity; the CPU-side FXC test compiles representative shaders from one through eight loads. The selected entry point and reachable straight-line helpers may directly reference those global images; helper resource parameters/results, other reachable bound globals, sampling/query operations and control flow remain rejected. Unreachable helpers and sibling entry points do not constrain the selected shader. Naga emits the selected-entry resources with compact `t0`–`t7` assignments. The emulation uses the internal point/clamp sampler `s15`, dimensions in pixel constant buffer `b13`, texel-center sampling and a zero result for out-of-bounds coordinates or nonzero mip requests. FXC accepts the representative eight-image sum after the HLSL writer removed a redundant explicit coordinate clamp; other shader arithmetic can still exhaust the profile instruction budget.
 
+The strict public test on the physical RTX 3090 Ti at requested/actual FL9_1 checks direct, nested-helper, dynamic-coordinate, positive and negative out-of-bounds, nonzero-mip, two-image and eight-image outputs. The eight-image sum produced `[56, 24, 56, 255]` across all 64 target pixels; the two differently sized images produced `[255, 255, 255, 255]`, and the one-uniform tint produced `[0, 64, 0, 255]`. When the selected device supports the sRGB sampled/upload path, a further draw verifies encoded `[128, 128, 128, 128]` decodes to `[55, 55, 55, 128]`. The modern forced-level result does not establish behavior on historical FL9_1 hardware.
 A separate proven coordinate form permits a direct fragment entry-point
 `@location(0) vec2f` argument to be converted to `vec2i` and used as the
 coordinate of the single 2D `textureLoad`. It does not permit coordinate
@@ -4364,8 +4444,9 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 
 The direct 2D query also supports a texture binding in any valid bind group.
 The strict nonzero-group test uses group 7/binding 42, switches between 16x8
-and 8x4 views, and checks every output pixel. The selected-helper and 3D/cube
-query proofs retain their group-0 restriction. Run the focused checks with:
+and 8x4 views, and checks every output pixel. Selected-helper and 3D/cube
+query proofs may also use resources from different supported groups. Run the
+focused checks with:
 
 ```powershell
 cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_dimensions_accepts_only_direct_fragment_conversion
@@ -4393,8 +4474,8 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 The 2D query also supports one selected, no-argument straight-line helper that
 returns the queried `u32` for direct conversion to `f32`. The helper itself is
 query-only, but the selected entry may also contain exactly one direct implicit
-sample of the same image through one group-zero non-comparison sampler with
-matching coordinates. Nested or repeated calls, helper sampling, control flow,
+sample of the same image through one compatible non-comparison sampler in any
+supported group with matching coordinates. Nested or repeated calls, helper sampling, control flow,
 mismatched images, additional selected resources, multiple samples and
 explicit LOD remain rejected. Each dimension permits the selected helper. The
 strict 2D helper readback uses one- and three-level views and checks both
@@ -4417,9 +4498,8 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 ```
 
 The query may share the selected entry with one implicit sample of the same
-texture using one compatible non-comparison sampler. For 2D images, the
-texture and sampler may use different supported bind groups; for 3D and cube
-images the sampler remains group-zero-only. For helper-backed queries, the
+texture using one compatible non-comparison sampler. For 2D, 3D and cube
+images, texture and sampler may use different supported bind groups. For helper-backed queries, the
 helper remains query-only and the sample must be a direct entry operation.
 The strict public test switches between one- and three-level views
 over an initialized RGBA8 mip chain; the first output channel depends on the
@@ -4461,8 +4541,8 @@ unrelated queries remain rejected.
 The strict 2D test puts the queried texture at group 2/binding 42 and tests a
 compatible sampler at group 3/binding 7. It transitions between one-level and
 three-level views and verifies every output pixel for direct and selected
-helper forms. The synthetic Core, Naga and HAL tests retain rejection for
-split-group 3D/cube samplers. Run the proof tests and physical FL9_1 readback
+helper forms. The synthetic Core, Naga and HAL tests validate split-group
+3D/cube samplers. Run the proof tests and physical FL9_1 readback
 with:
 
 ```powershell
@@ -4514,13 +4594,13 @@ cargo +1.93 test --offline -j1 -p wgpu --no-default-features --features dx11,wgs
 ```
 
 The shader may combine one level-less `textureDimensions(image)` with one
-implicit `textureSample(image, sampler, uv)` of the same group-0 2D float
-texture. The direct selected-entry form rejects explicit sample/query mip
+implicit `textureSample(image, sampler, uv)` of the same 2D float texture,
+with the sampler in any supported group. The direct selected-entry form rejects explicit sample/query mip
 levels, helper calls, `select`, extra bound resources and other image
 operations. A separate helper form permits one no-argument, straight-line
 helper returning the dimensions for direct `vec2f` conversion, alongside one
-direct implicit sample of that same image with one group-0 non-comparison
-sampler. The helper cannot sample, call other functions or use control flow;
+direct implicit sample of that same image with one non-comparison sampler in
+any supported group. The helper cannot sample, call other functions or use control flow;
 extra resources and other image operations remain rejected.
 
 Run the Naga, Core, HAL and FXC proofs, then require the physical GPU test:
@@ -4552,8 +4632,8 @@ cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,w
 
 The selected fragment entry may combine one direct no-level
 `textureDimensions(volume)` converted to `vec3f` with one level-less implicit
-sample of that same non-array `texture_3d<f32>` through one group-0
-non-comparison sampler. It may alternatively call one parameterless,
+sample of that same non-array `texture_3d<f32>` through one non-comparison
+sampler in any supported group. It may alternatively call one parameterless,
 straight-line helper that directly returns the level-less `vec3u` query and
 directly convert that result to `vec3f`; helper mip arguments, extra helper
 operations, additional bound resources, explicit LOD, explicit query levels
@@ -4575,6 +4655,7 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_3d_texel_load_emits_only_proven_reachable_helpers
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_load_emulation_accepts_direct_global_nested_helpers
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texel_load_capacity_compiles_at_eight_images
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_3d_texel_load_helpers_compile_with_the_level_9_1_profile
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_3d_texture_load_selects_a_distinct_single_mip_emulation
 cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_3d_texel_load_compiles_with_the_level_9_1_profile
@@ -5020,3 +5101,26 @@ vertex-indexed float-vector triangle, and verifies 64/64 white pixels for each.
 Core rejects helper-forwarded, computed and write forms. This is a narrow
 shader subset, not evidence that every FL9_1 compiler or historical device
 supports the same behavior.
+
+### Up to six uniforms with fragment 2D `textureLoad`
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_load_ -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_load_emulation_accepts_direct_global_nested_helpers
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_texel_load_proof_allows_uniform_buffers
+```
+
+The strict public tests passed 2/2 on the physical RTX 3090 Ti, vendor/device
+`0x10de:0x2203`, driver `32.0.16.2101`, requested/actual FL9_1,
+`software=false`. Each sparse group layout rendered a sampled green texel
+through one fragment uniform tint and verified `[0, 64, 0, 191]` for 64/64
+pixels. Each sparse group layout also rendered through two and six independent
+uniform buffers; the six-buffer case produced `[64, 96, 32, 223]` for 64/64
+pixels. Synthetic Core/HAL/Naga tests accept six used uniforms and reject
+seven. A separate strict test verifies one sparse group-1/binding-42 tint
+uniform with the single-image 3D load emulation; all 64 pixels matched
+`[127, 0, 64, 255]`. Core/HAL/Naga tests accept the bounded 3D combination and
+reject seven uniforms; Core rejects it when the 3D load limit is off. Combined
+load/dimensions with uniforms and other bound resource classes remain rejected.

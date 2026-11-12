@@ -44,6 +44,7 @@ only.
 | `webgpu:api,operation,command_buffer,copyBufferToBuffer:state_transitions:*` | 1/1 passed, no skips or failures | Ordered partial copies and readback. |
 | `webgpu:api,operation,resource_init,buffer:copy_buffer_to_texture:*` | 1/1 passed, no skips or failures | Buffer-to-texture initialization, including source-offset subcases. |
 | `webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rgba8unorm";dstFormat="rgba8unorm";dimension="2d"` | 1/1 passed, no skips or failures | Non-array RGBA8 2D copies, including generated mip/region cases. |
+| `webgpu:api,operation,rendering,color_target_state:blending,formats:*` | 4 passed, 29 skipped, 6 failed | RGBA8/RG8/R8 linear blend paths passed. Failures are listed below: two sRGB targets hit the documented FL9_1 blend-semantics rejection; four other formats were not renderable in the selected-device projection, but the CTS preflight only uses its generic format table. |
 
 Exact commands and result descriptions are also recorded in
 [`TESTING.md`](TESTING.md#strict-public-cts-copy-subset) and
@@ -89,6 +90,7 @@ for related coverage and the broad-suite triage.
 | `webgpu:api,operation,rendering,depth_bias:depth_bias_24bit_format:format="depth24plus";*` and `format="depth24plus-stencil8";*` | Each selector failed 3/3 because the CTS fixture requests `COPY_SRC` on the depth texture, which this downlevel projection rejects. The resulting black color and teardown validation errors do not establish a depth-bias failure. A separate strict public test uses render-attachment-only `Depth24Plus`, and verified zero, positive and negative constant bias over 64 readback pixels. |
 | `webgpu:api,operation,rendering,draw:default_arguments:*` | Failed when its shader used runtime integer operations rejected by the selected FL9_1 shader subset. |
 | `webgpu:api,operation,rendering,depth:*` | Broad mixed result described above; do not classify the 34 fixture/format failures as supported-operation passes or backend depth failures without individual source triage. |
+| `webgpu:api,operation,rendering,color_target_state:blending,formats:*` | 4 passed, 29 skipped, 6 failed. The failures were `rgba8unorm-srgb` and `bgra8unorm-srgb` (Core rejects blending because FL9_1 sRGB blend semantics do not match wgpu), plus `r16float`, `rg16float`, `rgba16float`, and `rgb10a2unorm` (Core rejects them as non-renderable on the selected device). The CTS helper `skipIfTextureFormatNotUsableAsRenderAttachment` uses its generic format table and does not consult this backend's selected-device `getTextureFormatFeatures` projection, so those four unsupported device formats reach pipeline creation. They are not evidence of a valid Core request reaching HAL. The 29 skips include non-blendable integer formats and feature-gated formats. |
 | `image_copy:origins_and_extents` | Not a valid isolated single-layer 2D transfer selector: it generates 1D/3D and array-layer cases. Filtering to RGBA8 and 2D still includes array layers, which FL9_1 does not expose. |
 | `webgpu:api,operation,rendering,basic:large_draw:*` | `cts_runner/test.lst` contains a commented global failure expectation. No DX11-specific execution result is recorded here. |
 
@@ -105,3 +107,56 @@ shader operation, render state, surface path, or driver. The strict public
 `wgpu` integration tests and private HAL tests provide additional evidence,
 but they are not CTS executions. Desktop forced-FL9_1 results do not verify
 historical FL9_1 devices or Lumia/CoreWindow runtime behavior.
+
+## Strict render-pass selector boundary — 2026-11-12
+
+On the current worktree, the raw `webgpu:api,operation,render_pass,*`
+selector ran in strict required-hardware mode and reported 3 passes, 41 skips
+and 139 failed cases. The failures group as follows:
+
+| Failing test family | Cases | Source-backed boundary |
+| --- | ---: | --- |
+| `storeOp,color_attachment_only` | 64 | Includes two array layers and two mip levels. The RGBA8 mip-0/layer-0 subcase ran; sibling layer/mip cases hit the Core `TEXTURE_2D_ARRAYS` or `DEPTH_TEXTURE_MULTI_MIP` gate. Other formats also request copy-source/render-target usage not exposed by the selected-device projection. |
+| `resolve,render_pass_resolve` | 40 | Every fixture requests two or four color attachments (`resolve.spec.ts`); the adapter limit is one. This does not test the supported single-target resolve path. |
+| `clear_value,stencil_clear_value` | 20 | Fixtures request `COPY_SRC` on `Stencil8` or `Depth24PlusStencil8`; the selected projection rejects those copy usages. |
+| `storeOp,depth_stencil_attachment_only` | 6 | Mixes unsupported formats/usages with array-layer and depth-mip cases. |
+| `storeOp,color_attachment_with_depth_stencil_attachment` | 4 | Uses `Depth32Float` with `COPY_SRC`, which the projection does not expose. |
+| `storeOp,multiple_color_attachments` | 4 | Requests two through four targets; the adapter limit is one. |
+| `transient_attachment,overlapping_transient_attachments` | 1 | Exercises multiple simultaneous attachments beyond the one-target limit. |
+
+The aggregate failure count is not a supported-subset regression count: CTS
+continues after scoped Core validation rejects unsupported subcases, then
+reports their error-resource readbacks as mismatches. Core's D2-array gate is
+in `wgpu-core/src/device/resource.rs`; the relevant fixture shapes are in
+`cts/src/webgpu/api/operation/render_pass/storeOp.spec.ts`,
+`resolve.spec.ts` and `clear_value.spec.ts`. No confirmed failure of a
+projection-supported render-pass operation was found.
+
+The following strict CTS selectors passed on the current worktree with no
+skips or failures:
+
+| Selector | Result |
+| --- | ---: |
+| `webgpu:api,operation,rendering,basic:clear:*` | 1/1 |
+| `webgpu:api,operation,command_buffer,copyBufferToBuffer:state_transitions:*` | 1/1 |
+| `webgpu:api,operation,rendering,color_target_state:color_write_mask,channel_work:*` | 16/16 |
+| `webgpu:api,operation,resource_init,buffer:copy_buffer_to_texture:*` | 1/1 |
+| `webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rgba8unorm";dstFormat="rgba8unorm";dimension="2d"` | 1/1 |
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,render_pass,*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,basic:clear:*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyBufferToBuffer:state_transitions:*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,color_target_state:color_write_mask,channel_work:*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,resource_init,buffer:copy_buffer_to_texture:*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"rgba8unorm\";dstFormat=\"rgba8unorm\";dimension=\"2d\"'
+```
+
+The actual commands used the Visual Studio wrapper at
+`E:\Temp\wgpu_mission_cargo.bat`, which supplies the pinned Rust 1.93.1
+toolchain and external target directory. A direct PowerShell attempt outside
+that developer environment tried to relink `cts_runner` and failed because
+`link.exe` was not on `PATH`; rerunning within the Visual Studio environment
+passed. The parameterized copy selector also required escaped JSON quotes in
+Windows PowerShell so the CTS query parser received the format strings.

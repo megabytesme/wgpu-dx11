@@ -91,7 +91,7 @@ fn fl9_texture_emulation_format_supported(
     };
 
     match kind {
-        Kind::Gather => dimension == D2 && format == Rgba8Unorm,
+        Kind::Gather => dimension == D2 && matches!(format, Rgba8Unorm | Rgba8UnormSrgb),
         Kind::Load | Kind::LoadDimensions => {
             dimension == D2
                 && matches!(
@@ -192,7 +192,7 @@ impl RenderState {
             return false;
         }
         if self.texel_load.is_some()
-            && (self.texel_load_resource().is_none() || !self.gather_sampler_binding_compatible())
+            && (self.texel_load_resources().is_none() || !self.gather_sampler_binding_compatible())
         {
             return false;
         }
@@ -219,79 +219,90 @@ impl RenderState {
         super::sampling::compatible(&self.sampling_pairs, &resources, level, self.full_npot)
     }
 
-    fn texel_load_resource(
+    fn texel_load_resources(
         &self,
-    ) -> Option<(
-        &super::texture::SampledBinding,
-        super::sampling::TextureInfo,
-    )> {
+    ) -> Option<
+        Vec<(
+            &super::texture::SampledBinding,
+            super::sampling::TextureInfo,
+        )>,
+    > {
         let load = self.texel_load.as_ref()?;
         let plan = self.active_plan.as_ref()?;
-        let group_index = load.binding.group as usize;
-        let expected = plan.groups().get(group_index).copied().flatten()?;
-        let mut texture_slots = expected
-            .textures
-            .iter()
-            .enumerate()
-            .filter(|(_, binding)| **binding == Some(load.binding.binding));
-        let (local, _) = texture_slots.next()?;
-        if texture_slots.next().is_some() {
-            return None;
+        let mut resources = Vec::with_capacity(1 + load.additional_bindings.len());
+        for binding in
+            core::iter::once(load.binding).chain(load.additional_bindings.iter().copied())
+        {
+            let group_index = binding.group as usize;
+            let expected = plan.groups().get(group_index).copied().flatten()?;
+            let mut texture_slots = expected
+                .textures
+                .iter()
+                .enumerate()
+                .filter(|(_, candidate)| **candidate == Some(binding.binding));
+            let (local, _) = texture_slots.next()?;
+            if texture_slots.next().is_some() {
+                return None;
+            }
+            let bound = self.bound_groups.get(group_index)?.as_ref()?;
+            if bound.kind != expected {
+                return None;
+            }
+            let texture = bound.resources.textures.get(local)?;
+            let info = *bound.resources.sampling.textures.get(local)?;
+            let single_mip_resource = matches!(
+                load.kind,
+                super::hal_shader::Fl9TextureEmulationKind::Load
+                    | super::hal_shader::Fl9TextureEmulationKind::Load3D
+                    | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions
+                    | super::hal_shader::Fl9TextureEmulationKind::BaseClamp
+            );
+            let single_mip_view = matches!(
+                load.kind,
+                super::hal_shader::Fl9TextureEmulationKind::SampleBiasOffset
+                    | super::hal_shader::Fl9TextureEmulationKind::SampleCompareOffset
+                    | super::hal_shader::Fl9TextureEmulationKind::Gather
+            );
+            let depth_comparison = matches!(
+                load.kind,
+                super::hal_shader::Fl9TextureEmulationKind::SampleCompareOffset
+            );
+            let expected_dimension = match load.dimension {
+                naga::ImageDimension::D2 => wgt::TextureViewDimension::D2,
+                naga::ImageDimension::D3 => wgt::TextureViewDimension::D3,
+                naga::ImageDimension::Cube => wgt::TextureViewDimension::Cube,
+                _ => return None,
+            };
+            let dimensions_3d = expected_dimension == wgt::TextureViewDimension::D3;
+            let max_dimension = if dimensions_3d { 256 } else { 2048 };
+            if !(texture.dimension == expected_dimension
+                && texture.logical_format.is_some_and(|format| {
+                    fl9_texture_emulation_format_supported(load.kind, load.dimension, format)
+                })
+                && texture.sample_count == 1
+                && (!single_mip_resource || texture.mip_count == 1)
+                && (texture.depth == depth_comparison)
+                && (if single_mip_view {
+                    info.mip_levels == 1
+                } else {
+                    info.mip_levels == texture.mip_count
+                })
+                && info.mip_levels != 0
+                && info.size[0] != 0
+                && info.size[1] != 0
+                && info.size[0] <= max_dimension
+                && info.size[1] <= max_dimension
+                && if dimensions_3d {
+                    info.size[2] > 0 && info.size[2] <= 256
+                } else {
+                    info.size[2] == 1
+                })
+            {
+                return None;
+            }
+            resources.push((texture, info));
         }
-        let bound = self.bound_groups.get(group_index)?.as_ref()?;
-        if bound.kind != expected {
-            return None;
-        }
-        let texture = bound.resources.textures.get(local)?;
-        let info = *bound.resources.sampling.textures.get(local)?;
-        let single_mip_resource = matches!(
-            load.kind,
-            super::hal_shader::Fl9TextureEmulationKind::Load
-                | super::hal_shader::Fl9TextureEmulationKind::Load3D
-                | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions
-                | super::hal_shader::Fl9TextureEmulationKind::BaseClamp
-        );
-        let single_mip_view = matches!(
-            load.kind,
-            super::hal_shader::Fl9TextureEmulationKind::SampleBiasOffset
-                | super::hal_shader::Fl9TextureEmulationKind::SampleCompareOffset
-                | super::hal_shader::Fl9TextureEmulationKind::Gather
-        );
-        let depth_comparison = matches!(
-            load.kind,
-            super::hal_shader::Fl9TextureEmulationKind::SampleCompareOffset
-        );
-        let expected_dimension = match load.dimension {
-            naga::ImageDimension::D2 => wgt::TextureViewDimension::D2,
-            naga::ImageDimension::D3 => wgt::TextureViewDimension::D3,
-            naga::ImageDimension::Cube => wgt::TextureViewDimension::Cube,
-            _ => return None,
-        };
-        let dimensions_3d = expected_dimension == wgt::TextureViewDimension::D3;
-        let max_dimension = if dimensions_3d { 256 } else { 2048 };
-        (texture.dimension == expected_dimension
-            && texture.logical_format.is_some_and(|format| {
-                fl9_texture_emulation_format_supported(load.kind, load.dimension, format)
-            })
-            && texture.sample_count == 1
-            && (!single_mip_resource || texture.mip_count == 1)
-            && (texture.depth == depth_comparison)
-            && (if single_mip_view {
-                info.mip_levels == 1
-            } else {
-                info.mip_levels == texture.mip_count
-            })
-            && info.mip_levels != 0
-            && info.size[0] != 0
-            && info.size[1] != 0
-            && info.size[0] <= max_dimension
-            && info.size[1] <= max_dimension
-            && if dimensions_3d {
-                info.size[2] > 0 && info.size[2] <= 256
-            } else {
-                info.size[2] == 1
-            })
-        .then_some((texture, info))
+        Some(resources)
     }
 
     fn gather_sampler_binding_compatible(&self) -> bool {
@@ -425,7 +436,8 @@ impl RenderState {
             }
         }
         if let Some(load) = &self.texel_load {
-            let (texture, info) = self.texel_load_resource()?;
+            let resources = self.texel_load_resources()?;
+            let (texture, info) = resources.first().copied()?;
             let (width, height) = if matches!(
                 load.kind,
                 super::hal_shader::Fl9TextureEmulationKind::Dimensions
@@ -440,11 +452,23 @@ impl RenderState {
             } else {
                 (info.size[0], info.size[1])
             };
-            if let Some(copy) = &texture.refresh {
-                refresh.push(copy.clone());
+            for (texture, _) in &resources {
+                if let Some(copy) = &texture.refresh {
+                    refresh.push(copy.clone());
+                }
             }
             commands.push(NativeCommand::SetTexelLoad {
                 texture: texture.view.clone(),
+                additional_textures: resources
+                    .iter()
+                    .skip(1)
+                    .map(|(texture, _)| texture.view.clone())
+                    .collect(),
+                additional_dimensions: resources
+                    .iter()
+                    .skip(1)
+                    .map(|(_, info)| [info.size[0], info.size[1]])
+                    .collect(),
                 sampler: load.sampler.clone(),
                 dimensions: load.dimensions.clone(),
                 kind: load.kind,
@@ -2613,6 +2637,11 @@ mod tests {
         };
 
         assert!(supported(Kind::Load, D2, Rgba8Unorm));
+        assert!(supported(Kind::Gather, D2, Rgba8Unorm));
+        assert!(supported(Kind::Gather, D2, Rgba8UnormSrgb));
+        assert!(!supported(Kind::Gather, D2, Bgra8Unorm));
+        assert!(!supported(Kind::Gather, D2, Bgra8UnormSrgb));
+        assert!(!supported(Kind::Gather, D2, R8Unorm));
         assert!(supported(Kind::Load, D2, R8Unorm));
         assert!(supported(Kind::Load, D2, Rg8Unorm));
         assert!(supported(Kind::Load, D2, Rg8Snorm));

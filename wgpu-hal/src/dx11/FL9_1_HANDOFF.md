@@ -1,5 +1,79 @@
 # FL9_1 handoff
 
+## Adapter exposure clarification — 2026-11-12
+
+Explicit `Backends::DX11` selection exposes only physical adapters that
+successfully create and confirm FL9_1 and pass the conservative capability
+projection. DX11 is not in the default instance backend set. The test named
+`experimental_dx11_is_not_enabled_by_default` checks only this default
+isolation; it does not assert that explicitly selected DX11 enumeration is
+empty. Older handoff entries saying public enumeration is disabled are
+historical.
+
+## ARM32 UWP cross-check — 2026-11-12
+
+The current worktree passed `wgpu-hal` and public `wgpu` checks for
+`thumbv7a-uwp-windows-msvc` using nightly `build-std`. This is compile-only
+evidence. The configured Lumia Device Portal request timed out; Windows 10
+Mobile CoreWindow runtime behavior remains unverified.
+
+## Render-pass CTS capability boundary — 2026-11-12
+
+Strict raw `render_pass,*` CTS ran 183 cases: 3 passed, 41 skipped and 139
+failed. Failures are from subtests requiring multiple color targets, array or
+multi-mip textures, or unsupported texture copy usages/formats. The valid
+single-layer/single-mip RGBA8 store subcase ran; its sibling unsupported
+subcases caused the aggregate CTS failure. Scoped strict selectors passed
+clear/readback 1/1, ordered buffer-copy transitions 1/1 and color-write masks
+16/16, buffer-to-texture upload 1/1 and RGBA8 texture-to-texture copy 1/1.
+This did not identify a supported render-pass regression. See `FL9_1_CTS.md`
+for the source-backed breakdown.
+
+## Current verified increment — computed `textureLoad` helper coordinates — 2026-11-12
+
+One selected fragment 2D float `textureLoad` helper may now apply the
+documented bounded literal-based f32 coordinate expressions before converting
+to `vec2i`. Core/HAL use matching proofs and FXC compiles the exact shader
+profile. Two strict public RTX 3090 Ti tests passed at requested/actual FL9_1:
+group 0/binding 7 and group 1/binding 42. Both checked all 64 output pixels,
+including shifted samples and out-of-bounds zero. Focused Core and HAL tests
+passed. Full regressions passed Naga 171/171, Core DX11 136/136, Core DX12
+135/135, strict private HAL 517/517 and strict public D3D11 153/153. This does
+not make general dynamic coordinates or integer arithmetic available. See
+`FL9_1_PROGRESS.md` for commands and evidence.
+
+## Latest verified increment — uniform-backed 3D `textureLoad` — 2026-11-12
+
+The selected single-image fragment 3D `textureLoad` proof now permits up to
+six used uniforms using the existing compact register allocator. The
+group-1/binding-42 tint case executed on the physical RTX 3090 Ti at requested
+and actual FL9_1 and matched `[127, 0, 64, 255]` across all 64 output pixels.
+Synthetic Core, Naga and HAL checks reject seven uniforms; combined
+load/dimensions with uniforms and unrelated resources remain unsupported.
+Strict mode was also applied to four HAL queue/command/fence GPU tests that
+previously could silently skip when hardware was absent. Current exact commands
+are in `FL9_1_PROGRESS.md`.
+
+## Latest validation — separate-group volume query samplers — 2026-11-12
+
+The existing narrow 3D/cube `textureDimensions` and `textureNumLevels`
+query-plus-same-image-sample paths now permit texture and sampler bindings in
+different supported groups. Strict RTX 3090 Ti FL9_1 output and the full
+affected CPU/GPU suites passed. This is only a logical group-placement
+extension; the selected-entry proof and sampler/resource restrictions remain.
+See `FL9_1_PROGRESS.md` for the exact run record.
+
+## Latest validation — public Depth24Plus constant bias — 2026-11-12
+
+Commit `df648a5a9` adds a strict public wgpu test that uses an attachment-only
+Depth24Plus resource and checks zero, positive and negative constant bias.
+All 64 readback pixels passed on the physical RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`, `software=false`, requested/actual FL9_1). The two
+filtered 24-bit depth-bias CTS selectors each failed 3/3 because their fixtures
+request unsupported depth `COPY_SRC`; the black error-resource outputs do not
+measure the valid render-attachment path. The complete strict public suite
+passed 146/146. Details and exact commands are in `FL9_1_PROGRESS.md`.
+
 ## Latest validation — depth comparison CTS — 2026-11-12
 
 Strict filtered CTS coverage passed 24/24 each for D16, Depth24Plus and
@@ -3616,3 +3690,108 @@ must remain rejected. Historical FL9_1 hardware, Lumia ARM32/CoreWindow runtime
 and physical device-removal recovery require external verification. Use
 agents for independent audits and compiler probes; keep each Core/Naga/HAL
 implementation slice under the coordinator so it can be verified end to end.
+
+Latest verified increment: one used uniform can accompany the selected
+fragment 2D float `textureLoad` emulation, with two strict physical FL9_1
+readbacks and negative multi-uniform/3D checks. The full Core DX11, Core DX12,
+Naga, private HAL and strict public D3D11 suites passed 136, 135, 170, 515 and
+152 tests respectively. See the final `One uniform with selected fragment 2D
+textureLoad` entry in `FL9_1_PROGRESS.md` for commands, warnings and GPU
+identity. Public adapter exposure remains disabled, and the broader completion
+mission remains open.
+
+## Current coordinator state — eight-image fragment 2D textureLoad — 2026-11-12
+
+The latest increment removes the one-image limit from the proven selected-entry
+fragment 2D float `textureLoad` path, up to the FL9_1 eight-image binding cap.
+An FXC probe first measured the old helper at 65 arithmetic slots for seven
+images and 74 for eight versus the 64-slot profile limit. The production helper
+then removed a redundant coordinate clamp while retaining point/clamp-to-edge
+sampling and the explicit out-of-bounds zero mask; representative production
+shaders for one through eight images now compile. A ninth is rejected by Core
+and HAL. Strict D3D11 public and private suites passed 152/152 and 516/516;
+the public run verified 64/64 pixels for the eight-image result on the RTX
+3090 Ti at explicitly requested/actual FL9_1. Other full regressions: Naga
+171/171, Core DX11 136/136, Core DX12 135/135. Formatting, diff check, D3D11
+HAL check and affected Clippy commands completed. See `FL9_1_PROGRESS.md` for
+exact commands and optional-device skips.
+
+Continue as coordinator. Parallel agents are useful for separate read-only
+capability inventories, compiler-limit probes and targeted audits. Avoid
+parallel implementation of Core/Naga/HAL slices because they share the proof,
+resource mapping and draw-validation contract. Current remaining work includes
+narrow shader/resource/API support, opt-in backend usability and proof on
+historical FL9_1 devices, Lumia ARM32/CoreWindow and device removal/recovery.
+No commit was made.
+
+## Current coordinator state — six-uniform fragment textureLoad — 2026-11-12
+
+The selected-entry fragment 2D float `textureLoad` proof now allows up to six
+used uniform buffers alongside up to eight images. This matches the projected
+per-stage uniform-binding limit; other bound resource classes and uniform-backed
+3D or combined load/dimensions emulation remain rejected. Core, Naga and HAL
+accept six sparse bindings and reject seven. Strict physical GPU tests passed
+for both group-0 and group-1 layouts at forced FL9_1, verifying the six-buffer
+output `[64, 96, 32, 223]` at all 64 pixels. The complete public suite passed
+152/152 and private HAL suite passed 516/516. Full Naga, Core DX11 and Core DX12
+suites passed 171/171, 136/136 and 135/135. This remains a narrowly proven
+shader path, not general multi-resource shader validation.
+
+## Current coordinator state — instance-indexed matrix uniforms — 2026-11-12
+
+Core and HAL now permit a selected vertex entry to directly index a fixed
+`array<mat4x4<f32>, N>` with `instance_index` for `N <= 63`. Computed indices,
+non-square matrices and longer arrays remain rejected. The production HAL path
+compiles with FXC at `vs_4_0_level_9_1`, and strict public GPU readback verified
+two separately translated instances and all 64 pixels on the physical RTX
+3090 Ti at requested/actual FL9_1. Full suites passed Naga 171/171, Core DX11
+136/136, Core DX12 135/135, private HAL 517/517 and public D3D11 153/153.
+Formatting, `git diff --check`, D3D11 HAL check and affected Clippy passed;
+HAL reports pre-existing warnings. Exact commands and observations are in
+`FL9_1_PROGRESS.md`.
+
+The backend is suitable for opt-in experiments and small workloads within its
+reported subset, but is not a full FL9_1 WebGPU implementation. Remaining work
+is still feature work and contract closure: constrained WGSL semantics and
+resource/usages, any remaining accepted Core-to-HAL mismatches, example and
+application integration polish, and broad CTS coverage. Compute/UAV,
+geometry-stage shaders, multiple color attachments, indirect draws and
+occlusion queries remain hard FL9_1/profile limits. Historical FL9_1 drivers,
+Lumia ARM32/CoreWindow runtime and real device-removal recovery remain external
+verification gaps. Independent audits are running; implementation remains
+coordinated across Core, Naga and HAL.
+
+## Latest verified increment — sRGB fragment gather — 2026-11-12
+
+The narrow selected-entry fragment `textureGather` emulation now handles
+single-mip `Rgba8UnormSrgb` views when the selected device reports sampled,
+filterable support. Core validates the bound format at each draw because the
+custom downlevel limit cannot express format restrictions; unsupported R8
+views are rejected before HAL. Strict RTX 3090 Ti execution at requested and
+actual FL9_1 matched 64/64 pixels for both the linear baseline and sRGB decoded
+result. Focused Core, HAL and strict public test results are in
+`FL9_1_PROGRESS.md`. After the change, Core DX11 136/136, Core DX12 135/135,
+private HAL 517/517 and strict public D3D11 153/153 passed; formatting and
+diff checks also passed. Public D3D11 remains opt-in and does not claim general
+texture-gather support.
+
+## Latest coordinator state — bounded computed explicit LOD — 2026-11-12
+
+The direct one-mip `textureSampleLevel` proof now accepts finite LOD literals
+and whitelisted side-effect-free scalar expressions over fragment inputs.
+Core/HAL retain the same strict shape proof and live draw gate: selected view
+has exactly one mip, min/mag filters match, anisotropy is one. The straight-line
+helper still accepts only literal positive zero; mutable-local loads, helper
+calls with dynamic LOD, branches, selects and other shapes stay rejected. The
+physical RTX 3090 Ti at requested/actual FL9_1 rendered both literal and
+computed LOD forms and matched 64/64 readback pixels. Full Core DX11/Core DX12,
+private HAL and strict public tests passed 136, 135, 518 and 153 tests. Strict
+public adapter isolation remained disabled. Full details and exact commands
+are recorded in `FL9_1_PROGRESS.md`.
+
+The strict format-blending CTS probe separately found four supported linear
+normalized cases passing and six boundary failures: FL9_1 sRGB blend semantics
+are rejected, while four optional formats fail the CTS's generic preflight; device-specific format projection mismatch
+adapter-specific format projection boundary. No Core-valid unsupported draw
+reaching HAL was demonstrated. Continue contract auditing from concrete
+reproductions; do not advertise those formats or widen sRGB blend semantics.

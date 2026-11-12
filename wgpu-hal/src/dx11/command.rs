@@ -256,6 +256,8 @@ pub(super) enum NativeCommand {
     },
     SetTexelLoad {
         texture: ID3D11ShaderResourceView,
+        additional_textures: Vec<ID3D11ShaderResourceView>,
+        additional_dimensions: Vec<[u32; 2]>,
         sampler: ID3D11SamplerState,
         dimensions: ID3D11Buffer,
         kind: super::hal_shader::Fl9TextureEmulationKind,
@@ -883,6 +885,8 @@ impl CommandBuffer {
                     }
                     NativeCommand::SetTexelLoad {
                         texture,
+                        additional_textures,
+                        additional_dimensions,
                         sampler,
                         dimensions,
                         kind,
@@ -922,6 +926,17 @@ impl CommandBuffer {
                                 [*width as f32, *height as f32, 0.0, 0.0]
                             }
                         };
+                        let mut constants = alloc::vec![constants];
+                        if matches!(kind, super::hal_shader::Fl9TextureEmulationKind::Load) {
+                            constants.extend(additional_dimensions.iter().map(|[width, height]| {
+                                [
+                                    *width as f32,
+                                    *height as f32,
+                                    1.0 / *width as f32,
+                                    1.0 / *height as f32,
+                                ]
+                            }));
+                        }
                         context.UpdateSubresource(
                             dimensions,
                             0,
@@ -939,7 +954,9 @@ impl CommandBuffer {
                         } else {
                             Some(texture.clone())
                         };
-                        context.PSSetShaderResources(0, Some(&[sampled_resource]));
+                        let mut sampled_resources = alloc::vec![sampled_resource];
+                        sampled_resources.extend(additional_textures.iter().cloned().map(Some));
+                        context.PSSetShaderResources(0, Some(&sampled_resources));
                         if matches!(
                             kind,
                             super::hal_shader::Fl9TextureEmulationKind::Load
@@ -2022,11 +2039,21 @@ mod tests {
 
     #[test]
     fn recorded_copy_submits_in_order_and_retains_resources() -> Result<()> {
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
         let adapters = enumerate_native_adapters()?;
-        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|error| panic!("{error}"))
+        else {
+            std::println!("SKIP: no physical D3D11 adapter");
             return Ok(());
         };
         let device = adapter.open_device(&[FeatureLevel::L9_1])?;
+        assert_eq!(device.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested and actual FL9_1",
+            adapter.identity()
+        );
         let middle = device.create_byte_buffer(16)?;
         let output = device.create_byte_buffer(16)?;
         device.write_byte_buffer(&middle, 0, &[0; 16])?;

@@ -1269,7 +1269,7 @@ pub struct RenderPipeline {
     pub(crate) sampling_pairs: Vec<validation::SamplingPair>,
     pub(crate) fl9_texture_sample_level_zero_pairs: Vec<validation::SamplingPair>,
     pub(crate) fl9_texture_gather_pair: Option<validation::SamplingPair>,
-    pub(crate) fl9_texture_load_binding: Option<validation::TextureLoadBinding>,
+    pub(crate) fl9_texture_load_bindings: Vec<validation::TextureLoadBinding>,
     pub(crate) fl9_texture_sample_bias_offset_binding:
         Option<validation::TextureSampleBiasOffsetBinding>,
     pub(crate) fl9_texture_sample_compare_offset_binding:
@@ -1365,7 +1365,7 @@ impl RenderPipeline {
             sampling_pairs: Vec::new(),
             fl9_texture_sample_level_zero_pairs: Vec::new(),
             fl9_texture_gather_pair: None,
-            fl9_texture_load_binding: None,
+            fl9_texture_load_bindings: Vec::new(),
             fl9_texture_sample_bias_offset_binding: None,
             fl9_texture_sample_compare_offset_binding: None,
             requires_texture_sample_bias_compatible_samplers: false,

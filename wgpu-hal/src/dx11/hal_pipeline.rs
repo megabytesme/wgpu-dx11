@@ -576,6 +576,7 @@ impl crate::DynPipelineLayout for PipelineLayout {}
 #[derive(Clone, Debug)]
 pub(super) struct TexelLoadPipeline {
     pub binding: naga::ResourceBinding,
+    pub additional_bindings: alloc::vec::Vec<naga::ResourceBinding>,
     pub gather_sampler_binding: Option<naga::ResourceBinding>,
     pub kind: super::hal_shader::Fl9TextureEmulationKind,
     pub dimension: naga::ImageDimension,
@@ -589,6 +590,7 @@ impl TexelLoadPipeline {
     fn new(
         owner: &NativeDevice,
         binding: naga::ResourceBinding,
+        additional_bindings: alloc::vec::Vec<naga::ResourceBinding>,
         gather_sampler_binding: Option<naga::ResourceBinding>,
         kind: super::hal_shader::Fl9TextureEmulationKind,
         dimension: naga::ImageDimension,
@@ -629,8 +631,14 @@ impl TexelLoadPipeline {
                 "D3D11 returned no FL9 texture-load sampler".into(),
             )
         })?;
+        let dimensions_byte_width =
+            if matches!(kind, super::hal_shader::Fl9TextureEmulationKind::Load) {
+                16 * (1 + additional_bindings.len() as u32)
+            } else {
+                16
+            };
         let dimensions_desc = D3D11_BUFFER_DESC {
-            ByteWidth: 16,
+            ByteWidth: dimensions_byte_width,
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
             ..Default::default()
@@ -644,6 +652,7 @@ impl TexelLoadPipeline {
         .map_err(fail)?;
         Ok(Self {
             binding,
+            additional_bindings,
             gather_sampler_binding,
             kind,
             dimension,
@@ -3211,6 +3220,7 @@ impl RenderPipeline {
                 TexelLoadPipeline::new(
                     owner,
                     proof.binding,
+                    proof.additional_bindings,
                     proof.gather_sampler_binding,
                     proof.kind,
                     proof.dimension,

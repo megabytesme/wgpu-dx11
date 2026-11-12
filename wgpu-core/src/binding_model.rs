@@ -1361,6 +1361,7 @@ pub struct BindGroup {
     pub(crate) late_buffer_binding_infos: Vec<BindGroupLateBufferBindingInfo>,
     pub(crate) sampled_texture_npot: FastHashMap<u32, Vec<bool>>,
     pub(crate) sampled_texture_mip_levels: FastHashMap<u32, Vec<u32>>,
+    pub(crate) sampled_texture_formats: FastHashMap<u32, Vec<wgt::TextureFormat>>,
     pub(crate) fl9_texture_load_compatible: FastHashMap<u32, Vec<Fl9TextureLoadViewCompatibility>>,
     pub(crate) sampler_uses_repeat: FastHashMap<u32, Vec<bool>>,
     pub(crate) sampler_clamp_to_edge: FastHashMap<u32, Vec<bool>>,

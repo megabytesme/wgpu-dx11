@@ -4359,6 +4359,7 @@ impl Device {
         let mut dynamic_binding_info = Vec::new();
         let mut sampled_texture_npot = FastHashMap::default();
         let mut sampled_texture_mip_levels = FastHashMap::default();
+        let mut sampled_texture_formats = FastHashMap::default();
         let mut fl9_texture_load_compatible = FastHashMap::default();
         let mut sampler_uses_repeat = FastHashMap::default();
         let mut sampler_clamp_to_edge = FastHashMap::default();
@@ -4504,6 +4505,7 @@ impl Device {
                             );
                             sampled_texture_mip_levels
                                 .insert(binding, vec![binding_model::sampled_view_mip_count(view)]);
+                            sampled_texture_formats.insert(binding, vec![view.desc.format]);
                             fl9_texture_load_compatible.insert(
                                 binding,
                                 vec![
@@ -4545,6 +4547,8 @@ impl Device {
                                 .map(|view| binding_model::sampled_view_mip_count(view))
                                 .collect(),
                         );
+                        sampled_texture_formats
+                            .insert(binding, views.iter().map(|view| view.desc.format).collect());
                         fl9_texture_load_compatible.insert(
                             binding,
                             views
@@ -4672,6 +4676,7 @@ impl Device {
             late_buffer_binding_infos,
             sampled_texture_npot,
             sampled_texture_mip_levels,
+            sampled_texture_formats,
             fl9_texture_load_compatible,
             sampler_uses_repeat,
             sampler_clamp_to_edge,
@@ -5797,7 +5802,7 @@ impl Device {
         let mut sampling_pairs = Vec::new();
         let mut fl9_texture_sample_level_zero_pairs = Vec::new();
         let mut fl9_texture_gather_pair = None;
-        let mut fl9_texture_load_binding = None;
+        let mut fl9_texture_load_bindings = Vec::new();
         let mut fl9_texture_sample_bias_offset_binding = None;
         let mut fl9_texture_sample_compare_offset_binding = None;
         let mut requires_texture_sample_bias_compatible_samplers = false;
@@ -6593,8 +6598,8 @@ impl Device {
                     || self.downlevel.limits.texture_load_3d_float_fragment
                 {
                     if let Some(interface) = interface {
-                        fl9_texture_load_binding = interface
-                            .fl9_texture_load_binding_used(
+                        fl9_texture_load_bindings = interface
+                            .fl9_texture_load_bindings_used(
                                 stage.to_naga(),
                                 &fragment_entry_point_name,
                             )
@@ -7154,7 +7159,7 @@ impl Device {
             sampling_pairs,
             fl9_texture_sample_level_zero_pairs,
             fl9_texture_gather_pair,
-            fl9_texture_load_binding,
+            fl9_texture_load_bindings,
             fl9_texture_sample_bias_offset_binding,
             fl9_texture_sample_compare_offset_binding,
             requires_texture_sample_bias_compatible_samplers,

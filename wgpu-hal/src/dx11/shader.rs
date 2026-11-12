@@ -45,6 +45,7 @@ pub(super) struct Fl9ShaderInputOptions {
     pub vertex_index_input: bool,
     pub vertex_index_vector_indexing: bool,
     pub texel_load_binding: Option<naga::ResourceBinding>,
+    pub additional_texel_load_bindings: [Option<naga::ResourceBinding>; 7],
     pub texel_load_coordinate_conversion: Option<naga::Handle<naga::Expression>>,
     pub texture_dimensions_binding: Option<naga::ResourceBinding>,
     pub texture_dimensions_helper: bool,
@@ -409,6 +410,10 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         ),
         (Some(load), Some(dimensions)) if load == dimensions
     ) && input_options.texture_dimensions_3d_binding.is_none()
+        && input_options
+            .additional_texel_load_bindings
+            .iter()
+            .all(Option::is_none)
         && input_options.texture_num_levels_binding.is_none()
         && input_options.texture_base_clamp_binding.is_none()
         && input_options.texture_gather_binding.is_none()
@@ -419,9 +424,37 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
     if proof_bindings.into_iter().filter(Option::is_some).count() > 1 && !combined_load_dimensions {
         return Err(NagaCompileError::InvalidBindingMapping);
     }
-    if let Some(binding) = input_options
-        .texel_load_binding
-        .or(input_options.texture_dimensions_binding)
+    if input_options.texel_load_binding.is_none()
+        && input_options
+            .additional_texel_load_bindings
+            .iter()
+            .any(Option::is_some)
+    {
+        return Err(NagaCompileError::InvalidBindingMapping);
+    }
+    if let Some(primary_binding) = input_options.texel_load_binding {
+        let mut texture_bindings = Vec::with_capacity(8);
+        texture_bindings.push(primary_binding);
+        texture_bindings.extend(
+            input_options
+                .additional_texel_load_bindings
+                .iter()
+                .flatten()
+                .copied(),
+        );
+        if texture_bindings.len() > 8 {
+            return Err(NagaCompileError::InvalidBindingMapping);
+        }
+        for (slot, binding) in texture_bindings.into_iter().enumerate() {
+            let Some(texture) = remapped_bindings.iter_mut().find(|mapping| {
+                mapping.binding == binding && mapping.kind == ShaderBindingKind::TextureFloat
+            }) else {
+                return Err(NagaCompileError::InvalidBindingMapping);
+            };
+            texture.slot = slot as u32;
+        }
+    } else if let Some(binding) = input_options
+        .texture_dimensions_binding
         .or(input_options.texture_dimensions_3d_binding)
         .or(input_options.texture_num_levels_binding)
         .or(input_options.texture_base_clamp_binding)
@@ -469,6 +502,12 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         fl9_vertex_index_vector_indexing: input_options.vertex_index_vector_indexing
             && stage == naga::ShaderStage::Vertex,
         fl9_texel_load_proof: input_options.texel_load_binding,
+        fl9_texel_load_additional_proofs: input_options
+            .additional_texel_load_bindings
+            .iter()
+            .flatten()
+            .copied()
+            .collect(),
         fl9_texture_dimensions_proof: input_options.texture_dimensions_binding,
         fl9_texture_dimensions_3d_proof: input_options.texture_dimensions_3d_binding,
         fl9_texture_num_levels_proof: input_options.texture_num_levels_binding,
@@ -3106,6 +3145,7 @@ mod tests {
                 struct Uniforms {
                     vec3_values: array<vec3f, 4>,
                     vec4_values: array<vec4f, 4>,
+                    matrix_values: array<mat4x4f, 4>,
                 }
                 @group(0) @binding(17) var<uniform> uniforms: Uniforms;
 
@@ -3117,6 +3157,9 @@ mod tests {
                 }
                 @vertex fn instance_array(@builtin(instance_index) index: u32) -> @builtin(position) vec4f {
                     return uniforms.vec4_values[index];
+                }
+                @vertex fn instance_matrix_array(@builtin(instance_index) index: u32) -> @builtin(position) vec4f {
+                    return uniforms.matrix_values[index] * vec4f(0.25, 0.5, 0.75, 1.0);
                 }
             "#,
         )
@@ -3157,6 +3200,13 @@ mod tests {
             ),
             (
                 "instance_array",
+                Fl9ShaderInputOptions {
+                    instance_index_input: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "instance_matrix_array",
                 Fl9ShaderInputOptions {
                     instance_index_input: true,
                     ..Default::default()
@@ -3666,6 +3716,130 @@ mod tests {
         assert!(source.contains("register(b13)"), "{source}");
         compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1)
             .unwrap_or_else(|error| panic!("FL9_1 texel-load HLSL failed: {error:?}\n{source}"));
+    }
+
+    #[test]
+    fn fl91_texel_load_coexists_with_a_uniform_buffer() {
+        let module = naga::front::wgsl::parse_str(
+            "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(9) var<uniform> tint: vec4f; @fragment fn fs() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 0) * tint; }",
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let texture_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let uniform_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 9,
+        };
+        let bindings = [
+            ShaderBinding {
+                binding: texture_binding,
+                slot: 7,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: uniform_binding,
+                slot: 0,
+                kind: ShaderBindingKind::Uniform,
+            },
+        ];
+        let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "fs",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions {
+                texel_load_binding: Some(texture_binding),
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("translate textureLoad with one user uniform");
+        assert!(source.contains("register(t0)"), "{source}");
+        assert!(source.contains("register(b0)"), "{source}");
+        assert!(source.contains("register(s15)"), "{source}");
+        assert!(source.contains("register(b13)"), "{source}");
+        compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+            panic!("FL9_1 textureLoad with uniform failed: {error:?}\n{source}")
+        });
+    }
+
+    #[test]
+    fn fl91_texel_load_capacity_compiles_at_eight_images() {
+        for count in 1..=8 {
+            let declarations = (0..count)
+                .map(|index| {
+                    format!(
+                        "@group(0) @binding({}) var image{index}: texture_2d<f32>;\n",
+                        7 + index * 3
+                    )
+                })
+                .collect::<String>();
+            let loads = (0..count)
+                .map(|index| format!("textureLoad(image{index}, vec2i(0), 0)"))
+                .collect::<Vec<_>>();
+            let source = format!(
+                "{declarations}@fragment fn fs() -> @location(0) vec4f {{ return ({}) / {}.0; }}",
+                loads.join(" + "),
+                count
+            );
+            let module = naga::front::wgsl::parse_str(&source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            let logical_bindings = (0..count)
+                .map(|index| naga::ResourceBinding {
+                    group: 0,
+                    binding: 7 + index * 3,
+                })
+                .collect::<Vec<_>>();
+            let shader_bindings = logical_bindings
+                .iter()
+                .enumerate()
+                .map(|(slot, binding)| ShaderBinding {
+                    binding: *binding,
+                    slot: 15 + slot as u32,
+                    kind: ShaderBindingKind::TextureFloat,
+                })
+                .collect::<Vec<_>>();
+            let (hlsl, entry) = translate_naga_with_viewport_and_fl9_inputs(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                "fs",
+                ShaderProfile::PixelLevel9_1,
+                &shader_bindings,
+                Fl9ShaderInputOptions {
+                    texel_load_binding: logical_bindings.first().copied(),
+                    additional_texel_load_bindings: core::array::from_fn(|index| {
+                        logical_bindings.get(index + 1).copied()
+                    }),
+                    ..Default::default()
+                },
+            )
+            .unwrap_or_else(|error| panic!("translate {count} textureLoad images: {error:?}"));
+            for slot in 0..count {
+                assert!(hlsl.contains(&format!("register(t{slot})")), "{hlsl}");
+            }
+            compile_hlsl(&hlsl, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+                panic!(
+                    "FXC rejected the FL9_1 textureLoad shader with {count} images: {}\n{hlsl}",
+                    error.message
+                )
+            });
+        }
     }
 
     #[test]

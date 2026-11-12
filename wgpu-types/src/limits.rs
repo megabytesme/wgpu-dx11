@@ -1406,8 +1406,10 @@ pub struct DownlevelLimits {
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_sample_level: bool,
     /// Whether fragment shaders may use the restricted `textureSampleLevel` subset that samples
-    /// literal level zero from a single-mip `texture_2d<f32>` view with a regular sampler whose
-    /// minification and magnification filters match and whose anisotropy is one.
+    /// the sole mip of a single-mip `texture_2d<f32>` view with a regular sampler whose
+    /// minification and magnification filters match and whose anisotropy is one. Direct samples
+    /// may use a finite literal or a side-effect-free scalar expression over fragment inputs;
+    /// the supported helper form still requires literal level zero.
     ///
     /// This is reported separately from [`Self::texture_sample_level`] because it does not enable
     /// general explicit-LOD sampling. The selected view and sampler are checked at draw time.

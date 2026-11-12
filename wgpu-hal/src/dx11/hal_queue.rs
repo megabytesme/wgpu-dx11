@@ -262,11 +262,21 @@ mod tests {
 
     #[test]
     fn dynamic_queue_submits_copy_batches_and_signals_real_fence() -> windows::core::Result<()> {
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
         let adapters = enumerate_native_adapters()?;
-        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|error| panic!("{error}"))
+        else {
+            std::println!("SKIP: no physical D3D11 adapter");
             return Ok(());
         };
         let device = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(device.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested and actual FL9_1",
+            adapter.identity()
+        );
         let src = device.create_byte_buffer(16)?;
         let middle = device.create_byte_buffer(16)?;
         let dst = device.create_byte_buffer(16)?;

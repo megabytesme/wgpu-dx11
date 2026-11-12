@@ -353,8 +353,15 @@ fn sampler_mip_pair_compatible(
         })
 }
 
-fn fl9_texture_gather_view_compatible(texture_mip_levels: &[u32]) -> bool {
+fn fl9_texture_gather_view_compatible(
+    texture_mip_levels: &[u32],
+    texture_formats: &[wgt::TextureFormat],
+) -> bool {
     texture_mip_levels == [1]
+        && matches!(
+            texture_formats,
+            [wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Rgba8UnormSrgb]
+        )
 }
 
 fn fl9_texture_gather_sampler_compatible(sampler_clamp_to_edge: &[bool]) -> bool {
@@ -585,38 +592,35 @@ impl Binder {
         &self,
         pipeline: &RenderPipeline,
     ) -> Result<(), DrawError> {
-        let Some(binding) = pipeline.fl9_texture_load_binding else {
-            return Ok(());
-        };
+        for binding in &pipeline.fl9_texture_load_bindings {
+            let group = self
+                .list_valid()
+                .find_map(|(index, group, _)| (index == binding.group as usize).then_some(group))
+                .ok_or(DrawError::MissingTextureLoadBindingMetadata {
+                    group: binding.group,
+                    binding: binding.binding,
+                })?;
+            let compatibility = group
+                .fl9_texture_load_compatible
+                .get(&binding.binding)
+                .ok_or(DrawError::MissingTextureLoadBindingMetadata {
+                    group: binding.group,
+                    binding: binding.binding,
+                })?;
 
-        let group = self
-            .list_valid()
-            .find_map(|(index, group, _)| (index == binding.group as usize).then_some(group))
-            .ok_or(DrawError::MissingTextureLoadBindingMetadata {
-                group: binding.group,
-                binding: binding.binding,
-            })?;
-        let compatibility = group
-            .fl9_texture_load_compatible
-            .get(&binding.binding)
-            .ok_or(DrawError::MissingTextureLoadBindingMetadata {
-                group: binding.group,
-                binding: binding.binding,
-            })?;
-
-        let view_is_compatible = match binding.dimension {
-            naga::ImageDimension::D2 => compatibility.len() == 1 && compatibility[0].d2,
-            naga::ImageDimension::D3 => compatibility.len() == 1 && compatibility[0].d3,
-            _ => false,
-        };
-        if view_is_compatible {
-            Ok(())
-        } else {
-            Err(DrawError::IncompatibleTextureLoadView {
-                group: binding.group,
-                binding: binding.binding,
-            })
+            let view_is_compatible = match binding.dimension {
+                naga::ImageDimension::D2 => compatibility.len() == 1 && compatibility[0].d2,
+                naga::ImageDimension::D3 => compatibility.len() == 1 && compatibility[0].d3,
+                _ => false,
+            };
+            if !view_is_compatible {
+                return Err(DrawError::IncompatibleTextureLoadView {
+                    group: binding.group,
+                    binding: binding.binding,
+                });
+            }
         }
+        Ok(())
     }
 
     pub(super) fn check_fl9_texture_sample_bias_offset_views(
@@ -860,7 +864,14 @@ impl Binder {
                 group: pair.texture_group,
                 binding: pair.texture_binding,
             })?;
-        if !fl9_texture_gather_view_compatible(mip_levels) {
+        let formats = texture_group
+            .sampled_texture_formats
+            .get(&pair.texture_binding)
+            .ok_or(DrawError::MissingSamplingBindingMetadata {
+                group: pair.texture_group,
+                binding: pair.texture_binding,
+            })?;
+        if !fl9_texture_gather_view_compatible(mip_levels, formats) {
             return Err(DrawError::IncompatibleTextureGatherView {
                 group: pair.texture_group,
                 binding: pair.texture_binding,
@@ -989,10 +1000,33 @@ mod tests {
 
     #[test]
     fn fl9_texture_gather_requires_one_mip_and_clamp_addressing() {
-        assert!(fl9_texture_gather_view_compatible(&[1]));
-        assert!(!fl9_texture_gather_view_compatible(&[2]));
-        assert!(!fl9_texture_gather_view_compatible(&[1, 1]));
-        assert!(!fl9_texture_gather_view_compatible(&[]));
+        use wgt::TextureFormat as Format;
+
+        assert!(fl9_texture_gather_view_compatible(
+            &[1],
+            &[Format::Rgba8Unorm]
+        ));
+        assert!(fl9_texture_gather_view_compatible(
+            &[1],
+            &[Format::Rgba8UnormSrgb]
+        ));
+        assert!(!fl9_texture_gather_view_compatible(
+            &[1],
+            &[Format::R8Unorm]
+        ));
+        assert!(!fl9_texture_gather_view_compatible(
+            &[1],
+            &[Format::Bgra8Unorm]
+        ));
+        assert!(!fl9_texture_gather_view_compatible(
+            &[2],
+            &[Format::Rgba8Unorm]
+        ));
+        assert!(!fl9_texture_gather_view_compatible(
+            &[1, 1],
+            &[Format::Rgba8Unorm, Format::Rgba8Unorm]
+        ));
+        assert!(!fl9_texture_gather_view_compatible(&[], &[]));
         assert!(fl9_texture_gather_sampler_compatible(&[true]));
         assert!(!fl9_texture_gather_sampler_compatible(&[false]));
         assert!(!fl9_texture_gather_sampler_compatible(&[true, true]));

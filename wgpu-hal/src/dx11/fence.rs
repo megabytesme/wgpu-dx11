@@ -292,11 +292,21 @@ mod tests {
 
     #[test]
     fn batched_copy_submission_is_ordered_and_validates_before_work() -> Result<()> {
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
         let adapters = enumerate_native_adapters()?;
-        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|error| panic!("{error}"))
+        else {
+            std::println!("SKIP: no physical D3D11 adapter");
             return Ok(());
         };
         let device = adapter.open_device(&[FeatureLevel::L9_1])?;
+        assert_eq!(device.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested and actual FL9_1",
+            adapter.identity()
+        );
         let input = device.create_byte_buffer(16)?;
         let middle = device.create_byte_buffer(16)?;
         let output = device.create_byte_buffer(16)?;
@@ -340,11 +350,21 @@ mod tests {
 
     #[test]
     fn event_fence_tracks_real_gpu_copy_completion() -> Result<()> {
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
         let adapters = enumerate_native_adapters()?;
-        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|error| panic!("{error}"))
+        else {
+            std::println!("SKIP: no physical D3D11 adapter");
             return Ok(());
         };
         let device = adapter.open_device(&[FeatureLevel::L9_1])?;
+        assert_eq!(device.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {:?}; requested and actual FL9_1",
+            adapter.identity()
+        );
         let source = device.create_byte_buffer(16)?;
         let destination = device.create_byte_buffer(16)?;
         device.write_byte_buffer(&source, 0, &[0x5a; 16])?;

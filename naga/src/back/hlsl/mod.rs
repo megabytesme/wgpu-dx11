@@ -528,17 +528,22 @@ pub struct Options {
     /// This experimental mode rejects sampler binding arrays and register spaces.
     pub direct_sampler_bindings: bool,
 
-    /// Experimental opt-in proof for a fragment-stage, single-mip 2D float
-    /// texture load. The host must supply the texture dimensions and reciprocal
-    /// dimensions in `b13`, a nearest, clamp sampler in `s15`, and the texture
-    /// in `t0`. The
+    /// Experimental opt-in proof for fragment-stage, single-mip 2D float
+    /// texture loads. The host must supply each texture's dimensions and
+    /// reciprocal dimensions in `b13`, a nearest, clamp sampler in `s15`, and
+    /// the selected textures in consecutive `t` registers starting at `t0`. The
     /// bound view must contain exactly one mip and have nonzero FL9 dimensions.
     /// The caller must link a vertex shader with a matching location-0 varying.
-    /// This restricted proof rejects other resources, inputs and control flow.
+    /// This restricted 2D proof permits six used uniform buffers alongside the
+    /// textures, but rejects other resources, inputs and control flow. Up to
+    /// seven additional logical texture bindings may be supplied below.
     /// It may be combined with `fl9_texture_dimensions_proof` for the same
     /// binding to prove one direct, level-less 2D dimensions query alongside
     /// the texel load.
     pub fl9_texel_load_proof: Option<crate::ResourceBinding>,
+
+    /// Additional bindings covered by `fl9_texel_load_proof`.
+    pub fl9_texel_load_additional_proofs: Vec<crate::ResourceBinding>,
 
     /// Experimental opt-in proof for one direct fragment `textureDimensions`
     /// query on a bound 2D or cube float texture. The host supplies the
@@ -671,6 +676,7 @@ impl Default for Options {
             sampler_heap_target: SamplerHeapBindTargets::default(),
             direct_sampler_bindings: false,
             fl9_texel_load_proof: None,
+            fl9_texel_load_additional_proofs: Vec::new(),
             fl9_texture_dimensions_proof: None,
             fl9_texture_dimensions_3d_proof: None,
             fl9_texture_num_levels_proof: None,

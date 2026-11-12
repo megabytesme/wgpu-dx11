@@ -1,5 +1,113 @@
 # FL9_1 completion plan
 
+## Adapter exposure clarification — 2026-11-12
+
+The D3D11 backend is available through explicit public `Backends::DX11`
+selection. It enumerates only physical adapters that create an explicitly
+requested and confirmed FL9_1 device and pass the conservative capability
+projection. DX11 remains absent from the default instance backend set; the
+`experimental_dx11_is_not_enabled_by_default` test verifies that default
+isolation, not zero adapters after explicit DX11 selection. Older journal
+entries saying public enumeration is disabled describe the earlier state and
+must not be read as current behavior.
+
+## ARM32 UWP cross-check — 2026-11-12
+
+On the current worktree, both the D3D11 HAL and public `wgpu` compile for
+`thumbv7a-uwp-windows-msvc` using the installed nightly with `build-std`.
+This verifies the ARM32 UWP compile path only. A Device Portal request to the
+configured Lumia timed out, so CoreWindow startup, rendering and readback
+remain unverified on Windows 10 Mobile.
+
+## Render-pass CTS capability boundary — 2026-11-12
+
+The strict raw `webgpu:api,operation,render_pass,*` selector produced 3 passes,
+41 skips and 139 failures. Source and log triage attributed the failures to
+fixtures requiring multiple color attachments, unsupported texture arrays or
+depth mip chains, or texture copy usages/formats outside the selected FL9_1
+projection. No failure of a confirmed supported render-pass operation was
+found. Scoped strict CTS rechecks passed RGBA8 clear/readback (1/1), ordered
+buffer-copy transitions (1/1), color-write-mask cases (16/16), buffer-to-
+texture upload (1/1) and RGBA8 texture-to-texture copy (1/1). Details are
+recorded in `FL9_1_CTS.md` and `FL9_1_PROGRESS.md`.
+
+## Current coordinator increment — sRGB fragment `textureGather` — 2026-11-12
+
+The existing narrow direct fragment gather path now accepts a query-supported
+single-mip `Rgba8UnormSrgb` view alongside `Rgba8Unorm`. Core retains and checks
+the live view format because its downlevel limit cannot encode a format list;
+other formats such as R8 fail before HAL. The physical RTX 3090 Ti at forced
+FL9_1 matched the decoded sRGB gather output on all 64 pixels and retained the
+linear baseline; exact commands/results are in `FL9_1_PROGRESS.md`.
+
+An independent audit found no confirmed Core-valid command/resource request
+reaching an unsupported HAL operation in the reviewed map/copy/draw/dispatch
+paths. The public-usability audit found adapter classification remains
+`Other`, which is intentional until DXGI can establish architecture
+reliably; offscreen applications can enumerate/filter using name and PCI IDs.
+Independent audits and compiler probes are useful agent tasks; cross-layer
+implementation and strict end-to-end proof remain coordinator-owned.
+
+## Current coordinator increment — computed helper coordinates for fragment 2D `textureLoad` — 2026-11-12
+
+The existing selected-entry fragment 2D float `textureLoad` proof now permits
+one straight-line helper to transform its unchanged `@location(0) vec2f`
+argument with a bounded set of literal-based f32 operations before the
+`vec2i` conversion. Core and HAL use matching fail-closed expression checks;
+the HAL FXC proof compiles `ps_4_0_level_9_1`. Strict public readback on the
+RTX 3090 Ti verified a one-column shift and zero for out-of-bounds results at
+group 0/binding 7 and group 1/binding 42, requested/actual FL9_1. Entry-point
+call-site arithmetic, nested helpers and other integer operations remain
+rejected. Full regressions passed Naga 171/171, Core DX11 136/136, Core DX12
+135/135, strict private HAL 517/517 and strict public D3D11 153/153. Details
+and exact commands are in `FL9_1_PROGRESS.md`.
+
+## Current coordinator increment — uniform-backed 3D `textureLoad` — 2026-11-12
+
+The existing one-image fragment 3D `textureLoad` proof now permits up to six
+used uniform buffers, matching the existing projected per-stage uniform limit.
+Core, Naga and HAL preserve selected-entry checks and reserve `b13` for volume
+dimensions. The RTX 3090 Ti executed a sparse group-1/binding-42 tint at forced
+FL9_1 and all 64 pixels matched `[127, 0, 64, 255]`. Seven uniforms and
+combined load/dimensions with uniforms remain rejected. See
+`FL9_1_PROGRESS.md` for exact commands and the current regression state.
+
+## Current coordinator increment — instance-indexed matrix uniforms — 2026-11-12
+
+The selected vertex-stage dynamic uniform-array gate now permits a fixed
+`mat4x4<f32>` array indexed directly by `instance_index`, through a 63-element
+bound. Computed indices, non-square arrays and longer arrays remain rejected.
+The HAL proof compiles the production HLSL through FXC, and a strict public
+RTX 3090 Ti FL9_1 test renders and reads back two instances translated by
+different matrix elements. FXC remains the aggregate shader-constant limit
+check. Full regression verification passed Naga 171/171, Core DX11 136/136,
+Core DX12 135/135, private HAL 517/517 and public D3D11 153/153; see the
+progress journal for exact commands.
+
+## Current coordinator increment — split-group volume query sampling — 2026-11-12
+
+Removed the group-zero-only sampler restriction from the already narrow
+selected-entry 3D/cube `textureDimensions` and `textureNumLevels` proofs.
+Core, Naga and HAL continue to require the same queried/sampled image, at most
+one compatible implicit sample, a supported non-comparison sampler and the
+existing operation/view shape. Strict forced-FL9_1 public tests and the full
+affected suites passed; see `FL9_1_PROGRESS.md` for exact results and commands.
+
+## Current coordinator increment — public Depth24Plus bias and CTS fixture boundary — 2026-11-12
+
+A strict public integration test now verifies zero, positive and negative
+constant depth bias through a valid render-attachment-only `Depth24Plus`
+texture. All 64 color readback pixels matched on the physical RTX 3090 Ti at
+requested/actual FL9_1. The D24 bias CTS selectors each fail 3/3 because their
+fixtures require unsupported depth-texture `COPY_SRC`; that pixel mismatch is
+not valid evidence against the supported render path. Commit `df648a5a9`
+records the test and triage. See `FL9_1_PROGRESS.md` for exact commands.
+
+The mission remains partial. Continue the independent public API/Core/HAL and
+shader-gap audits, then choose one evidenced, software-solvable vertical slice.
+Keep historical FL9_1, Lumia/CoreWindow and device-removal verification gaps
+separate from implementation work.
+
 ## Current coordinator increment — depth comparison CTS and cross-backend build — 2026-11-12
 
 The three format-filtered `depth_compare_func` CTS runs now cover every
@@ -49,9 +157,10 @@ Selected fragment D2 `textureDimensions` and `textureNumLevels` proofs now
 allow their one same-image implicit sample to use a compatible non-comparison
 sampler from another supported bind group. Core, Naga and HAL retain the
 selected entry, exact texture/sampler identities, one-sample, view-mip and
-helper-shape restrictions. D3 and cube query/sample paths still require a
-group-zero sampler. No general image-query or unrestricted shader capability
-was added.
+helper-shape restrictions. The separate-group 3D/cube query-sampler extension
+was subsequently implemented and verified; see the progress journal's
+2026-11-12 entry. No general image-query or unrestricted shader capability was
+added.
 
 The strict public `textureNumLevels` cases put the texture at group 2 and
 sampler at group 3, switched between one- and three-level views, and matched
@@ -103,14 +212,14 @@ This closes the prior HWND implementation gap; CoreWindow runtime behavior and
 Lumia execution remain unverified. Exact results are recorded in
 `FL9_1_PROGRESS.md`.
 
-The next audit candidates are remaining group-zero restrictions in optional
-sampler/query proofs and selected Core/HAL render validation paths. Any further
-resource-group change should begin by checking whether
-the shared binding map already supports it and then add selected-entry and
-strict GPU evidence without broadening unrelated proof shapes. Compute/UAV,
-geometry shaders, MRT, indirect drawing, 1D textures and ordinary arrays
-remain FL9_1/profile or public API boundaries, not candidates for emulation in
-this slice.
+The proposed group-zero restriction in 3D/cube query-sampler proofs has since
+been removed and strictly tested. The direct instance-indexed fixed
+`mat4x4<f32>` uniform-array candidate is now implemented and strictly tested;
+see the current coordinator increment at the top of this plan and the detailed
+progress entry. Independent follow-up audits are selecting the next software-
+solvable feature slice. Compute/UAV, geometry shaders, MRT, indirect drawing,
+1D textures and ordinary arrays remain FL9_1/profile or public API boundaries,
+not candidates for emulation in that slice.
 
 ## Previous coordinator checkpoint — vertex-only mat4 inverse — 2026-11-12
 
@@ -3077,3 +3186,50 @@ inspection and positive/negative/zero GPU readbacks. Full results and other
 integer semantics remain gated. Continue the Core/HAL contract audit and
 select the next implementation from a reproduced workload or profile boundary;
 do not broaden this narrow capability based on modern hardware alone.
+
+## Selected-entry 2D `textureLoad` with one uniform — 2026-11-12
+
+Completed one bounded workload increment: a single used uniform may modulate
+the one selected fragment 2D float `textureLoad` result. Core, HAL and Naga
+share the one-uniform limit; other used resources, multiple uniforms, 3D loads
+with uniforms and combined load/dimensions with uniforms remain rejected.
+Strict public GPU tests verified sparse group-0 and group-1 bindings at forced
+FL9_1. Continue using independent agents for read-only audits or compiler
+probes; keep subsequent Core/Naga/HAL changes coordinated. The next feature
+should follow a reproduced application workload or a specific Core-to-HAL
+contract mismatch rather than expanding this emulation speculatively.
+
+## Coordinator update — eight-image fragment 2D textureLoad — 2026-11-12
+
+Completed and verified support for up to eight selected-entry fragment 2D float
+textureLoad images at forced FL9_1. The production FXC path compiles 1–8 image
+representative shaders after removing redundant coordinate clamping; Core/HAL
+reject image nine. Full strict HAL and public D3D11 suites passed 516/516 and
+152/152, with actual RTX 3090 Ti readbacks included. Full Naga/Core DX11/Core
+DX12 suites passed 171/171, 136/136 and 135/135. Exact commands and hardware
+outputs are in `FL9_1_PROGRESS.md`.
+
+Remaining support is not just polishing. Compute/UAV, geometry shaders, MRT,
+ordinary texture arrays, 1D textures and indirect drawing remain unavailable at
+FL9_1 or deliberately withheld. The public D3D11 backend remains opt-in and
+its API surface is a constrained subset, not complete WebGPU/downlevel
+conformance. Historical FL9_1 devices, Lumia ARM32/CoreWindow, and device-loss
+recovery remain external verification gaps. Use read-only agents for
+independent contract audits and bounded compiler probes, but keep every
+Core/Naga/HAL change and end-to-end GPU proof with one coordinator. The proposed
+nonzero-group 3D/cube query-sampler follow-up has since been implemented and
+verified in the 2026-11-12 progress entry; it is no longer an open candidate.
+Choose the next software slice from a reproduced application workload or a
+confirmed Core-to-HAL contract gap, and require an end-to-end proof before
+expanding a path.
+
+## Coordinator update — six-uniform fragment 2D textureLoad — 2026-11-12
+
+Core, Naga and HAL now allow up to six used uniform buffers in the selected
+fragment 2D float `textureLoad` proof and reject a seventh. The allocator remains
+the normal compact uniform-register path, independent of sparse logical binding
+numbers, while the internal dimension buffer stays reserved. Strict public GPU
+readback verified both group-0 and group-1 layouts with six uniforms as
+`[64, 96, 32, 223]` for every pixel. Full regressions passed: Naga 171, Core
+DX11 136, Core DX12 135, private HAL 516 and strict public D3D11 152. This is
+still one explicit emulation proof, not a general limit on all shader uniforms.
