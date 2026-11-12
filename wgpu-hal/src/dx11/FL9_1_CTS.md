@@ -56,32 +56,29 @@ The `basic:clear` and buffer-copy state-transition commands are in
 blend-constant results are recorded under [`render-state CTS`](FL9_1_PROGRESS.md#public-render-state-cts-slice-2026-11-10)
 and [`blend-constant CTS`](TESTING.md#strict-dynamic-blend-constant-cts-selector).
 
-## Proposed filtered depth selectors
+## Executed filtered depth selectors
 
-The exact selectors below are useful candidates for the supported depth
-formats, but have **not** been recorded as separate invocations. In the broad
-`webgpu:api,operation,rendering,depth:*` run, the CTS `depth_compare_func`
-parameter matrix's 72 D16, Depth24Plus, and Depth24PlusStencil8 comparisons
-passed. The three filters below isolate those format groups for a reproducible
-follow-up; they must be run before being listed as individually executed.
+The exact commands below ran on the physical RTX 3090 Ti at requested and
+actual FL9_1. Each format's 24 compare-function/clear-value cases passed with
+zero skips or failures. The test's Equal/NotEqual pipeline validation emitted
+the existing invariant-position warning; it did not affect the CTS results.
 
 ```text
-webgpu:api,operation,rendering,depth:depth_compare_func:format="depth16unorm"
-webgpu:api,operation,rendering,depth:depth_compare_func:format="depth24plus"
-webgpu:api,operation,rendering,depth:depth_compare_func:format="depth24plus-stencil8"
+webgpu:api,operation,rendering,depth:depth_compare_func:format="depth16unorm";*
+webgpu:api,operation,rendering,depth:depth_compare_func:format="depth24plus";*
+webgpu:api,operation,rendering,depth:depth_compare_func:format="depth24plus-stencil8";*
 ```
 
-The source parameterizes `depth_compare_func` over the depth formats and
-comparison functions in
+The `;*` retains all remaining `depthCompare` and `depthClearValue` cases for
+the selected format. The source parameterizes `depth_compare_func` over the
+depth formats and comparison functions in
 [`depth.spec.ts`](../../../cts/src/webgpu/api/operation/rendering/depth.spec.ts).
-The broad run's overall result was 130 subcases: 72 passed, 24 skipped and 34
-failed. Its 8 D24S8 failures requested `COPY_DST`; 26 failed texture creation
-for unsupported Depth32Float usages and then observed the unchanged clear
-target. The 24 Depth32FloatStencil8 cases skipped. This broad result is not
-proof that all depth states or formats pass. See
+These filtered runs do not replace the broad depth-suite triage: the broad
+selector still has unrelated unsupported-usage failures for D24S8 `COPY_DST`
+and Depth32Float, plus skipped Depth32FloatStencil8 cases. See
 [`TESTING.md`](TESTING.md#4-webgpu-cts) and
 [`FL9_1_PROGRESS.md`](FL9_1_PROGRESS.md#strict-depth-cts-probe-2026-11-11)
-for the full triage and command.
+for related coverage and the broad-suite triage.
 
 ## Known boundary results; do not count as passes
 

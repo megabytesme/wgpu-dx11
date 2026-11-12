@@ -1,3 +1,12 @@
+## Depth comparison CTS coverage — 2026-11-12
+
+Strict CTS depth comparison selectors passed for D16, Depth24Plus and
+Depth24PlusStencil8: all 24 compare-function/clear-value cases per format,
+72 total, on the physical RTX 3090 Ti at requested and actual FL9_1. No cases
+skipped or failed. The equal/not-equal cases logged Core's invariant-position
+warning. The broader mixed-format depth selector still has unrelated
+unsupported-usage failures; see `FL9_1_CTS.md`.
+
 ## Fragment explicit LOD zero helper coordinates — 2026-11-12
 
 The restricted `textureSampleLevel(..., 0.0)` subset now permits one

@@ -1040,6 +1040,7 @@ impl super::Adapter {
             texture_sample_level_zero_2d_float_fragment: false,
             texture_gather: supported((3, 1), (4, 0))
                 || extensions.contains("GL_ARB_texture_gather"),
+            texture_gather_2d_float_fragment: false,
             texture_load: true,
             texture_load_2d_float_fragment: false,
             texture_load_3d_float_fragment: false,
@@ -1056,6 +1057,7 @@ impl super::Adapter {
             fragment_derivatives: true,
             runtime_integer_shader_operations: true,
             matrix_inverse: true,
+            matrix_inverse_4x4_vertex: false,
             matrix_inverse_2x2: false,
             matrix_inverse_3x3: false,
             matrix_outer_product: true,

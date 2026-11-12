@@ -1,3 +1,31 @@
+## Strict depth comparison CTS and GLES initializer fix — 2026-11-12
+
+The filtered `depth_compare_func` selectors exercised all seven comparison
+functions with three clear values on each supported depth format. D16,
+Depth24Plus and Depth24PlusStencil8 each passed 24/24 cases, 72/72 total, on
+the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, physical, `software=false`) at requested and actual FL9_1.
+There were no skips or failures. Equal/NotEqual cases emitted the existing
+Core warning about invariant position; all CTS comparisons passed.
+
+The first CTS invocation uncovered a compile regression in the GLES adapter's
+explicit `DownlevelLimits` initializer: it lacked the newer
+`texture_gather_2d_float_fragment` and `matrix_inverse_4x4_vertex` fields.
+GLES now sets both to `false`, preserving its prior advertised capability
+behavior. A standalone GLES HAL check passed. Two early selector attempts were
+also corrected: Windows quoting must preserve JSON quotes around string-valued
+parameters, and format-filtered parameterized tests need a trailing `;*` to
+include all comparison/clear-value combinations. Neither was a backend test
+failure.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+& 'E:\Temp\wgpu_mission_cargo.bat' xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,depth:depth_compare_func:format=\"depth16unorm\";*'
+& 'E:\Temp\wgpu_mission_cargo.bat' xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,depth:depth_compare_func:format=\"depth24plus\";*'
+& 'E:\Temp\wgpu_mission_cargo.bat' xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,depth:depth_compare_func:format=\"depth24plus-stencil8\";*'
+& 'E:\Temp\wgpu_mission_cargo.bat' check --offline -j16 -p wgpu-hal --no-default-features --features gles
+```
+
 ## Explicit-LOD-zero helper coordinate arithmetic — 2026-11-12
 
 The selected-fragment `textureSampleLevel(..., 0.0)` proof now permits one

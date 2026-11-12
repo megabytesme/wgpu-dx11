@@ -1,5 +1,16 @@
 # FL9_1 completion plan
 
+## Current coordinator increment — depth comparison CTS and cross-backend build — 2026-11-12
+
+The three format-filtered `depth_compare_func` CTS runs now cover every
+comparison function and clear value for D16, Depth24Plus and
+Depth24PlusStencil8: 24/24 per format, 72 total, on the physical RTX 3090 Ti
+at requested/actual FL9_1 with no skips or failures. Building the CTS runner
+also exposed two newly added `DownlevelLimits` fields missing from GLES's
+explicit initializer; GLES now conservatively sets both D3D11-specific limits
+false. A standalone `wgpu-hal` GLES check passes. The limits remain false for
+GLES and no GLES capability was changed.
+
 ## Current coordinator increment — explicit-LOD helper coordinates — 2026-11-12
 
 The existing selected-fragment literal-LOD-zero proof now permits one

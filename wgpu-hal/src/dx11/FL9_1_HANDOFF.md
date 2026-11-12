@@ -1,5 +1,16 @@
 # FL9_1 handoff
 
+## Latest validation — depth comparison CTS — 2026-11-12
+
+Strict filtered CTS coverage passed 24/24 each for D16, Depth24Plus and
+Depth24PlusStencil8 depth comparisons (72 total) on the physical RTX 3090 Ti
+at requested/actual FL9_1, with no skips or failures. The CTS build exposed
+two shared `DownlevelLimits` fields missing from the GLES adapter initializer;
+both are now conservatively false there, and `wgpu-hal --features gles`
+checks successfully. This did not widen GLES or D3D11 capabilities. Commands
+and exact selectors are recorded in `FL9_1_PROGRESS.md` and
+`FL9_1_CTS.md`.
+
 ## Latest verified increment — 2026-11-12
 
 The narrow fragment `textureSampleLevel(..., 0.0)` subset now supports one
