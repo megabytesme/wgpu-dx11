@@ -8255,14 +8255,14 @@ mod fl9_viewport_tests {
     #[test]
     fn fl9_base_clamp_uses_host_dimensions_and_implicit_sample() {
         let texture_binding = crate::ResourceBinding {
-            group: 0,
-            binding: 7,
+            group: 1,
+            binding: 17,
         };
         let sampler_binding = crate::ResourceBinding {
-            group: 0,
+            group: 2,
             binding: 42,
         };
-        let source = "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBaseClampToEdge(image, smp, uv); }";
+        let source = "@group(1) @binding(17) var image: texture_2d<f32>; @group(2) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBaseClampToEdge(image, smp, uv); }";
         let mut options = Options {
             direct_sampler_bindings: true,
             fl9_texture_base_clamp_proof: Some(texture_binding),
@@ -8309,7 +8309,7 @@ mod fl9_viewport_tests {
         );
         assert!(translate(&ordinary_sample, &options, ShaderStage::Fragment).is_err());
 
-        let helper = "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn sample_image(uv: vec2f) -> vec4f { return textureSampleBaseClampToEdge(image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_image(uv * 0.5 + vec2f(0.25)); }";
+        let helper = "@group(1) @binding(17) var image: texture_2d<f32>; @group(2) @binding(42) var smp: sampler; fn sample_image(uv: vec2f) -> vec4f { return textureSampleBaseClampToEdge(image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_image(uv * 0.5 + vec2f(0.25)); }";
         let helper_output = translate(helper, &options, ShaderStage::Fragment).unwrap();
         assert!(
             helper_output.contains("float4 sample_image(float2 uv_1)")
@@ -8319,7 +8319,7 @@ mod fl9_viewport_tests {
         );
         assert!(!helper_output.contains("GetDimensions"), "{helper_output}");
 
-        let helper_with_unreachable_sibling = "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(8) var sibling: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn sample_image(uv: vec2f) -> vec4f { return textureSampleBaseClampToEdge(image, smp, uv); } fn unused(uv: vec2f) -> vec4f { return textureSampleBaseClampToEdge(sibling, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_image(uv); }";
+        let helper_with_unreachable_sibling = "@group(1) @binding(17) var image: texture_2d<f32>; @group(1) @binding(18) var sibling: texture_2d<f32>; @group(2) @binding(42) var smp: sampler; fn sample_image(uv: vec2f) -> vec4f { return textureSampleBaseClampToEdge(image, smp, uv); } fn unused(uv: vec2f) -> vec4f { return textureSampleBaseClampToEdge(sibling, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_image(uv); }";
         let sibling_output = translate(
             helper_with_unreachable_sibling,
             &options,

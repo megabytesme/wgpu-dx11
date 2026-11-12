@@ -1,6 +1,26 @@
 # FL9_1 completion plan
 
-## Current coordinator checkpoint — nonzero-group `textureNumLevels` — 2026-11-12
+## Current coordinator checkpoint — nonzero-group base-clamp sampling — 2026-11-12
+
+The selected-entry fragment `textureSampleBaseClampToEdge` proof now accepts
+its single 2D float image and non-comparison sampler from any supported bind
+groups, including separate groups. The one-sample, helper-shape, single-mip,
+selected-entry and other resource restrictions remain. Strict RTX 3090 Ti
+execution at requested and actual FL9_1 used group 1/binding 7 for the image
+and group 2/binding 42 for the sampler; all 64 patterned output pixels matched
+for out-of-range coordinates. Naga, Core and HAL focused tests passed; full
+Naga (164), Core DX11 (132), Core DX12 (131), strict HAL (510) and strict public
+D3D11 (144) suites passed. Details and exact commands are in
+`FL9_1_PROGRESS.md`.
+
+The next worthwhile software slice is vertex-stage f32 `mat4x4` inverse: an
+independent FXC probe stayed within FL9_1 vertex instruction and temporary
+register budgets, but production Naga lowering, a stage-specific Core limit
+and GPU validation remain. The presentation-completion contract also remains
+open and needs a separate DXGI wait design plus UWP validation. Historical
+FL9_1 drivers and Lumia/CoreWindow execution are external evidence gaps.
+
+## Previous coordinator checkpoint — nonzero-group `textureNumLevels` — 2026-11-12
 
 The narrow selected-entry fragment `textureNumLevels` proof now accepts its
 queried float image from any bind group supported by the shared binding map.
@@ -12,11 +32,9 @@ Direct and helper forms, with and without a same-image implicit sample, each
 matched all 64 output pixels. Naga, Core and HAL proof tests passed. Full
 regression results and exact commands are in `FL9_1_PROGRESS.md`.
 
-The next small binding-identity slice is the selected `textureSampleBaseClampToEdge`
-path, after verifying its compiler/runtime identity flow. Vertex-only f32
-mat4 inverse remains a larger shader/Core slice; the independent probe found
-it plausible but not implemented. Presentation completion, historical FL9_1
-drivers and Lumia/CoreWindow remain separate validation gaps.
+The selected query now uses any resource group while keeping its optional
+sampler in group 0. Later base-clamp work has since generalized both resources
+to separate groups.
 
 ## Previous coordinator checkpoint — query-gated BGRA8 texture loads — 2026-11-11
 
@@ -33,9 +51,9 @@ results: HAL 510/510, Core DX11 132/132, Core DX12 131/131 and public D3D11
 skips. Targeted Clippy, formatting and diff checks passed; six known HAL
 warnings remain. Details are recorded in `FL9_1_PROGRESS.md`.
 
-Three probes recommend keeping agent work focused: vertex-only f32 mat4 inverse
-is feasible but needs a new stage-specific limit and exact Naga/HAL/GPU proof;
-`textureSampleBaseClampToEdge` remains group-0-restricted; and
+Independent probes recommend keeping agent work focused: vertex-only f32 mat4
+inverse is feasible but needs a new stage-specific limit and exact Naga/HAL/GPU
+proof; `textureSampleBaseClampToEdge` group placement is now generalized; and
 `Queue::wait_for_idle` still does not prove DXGI present completion. Continue
 with one integrated vertical slice at a time. Compute/UAV, geometry shaders,
 MRT, indirect draws and other documented profile/API limits are not software

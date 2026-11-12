@@ -40390,6 +40390,33 @@ fn public_dx11_texture_sample_base_clamp_to_edge_at_fl91() {
         address_mode_v: AddressMode::ClampToEdge,
         ..Default::default()
     });
+    let texture_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 base-clamp texture group layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: true },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    });
+    let sampler_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 base-clamp sampler group layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 42,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Sampler(SamplerBindingType::Filtering),
+            count: None,
+        }],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 base-clamp nonzero group pipeline layout"),
+        bind_group_layouts: &[None, Some(&texture_layout), Some(&sampler_layout)],
+        immediate_size: 0,
+    });
     let vertex_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 base-clamp vertex shader"),
         source: ShaderSource::Wgsl(
@@ -40403,8 +40430,8 @@ fn public_dx11_texture_sample_base_clamp_to_edge_at_fl91() {
     let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 base-clamp fragment shader"),
         source: ShaderSource::Wgsl(
-            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
-             @group(0) @binding(42) var smp: sampler;\n\
+            "@group(1) @binding(7) var image: texture_2d<f32>;\n\
+             @group(2) @binding(42) var smp: sampler;\n\
              fn sample_base_clamp(uv: vec2f) -> vec4f {\n\
                  return textureSampleBaseClampToEdge(image, smp, uv);\n\
              }\n\
@@ -40447,7 +40474,7 @@ fn public_dx11_texture_sample_base_clamp_to_edge_at_fl91() {
     })];
     let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some("FL9_1 base-clamp pipeline"),
-        layout: None,
+        layout: Some(&pipeline_layout),
         vertex: VertexState {
             module: &vertex_shader,
             entry_point: Some("vs"),
@@ -40466,19 +40493,21 @@ fn public_dx11_texture_sample_base_clamp_to_edge_at_fl91() {
         multiview_mask: None,
         cache: None,
     });
-    let bind_group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("FL9_1 base-clamp sparse resources"),
-        layout: &pipeline.get_bind_group_layout(0),
-        entries: &[
-            BindGroupEntry {
-                binding: 7,
-                resource: BindingResource::TextureView(&source_view),
-            },
-            BindGroupEntry {
-                binding: 42,
-                resource: BindingResource::Sampler(&sampler),
-            },
-        ],
+    let texture_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 base-clamp texture group"),
+        layout: &texture_layout,
+        entries: &[BindGroupEntry {
+            binding: 7,
+            resource: BindingResource::TextureView(&source_view),
+        }],
+    });
+    let sampler_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 base-clamp sampler group"),
+        layout: &sampler_layout,
+        entries: &[BindGroupEntry {
+            binding: 42,
+            resource: BindingResource::Sampler(&sampler),
+        }],
     });
     let vertices = [[-1.0_f32, -1.0], [3.0, -1.0], [-1.0, 3.0]];
     let mut vertex_bytes = Vec::with_capacity(6 * std::mem::size_of::<f32>());
@@ -40519,7 +40548,8 @@ fn public_dx11_texture_sample_base_clamp_to_edge_at_fl91() {
             multiview_mask: None,
         });
         pass.set_pipeline(&pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_bind_group(1, &texture_group, &[]);
+        pass.set_bind_group(2, &sampler_group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..3, 0..1);
     }

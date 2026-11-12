@@ -927,11 +927,12 @@ false even though the hardware model records query support from feature level
 The general `texture_sample_base_clamp_to_edge` limit remains false. The
 `texture_sample_base_clamp_to_edge_2d_float_fragment` limit covers one narrow
 FL9_1 form of `textureSampleBaseClampToEdge`. Core proves one fragment sample
-using one group-0 `texture_2d<f32>` and one group-0 non-comparison sampler,
-either directly or through one reachable straight-line helper called once with
-a `vec2f` argument and returning `vec4f`. Resource handles cannot pass through
-the helper; selected extra resources, other image operations and control flow
-are rejected before HAL. HAL requires a single-mip view and updates the `b13`
+using one `texture_2d<f32>` and one non-comparison sampler from any supported
+bind groups, including separate groups, either directly or through one
+reachable straight-line helper called once with a `vec2f` argument and
+returning `vec4f`. Resource handles cannot pass through the helper; selected
+extra resources, other image operations and control flow are rejected before
+HAL. HAL requires a single-mip view and updates the `b13`
 width/height constants whenever the selected binding changes.
 Naga's writer emits an implicit level-zero `Sample` with half-texel coordinate
 clamping. The helper may receive a computed `vec2f` from the entry point; the
@@ -943,6 +944,14 @@ ClampToEdge sampler because Core rejects Repeat/MirrorRepeat descriptors under
 the adapter's finite repeat-per-primitive limit. It does not establish
 sampler-independent edge behavior for those unavailable sampler modes.
 
+The strict nonzero-group regression uses the texture at group 1/binding 7 and
+the sampler at group 2/binding 42. It renders the existing patterned 2x2
+texture through the helper, exercises out-of-range coordinates, and verifies
+all 64 output pixels. The logical identities are preserved through the Core
+proof, HAL shader proof, Naga binding map and runtime group lookup; the image is
+remapped to `t0` while the sampler retains its independently allocated sampler
+register.
+
 ```powershell
 cargo +1.93 test --offline -j8 -p naga --lib --features hlsl-out fl9_base_clamp_uses_host_dimensions_and_implicit_sample
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib base_clamp_to_edge_sampling_follows_selected_entry_and_helper_calls
@@ -950,6 +959,18 @@ cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_sample_base_clamp_to_edge_at_fl91 -- --nocapture --test-threads=1
 ```
+
+The nonzero-group regression was run in strict mode with the repository's MSVC
+Cargo wrapper:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_texture_sample_base_clamp_to_edge_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+It reported the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), requested and actual FL9_1, physical adapter and
+`software=false`; the split group 1/2 helper path matched all 64 pixels.
 
 ### Texture gather shader-model boundary
 

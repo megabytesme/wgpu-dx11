@@ -1,3 +1,44 @@
+## Nonzero-group fragment `textureSampleBaseClampToEdge` — 2026-11-12
+
+Core now accepts the selected fragment proof's image and sampler in any
+supported groups, including separate groups. HAL removed only the sampler's
+group-0 check; it already retained the texture's full `ResourceBinding`, and
+Naga remaps that selected image to `t0` while retaining the sampler's mapped
+register. The direct/helper, one-pair, fragment-only, single-mip and resource
+shape constraints remain.
+
+Naga writer, Core proof, HAL binding-proof and HAL FXC compilation tests passed
+(1/1 each). The strict public GPU test passed 1/1 on the NVIDIA GeForce RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), with requested and actual
+FL9_1, physical adapter and `software=false`. The texture at group 1/binding 7
+and sampler at group 2/binding 42 were used by the helper while sampling
+out-of-range coordinates. All 64 output pixels matched the patterned 2x2
+source. No required hardware case skipped.
+
+Full regression results: Naga 164/164, Core DX11 132/132, Core DX12 131/131,
+strict private HAL 510/510 and strict public D3D11 144/144. The full HAL test
+reported four pre-existing unnecessary-qualification warnings in
+`hal_queue.rs`. The MSVC wrapper prints its existing `vError: Unknown error`
+banner; builds and tests complete normally. Targeted Clippy passed for Naga,
+Core, HAL and the public test target. It reported six existing HAL warnings
+in `hal_index.rs`, `hal_transfer.rs` and `texture.rs`, with no warnings in the
+changed code. Rust 1.93.1 format and `git diff --check` passed.
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_base_clamp_uses_host_dimensions_and_implicit_sample
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib base_clamp_to_edge_sampling_follows_selected_entry_and_helper_calls
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_base_clamp_binding_is_direct_and_single_mip
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl91_base_clamp_through_straight_line_helper_compiles
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_texture_sample_base_clamp_to_edge_at_fl91 -- --exact --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 --quiet -p naga --no-default-features --features hlsl-out,wgsl-in --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 --quiet -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 --quiet -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 --quiet -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 --quiet -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+```
+
 ## Nonzero-group fragment `textureNumLevels` — 2026-11-12
 
 Core, Naga and HAL now preserve the queried texture's logical group when

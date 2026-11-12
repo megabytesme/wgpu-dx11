@@ -1714,11 +1714,12 @@ FL9_1 projection exposes only the separate
 the one supported operation to an implicit `Texture2D.Sample` after clamping
 coordinates to half-texel centers using the selected view dimensions supplied
 through `b13`; this avoids FL9_1-incompatible `GetDimensions` and
-`SampleLevel`. Core permits one fragment sample of a group-0, non-array
-`texture_2d<f32>` and one group-0 non-comparison sampler, either directly in
-the selected entry or through exactly one reachable straight-line helper that
-is called once, takes one `vec2f`, and returns `vec4f`. Resource handles cannot
-be passed through the helper. Additional selected resources, other image
+`SampleLevel`. Core permits one fragment sample of a non-array
+`texture_2d<f32>` and one non-comparison sampler from any supported bind
+groups, including separate groups, either directly in the selected entry or
+through exactly one reachable straight-line helper that is called once, takes
+one `vec2f`, and returns `vec4f`. Resource handles cannot be passed through
+the helper. Additional selected resources, other image
 operations and control flow remain unsupported; unreachable sibling helpers
 do not affect the selected entry. HAL
 requires the currently selected view to expose exactly one mip and refreshes

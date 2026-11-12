@@ -3,15 +3,14 @@
 ## Current mission status — 2026-11-12
 
 The latest verified slice allows the narrow selected-entry fragment
-`textureNumLevels` proof to use an image from a nonzero bind group, with an
-optional group-0 sampler retained. Direct and helper queries at group
-2/binding 42 switched one- and three-level views and matched all 64 pixels in
-strict RTX 3090 Ti FL9_1 execution. The strict public target passed 144/144;
-private HAL passed 510/510, Core DX11 132/132, Core DX12 131/131 and Naga
-164/164. Three optional public capability subcases skipped; no hardware-
-required test skipped. Targeted Clippy passed; the one new Naga style warning
-was corrected. Rust 1.93.1 format and diff checks passed. Exact evidence is at
-the top of `FL9_1_PROGRESS.md`.
+`textureSampleBaseClampToEdge` proof to use one image and one non-comparison
+sampler from any supported bind groups, including separate groups. Strict RTX
+3090 Ti FL9_1 execution with the texture in group 1 and sampler in group 2
+matched all 64 pixels for out-of-range coordinates. Naga passed 164 tests,
+Core DX11 132, Core DX12 131, private HAL 510 and strict public D3D11 144; the
+focused strict public test passed 1/1 without skipping. Targeted Clippy passed
+with six existing HAL warnings and no new warnings. Rust 1.93.1 formatting
+and diff checks passed. Exact commands are at the top of `FL9_1_PROGRESS.md`.
 
 The latest increment accepts query-gated `Bgra8Unorm` and `Bgra8UnormSrgb`
 views in the narrow fragment 2D `textureLoad` subset. The strict RTX 3090 Ti

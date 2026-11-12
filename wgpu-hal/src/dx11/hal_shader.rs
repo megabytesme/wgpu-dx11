@@ -2371,8 +2371,8 @@ mod tests {
     fn fl9_texture_base_clamp_binding_is_direct_and_single_mip() {
         let module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
-            @group(0) @binding(42) var smp: sampler;
+            @group(1) @binding(17) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
             @fragment fn sampled(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleBaseClampToEdge(image, smp, uv);
             }
@@ -2393,8 +2393,8 @@ mod tests {
         assert_eq!(
             proof.binding,
             naga::ResourceBinding {
-                group: 0,
-                binding: 7,
+                group: 1,
+                binding: 17,
             }
         );
         assert!(matches!(proof.kind, Fl9TextureEmulationKind::BaseClamp));
@@ -2409,9 +2409,9 @@ mod tests {
 
         let helper_module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
-            @group(0) @binding(8) var sibling_image: texture_2d<f32>;
-            @group(0) @binding(42) var smp: sampler;
+            @group(1) @binding(17) var image: texture_2d<f32>;
+            @group(1) @binding(18) var sibling_image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
             fn sample_image(uv: vec2f) -> vec4f {
                 return textureSampleBaseClampToEdge(image, smp, uv);
             }
@@ -2438,6 +2438,8 @@ mod tests {
         )
         .unwrap()
         .expect("one selected straight-line helper should resolve");
+        assert_eq!(helper_proof.binding.group, 1);
+        assert_eq!(helper_proof.binding.binding, 17);
         assert!(matches!(
             helper_proof.kind,
             Fl9TextureEmulationKind::BaseClamp
@@ -7447,7 +7449,6 @@ fn fl9_texture_emulation_binding(
                     ));
                 };
                 if global.space != naga::AddressSpace::Handle
-                    || resource.group != 0
                     || !matches!(
                         module.types[global.ty].inner,
                         naga::TypeInner::Sampler { comparison: false }
@@ -7458,8 +7459,7 @@ fn fl9_texture_emulation_binding(
                 {
                     return Err(crate::PipelineError::Linkage(
                         stages,
-                        "D3D11 FL9 base-clamp requires one group-zero non-comparison sampler"
-                            .into(),
+                        "D3D11 FL9 base-clamp requires one non-comparison sampler".into(),
                     ));
                 }
                 if !matches!(

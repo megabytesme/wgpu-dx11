@@ -2277,9 +2277,9 @@ mod tests {
     fn fl91_base_clamp_through_straight_line_helper_compiles() {
         let module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
-            @group(0) @binding(8) var sibling: texture_2d<f32>;
-            @group(0) @binding(42) var smp: sampler;
+            @group(1) @binding(17) var image: texture_2d<f32>;
+            @group(1) @binding(18) var sibling: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
             fn sample_image(uv: vec2f) -> vec4f {
                 return textureSampleBaseClampToEdge(image, smp, uv);
             }
@@ -2299,11 +2299,11 @@ mod tests {
         .validate(&module)
         .unwrap();
         let texture_binding = naga::ResourceBinding {
-            group: 0,
-            binding: 7,
+            group: 1,
+            binding: 17,
         };
         let sampler_binding = naga::ResourceBinding {
-            group: 0,
+            group: 2,
             binding: 42,
         };
         let bindings = [

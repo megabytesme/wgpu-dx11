@@ -1,3 +1,13 @@
+## Nonzero-group `textureSampleBaseClampToEdge` — 2026-11-12
+
+The selected-entry fragment proof accepts its single 2D float image and
+non-comparison sampler from any supported bind groups, including separate
+groups. It preserves the one-sample, helper, single-mip, entry-point and
+resource-shape restrictions. The strict RTX 3090 Ti FL9_1 test used the image
+in group 1/binding 7 and sampler in group 2/binding 42; all 64 pixels matched
+for out-of-range coordinates. This changes logical group placement only; it
+does not enable general bind-group or sampling support.
+
 ## Nonzero-group `textureNumLevels` — 2026-11-12
 
 The selected-entry fragment `textureNumLevels` proofs now accept the queried
@@ -714,16 +724,15 @@ compiler validation are recorded in `TESTING.md`.
 downlevel limit remains false. Naga supplies selected-view dimensions through host constant
 `b13`, clamps coordinates to half-texel centers and emits implicit `Sample`,
 which FXC accepts for `ps_4_0_level_9_1`. Core's additional narrow limit allows
-one group-0 2D float texture and one group-0 non-comparison sampler, either
-directly or through exactly one reachable straight-line helper called once
-with a `vec2f` and returning `vec4f`. The helper cannot accept resource handles;
-selected extra resources, other image operations and control flow remain
-unsupported. HAL revalidates the selected single-mip view at draw preparation
-and refreshes the dimensions. The earlier strict RTX 3090 Ti direct-path
-readback and the new helper-path readback each matched all 64 pixels for
-out-of-range coordinates at requested/actual FL9_1. The helper-path output was
-verified on the physical RTX 3090 Ti. The public finite repeat-per-primitive
-limit rejects Repeat and
+one 2D float texture and one non-comparison sampler from any supported bind
+groups, including separate groups, either directly or through exactly one
+reachable straight-line helper called once with a `vec2f` and returning
+`vec4f`. The helper cannot accept resource handles; selected extra resources,
+other image operations and control flow remain unsupported. HAL revalidates
+the selected single-mip view at draw preparation and refreshes the dimensions.
+Strict RTX 3090 Ti readback verified all 64 pixels with the texture in group 1
+and sampler in group 2 at requested/actual FL9_1. The public finite
+repeat-per-primitive limit rejects Repeat and
 MirrorRepeat sampler descriptors, so independence from those sampler modes is
 not established by the public GPU test.
 

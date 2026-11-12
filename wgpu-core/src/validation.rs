@@ -6687,10 +6687,7 @@ fn entry_point_supports_fl9_texture_sample_base_clamp_to_edge(
     let image_global = &module.global_variables[image];
     let sampler_global = &module.global_variables[sampler];
     image_global.space == naga::AddressSpace::Handle
-        && matches!(
-            image_global.binding,
-            Some(naga::ResourceBinding { group: 0, .. })
-        )
+        && image_global.binding.is_some()
         && matches!(
             module.types[image_global.ty].inner,
             naga::TypeInner::Image {
@@ -6703,10 +6700,7 @@ fn entry_point_supports_fl9_texture_sample_base_clamp_to_edge(
             }
         )
         && sampler_global.space == naga::AddressSpace::Handle
-        && matches!(
-            sampler_global.binding,
-            Some(naga::ResourceBinding { group: 0, .. })
-        )
+        && sampler_global.binding.is_some()
         && matches!(
             module.types[sampler_global.ty].inner,
             naga::TypeInner::Sampler { comparison: false }
@@ -13378,8 +13372,8 @@ mod tests {
     fn base_clamp_to_edge_sampling_follows_selected_entry_and_helper_calls() {
         let module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(0) var image: texture_2d<f32>;
-            @group(0) @binding(1) var smp: sampler;
+            @group(1) @binding(17) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
             fn sample_base_clamp(uv: vec2f) -> vec4f {
                 return textureSampleBaseClampToEdge(image, smp, uv);
             }
@@ -13452,8 +13446,8 @@ mod tests {
 
         let direct_module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
-            @group(0) @binding(42) var smp: sampler;
+            @group(1) @binding(17) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
             @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleBaseClampToEdge(image, smp, uv);
             }
@@ -13478,8 +13472,8 @@ mod tests {
 
         let unused_helper_module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
-            @group(0) @binding(42) var smp: sampler;
+            @group(1) @binding(17) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
             fn unused() -> f32 { return 1.0; }
             @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleBaseClampToEdge(image, smp, uv);
@@ -13516,9 +13510,9 @@ mod tests {
 
         let sibling_only_module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
-            @group(0) @binding(8) var sibling: texture_2d<f32>;
-            @group(0) @binding(42) var smp: sampler;
+            @group(1) @binding(17) var image: texture_2d<f32>;
+            @group(1) @binding(18) var sibling: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
             fn sample_selected(uv: vec2f) -> vec4f {
                 return textureSampleBaseClampToEdge(image, smp, uv);
             }
