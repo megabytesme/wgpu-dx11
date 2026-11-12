@@ -1723,6 +1723,8 @@ impl State {
             self.binder
                 .check_fl9_texture_gather_bindings(pipeline.as_ref())?;
             self.binder
+                .check_fl9_texture_sample_level_zero_bindings(pipeline.as_ref())?;
+            self.binder
                 .check_texture_sample_bias_samplers(pipeline.as_ref())?;
             self.binder.check_late_buffer_bindings()?;
 

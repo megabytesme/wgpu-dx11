@@ -1,3 +1,17 @@
+## Fragment explicit LOD zero helper coordinates — 2026-11-12
+
+The restricted `textureSampleLevel(..., 0.0)` subset now permits one
+straight-line fragment helper to compute its `vec2f` coordinate from its sole
+`vec2f` argument using whitelisted literal-based arithmetic, composition,
+splat or swizzle operations. Nested calls, control flow, extra resources,
+additional samples, unsupported coordinate operations, changed LOD, and
+incompatible views or samplers remain rejected. A single-mip bound view,
+matching min/mag filters and anisotropy 1 remain required. Core now applies the
+same live-view check when finishing render bundles. Strict forced-FL9_1 GPU
+readback verified the helper's shifted coordinate on the RTX 3090 Ti; a
+Core fixture rejected multi-mip bundle bindings and accepted one-mip bindings.
+General `textureSampleLevel` remains unavailable.
+
 ## Nonzero-group `textureSampleBaseClampToEdge` — 2026-11-12
 
 The selected-entry fragment proof accepts its single 2D float image and

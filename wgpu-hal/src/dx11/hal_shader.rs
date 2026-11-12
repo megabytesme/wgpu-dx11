@@ -5256,13 +5256,14 @@ mod tests {
     }
 
     #[test]
-    fn fl91_explicit_lod_zero_proof_lowers_one_forwarding_helper() {
+    fn fl91_explicit_lod_zero_proof_lowers_helper_computed_coordinates() {
         let module = naga::front::wgsl::parse_str(
             r#"
             @group(0) @binding(7) var image: texture_2d<f32>;
             @group(0) @binding(42) var smp: sampler;
             fn sample_zero(uv: vec2f) -> vec4f {
-                return textureSampleLevel(image, smp, uv, 0.0);
+                let coordinates = uv + vec2f(0.5, 0.0);
+                return textureSampleLevel(image, smp, coordinates, 0.0);
             }
             @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return sample_zero(uv);
@@ -5394,7 +5395,9 @@ mod tests {
             r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { if uv.x > 0.0 { return textureSampleLevel(image, smp, uv, 0.0); } return vec4f(0.0); }"#,
             r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return select(vec4f(0.0), textureSampleLevel(image, smp, uv, 0.0), uv.x > 0.0); }"#,
             r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; fn helper(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, uv, 0.0); } fn wrapper(uv: vec2f) -> vec4f { return helper(uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return wrapper(uv); }"#,
-            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; fn helper(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, uv + vec2f(0.0), 0.0); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return helper(uv); }"#,
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; fn helper(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, vec2f(sin(uv.x), uv.y), 0.0); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return helper(uv); }"#,
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; fn helper(uv: vec2f) -> vec4f { if uv.x > 0.5 { return textureSampleLevel(image, smp, uv, 0.0); } return textureSampleLevel(image, smp, uv, 0.0); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return helper(uv); }"#,
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @group(0) @binding(2) var<uniform> offset: vec2f; fn helper(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, uv + offset, 0.0); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return helper(uv); }"#,
             r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; fn helper(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, uv, 0.0); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return helper(uv) + helper(uv); }"#,
         ];
         for source in sources {
@@ -5752,17 +5755,33 @@ fn fl9_texture_sample_level_zero_helper(
         }
     }
     let sample = sample?;
+    let naga::Expression::ImageSample { image, sampler, .. } = helper_function.expressions[sample]
+    else {
+        return None;
+    };
+    let (naga::Expression::GlobalVariable(image), naga::Expression::GlobalVariable(sampler)) = (
+        &helper_function.expressions[image],
+        &helper_function.expressions[sampler],
+    ) else {
+        return None;
+    };
     if helper_function
         .expressions
         .iter()
         .any(|(handle, expression)| {
             !matches!(
                 expression,
-                naga::Expression::FunctionArgument(_)
+                naga::Expression::FunctionArgument(0)
                     | naga::Expression::GlobalVariable(_)
                     | naga::Expression::Literal(_)
                     | naga::Expression::ImageSample { .. }
+                    | naga::Expression::Binary { .. }
+                    | naga::Expression::Unary { .. }
+                    | naga::Expression::Compose { .. }
+                    | naga::Expression::Splat { .. }
+                    | naga::Expression::Swizzle { .. }
             ) || (matches!(expression, naga::Expression::ImageSample { .. }) && handle != sample)
+                || matches!(expression, naga::Expression::GlobalVariable(global) if global != image && global != sampler)
         })
         || !matches!(
             helper_function.expressions[sample],
@@ -5775,7 +5794,7 @@ fn fl9_texture_sample_level_zero_helper(
                 gather: None,
                 clamp_to_edge: false,
                 ..
-            } if matches!(helper_function.expressions[coordinate], naga::Expression::FunctionArgument(0))
+            } if !matches!(helper_function.expressions[coordinate], naga::Expression::ImageSample { .. })
         )
     {
         return None;

@@ -3054,9 +3054,11 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
              @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(vec4f(position, 0.0, 1.0), uv); }\n\
              fn sample_exact(uv: vec2f, lod: f32) -> vec4f { return textureSampleLevel(image, smp, uv, lod); }\n\
              fn sample_zero(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, uv, 0.0); }\n\
+             fn sample_transformed(uv: vec2f) -> vec4f { let coordinates = uv + vec2f(0.5, 0.0); return textureSampleLevel(image, smp, coordinates, 0.0); }\n\
              @fragment fn exact_direct(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, 0.0); }\n\
              @fragment fn exact_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_exact(uv, uv.x); }\n\
              @fragment fn exact_helper_zero(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_zero(uv); }\n\
+             @fragment fn exact_helper_transformed(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_transformed(uv); }\n\
              @fragment fn implicit(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSample(image, smp, uv); }"
                 .into(),
         ),
@@ -3108,6 +3110,8 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     };
     let sample_level_pipeline = create_sample_level_pipeline("exact_direct");
     let sample_level_helper_pipeline = create_sample_level_pipeline("exact_helper_zero");
+    let sample_level_transformed_pipeline =
+        create_sample_level_pipeline("exact_helper_transformed");
     expect_validation_error_containing(
         &device,
         "helper explicit texture sample level",
@@ -3373,6 +3377,87 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     sample_level_readback.unmap();
     println!("PASS: one straight-line helper forwarded textureSampleLevel(..., 0.0) and all 64 GPU-read pixels matched the expected pattern");
 
+    let mut transformed_encoder =
+        device.create_command_encoder(&CommandEncoderDescriptor::default());
+    {
+        let mut pass = transformed_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 computed-coordinate helper explicit LOD zero pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &sample_level_target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&sample_level_transformed_pipeline);
+        pass.set_bind_group(2, &level_zero_group, &[]);
+        pass.set_vertex_buffer(0, sample_level_vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    transformed_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &sample_level_target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &sample_level_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let transformed_submission = queue.submit([transformed_encoder.finish()]);
+    let (transformed_sender, transformed_receiver) = std::sync::mpsc::channel();
+    sample_level_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| {
+            transformed_sender.send(result).unwrap()
+        });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(transformed_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for computed-coordinate helper GPU execution");
+    transformed_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("computed-coordinate helper map callback")
+        .expect("map computed-coordinate helper output");
+    {
+        let pixels = sample_level_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped computed-coordinate helper output");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    expected_level_zero[1],
+                    "computed-coordinate explicit level-zero sample pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    sample_level_readback.unmap();
+    println!("PASS: helper-computed textureSampleLevel(..., 0.0) coordinates changed the sampled image; all 64 GPU-read pixels matched the transformed expectation");
+
     let expect_sample_level_draw_rejection =
         |group: &BindGroup, label: &str, expected_error: &str| {
             expect_validation_error_containing(&device, label, expected_error, || {
@@ -3437,7 +3522,6 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         "explicit LOD zero with a multi-mip view",
         "IncompatibleTextureSampleLevelView",
     );
-
     let mismatched_sampler = device.create_sampler(&SamplerDescriptor {
         min_filter: FilterMode::Linear,
         mag_filter: FilterMode::Nearest,

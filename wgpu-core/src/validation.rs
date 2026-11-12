@@ -3850,18 +3850,35 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
             }
         }
         let sample_result = sample_result?;
+        let naga::Expression::ImageSample { image, sampler, .. } =
+            helper_function.expressions[sample_result]
+        else {
+            return None;
+        };
+        let (naga::Expression::GlobalVariable(image), naga::Expression::GlobalVariable(sampler)) = (
+            &helper_function.expressions[image],
+            &helper_function.expressions[sampler],
+        ) else {
+            return None;
+        };
         if helper_function
             .expressions
             .iter()
             .any(|(handle, expression)| {
                 !matches!(
                     expression,
-                    naga::Expression::FunctionArgument(_)
+                    naga::Expression::FunctionArgument(0)
                         | naga::Expression::GlobalVariable(_)
                         | naga::Expression::Literal(_)
                         | naga::Expression::ImageSample { .. }
+                        | naga::Expression::Binary { .. }
+                        | naga::Expression::Unary { .. }
+                        | naga::Expression::Compose { .. }
+                        | naga::Expression::Splat { .. }
+                        | naga::Expression::Swizzle { .. }
                 ) || (matches!(expression, naga::Expression::ImageSample { .. })
                     && handle != sample_result)
+                    || matches!(expression, naga::Expression::GlobalVariable(global) if global != image && global != sampler)
             })
         {
             return None;
@@ -3870,7 +3887,7 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
             module,
             &helper_function.expressions,
             sample_result,
-            Some(0),
+            None,
         )?;
         return Some(alloc::vec![pair]);
     }
@@ -11360,7 +11377,16 @@ mod tests {
                 return exact_helper(uv);
             }
             fn transformed_helper(uv: vec2f) -> vec4f {
-                return textureSampleLevel(image, smp, uv + vec2f(0.0), 0.0);
+                return textureSampleLevel(image, smp, uv + vec2f(0.25, 0.0), 0.0);
+            }
+            fn math_helper(uv: vec2f) -> vec4f {
+                return textureSampleLevel(image, smp, vec2f(sin(uv.x), uv.y), 0.0);
+            }
+            fn branching_helper(uv: vec2f) -> vec4f {
+                if uv.x > 0.5 {
+                    return textureSampleLevel(image, smp, uv, 0.0);
+                }
+                return textureSampleLevel(image, smp, uv, 0.0);
             }
             @fragment fn level_zero(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleLevel(image, smp, uv, 0.0);
@@ -11389,6 +11415,12 @@ mod tests {
             }
             @fragment fn helper_transformed(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return transformed_helper(uv);
+            }
+            @fragment fn helper_math(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return math_helper(uv);
+            }
+            @fragment fn helper_control_flow(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return branching_helper(uv);
             }
             @fragment fn helper_twice(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return exact_helper(uv) + exact_helper(uv);
@@ -11450,7 +11482,8 @@ mod tests {
             "level_zero_with_offset",
             "helper_dynamic",
             "helper_nested",
-            "helper_transformed",
+            "helper_math",
+            "helper_control_flow",
             "helper_twice",
             "control_flow",
         ] {
@@ -11486,6 +11519,27 @@ mod tests {
                 .entry_point_fl9_texture_sample_level_zero_pairs(
                     naga::ShaderStage::Fragment,
                     "helper",
+                )
+                .unwrap(),
+            alloc::vec![SamplingPair {
+                texture_group: 2,
+                texture_binding: 7,
+                sampler_group: 2,
+                sampler_binding: 42,
+            }]
+        );
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_level(
+                naga::ShaderStage::Fragment,
+                "helper_transformed",
+                &restricted,
+            )
+            .unwrap());
+        assert_eq!(
+            interface
+                .entry_point_fl9_texture_sample_level_zero_pairs(
+                    naga::ShaderStage::Fragment,
+                    "helper_transformed",
                 )
                 .unwrap(),
             alloc::vec![SamplingPair {

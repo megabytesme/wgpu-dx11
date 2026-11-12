@@ -324,6 +324,7 @@ fn fl91_core_empty_unmap_and_mapped_write_flush_failure_cleans_up() {
                     texture_sample_level: false,
                     texture_sample_level_zero_2d_float_fragment: false,
                     texture_gather: false,
+                    texture_gather_2d_float_fragment: false,
                     texture_load: false,
                     texture_load_2d_float_fragment: true,
                     texture_load_3d_float_fragment: false,
@@ -8164,4 +8165,277 @@ fn render_triangle(
         global.buffer_drop(buffer);
     }
     global.buffer_drop(readback);
+}
+
+#[test]
+fn fl91_render_bundle_validates_explicit_level_zero_texture_views() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
+    let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        assert!(!required, "strict mode requires a physical D3D11 adapter");
+        std::println!("SKIP: no physical D3D11 adapter");
+        return;
+    };
+    let identity = adapter.identity();
+    let native = Arc::new(
+        adapter
+            .open_device(&[hal::dx11::FeatureLevel::L9_1])
+            .expect("forced FL9_1 device"),
+    );
+    assert_eq!(native.feature_level(), hal::dx11::FeatureLevel::L9_1);
+    std::println!(
+        "Hardware: {identity:?}; requested and actual FL9_1; render-bundle view validation"
+    );
+
+    let global = unsafe {
+        Global::from_hal_instance::<hal::dx11::Api>(
+            "dx11 explicit-level render-bundle validation fixture",
+            hal::dx11::Instance,
+        )
+    };
+    let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
+    let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let (features, capabilities) = fixture
+        .test_fixture_wgpu_capabilities()
+        .expect("selected FL9_1 device capability projection");
+    let limits = capabilities.limits.clone();
+    let open = unsafe { fixture.open_test_fixture() };
+    let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+    info.name = identity.name.clone();
+    info.vendor = identity.vendor_id;
+    info.device = identity.device_id;
+    let adapter_id = unsafe {
+        global.create_adapter_from_hal(
+            hal::ExposedAdapter::<hal::dx11::Api> {
+                adapter: fixture,
+                info,
+                features,
+                capabilities,
+            }
+            .into(),
+            None,
+        )
+    };
+    let descriptor = crate::device::DeviceDescriptor {
+        required_features: features,
+        required_limits: limits,
+        ..Default::default()
+    };
+    let (device, queue) =
+        unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
+            .expect("FL9_1 Core device");
+
+    let binding_entries = [
+        wgt::BindGroupLayoutEntry {
+            binding: 7,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Texture {
+                sample_type: wgt::TextureSampleType::Float { filterable: true },
+                view_dimension: wgt::TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        },
+        wgt::BindGroupLayoutEntry {
+            binding: 23,
+            visibility: wgt::ShaderStages::FRAGMENT,
+            ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+            count: None,
+        },
+    ];
+    let (bind_group_layout, error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Borrowed(&binding_entries),
+        },
+        None,
+    );
+    assert!(error.is_none(), "sampled binding layout: {error:?}");
+
+    let (texture, error) = global.device_create_texture(
+        device,
+        &crate::resource::TextureDescriptor {
+            label: None,
+            size: wgt::Extent3d {
+                width: 4,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 2,
+            sample_count: 1,
+            dimension: wgt::TextureDimension::D2,
+            format: wgt::TextureFormat::Rgba8Unorm,
+            usage: wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::COPY_DST,
+            view_formats: vec![],
+        },
+        None,
+    );
+    assert!(error.is_none(), "multi-mip sampled texture: {error:?}");
+    let (multi_mip_view, error) = global.texture_create_view(
+        texture,
+        &crate::resource::TextureViewDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "multi-mip sampled view: {error:?}");
+    let one_mip_view_descriptor = crate::resource::TextureViewDescriptor {
+        range: wgt::ImageSubresourceRange {
+            mip_level_count: Some(1),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+    let (one_mip_view, error) = global.texture_create_view(texture, &one_mip_view_descriptor, None);
+    assert!(error.is_none(), "one-mip sampled view: {error:?}");
+    let (sampler, error) = global.device_create_sampler(
+        device,
+        &crate::resource::SamplerDescriptor {
+            label: None,
+            address_modes: [wgt::AddressMode::ClampToEdge; 3],
+            mag_filter: wgt::FilterMode::Nearest,
+            min_filter: wgt::FilterMode::Nearest,
+            mipmap_filter: wgt::MipmapFilterMode::Nearest,
+            lod_min_clamp: 0.0,
+            lod_max_clamp: f32::MAX,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        },
+        None,
+    );
+    assert!(error.is_none(), "regular filtering sampler: {error:?}");
+    let create_group = |view| {
+        let entries = [
+            binding_model::BindGroupEntry {
+                binding: 7,
+                resource: binding_model::BindingResource::TextureView(view),
+            },
+            binding_model::BindGroupEntry {
+                binding: 23,
+                resource: binding_model::BindingResource::Sampler(sampler),
+            },
+        ];
+        let (group, error) = global.device_create_bind_group(
+            device,
+            &binding_model::BindGroupDescriptor {
+                label: None,
+                layout: bind_group_layout,
+                entries: Cow::Borrowed(&entries),
+            },
+            None,
+        );
+        assert!(error.is_none(), "sampled resource group: {error:?}");
+        group
+    };
+    let multi_mip_group = create_group(multi_mip_view);
+    let one_mip_group = create_group(one_mip_view);
+
+    let bind_group_layouts = [Some(bind_group_layout)];
+    let (pipeline_layout, error) = global.device_create_pipeline_layout(
+        device,
+        &binding_model::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: Cow::Borrowed(&bind_group_layouts),
+            immediate_size: 0,
+        },
+        None,
+    );
+    assert!(
+        error.is_none(),
+        "explicit-sample pipeline layout: {error:?}"
+    );
+    let (shader, error) = global.device_create_shader_module(
+        device,
+        &crate::pipeline::ShaderModuleDescriptor {
+            label: None,
+            runtime_checks: wgt::ShaderRuntimeChecks::checked(),
+        },
+        crate::pipeline::ShaderModuleSource::Wgsl(Cow::Borrowed(
+            r#"@group(0) @binding(7) var image: texture_2d<f32>;
+               @group(0) @binding(23) var smp: sampler;
+               @vertex fn vs() -> @builtin(position) vec4f { return vec4f(0.0, 0.0, 0.0, 1.0); }
+               @fragment fn fs() -> @location(0) vec4f { return textureSampleLevel(image, smp, vec2f(0.5), 0.0); }"#,
+        )),
+        None,
+    );
+    assert!(error.is_none(), "explicit-sample shader: {error:?}");
+    let stage = |entry: &'static str| crate::pipeline::ProgrammableStageDescriptor {
+        module: shader,
+        entry_point: Some(Cow::Borrowed(entry)),
+        constants: Default::default(),
+        zero_initialize_workgroup_memory: false,
+    };
+    let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
+    let (pipeline, error) = global.device_create_render_pipeline(
+        device,
+        &crate::pipeline::RenderPipelineDescriptor {
+            label: None,
+            layout: Some(pipeline_layout),
+            vertex: crate::pipeline::VertexState {
+                stage: stage("vs"),
+                buffers: Cow::Borrowed(&[]),
+            },
+            primitive: wgt::PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: wgt::MultisampleState::default(),
+            fragment: Some(crate::pipeline::FragmentState {
+                stage: stage("fs"),
+                targets: Cow::Borrowed(&targets),
+            }),
+            multiview_mask: None,
+            cache: None,
+        },
+        None,
+    );
+    assert!(error.is_none(), "explicit-sample pipeline: {error:?}");
+
+    let color_formats = [Some(wgt::TextureFormat::Rgba8Unorm)];
+    let bundle_encoder_descriptor = crate::command::RenderBundleEncoderDescriptor {
+        label: None,
+        color_formats: Cow::Borrowed(&color_formats),
+        depth_stencil: None,
+        sample_count: 1,
+        multiview: None,
+    };
+    let bundle_descriptor = crate::command::RenderBundleDescriptor { label: None };
+    let finish_bundle = |group| {
+        let (mut bundle_encoder, error) =
+            global.device_create_render_bundle_encoder(device, &bundle_encoder_descriptor);
+        assert!(error.is_none(), "render-bundle encoder: {error:?}");
+        global
+            .render_bundle_encoder_set_pipeline(&mut bundle_encoder, pipeline)
+            .expect("set explicit-sample bundle pipeline");
+        global
+            .render_bundle_encoder_set_bind_group(&mut bundle_encoder, 0, Some(group), &[])
+            .expect("set explicit-sample bundle group");
+        global
+            .render_bundle_encoder_draw(&mut bundle_encoder, 3, 1, 0, 0)
+            .expect("record explicit-sample bundle draw");
+        global.render_bundle_encoder_finish(&mut bundle_encoder, &bundle_descriptor, None)
+    };
+    let (invalid_bundle, error) = finish_bundle(multi_mip_group);
+    global.render_bundle_drop(invalid_bundle);
+    let error = error.expect("Core must reject the multi-mip view while finishing a bundle");
+    assert!(
+        std::format!("{error:?}").contains("IncompatibleTextureSampleLevelView"),
+        "unexpected render-bundle validation error: {error:?}"
+    );
+    let (valid_bundle, error) = finish_bundle(one_mip_group);
+    assert!(error.is_none(), "valid one-mip render bundle: {error:?}");
+    global.render_bundle_drop(valid_bundle);
+    std::println!("PASS: Core render-bundle finish rejected the bound multi-mip view and accepted the one-mip view");
+
+    global.render_pipeline_drop(pipeline);
+    global.shader_module_drop(shader);
+    global.pipeline_layout_drop(pipeline_layout);
+    global.bind_group_drop(multi_mip_group);
+    global.bind_group_drop(one_mip_group);
+    global.bind_group_layout_drop(bind_group_layout);
+    global.sampler_drop(sampler);
+    global.texture_view_drop(multi_mip_view);
+    global.texture_view_drop(one_mip_view);
+    global.texture_drop(texture);
+    global.queue_drop(queue);
+    global.device_drop(device);
+    global.adapter_drop(adapter_id);
 }

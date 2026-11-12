@@ -2,6 +2,20 @@
 
 ## Latest verified increment — 2026-11-12
 
+The narrow fragment `textureSampleLevel(..., 0.0)` subset now supports one
+straight-line helper that computes its `vec2f` sample coordinate from the
+helper's single `vec2f` input using literal-based arithmetic, composition,
+splat or swizzle. The exact-zero LOD, direct D2 float texture and regular
+sampler, single helper call/sample, single-mip bound view, equal min/mag and
+anisotropy-one restrictions remain. Core and HAL validate the same bounded
+expression shape. The Core bundle path now checks the live view too; a
+hardware-backed fixture rejects multi-mip and accepts one-mip bindings.
+Strict RTX 3090 Ti FL9_1 public readback verified the transformed output for
+all 64 pixels. General `textureSampleLevel` remains unavailable. Full
+regression results are in `FL9_1_PROGRESS.md`.
+
+## Latest verified increment — 2026-11-12
+
 The backend now exposes only the restricted fragment `textureGather` subset:
 one direct operation on a single-mip `Rgba8Unorm` 2D view using a regular
 clamp-to-edge sampler. Naga emulates gather using four point samples, and Core

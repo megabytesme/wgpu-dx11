@@ -1,5 +1,20 @@
 # FL9_1 completion plan
 
+## Current coordinator increment — explicit-LOD helper coordinates — 2026-11-12
+
+The existing selected-fragment literal-LOD-zero proof now permits one
+straight-line helper to compute the sampled `vec2f` coordinate from its single
+`vec2f` input using only literal-based binary/unary arithmetic, composition,
+splat and swizzle. Core and HAL enforce matching whitelists; resource handles,
+uniform loads, math builtins, control flow, nested/repeated calls and extra
+samples remain rejected. The existing single-mip view, equal min/mag and
+anisotropy-one requirements keep lowering to implicit sampling semantics
+bounded. Strict public FL9_1 readback on the RTX 3090 Ti verified the shifted
+coordinate across all 64 pixels. Core render-bundle finish now validates the
+bound view as render-pass draw validation already did; a hardware-backed Core
+fixture rejected a two-mip view and accepted a one-mip view. Full regression
+commands and results are recorded in `FL9_1_PROGRESS.md`.
+
 ## Current coordinator increment — restricted fragment `textureGather` emulation — 2026-11-12
 
 The general gather capability remains disabled. The selected FL9_1 public

@@ -1,3 +1,72 @@
+## Explicit-LOD-zero helper coordinate arithmetic — 2026-11-12
+
+The selected-fragment `textureSampleLevel(..., 0.0)` proof now permits one
+unconditional straight-line helper whose single `vec2f` coordinate is derived
+from the forwarded `vec2f` input using literal-based binary/unary arithmetic,
+composition, splat or swizzle. Core and HAL use matching allowlists and retain
+the existing single helper call, one sample, exact positive-zero LOD, D2 float
+image, regular sampler, single-mip bound view, equal min/mag and anisotropy-one
+requirements. Math builtins, uniform/resource-derived coordinates, nested or
+repeated calls, control flow, extra samples, other texture shapes and other
+LOD values remain rejected. No Naga writer changes were needed.
+
+Core render-pass draws already validated the live bound view and sampler, but
+render-bundle finish did not run the explicit-LOD-zero view check. The bundle
+path now applies the same validation; a hardware-backed Core fixture confirms
+that a two-mip view is rejected and a one-mip view is accepted. A strict public
+test on the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, `software=false`) requested and observed FL9_1. With a patterned
+2x2 texture and coordinate offset `(0.5, 0.0)`, all 64 readback pixels changed
+to the expected right-hand texel `[10, 220, 40, 255]`; the original direct and
+forwarding-helper results still matched their expected two-color image.
+
+Targeted verification passed: HAL proof plus FXC compilation 1/1, Core proof
+1/1, strict Core bundle-view validation 1/1, and strict public FL9_1 API test
+1/1. The first public attempt exposed the test's use of the public fatal
+`RenderBundleEncoder::finish` wrapper for an expected validation error; the
+regression was moved to Core's typed finish result, where the invalid request
+is verified without a panic. One earlier filter used `--exact` with an
+unqualified HAL test name and ran zero tests; the subsequent correctly
+qualified-filter command ran and passed the test.
+
+Full regressions passed with Rust 1.93.1 and the installed Visual Studio 2026
+x64 developer environment:
+
+- Strict private D3D11 HAL suite: 514/514.
+- Strict Core DX11 fixture suite: 144/144, including hardware render-bundle
+  rejection of the two-mip view and acceptance of the one-mip view.
+- Core DX12 regression suite: 132/132.
+- Strict public D3D11 suite: 149/149, zero ignored Rust tests and zero skips.
+- `cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed.
+- Clippy passed for `wgpu-hal` (`dx11`, tests), `wgpu-core`
+  (`dx11-test-fixture`, tests), and the public `wgpu` `dx11_public` target.
+
+The strict public render used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, `software=false`) at requested and
+actual FL9_1. The computed-coordinate helper matched all 64 readback pixels
+against `[10, 220, 40, 255]`; the direct and forwarding-helper baseline
+images also remained correct. The strict Core fixture used the same forced
+feature level. Clippy reports existing warnings in `hal_queue.rs`,
+`hal_device.rs`, `hal_index.rs`, `hal_transfer.rs`, `texture.rs`,
+`swapchain.rs`, `hal_shader.rs`, and older Core fixture code; no warning
+points to the changed proof, bundle check, or new public test. The Visual
+Studio startup wrapper continues to print its existing `vError: Unknown
+error` banner while Cargo succeeds. Git reports expected LF-to-CRLF working
+copy notices for touched files.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' fmt --all -- --check
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --tests
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --tests
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+git diff --check
+```
+
 ## Nonzero-group fragment 2D `textureLoad` coverage — 2026-11-12
 
 The Core selected-entry proof and HAL/Naga lowering already retained the full

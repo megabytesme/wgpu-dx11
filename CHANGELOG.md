@@ -50,6 +50,7 @@ Bottom level categories:
 
 #### Hal
 
+- Extend the opt-in FL9_1 D3D11 literal-zero texture-sampling subset to support bounded helper coordinate arithmetic and validate render-bundle view compatibility.
 - Represent each BC1/2/3 UNORM and sRGB cube-texture format independently in downlevel limits.
 - Fail pipeline creation when the required FL9_1 viewport-remapped shader exceeds compiler limits.
 - Support query-validated targetless depth-only multisample prepasses in the opt-in FL9_1 D3D11 backend.
