@@ -31,6 +31,15 @@ buffer-copy transitions (1/1), color-write-mask cases (16/16), buffer-to-
 texture upload (1/1) and RGBA8 texture-to-texture copy (1/1). Details are
 recorded in `FL9_1_CTS.md` and `FL9_1_PROGRESS.md`.
 
+## Multiple render-target boundary — 2026-11-12
+
+The one-color-target projection is not an unfinished FL9_1 backend feature.
+Microsoft's 10Level9 resource-limits table defines
+`D3D_FL9_1_SIMULTANEOUS_RENDER_TARGET_COUNT` as 1; four targets begin at
+FL9_3. The multi-attachment render-pass CTS cases therefore exercise a native
+FL9_1 hardware boundary. Preserve the one-target limit and reject additional
+fragment outputs in Core. Source: [Microsoft Direct3D 11 resource limits](https://learn.microsoft.com/en-us/windows/desktop/direct3d11/overviews-direct3d-11-resources-limits).
+
 ## Current coordinator increment — sRGB fragment `textureGather` — 2026-11-12
 
 The existing narrow direct fragment gather path now accepts a query-supported

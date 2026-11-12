@@ -18200,6 +18200,17 @@ Checkpoint commit: `56197ccfeb0efccd24ccb7806b8f8d1ffdcc4965`
 only the reviewed 24-file FL9_1 shader/query, validation, testing and
 capability-documentation expansion described above.
 
+## FL9_1 render-target count source check — 2026-11-12
+
+The raw render-pass CTS boundary included tests requesting multiple color
+attachments. Checked Microsoft's 10Level9 resource limits and method-specific
+reference: `D3D_FL9_1_SIMULTANEOUS_RENDER_TARGET_COUNT` is 1, while FL9_3
+guarantees four. This confirms the adapter's one-color-target limit is a
+hardware contract, not a missing FL9_1 backend implementation. The capability
+matrix and plan now state this explicitly; no expansion is appropriate.
+Source: [Microsoft Direct3D 11 resource limits](https://learn.microsoft.com/en-us/windows/desktop/direct3d11/overviews-direct3d-11-resources-limits)
+and [10Level9 output-merger behavior](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context).
+
 ## D2 `textureNumLevels` with a split-group sampler — 2026-11-12
 
 The selected fragment 2D `textureNumLevels` proof now permits its one

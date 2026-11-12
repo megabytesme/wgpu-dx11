@@ -639,6 +639,12 @@ RTX test compared the full triangle wireframe readback with explicit edge-line
 primitives; both images matched, with 17 green pixels. Polygon point mode and
 historical-driver behavior remain unsupported or unverified.
 
+FL9_1's single simultaneous color render target is a hardware limit, not a
+backend omission: Microsoft defines `D3D_FL9_1_SIMULTANEOUS_RENDER_TARGET_COUNT`
+as 1 in its [Direct3D 11 resource limits](https://learn.microsoft.com/en-us/windows/desktop/direct3d11/overviews-direct3d-11-resources-limits).
+The four-target minimum begins at FL9_3. The backend advertises one target and
+Core rejects additional color outputs before HAL.
+
 | Category | Hardware and private implementation | Coverage; wgpu mapping and remaining work |
 | --- | --- | --- |
 | Device / adapter | Native DXGI discovery excludes software adapters and creates only an explicitly requested FL9_1 device. The public opt-in adapter exposes the selected-device projection and constrained HWND surface. A CoreWindow path implements and API-validates BGRA8 sRGB FIFO, opaque composition, render-attachment usage, one frame of latency and owner-thread lifecycle, but has not been exercised on Lumia/UWP hardware. | Strict public wgpu tests select the RTX 3090 Ti, render/read back with uniforms in group 0, a sampler in group 4 and textures in group 7, replace only the group-7 texture between draws, verify overlapping near/far draws in both orders, concurrently submit through two public devices sharing the selected native device/context, and verify core rejection of unsupported resource/layout requests. A hidden-window lifecycle test configures, presents, resizes and presents again; a visible-window example presents 60 animated textured, indexed, depth-tested frames. The adapter exposes `TEXTURE_FORMAT_16BIT_NORM`, `TEXTURE_FORMAT_16BIT_PACKED` and comparison-sampler `ADDRESS_MODE_CLAMP_TO_BORDER` only when their implemented paths and selected-device queries permit them. It is not WebGPU-compliant. The exhaustive contract audit remains outstanding; visible client-area output has been qualitatively captured and inspected. |
