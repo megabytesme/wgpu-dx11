@@ -576,6 +576,7 @@ impl crate::DynPipelineLayout for PipelineLayout {}
 #[derive(Clone, Debug)]
 pub(super) struct TexelLoadPipeline {
     pub binding: naga::ResourceBinding,
+    pub gather_sampler_binding: Option<naga::ResourceBinding>,
     pub kind: super::hal_shader::Fl9TextureEmulationKind,
     pub dimension: naga::ImageDimension,
     pub mip_level: u32,
@@ -588,6 +589,7 @@ impl TexelLoadPipeline {
     fn new(
         owner: &NativeDevice,
         binding: naga::ResourceBinding,
+        gather_sampler_binding: Option<naga::ResourceBinding>,
         kind: super::hal_shader::Fl9TextureEmulationKind,
         dimension: naga::ImageDimension,
         mip_level: u32,
@@ -642,6 +644,7 @@ impl TexelLoadPipeline {
         .map_err(fail)?;
         Ok(Self {
             binding,
+            gather_sampler_binding,
             kind,
             dimension,
             mip_level,
@@ -3140,6 +3143,20 @@ impl RenderPipeline {
         if texel_load_binding.as_ref().is_some_and(|proof| {
             matches!(
                 proof.kind,
+                super::hal_shader::Fl9TextureEmulationKind::Gather
+            )
+        }) && !super::capabilities::Capabilities::query(owner)
+            .backend
+            .texture_gather_2d_float_fragment
+        {
+            return Err(crate::PipelineError::Linkage(
+                wgt::ShaderStages::FRAGMENT,
+                "D3D11 FL9_1 fragment textureGather emulation is unavailable".into(),
+            ));
+        }
+        if texel_load_binding.as_ref().is_some_and(|proof| {
+            matches!(
+                proof.kind,
                 super::hal_shader::Fl9TextureEmulationKind::Load3D
             )
         }) && !super::capabilities::Capabilities::query(owner)
@@ -3194,6 +3211,7 @@ impl RenderPipeline {
                 TexelLoadPipeline::new(
                     owner,
                     proof.binding,
+                    proof.gather_sampler_binding,
                     proof.kind,
                     proof.dimension,
                     proof.mip_level,

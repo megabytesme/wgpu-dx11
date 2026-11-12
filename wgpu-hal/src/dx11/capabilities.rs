@@ -405,6 +405,7 @@ pub(super) struct BackendCapabilities {
     pub texture_query: bool,
     pub texture_sample_level: bool,
     pub texture_gather: bool,
+    pub texture_gather_2d_float_fragment: bool,
     pub runtime_integer_shader_operations: bool,
     pub matrix_inverse: bool,
     pub matrix_inverse_2x2: bool,
@@ -572,6 +573,7 @@ impl BackendCapabilities {
         texture_query: false,
         texture_sample_level: false,
         texture_gather: false,
+        texture_gather_2d_float_fragment: true,
         runtime_integer_shader_operations: false,
         matrix_inverse: false,
         matrix_inverse_2x2: true,
@@ -1006,6 +1008,7 @@ impl Capabilities {
                 texture_sample_level_zero_2d_float_fragment: self
                     .private_fl91_fragment_texture_sample_level_zero_2d_single_mip(),
                 texture_gather: self.hardware.texture_gather && self.backend.texture_gather,
+                texture_gather_2d_float_fragment: self.backend.texture_gather_2d_float_fragment,
                 runtime_integer_shader_operations: self.backend.runtime_integer_shader_operations,
                 frexp_fraction_only_fragment: self.private_fl91_fragment_frexp_fraction_only(),
                 matrix_inverse: self.backend.matrix_inverse,
@@ -3250,7 +3253,28 @@ mod tests {
         for level in FeatureLevel::ALL_DESCENDING {
             let projection = model(level).wgpu_projection();
             assert_eq!(projection.is_some(), level == FeatureLevel::L9_1);
+            if let Some(projection) = projection {
+                assert!(!projection.capabilities.downlevel.limits.texture_gather);
+                assert!(
+                    projection
+                        .capabilities
+                        .downlevel
+                        .limits
+                        .texture_gather_2d_float_fragment
+                );
+            }
         }
+
+        let mut disabled = model(FeatureLevel::L9_1);
+        disabled.backend.texture_gather_2d_float_fragment = false;
+        let limits = disabled
+            .wgpu_projection()
+            .unwrap()
+            .capabilities
+            .downlevel
+            .limits;
+        assert!(!limits.texture_gather);
+        assert!(!limits.texture_gather_2d_float_fragment);
     }
 
     #[test]

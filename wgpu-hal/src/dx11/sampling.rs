@@ -28,6 +28,7 @@ pub(super) type SamplerLod = crate::SamplerMipCompatibility;
 pub(super) struct SamplingResources {
     pub textures: Vec<TextureInfo>,
     pub samplers_wrap: Vec<bool>,
+    pub samplers_clamp_to_edge_u_v: Vec<bool>,
     pub samplers_lod: Vec<SamplerLod>,
     pub samplers_bias_compatible: Vec<bool>,
 }
@@ -36,6 +37,8 @@ impl SamplingResources {
     pub(super) fn append(&mut self, other: &Self) {
         self.textures.extend_from_slice(&other.textures);
         self.samplers_wrap.extend_from_slice(&other.samplers_wrap);
+        self.samplers_clamp_to_edge_u_v
+            .extend_from_slice(&other.samplers_clamp_to_edge_u_v);
         self.samplers_lod.extend_from_slice(&other.samplers_lod);
         self.samplers_bias_compatible
             .extend_from_slice(&other.samplers_bias_compatible);
@@ -119,9 +122,10 @@ pub(super) fn compatible(
     full_npot: Query<bool>,
 ) -> bool {
     pairs.iter().all(|pair| {
-        let (Some(texture), Some(&wraps), Some(&lod), Some(&bias_compatible)) = (
+        let (Some(texture), Some(&wraps), Some(_), Some(&lod), Some(&bias_compatible)) = (
             resources.textures.get(pair.texture_slot),
             resources.samplers_wrap.get(pair.sampler_slot),
+            resources.samplers_clamp_to_edge_u_v.get(pair.sampler_slot),
             resources.samplers_lod.get(pair.sampler_slot),
             resources.samplers_bias_compatible.get(pair.sampler_slot),
         ) else {
@@ -246,6 +250,7 @@ mod tests {
                 mip_levels: 1,
             }],
             samplers_wrap: alloc::vec![true],
+            samplers_clamp_to_edge_u_v: alloc::vec![false],
             samplers_lod: alloc::vec![SamplerLod::Unrestricted],
             samplers_bias_compatible: alloc::vec![true],
         };
@@ -277,6 +282,7 @@ mod tests {
                 }
             ],
             samplers_wrap: alloc::vec![true, false],
+            samplers_clamp_to_edge_u_v: alloc::vec![false, true],
             samplers_lod: alloc::vec![SamplerLod::Unrestricted; 2],
             samplers_bias_compatible: alloc::vec![true; 2],
         }
@@ -452,6 +458,7 @@ mod tests {
                     mip_levels: 1
                 }],
                 samplers_wrap: alloc::vec![],
+                samplers_clamp_to_edge_u_v: alloc::vec![],
                 samplers_lod: alloc::vec![],
                 samplers_bias_compatible: alloc::vec![],
             },
@@ -461,18 +468,21 @@ mod tests {
                     mip_levels: 1
                 }],
                 samplers_wrap: alloc::vec![],
+                samplers_clamp_to_edge_u_v: alloc::vec![],
                 samplers_lod: alloc::vec![],
                 samplers_bias_compatible: alloc::vec![],
             },
             SamplingResources {
                 textures: alloc::vec![],
                 samplers_wrap: alloc::vec![true],
+                samplers_clamp_to_edge_u_v: alloc::vec![false],
                 samplers_lod: alloc::vec![SamplerLod::Unrestricted],
                 samplers_bias_compatible: alloc::vec![true],
             },
             SamplingResources {
                 textures: alloc::vec![],
                 samplers_wrap: alloc::vec![false],
+                samplers_clamp_to_edge_u_v: alloc::vec![true],
                 samplers_lod: alloc::vec![SamplerLod::Unrestricted],
                 samplers_bias_compatible: alloc::vec![true],
             },

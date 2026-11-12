@@ -1,17 +1,23 @@
 //! Restricted D3D11 HAL queue for the FL9_1 adapter projection.
 use super::{device::NativeDevice, Api};
 use alloc::sync::Arc;
+use alloc::vec::Vec;
+use parking_lot::Mutex;
 
 /// A serialized immediate-context queue for the restricted command path.
 #[derive(Debug)]
 pub struct Queue {
     device: Arc<NativeDevice>,
+    pending_presents: Mutex<Vec<super::swapchain::CoreWindowSwapchain>>,
 }
 
 impl Queue {
     #[allow(dead_code)]
     pub(super) fn new(device: Arc<NativeDevice>) -> Self {
-        Self { device }
+        Self {
+            device,
+            pending_presents: Mutex::new(Vec::new()),
+        }
     }
 
     #[allow(dead_code)]
@@ -24,6 +30,12 @@ impl Queue {
     pub fn test_fixture_remove_device_on_next_wait_for_idle(&self) {
         self.device
             .test_fixture_remove_device_on_next_wait_for_idle();
+    }
+
+    fn prune_completed_presents(&self) {
+        self.pending_presents
+            .lock()
+            .retain(super::swapchain::CoreWindowSwapchain::has_pending_present);
     }
 }
 
@@ -38,6 +50,7 @@ impl crate::Queue for Queue {
         surface_textures: &[&<Self::A as crate::Api>::SurfaceTexture],
         signal_fence: (&<Self::A as crate::Api>::Fence, crate::FenceValue),
     ) -> Result<(), crate::DeviceError> {
+        self.prune_completed_presents();
         if surface_textures
             .iter()
             .any(|texture| !texture.belongs_to(&self.device))
@@ -54,13 +67,30 @@ impl crate::Queue for Queue {
         surface: &<Self::A as crate::Api>::Surface,
         texture: <Self::A as crate::Api>::SurfaceTexture,
     ) -> Result<(), crate::SurfaceError> {
-        surface.present(&self.device, texture)
+        let mut pending = self.pending_presents.lock();
+        pending.retain(super::swapchain::CoreWindowSwapchain::has_pending_present);
+        let swapchain = surface.present(&self.device, texture)?;
+        if !pending
+            .iter()
+            .any(|existing| existing.same_swapchain(&swapchain))
+        {
+            pending.push(swapchain);
+        }
+        Ok(())
     }
 
     unsafe fn wait_for_idle(&self) -> Result<(), crate::DeviceError> {
+        let mut pending = self.pending_presents.lock();
         self.device
             .wait_for_copy_idle()
-            .map_err(super::hal_device::device_error)
+            .map_err(super::hal_device::device_error)?;
+        while !pending.is_empty() {
+            pending[0]
+                .wait_for_pending_present()
+                .map_err(super::hal_device::device_error)?;
+            pending.remove(0);
+        }
+        Ok(())
     }
 
     unsafe fn get_timestamp_period(&self) -> f32 {

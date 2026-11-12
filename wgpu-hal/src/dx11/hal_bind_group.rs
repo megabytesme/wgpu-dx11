@@ -591,6 +591,7 @@ impl BindGroup {
         }
         let mut native_samplers = alloc::vec::Vec::new();
         let mut samplers_wrap = alloc::vec::Vec::new();
+        let mut samplers_clamp_to_edge_u_v = alloc::vec::Vec::new();
         let mut samplers_lod = alloc::vec::Vec::new();
         let mut samplers_bias_compatible = alloc::vec::Vec::new();
         for (slot, index) in sampler_indices.into_iter().enumerate() {
@@ -606,6 +607,7 @@ impl BindGroup {
             }
             native_samplers.push(raw);
             samplers_wrap.push(sampler.wraps());
+            samplers_clamp_to_edge_u_v.push(sampler.clamps_to_edge_u_v());
             samplers_lod.push(sampler.lod());
             samplers_bias_compatible.push(sampler.bias_compatible());
         }
@@ -615,6 +617,7 @@ impl BindGroup {
                 .map(|(size, mip_levels)| super::sampling::TextureInfo { size, mip_levels })
                 .collect(),
             samplers_wrap,
+            samplers_clamp_to_edge_u_v,
             samplers_lod,
             samplers_bias_compatible,
         };

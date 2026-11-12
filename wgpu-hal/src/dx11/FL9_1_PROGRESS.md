@@ -1,3 +1,43 @@
+## Nonzero-group fragment 2D `textureLoad` coverage — 2026-11-12
+
+The Core selected-entry proof and HAL/Naga lowering already retained the full
+logical texture group and binding; this slice adds coverage without changing
+the accepted shader subset. The Core production-path test verifies direct and
+one-helper loads at group 7/binding 42, returns that exact `TextureLoadBinding`
+metadata, and confirms an unsupported sibling entry does not leak into the
+selected entry's proof. The strict public test uses an explicit pipeline
+layout with empty group 0 and a sparse texture at group 1/binding 42. The RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, physical adapter,
+`software=false`) ran at requested and actual FL9_1. Direct, nested-helper,
+out-of-bounds and nonzero-mip behavior matched across 256 pixels; query-gated
+sRGB load decoded the input correctly across 64 additional pixels.
+
+The nonzero-group case intentionally does not select the dynamic-coordinate
+helper entry: Core's separate dynamic-coordinate exemption remains group-0-only.
+The first strict attempt selected that entry too and Core rejected its pipeline
+with `UnsupportedRuntimeIntegerShaderOperations`; the existing group-0 test
+continues to cover it. No texture-load shape, format, query or capability gate
+was broadened. Public D3D11 adapter enumeration remains otherwise unchanged.
+
+The focused Core DX11 and DX12 tests each passed 1/1. The strict public
+nonzero-group test passed 1/1 with no hardware skip. `cargo +1.93.1 fmt --all
+-- --check` and `git diff --check` passed. The first Core test compile exposed
+an out-of-date `DownlevelLimits` literal in the DX11 Core fixture after the
+preceding `matrix_inverse_4x4_vertex` limit addition; the fixture now explicitly
+sets that capability false. The initial public link attempt outside a Visual
+Studio developer environment failed because `link.exe` was not on `PATH`; all
+successful commands were run with the installed Visual Studio 2026 x64
+developer environment. Its `VsDevCmd.bat` printed an existing
+`vError: Unknown error` banner, but Cargo completed successfully.
+
+```powershell
+cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific -- --nocapture'
+cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific -- --nocapture'
+cmd.exe /d /s /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_load_nonzero_group_at_fl91 -- --exact --nocapture --test-threads=1'
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
 ## Nonzero-group fragment `textureSampleBaseClampToEdge` — 2026-11-12
 
 Core now accepts the selected fragment proof's image and sampler in any
@@ -17780,6 +17820,272 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 & 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib
 & 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib
 & 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
+## Dynamic-coordinate `textureLoad` across groups and HWND frame-latency completion — 2026-11-12
+
+Core's selected-entry proof already established a single 2D float image, fragment-stage use, level zero, a direct float-to-i32 coordinate cast, and no other runtime integer semantics. Two additional checks unnecessarily required that image's bind group to be zero. Removing those checks did not broaden the shader proof; group and binding still come from the selected image's Naga resource identity and flow through the existing HAL binding map. The Core test now covers a helper at group 7/binding 42, verifies the selected-resource metadata, and confirms the same shader is rejected when the FL9_1 texture-load limit is absent.
+
+The strict public group-1/binding-42 test now executes the dynamic-coordinate helper in addition to direct and nested-helper loads. On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, physical, `software=false`) requested and actual FL9_1 matched all four patterned source quadrants. With query-backed sRGB support the test checked 384 output pixels covering direct, nested, dynamic, out-of-bounds, nonzero-mip and sRGB behavior. The focused Core proof passed 1/1; the strict GPU case passed 1/1 without skips.
+
+The HWND presentation gap was also closed. The surface creates a DXGI frame-latency-waitable swap chain, sets maximum frame latency to one, waits on the owned handle before acquisition, tracks pending presents, and drains them from queue idle and unconfigure. Strict hidden-HWND tests cover presentation, resize/reconfigure, repeated acquisition and destruction with a pending present. CoreWindow and Lumia runtime behavior remain unverified.
+
+Pinned Rust 1.93.1/MSVC regression results after these changes:
+
+- Strict private D3D11 HAL suite: 511/511 passed, zero failures/skips.
+- Strict public D3D11 suite (including ordinary-enumeration isolation): 145/145 passed, zero failures/skips.
+- Core DX11 suite: 132/132 passed.
+- Core DX12 regression suite: 131/131 passed.
+- Focused fixture-only Core selected-entry proof: 1/1 passed.
+- Core DX11 Clippy and public `dx11_public` Clippy passed; the HAL dependency emitted six existing warnings in index, transfer and texture code.
+- `cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed. Git printed line-ending conversion notices for the modified Windows worktree files; there were no whitespace errors.
+
+Commands:
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_load_nonzero_group_at_fl91 -- --exact --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 --quiet -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 --quiet -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 --quiet -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 --quiet -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+& 'E:\Temp\wgpu_mission_cargo.bat' fmt --all -- --check
+git diff --check
+```
+
+## Lumia Device Portal availability check — 2026-11-12
+
+The Lumia at `192.168.1.157` responds to a LAN ping, but the read-only
+`Invoke-LumiaPortal -Path '/api/os/devicefamily'` request returned HTTP 503
+from the helper's initial API request. No device settings were changed. The
+phone's current OS/device-family status and any ARM32/CoreWindow execution
+remain unverified; retry the portal query when its service is available.
+
+## D2 dimensions query with a split-group sampler — 2026-11-12
+
+The D2 `textureDimensions` proof now permits its one compatible implicit
+sample to use a sampler in a different bind group from the queried texture.
+Core, Naga and HAL retain the existing selected-entry, same-image, single
+sample and supported helper-shape checks. The relaxation is D2-only; D3 and
+cube sampler placement remains group-0-only. Public direct and helper cases
+now use the image in group 1 and sampler in group 2 and transition between
+image views before readback.
+
+The NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,physical adapter, `software=false`) ran with requested and actual FL9_1. Both
+new split-group render cases matched all 64 pixels. The focused D2 dimensions
+public filter passed 15/15. Naga passed 165/165; Core DX11 132/132; Core DX12
+131/131; private D3D11 HAL 511/511; full strict public D3D11 143/143. The
+public suite reported three optional feature subcase skips for R8G8 UNORM
+vertex input, R16G16 FLOAT vertex input and Rg8Unorm mip support; no required
+hardware case skipped. Rust 1.93.1 and the Visual Studio x64 wrapper were used.
+The wrapper emitted its existing `vError: Unknown error` startup banner.
+
+Commands:
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+## D2 `textureNumLevels` with a split-group sampler — 2026-11-12
+
+The selected fragment 2D `textureNumLevels` proof now permits its one
+same-image implicit sample to use a sampler from a different supported bind
+group. Core preserves the query shape, selected-entry and same-image checks;
+Naga emits the selected texture and sampler through their shared logical
+binding map; HAL accepts nonzero sampler groups only for this D2 path. D3 and
+cube query/sample combinations still require the sampler in group 0. Separate
+group support does not enable general texture queries or relax the one-query,
+one-sample, implicit-LOD, view-mip or resource-count restrictions.
+
+Naga's direct-query mapping tests passed 3/3 and the new helper mapping test
+passed 1/1. Core's full `fl9_texture_num_levels` filter passed 7/7, including
+direct and helper positive cases for group 2 texture/group 3 sampler and
+negative 3D/cube cases. HAL's proof filter passed 6/6, its FL9_1 HLSL/FXC
+helper-plus-sample test passed 1/1, and its production proof rejects separate
+group samplers for 3D/cube images.
+
+Strict public GPU readback passed on the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), with a physical adapter,
+`software=false`, requested FL9_1 and actual FL9_1. The test executed six
+direct/helper and sample/no-sample configurations. The new direct and helper
+cases used the queried texture at group 2/binding 42 and sampler at
+group 3/binding 7; both transitioned between one-level and three-level views
+and all 64 pixels matched the expected query and sampled colors. No hardware
+case skipped. The MSVC wrapper emitted its existing `vError: Unknown error`
+startup banner. The HAL build reported four existing unnecessary
+qualification warnings in `hal_queue.rs`; no warning was introduced by this
+slice. Full crate regression suites and Clippy were not run as part of this
+focused handoff.
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_texture_num_levels -- --nocapture
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_2d_texture_num_levels_helper_can_sample_from_a_separate_group -- --nocapture
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib fl9_texture_num_levels -- --nocapture
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels -- --nocapture
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl91_texture_num_levels_helper_with_implicit_sample_compiles_with_fxc -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_num_levels_selected_helper_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
+## Full regression and public example follow-up — 2026-11-12
+
+After the focused `textureNumLevels` split-group handoff, the integrated tree
+passed the full Naga library suite (166/166), Core DX11 (133/133), Core DX12
+(132/132), strict private HAL (511/511) and strict public D3D11 test target
+(147/147; zero Rust test skips). The public strict run includes default
+backend-isolation coverage and the new split-group query cases. The six
+optional capability subcases recorded by the previous public run remain
+driver-gated and are not counted as GPU passes.
+
+The public offscreen example was run directly through `wgpu`: it selected the
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, physical,
+`software=false`), requested and confirmed FL9_1, reported its features/limits,
+and verified a 1,024-pixel textured indexed cube. The public HWND example
+selected the same device and presented five textured, indexed, depth-tested
+frames. This verifies desktop presentation on this system; it does not verify
+CoreWindow/UWP or historical FL9_1 hardware.
+
+Clippy passed for Naga with `-D warnings`, and for Core DX11, HAL DX11 and the
+public DX11 test target. Core/public Clippy emitted six existing HAL warnings
+in index, transfer and texture helpers; the HAL `-D warnings` invocation
+therefore fails on those pre-existing warnings, while normal HAL Clippy exits
+successfully. Rust 1.93.1 workspace formatting and `git diff --check` passed.
+
+Commands:
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --example dx11_fl91_offscreen
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --example dx11_fl91_windowed -- --frames=5
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p naga --no-default-features --features hlsl-out,glsl-in,wgsl-in --lib -- -D warnings
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+& 'E:\Temp\wgpu_mission_cargo.bat' fmt --all -- --check
+git diff --check
+```
+
+## Split-group comparison sampling coverage — 2026-11-12
+
+Added deterministic Naga, Core, HAL and FXC coverage for the existing
+`textureSampleCompare` constant-offset proof when the depth texture and
+comparison sampler use separate bind groups. Production behavior did not
+change: the selected-entry proof and shared binding map already supported
+these logical groups. The public test uses group 1 for the depth view and
+group 2 for the sampler, requests FL9_1, and validates all 64 output pixels.
+
+The focused strict public test passed on the physical NVIDIA GeForce RTX 3090
+Ti (`0x10de:0x2203`, driver `32.0.16.2101`, `software=false`), with requested
+and actual feature level FL9_1. It also verified invalid comparison functions,
+filter mismatch and anisotropy were rejected before HAL. The complete updated
+regression sweep passed Naga 167/167, Core DX11 133/133, Core DX12 132/132,
+strict private HAL 512/512 and strict public D3D11 148/148. The public suite
+had zero skipped Rust tests; optional capability subcases reported within
+tests are not counted as hardware passes. HAL compilation emitted four
+existing `unused_qualifications` warnings in `hal_queue.rs`. The Visual Studio
+wrapper printed its existing `vError: Unknown error` startup banner while
+Cargo completed successfully.
+
+Commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_query_gated_fl91_comparison_sample_offset_split_groups -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
+## Repeat and mirror address-mode feasibility audit — 2026-11-12
+
+A read-only review found that shader-coordinate folding is not generally
+semantics-preserving: wrap/fold discontinuities can change implicit
+minification-versus-magnification selection and anisotropic footprint even
+when only one mip is visible. A defensible subset would require one selected
+fragment `textureSample` relationship, a single-mip 2D float view, identical
+min/mag filters and anisotropy 1, while retaining the native Repeat or
+MirrorRepeat sampler for correct seam taps. Conditional NPOT Repeat must
+continue to require a positive `FullNonPow2TextureSupport` query; coordinate
+folding does not legalize a native WRAP sampler on restricted devices.
+
+The remaining obstacle is cross-layer and not a good parallel feature ticket:
+Core rejects these samplers before it sees shader-resource relationships,
+while correct selection would need draw-time shader variants or per-pair mode
+state. Microsoft's 128-repeat-per-primitive limit also has no documented
+post-transform counting rule, so coordinate lowering cannot currently be
+claimed to remove it. This path is deferred pending a concrete application
+need and a contract-backed design; current repeat/mirror rejection remains
+correct. The exact audit and references were returned by the feature-level
+review agent; no production code or tests changed for this investigation.
+
+## Restricted fragment `textureGather` emulation — 2026-11-12
+
+The general `texture_gather` downlevel limit stays false. A new narrowly scoped
+`texture_gather_2d_float_fragment` limit accepts one direct selected fragment
+operation on a single-mip, single-sample `Rgba8Unorm` 2D view with a regular
+sampler clamped on U and V. The coordinate must be the location-0 `vec2f`
+argument and the result must be returned directly at location 0. Helpers,
+additional image operations, comparison sampling and other resource shapes
+remain rejected. Core checks the live view and sampler during render and
+bundle draws. Naga expands the proved operation to four point samples at
+texel centers, assembling the selected channel in WGSL's documented gather
+order. HAL uses reserved `t0`, `b13` and `s15` resources for this emulation.
+
+The strict public test selected the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) at requested/actual FL9_1 with
+`software=false`. It uploaded a patterned 4x4 texture, drew a fullscreen
+triangle through public wgpu, and read back `[151, 166, 106, 91]` for 64/64
+pixels within one UNORM step. Core rejected helper-reached gather at pipeline
+creation and a multi-mip view before submission. This forced-level test is not
+evidence for historical FL9_1 drivers.
+
+The focused Naga tests passed 2/2, HAL gather tests 2/2, Core gather tests
+3/3, the wgpu-types projection test 1/1 and capability projection test 1/1.
+Full suites passed Naga 169/169, wgpu-types 118/118, Core DX11 136/136, Core
+DX12 135/135, strict private HAL 514/514 and strict public D3D11 149/149. The
+public suite had zero ignored Rust tests; three optional device-capability
+subcases logged skips. `cargo check -p wgpu-hal --no-default-features
+--features dx11`, Naga Clippy with `-D warnings`, Core/HAL/public-test
+Clippy, formatting and `git diff --check` passed. HAL Clippy reported six
+existing warnings in `hal_index.rs`, `hal_transfer.rs` and `texture.rs`; the
+Visual Studio Cargo wrapper printed its existing `vError: Unknown error`
+banner while Cargo succeeded. DX12's explicit Naga options now sets the new
+proof field to `None`, and the complete Core DX12 suite passed.
+
+Commands used the repository MSVC wrapper, offline dependencies and `-j16`:
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-types --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' check --offline -j16 -p wgpu-hal --no-default-features --features dx11
 cargo +1.93.1 fmt --all -- --check
 git diff --check
 ```

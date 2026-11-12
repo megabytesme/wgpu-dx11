@@ -52,6 +52,7 @@ pub(super) struct Fl9ShaderInputOptions {
     pub texture_num_levels_binding: Option<naga::ResourceBinding>,
     pub texture_num_levels_helper: bool,
     pub texture_base_clamp_binding: Option<naga::ResourceBinding>,
+    pub texture_gather_binding: Option<naga::ResourceBinding>,
     pub texture_sample_bias_offset_binding: Option<naga::ResourceBinding>,
     pub texture_sample_compare_offset_binding: Option<naga::ResourceBinding>,
 }
@@ -397,6 +398,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         input_options.texture_dimensions_3d_binding,
         input_options.texture_num_levels_binding,
         input_options.texture_base_clamp_binding,
+        input_options.texture_gather_binding,
         input_options.texture_sample_bias_offset_binding,
         input_options.texture_sample_compare_offset_binding,
     ];
@@ -409,6 +411,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
     ) && input_options.texture_dimensions_3d_binding.is_none()
         && input_options.texture_num_levels_binding.is_none()
         && input_options.texture_base_clamp_binding.is_none()
+        && input_options.texture_gather_binding.is_none()
         && input_options.texture_sample_bias_offset_binding.is_none()
         && input_options
             .texture_sample_compare_offset_binding
@@ -422,6 +425,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         .or(input_options.texture_dimensions_3d_binding)
         .or(input_options.texture_num_levels_binding)
         .or(input_options.texture_base_clamp_binding)
+        .or(input_options.texture_gather_binding)
         .or(input_options.texture_sample_bias_offset_binding)
         .or(input_options.texture_sample_compare_offset_binding)
     {
@@ -469,6 +473,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         fl9_texture_dimensions_3d_proof: input_options.texture_dimensions_3d_binding,
         fl9_texture_num_levels_proof: input_options.texture_num_levels_binding,
         fl9_texture_base_clamp_proof: input_options.texture_base_clamp_binding,
+        fl9_texture_gather_proof: input_options.texture_gather_binding,
         fl9_texture_sample_bias_offset_proof: input_options.texture_sample_bias_offset_binding,
         fl9_texture_sample_compare_offset_proof: input_options
             .texture_sample_compare_offset_binding,
@@ -1706,6 +1711,75 @@ mod tests {
     }
 
     #[test]
+    fn fl91_sample_compare_offset_split_group_sampler_compiles_with_fxc() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(1) @binding(17) var shadow: texture_depth_2d;
+            @group(2) @binding(42) var shadow_sampler: sampler_comparison;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let result = textureSampleCompare(shadow, shadow_sampler, uv, 0.5, vec2i(1, 0));
+                return vec4f(result, 0.0, 0.0, 1.0);
+            }
+            "#,
+        )
+        .expect("parse split-group comparison-offset shader");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate split-group comparison-offset shader");
+        let texture_binding = naga::ResourceBinding {
+            group: 1,
+            binding: 17,
+        };
+        let sampler_binding = naga::ResourceBinding {
+            group: 2,
+            binding: 42,
+        };
+        let bindings = [
+            ShaderBinding {
+                binding: texture_binding,
+                slot: 7,
+                kind: ShaderBindingKind::TextureDepth,
+            },
+            ShaderBinding {
+                binding: sampler_binding,
+                slot: 3,
+                kind: ShaderBindingKind::SamplerComparison,
+            },
+        ];
+        let (source, entry) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions {
+                texture_sample_compare_offset_binding: Some(texture_binding),
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("translate split-group comparison-offset shader");
+        assert!(
+            source.contains("Texture2D<float> shadow : register(t0)"),
+            "{source}"
+        );
+        assert!(
+            source.contains("SamplerComparisonState shadow_sampler : register(s3)"),
+            "{source}"
+        );
+        assert!(source.contains("register(b13)"), "{source}");
+        assert!(source.contains(".SampleCmp(shadow_sampler,"), "{source}");
+        assert!(source.contains("naga_fl9_load_size.zw"), "{source}");
+        compile_hlsl(&source, &entry, ShaderProfile::PixelLevel9_1).unwrap_or_else(|error| {
+            panic!("FL9_1 split-group comparison-offset HLSL failed FXC: {error:?}\n{source}")
+        });
+    }
+
+    #[test]
     fn level_9_1_pixel_profile_rejects_derivative_instructions() {
         let sources = [
             (
@@ -2089,6 +2163,79 @@ mod tests {
         )
         .expect("shader-model-5 compute compiler accepts textureGather");
         assert!(bytecode.starts_with(b"DXBC"));
+    }
+
+    #[test]
+    fn fl9_texture_gather_emulation_compiles_with_reserved_registers() {
+        let texture_binding = naga::ResourceBinding {
+            group: 1,
+            binding: 7,
+        };
+        let sampler_binding = naga::ResourceBinding {
+            group: 2,
+            binding: 42,
+        };
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(1) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv);
+            }
+            "#,
+        )
+        .expect("parse FL9 gather emulation shader");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate FL9 gather emulation shader");
+        let bindings = [
+            ShaderBinding {
+                binding: texture_binding,
+                slot: 0,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: sampler_binding,
+                slot: 3,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        let input_options = Fl9ShaderInputOptions {
+            texture_gather_binding: Some(texture_binding),
+            ..Default::default()
+        };
+        let bytecode = compile_naga_with_viewport_and_fl9_inputs(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            input_options,
+        )
+        .expect("FXC accepts the lowered four-tap point-sampling implementation");
+        assert!(bytecode.starts_with(b"DXBC"));
+
+        let colliding_sampler = [
+            bindings[0],
+            ShaderBinding {
+                slot: 15,
+                ..bindings[1]
+            },
+        ];
+        assert!(compile_naga_with_viewport_and_fl9_inputs(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &colliding_sampler,
+            input_options,
+        )
+        .is_err());
     }
 
     #[test]
@@ -4268,8 +4415,8 @@ mod tests {
     fn fl91_texture_num_levels_helper_with_implicit_sample_compiles_with_fxc() {
         let module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(42) var image: texture_2d<f32>;
-            @group(0) @binding(7) var smp: sampler;
+            @group(2) @binding(42) var image: texture_2d<f32>;
+            @group(3) @binding(7) var smp: sampler;
             fn levels_helper() -> u32 { return textureNumLevels(image); }
             @fragment fn fs() -> @location(0) vec4f {
                 let levels = f32(levels_helper());
@@ -4286,11 +4433,11 @@ mod tests {
         .validate(&module)
         .unwrap();
         let texture_binding = naga::ResourceBinding {
-            group: 0,
+            group: 2,
             binding: 42,
         };
         let sampler_binding = naga::ResourceBinding {
-            group: 0,
+            group: 3,
             binding: 7,
         };
         let bindings = [

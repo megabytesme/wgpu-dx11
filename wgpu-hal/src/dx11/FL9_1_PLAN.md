@@ -1,6 +1,92 @@
 # FL9_1 completion plan
 
-## Current coordinator checkpoint — vertex-only mat4 inverse — 2026-11-12
+## Current coordinator increment — restricted fragment `textureGather` emulation — 2026-11-12
+
+The general gather capability remains disabled. The selected FL9_1 public
+projection now advertises only a narrow fragment limit for one direct gather
+from a single-mip `Rgba8Unorm` 2D view with a regular clamp-to-edge sampler.
+Naga lowers the selected channel to four point samples at texel centers in
+WGSL order; Core checks selected-entry proof and the currently bound view and
+sampler before render or bundle draws. The strict public test rendered on the
+physical RTX 3090 Ti at requested/actual FL9_1 and checked 64/64 pixels against
+`[151, 166, 106, 91]`. Helper forms and multi-mip views are rejected.
+
+The full verification run passed Naga 169/169, wgpu-types 118/118, Core DX11
+136/136, Core DX12 135/135, strict private HAL 514/514, and strict public
+D3D11 149/149 with no ignored Rust tests. The public suite logged three
+optional subcase skips. Details and exact commands are in
+`FL9_1_PROGRESS.md`. This does not establish historical FL9_1 driver behavior.
+
+## Current coordinator increment — selected D2 query and comparison sampling groups — 2026-11-12
+
+Selected fragment D2 `textureDimensions` and `textureNumLevels` proofs now
+allow their one same-image implicit sample to use a compatible non-comparison
+sampler from another supported bind group. Core, Naga and HAL retain the
+selected entry, exact texture/sampler identities, one-sample, view-mip and
+helper-shape restrictions. D3 and cube query/sample paths still require a
+group-zero sampler. No general image-query or unrestricted shader capability
+was added.
+
+The strict public `textureNumLevels` cases put the texture at group 2 and
+sampler at group 3, switched between one- and three-level views, and matched
+64/64 pixels in both direct and helper variants. A separate strict public
+comparison-offset case puts the depth texture at group 1 and comparison
+sampler at group 2 and checks all 64 pixels. Both ran on the physical RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, `software=false`), requested
+and actual FL9_1. The updated full suite passed: strict public 148/148,
+private HAL 512/512, Core DX11 133/133, Core DX12 132/132 and Naga 167/167.
+Some optional device-specific subcases logged skips; no Rust hardware test
+skipped. The public offscreen example verified 1,024 pixels of a textured
+indexed cube, and the public HWND example presented five textured, indexed,
+depth-tested frames.
+Naga, Core, HAL and public-test Clippy completed; the HAL dependency still has
+six existing warnings in index, transfer and texture code. Formatting and
+`git diff --check` passed. The Visual Studio wrapper emits its existing
+`vError: Unknown error` startup banner while Cargo completes successfully.
+
+Independent Core/HAL and adapter-readiness reviews found no confirmed invalid
+request in their scanned paths but do not close the full public-operation
+audit. Separate read-only shader and feature-level audits are underway to
+choose the next bounded slice. Compute/UAV, geometry shaders, MRT, indirect
+drawing and occlusion queries remain unavailable at FL9_1; historical drivers,
+Lumia/CoreWindow runtime and physical device removal remain external evidence
+gaps.
+
+## Current coordinator checkpoint — generalized fragment `textureLoad` groups and HWND frame pacing — 2026-11-12
+
+The existing selected-entry Core proof and HAL/Naga binding path already retain
+the full logical group/binding for the restricted fragment 2D `textureLoad`
+subset. This checkpoint adds direct/helper Core proof coverage for group 7,
+binding 42, including an unsupported sibling entry to verify entry isolation,
+and a strict public readback test with an explicit empty group 0 and texture at
+group 1/binding 42. The physical RTX 3090 Ti ran at requested/actual FL9_1 and
+verified 384 output pixels across direct, nested-helper, dynamic-coordinate,
+out-of-bounds, nonzero-mip and query-supported sRGB cases. No new texture
+shape, format, query or capability gate was broadened. A stale Core-only
+group-zero condition on the narrow direct/one-helper dynamic-coordinate proof
+was removed; the group-1/binding-42 GPU test now checks all four source
+quadrants through that helper.
+Focused Core DX11/DX12 and strict public commands/results are recorded in
+`FL9_1_PROGRESS.md`.
+
+The HWND surface now creates a native DXGI frame-latency waitable swap chain,
+sets its maximum frame latency to one, waits before acquisition, and drains
+pending presentation from queue idle and unconfigure. Strict hidden-HWND tests
+cover completion, resize/reconfigure and destruction with a pending present.
+This closes the prior HWND implementation gap; CoreWindow runtime behavior and
+Lumia execution remain unverified. Exact results are recorded in
+`FL9_1_PROGRESS.md`.
+
+The next audit candidates are remaining group-zero restrictions in optional
+sampler/query proofs and selected Core/HAL render validation paths. Any further
+resource-group change should begin by checking whether
+the shared binding map already supports it and then add selected-entry and
+strict GPU evidence without broadening unrelated proof shapes. Compute/UAV,
+geometry shaders, MRT, indirect drawing, 1D textures and ordinary arrays
+remain FL9_1/profile or public API boundaries, not candidates for emulation in
+this slice.
+
+## Previous coordinator checkpoint — vertex-only mat4 inverse — 2026-11-12
 
 Naga's HLSL writer now lowers f32 4x4 matrix inverse through explicit
 cofactors. DX11 exposes a stage-specific `matrix_inverse_4x4_vertex` limit;
@@ -14,13 +100,9 @@ focused strict public render and capability gate passed 1/1 each. Clippy and
 format checks passed, with six existing HAL warnings. Exact commands and
 hardware details are in `FL9_1_PROGRESS.md`.
 
-The next audit candidates are nonzero-group fragment `textureLoad`, removing
-remaining group-0 proof restrictions from optional sampler/query forms, and
-the DXGI presentation-completion/frame-latency contract. The first two are
-narrow proof generalizations; presentation latency needs a distinct lifecycle
-design and CoreWindow testing. Compute/UAV, geometry shaders, MRT, indirect
-drawing, 1D textures and ordinary arrays remain FL9_1/profile or public API
-boundaries, not candidates for emulation in this slice.
+The texture load proof generalization is now covered above. Remaining group-0
+proof restrictions on optional sampler/query forms and the DXGI
+presentation-completion/frame-latency contract remain under audit.
 
 ## Previous coordinator checkpoint — nonzero-group base-clamp sampling — 2026-11-12
 

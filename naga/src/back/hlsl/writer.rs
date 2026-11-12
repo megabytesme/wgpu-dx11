@@ -633,11 +633,18 @@ fn fl9_texture_dimensions_functions(
             unreachable!()
         };
         let sampler_global = &module.global_variables[sampler_handle];
-        if sampler_global.space != crate::AddressSpace::Handle
-            || !matches!(
+        let sampler_group_supported = match module.types[image_global.ty].inner {
+            TypeInner::Image {
+                dim: crate::ImageDimension::D2,
+                ..
+            } => sampler_global.binding.is_some(),
+            _ => matches!(
                 sampler_global.binding,
                 Some(crate::ResourceBinding { group: 0, .. })
-            )
+            ),
+        };
+        if sampler_global.space != crate::AddressSpace::Handle
+            || !sampler_group_supported
             || !matches!(
                 module.types[sampler_global.ty].inner,
                 TypeInner::Sampler { comparison: false }
@@ -903,10 +910,9 @@ fn fl9_texture_num_levels_functions(
         };
         let sampler_global = &module.global_variables[sampler_handle];
         if sampler_global.space != crate::AddressSpace::Handle
-            || !matches!(
-                sampler_global.binding,
-                Some(crate::ResourceBinding { group: 0, .. })
-            )
+            || !sampler_global.binding.is_some_and(|binding| {
+                coordinate_size == crate::VectorSize::Bi || binding.group == 0
+            })
             || !matches!(
                 module.types[sampler_global.ty].inner,
                 TypeInner::Sampler { comparison: false }
@@ -1324,6 +1330,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             ) && self.options.fl9_texture_dimensions_3d_proof.is_none()
                 && self.options.fl9_texture_num_levels_proof.is_none()
                 && self.options.fl9_texture_base_clamp_proof.is_none()
+                && self.options.fl9_texture_gather_proof.is_none()
                 && self.options.fl9_texture_sample_bias_offset_proof.is_none()
                 && self
                     .options
@@ -1337,6 +1344,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             || self.options.fl9_texture_dimensions_proof.is_some()
             || self.options.fl9_texture_dimensions_3d_proof.is_some()
             || self.options.fl9_texture_num_levels_proof.is_some()
+            || self.options.fl9_texture_gather_proof.is_some()
             || self.options.fl9_texture_sample_bias_offset_proof.is_some()
             || self
                 .options
@@ -1424,6 +1432,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         .or(self.options.fl9_texture_base_clamp_proof)
                         .or(self.options.fl9_texture_dimensions_proof)
                         .or(self.options.fl9_texture_num_levels_proof)
+                        .or(self.options.fl9_texture_gather_proof)
                         .or(self.options.fl9_texture_sample_bias_offset_proof)
                         .or(self.options.fl9_texture_sample_compare_offset_proof)
             }) {
@@ -1722,6 +1731,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             self.options.fl9_texture_dimensions_3d_proof,
             self.options.fl9_texture_num_levels_proof,
             self.options.fl9_texture_base_clamp_proof,
+            self.options.fl9_texture_gather_proof,
             self.options.fl9_texture_sample_bias_offset_proof,
             self.options.fl9_texture_sample_compare_offset_proof,
         ]
@@ -1740,6 +1750,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             .or(self.options.fl9_texture_dimensions_3d_proof)
             .or(self.options.fl9_texture_num_levels_proof)
             .or(self.options.fl9_texture_base_clamp_proof)
+            .or(self.options.fl9_texture_gather_proof)
             .or(self.options.fl9_texture_sample_bias_offset_proof)
             .or(self.options.fl9_texture_sample_compare_offset_proof)
         {
@@ -1768,6 +1779,8 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         "FL9 base-clamp proof requires reserved t0 and b13 bindings".into()
                     } else if self.options.fl9_texture_sample_bias_offset_proof.is_some() {
                         "FL9 sample-bias offset proof requires reserved t0 and b13 bindings".into()
+                    } else if self.options.fl9_texture_gather_proof.is_some() {
+                        "FL9 texture-gather proof requires reserved t0, s15 and b13 bindings".into()
                     } else if self
                         .options
                         .fl9_texture_sample_compare_offset_proof
@@ -1859,6 +1872,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 ));
             }
             let sampler_required = self.options.fl9_texture_base_clamp_proof.is_some()
+                || self.options.fl9_texture_gather_proof.is_some()
                 || self.options.fl9_texture_sample_bias_offset_proof.is_some()
                 || compare_offset_proof;
             let sampler_allowed = !combined_texel_load_dimensions_proof
@@ -1866,6 +1880,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     || self.options.fl9_texture_dimensions_proof.is_some()
                     || self.options.fl9_texture_dimensions_3d_proof.is_some()
                     || self.options.fl9_texture_num_levels_proof.is_some()
+                    || self.options.fl9_texture_gather_proof.is_some()
                     || self.options.fl9_texture_sample_bias_offset_proof.is_some()
                     || compare_offset_proof);
             let Some(&(_, ref entry_name)) = self.pipeline_options.entry_point.as_ref() else {
@@ -2012,6 +2027,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         || self.options.fl9_texture_base_clamp_proof.is_some()
                         || self.options.fl9_texture_dimensions_proof.is_some()
                         || self.options.fl9_texture_num_levels_proof.is_some()
+                        || self.options.fl9_texture_gather_proof.is_some()
                         || self.options.fl9_texture_sample_bias_offset_proof.is_some()
                         || self
                             .options
@@ -2056,6 +2072,8 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                                 .dynamic_storage_buffer_offsets_index
                                 .is_some()
                             || sampler_target.register >= 16
+                            || (self.options.fl9_texture_gather_proof.is_some()
+                                && sampler_target.register == 15)
                         {
                             return Err(Error::Custom(
                                 "FL9 texture proof requires one supported group-zero sampler"
@@ -2083,6 +2101,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             let mut base_clamp_count = 0;
             let mut sample_bias_offset_count = 0;
             let mut sample_compare_offset_count = 0;
+            let mut gather_count = 0;
             let mut implicit_sample_count = 0;
             let mut texel_load_count = 0;
             let mut functions_to_check = vec![(&entry.function, entry_info, None)];
@@ -2163,6 +2182,20 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                             ..
                         } if self.options.fl9_texture_base_clamp_proof.is_some() => {
                             base_clamp_count += 1;
+                            (image, sampler, coordinate)
+                        }
+                        crate::Expression::ImageSample {
+                            image,
+                            sampler,
+                            coordinate,
+                            gather: Some(_),
+                            array_index: None,
+                            offset: None,
+                            level: crate::SampleLevel::Zero,
+                            depth_ref: None,
+                            clamp_to_edge: false,
+                        } if self.options.fl9_texture_gather_proof.is_some() => {
+                            gather_count += 1;
                             (image, sampler, coordinate)
                         }
                         crate::Expression::ImageSample {
@@ -2274,6 +2307,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     );
                     let bias_offset_coordinate_matches =
                         self.options.fl9_texture_sample_bias_offset_proof.is_none()
+                            && self.options.fl9_texture_gather_proof.is_none()
                             && !compare_offset_proof
                             || matches!(
                                 function.expressions[coordinate],
@@ -2492,6 +2526,8 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                         || (implicit_sample_count == 1) != sample_sampler.is_some())
                 || self.options.fl9_texture_base_clamp_proof.is_some()
                     && (query_count != 0 || base_clamp_count != 1)
+                || self.options.fl9_texture_gather_proof.is_some()
+                    && (query_count != 0 || gather_count != 1)
                 || self.options.fl9_texture_sample_bias_offset_proof.is_some()
                     && (query_count != 0 || sample_bias_offset_count != 1)
                 || compare_offset_proof && (query_count != 0 || sample_compare_offset_count != 1)
@@ -2600,12 +2636,16 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 self.out,
                 "cbuffer naga_fl9_load_dimensions : register(b13) {{ float4 naga_fl9_load_size; }};"
             )?;
-            if self.options.fl9_texel_load_proof.is_some() {
-                let name = &self.names[&NameKey::GlobalVariable(handle)];
+            if self.options.fl9_texel_load_proof.is_some()
+                || self.options.fl9_texture_gather_proof.is_some()
+            {
                 writeln!(
                     self.out,
                     "SamplerState naga_fl9_load_sampler : register(s15);"
                 )?;
+            }
+            if self.options.fl9_texel_load_proof.is_some() {
+                let name = &self.names[&NameKey::GlobalVariable(handle)];
                 if is_3d_texel_load {
                     writeln!(self.out, "float4 naga_fl9_load(float3 p, float mip) {{")?;
                     writeln!(
@@ -7011,6 +7051,69 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 }
             }
             Expression::ImageSample {
+                image,
+                sampler,
+                gather: Some(component),
+                coordinate,
+                array_index: None,
+                offset: None,
+                level: crate::SampleLevel::Zero,
+                depth_ref: None,
+                clamp_to_edge: false,
+            } if self.options.fl9_texture_gather_proof.is_some() => {
+                let binding = self.options.fl9_texture_gather_proof.unwrap();
+                let image_matches = matches!(
+                    func_ctx.expressions[image],
+                    Expression::GlobalVariable(global)
+                        if module.global_variables[global].binding == Some(binding)
+                );
+                let sampler_is_global = matches!(
+                    func_ctx.expressions[sampler],
+                    Expression::GlobalVariable(global)
+                        if matches!(
+                            module.types[module.global_variables[global].ty].inner,
+                            TypeInner::Sampler { comparison: false }
+                        )
+                );
+                if !image_matches
+                    || !sampler_is_global
+                    || !matches!(
+                        func_ctx.expressions[coordinate],
+                        Expression::FunctionArgument(0)
+                    )
+                {
+                    return Err(Error::Custom(
+                        "FL9 texture-gather proof requires direct texture, sampler and coordinate bindings".into(),
+                    ));
+                }
+                let channel = match component {
+                    crate::SwizzleComponent::X => "r",
+                    crate::SwizzleComponent::Y => "g",
+                    crate::SwizzleComponent::Z => "b",
+                    crate::SwizzleComponent::W => "a",
+                };
+                let corners = [
+                    "float2(0.0, 1.0)",
+                    "float2(1.0, 1.0)",
+                    "float2(1.0, 0.0)",
+                    "float2(0.0, 0.0)",
+                ];
+                write!(self.out, "float4(")?;
+                for (index, corner) in corners.into_iter().enumerate() {
+                    if index != 0 {
+                        write!(self.out, ", ")?;
+                    }
+                    self.write_expr(module, image, func_ctx)?;
+                    write!(self.out, ".Sample(naga_fl9_load_sampler, (clamp(floor(")?;
+                    self.write_expr(module, coordinate, func_ctx)?;
+                    write!(
+                        self.out,
+                        " * naga_fl9_load_size.xy - 0.5) + {corner}, float2(0.0, 0.0), naga_fl9_load_size.xy - float2(1.0, 1.0)) + float2(0.5, 0.5)) * naga_fl9_load_size.zw).{channel}"
+                    )?;
+                }
+                write!(self.out, ")")?;
+            }
+            Expression::ImageSample {
                 coordinate,
                 image,
                 sampler,
@@ -7162,6 +7265,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     .or(self.options.fl9_texture_dimensions_3d_proof)
                     .or(self.options.fl9_texture_num_levels_proof)
                     .or(self.options.fl9_texture_base_clamp_proof)
+                    .or(self.options.fl9_texture_gather_proof)
                     .or(self.options.fl9_texture_sample_compare_offset_proof)
                     .or(self.options.fl9_texel_load_proof)
                 {
@@ -8364,6 +8468,165 @@ mod fl9_viewport_tests {
     }
 
     #[test]
+    fn fl9_texture_gather_uses_selected_binding_channel_and_wgsl_order() {
+        let texture_binding = crate::ResourceBinding {
+            group: 1,
+            binding: 17,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 2,
+            binding: 42,
+        };
+        let source = r#"
+            @group(1) @binding(17) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv) * vec4f(0.5);
+            }
+        "#;
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_gather_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            texture_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        options.binding_map.insert(
+            sampler_binding,
+            super::super::BindTarget {
+                register: 3,
+                ..Default::default()
+            },
+        );
+
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(
+            output.contains("Texture2D<float4> image : register(t0)"),
+            "{output}"
+        );
+        assert!(
+            output.contains("SamplerState smp : register(s3)"),
+            "{output}"
+        );
+        assert!(
+            output.contains("SamplerState naga_fl9_load_sampler : register(s15)"),
+            "{output}"
+        );
+        assert!(output.contains("register(b13)"), "{output}");
+        assert_eq!(
+            output.matches(".Sample(naga_fl9_load_sampler").count(),
+            4,
+            "{output}"
+        );
+        assert_eq!(output.matches(").b").count(), 4, "{output}");
+        assert!(output.contains(" * (0.5).xxxx"), "{output}");
+
+        let taps = [
+            "+ float2(0.0, 1.0)",
+            "+ float2(1.0, 1.0)",
+            "+ float2(1.0, 0.0)",
+            "+ float2(0.0, 0.0)",
+        ];
+        let positions = taps.map(|tap| output.find(tap).expect("gather tap missing"));
+        assert!(
+            positions.windows(2).all(|pair| pair[0] < pair[1]),
+            "{output}"
+        );
+        assert!(
+            output.contains("clamp(floor(uv * naga_fl9_load_size.xy - 0.5)"),
+            "{output}"
+        );
+        assert!(output.contains("naga_fl9_load_size.zw"), "{output}");
+        assert!(!output.contains(".Gather"), "{output}");
+
+        for (component, channel) in [(0, "r"), (1, "g"), (2, "b"), (3, "a")] {
+            let component_source =
+                source.replace("textureGather(2,", &format!("textureGather({component},"));
+            let component_output =
+                translate(&component_source, &options, ShaderStage::Fragment).unwrap();
+            assert_eq!(
+                component_output.matches(&format!(").{channel}")).count(),
+                4,
+                "{component_output}"
+            );
+        }
+    }
+
+    #[test]
+    fn fl9_texture_gather_proof_rejects_unproven_operations() {
+        let texture_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let options = |sampler_register| {
+            let mut options = Options {
+                direct_sampler_bindings: true,
+                fl9_texture_gather_proof: Some(texture_binding),
+                ..Options::default()
+            };
+            options.binding_map.insert(
+                texture_binding,
+                super::super::BindTarget {
+                    register: 0,
+                    ..Default::default()
+                },
+            );
+            options.binding_map.insert(
+                sampler_binding,
+                super::super::BindTarget {
+                    register: sampler_register,
+                    ..Default::default()
+                },
+            );
+            options
+        };
+        let cases = [
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(0, image, smp, uv, vec2i(1, 0)); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d_array<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(0, image, smp, uv, 0); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSample(image, smp, uv); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBaseClampToEdge(image, smp, uv); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(0, image, smp, uv) + textureGather(1, image, smp, uv); }"#,
+            r#"@group(0) @binding(7) var image: texture_depth_2d; @group(0) @binding(42) var smp: sampler_comparison; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGatherCompare(image, smp, uv, 0.5); }"#,
+        ];
+        for source in cases {
+            assert!(
+                translate(source, &options(3), ShaderStage::Fragment).is_err(),
+                "accepted unsupported gather proof source: {source}"
+            );
+        }
+
+        let wrong_binding = r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(8) var other: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(0, other, smp, uv); }"#;
+        let mut wrong_binding_options = options(3);
+        wrong_binding_options.binding_map.insert(
+            crate::ResourceBinding {
+                group: 0,
+                binding: 8,
+            },
+            super::super::BindTarget {
+                register: 1,
+                ..Default::default()
+            },
+        );
+        assert!(translate(wrong_binding, &wrong_binding_options, ShaderStage::Fragment).is_err());
+
+        let transformed_coordinate = r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(0, image, smp, uv * 0.5); }"#;
+        assert!(translate(transformed_coordinate, &options(3), ShaderStage::Fragment).is_err());
+        let helper = r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(0, image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv); }"#;
+        assert!(translate(helper, &options(3), ShaderStage::Fragment).is_err());
+        let direct_gather = r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(0, image, smp, uv); }"#;
+        assert!(translate(direct_gather, &options(15), ShaderStage::Fragment).is_err());
+    }
+
+    #[test]
     fn fl9_base_clamp_uses_host_dimensions_and_implicit_sample() {
         let texture_binding = crate::ResourceBinding {
             group: 1,
@@ -8597,6 +8860,55 @@ mod fl9_viewport_tests {
     }
 
     #[test]
+    fn fl9_sample_compare_offset_maps_a_sampler_from_a_separate_group() {
+        let texture_binding = crate::ResourceBinding {
+            group: 1,
+            binding: 17,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 2,
+            binding: 42,
+        };
+        let source = "@group(1) @binding(17) var image: texture_depth_2d; \
+            @group(2) @binding(42) var smp: sampler_comparison; \
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) f32 { \
+                return textureSampleCompare(image, smp, uv, 0.5, vec2i(1, 0)); \
+            }";
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_sample_compare_offset_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            texture_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        options.binding_map.insert(
+            sampler_binding,
+            super::super::BindTarget {
+                register: 3,
+                ..Default::default()
+            },
+        );
+
+        let output = translate(source, &options, ShaderStage::Fragment)
+            .expect("the comparison sampler may be mapped from another logical group");
+        assert!(
+            output.contains("Texture2D<float> image : register(t0)"),
+            "{output}"
+        );
+        assert!(
+            output.contains("SamplerComparisonState smp : register(s3)"),
+            "{output}"
+        );
+        assert!(output.contains("register(b13)"), "{output}");
+        assert!(output.contains(".SampleCmp(smp,"), "{output}");
+    }
+
+    #[test]
     fn fl9_texture_dimensions_can_share_texture_with_one_implicit_sample() {
         let texture_binding = crate::ResourceBinding {
             group: 0,
@@ -8678,6 +8990,44 @@ mod fl9_viewport_tests {
 
         let explicit_level = "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(image)); return textureSampleLevel(image, smp, uv, 0.0) * vec4f(dimensions / vec2f(4.0, 2.0), 1.0, 1.0); }";
         assert!(translate(explicit_level, &options, ShaderStage::Fragment).is_err());
+    }
+
+    #[test]
+    fn fl9_2d_texture_dimensions_can_sample_from_a_separate_group() {
+        let texture_binding = crate::ResourceBinding {
+            group: 1,
+            binding: 7,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 2,
+            binding: 42,
+        };
+        let source = "@group(1) @binding(7) var image: texture_2d<f32>; @group(2) @binding(42) var smp: sampler; fn query_dimensions() -> vec2u { return textureDimensions(image); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { let dimensions = vec2f(query_dimensions()); return textureSample(image, smp, uv) * vec4f(dimensions / vec2f(4.0, 2.0), 1.0, 1.0); }";
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_dimensions_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            texture_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        options.binding_map.insert(
+            sampler_binding,
+            super::super::BindTarget {
+                register: 3,
+                ..Default::default()
+            },
+        );
+
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("register(t0)"), "{output}");
+        assert!(output.contains("register(s3)"), "{output}");
+        assert!(output.contains("image.Sample(smp, uv)"), "{output}");
+        assert!(output.contains("int2(naga_fl9_load_size.xy)"), "{output}");
     }
 
     #[test]
@@ -9213,6 +9563,41 @@ mod fl9_viewport_tests {
             assert!(!output.contains("SampleLevel"), "{output}");
         }
 
+        let split_sampler_binding = crate::ResourceBinding {
+            group: 3,
+            binding: 42,
+        };
+        let source = "@group(2) @binding(7) var image: texture_2d<f32>; \
+            @group(3) @binding(42) var smp: sampler; \
+            @fragment fn main() -> @location(0) vec4f { \
+                let levels = f32(textureNumLevels(image)); \
+                return textureSample(image, smp, vec2f(0.5)) * vec4f(levels / 4.0); \
+            }";
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_num_levels_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            texture_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        options.binding_map.insert(
+            split_sampler_binding,
+            super::super::BindTarget {
+                register: 3,
+                ..Default::default()
+            },
+        );
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("register(t0)"), "{output}");
+        assert!(output.contains("register(s3)"), "{output}");
+        assert!(output.contains("register(b13)"), "{output}");
+        assert!(output.contains("image.Sample(smp"), "{output}");
+
         let mut options = Options {
             direct_sampler_bindings: true,
             fl9_texture_num_levels_proof: Some(texture_binding),
@@ -9307,6 +9692,61 @@ mod fl9_viewport_tests {
             r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(1) @binding(42) var smp: sampler; fn levels_helper() -> u32 { return textureNumLevels(image); } @fragment fn main() -> @location(0) vec4f { return textureSample(image, smp, vec2f(0.5)) * vec4f(f32(levels_helper())); }"#,
         ] {
             assert!(translate(invalid, &options, ShaderStage::Fragment).is_err());
+        }
+    }
+
+    #[test]
+    fn fl9_2d_texture_num_levels_helper_can_sample_from_a_separate_group() {
+        let texture_binding = crate::ResourceBinding {
+            group: 2,
+            binding: 7,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 3,
+            binding: 42,
+        };
+        let source = r#"
+            @group(2) @binding(7) var image: texture_2d<f32>;
+            @group(3) @binding(42) var smp: sampler;
+            fn levels_helper() -> u32 { return textureNumLevels(image); }
+            @fragment fn main() -> @location(0) vec4f {
+                let levels = f32(levels_helper());
+                return textureSample(image, smp, vec2f(0.5)) * vec4f(levels / 4.0);
+            }
+        "#;
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_num_levels_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        for (binding, register) in [(texture_binding, 0), (sampler_binding, 3)] {
+            options.binding_map.insert(
+                binding,
+                super::super::BindTarget {
+                    register,
+                    ..Default::default()
+                },
+            );
+        }
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("register(t0)"), "{output}");
+        assert!(output.contains("register(s3)"), "{output}");
+        assert!(output.contains("register(b13)"), "{output}");
+        assert!(output.contains("image.Sample(smp"), "{output}");
+        assert!(!output.contains("GetDimensions"), "{output}");
+        assert!(!output.contains("SampleLevel"), "{output}");
+
+        for image_type in ["texture_3d<f32>", "texture_cube<f32>"] {
+            let coordinate = "vec3f(0.5)";
+            let invalid = format!(
+                "@group(2) @binding(7) var image: {image_type}; \
+                 @group(3) @binding(42) var smp: sampler; \
+                 fn levels_helper() -> u32 {{ return textureNumLevels(image); }} \
+                 @fragment fn main() -> @location(0) vec4f {{ \
+                     return textureSample(image, smp, {coordinate}) * vec4f(f32(levels_helper())); \
+                 }}"
+            );
+            assert!(translate(&invalid, &options, ShaderStage::Fragment).is_err());
         }
     }
 

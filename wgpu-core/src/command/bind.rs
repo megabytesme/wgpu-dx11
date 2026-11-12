@@ -353,6 +353,14 @@ fn sampler_mip_pair_compatible(
         })
 }
 
+fn fl9_texture_gather_view_compatible(texture_mip_levels: &[u32]) -> bool {
+    texture_mip_levels == [1]
+}
+
+fn fl9_texture_gather_sampler_compatible(sampler_clamp_to_edge: &[bool]) -> bool {
+    sampler_clamp_to_edge == [true]
+}
+
 #[derive(Debug)]
 pub(super) struct Binder {
     pub(super) pipeline_layout: Option<Arc<PipelineLayout>>,
@@ -824,6 +832,58 @@ impl Binder {
         Ok(())
     }
 
+    pub(super) fn check_fl9_texture_gather_bindings(
+        &self,
+        pipeline: &RenderPipeline,
+    ) -> Result<(), DrawError> {
+        let Some(pair) = pipeline.fl9_texture_gather_pair else {
+            return Ok(());
+        };
+        let texture_group = self
+            .list_valid()
+            .find_map(|(index, group, _)| (index == pair.texture_group as usize).then_some(group))
+            .ok_or(DrawError::MissingSamplingBindingMetadata {
+                group: pair.texture_group,
+                binding: pair.texture_binding,
+            })?;
+        let sampler_group = self
+            .list_valid()
+            .find_map(|(index, group, _)| (index == pair.sampler_group as usize).then_some(group))
+            .ok_or(DrawError::MissingSamplingBindingMetadata {
+                group: pair.sampler_group,
+                binding: pair.sampler_binding,
+            })?;
+        let mip_levels = texture_group
+            .sampled_texture_mip_levels
+            .get(&pair.texture_binding)
+            .ok_or(DrawError::MissingSamplingBindingMetadata {
+                group: pair.texture_group,
+                binding: pair.texture_binding,
+            })?;
+        if !fl9_texture_gather_view_compatible(mip_levels) {
+            return Err(DrawError::IncompatibleTextureGatherView {
+                group: pair.texture_group,
+                binding: pair.texture_binding,
+            });
+        }
+
+        let clamp_to_edge = sampler_group
+            .sampler_clamp_to_edge
+            .get(&pair.sampler_binding)
+            .ok_or(DrawError::MissingSamplingBindingMetadata {
+                group: pair.sampler_group,
+                binding: pair.sampler_binding,
+            })?;
+        if !fl9_texture_gather_sampler_compatible(clamp_to_edge) {
+            return Err(DrawError::IncompatibleTextureGatherSampler {
+                group: pair.sampler_group,
+                binding: pair.sampler_binding,
+            });
+        }
+
+        Ok(())
+    }
+
     /// Scan active buffer bindings corresponding to layouts without `min_binding_size` specified.
     pub(super) fn check_late_buffer_bindings(
         &self,
@@ -882,6 +942,7 @@ impl Binder {
 #[cfg(test)]
 mod tests {
     use super::{
+        fl9_texture_gather_sampler_compatible, fl9_texture_gather_view_compatible,
         npot_sampler_pair_compatible, sample_bias_sampler_compatible, sampler_mip_pair_compatible,
     };
 
@@ -924,5 +985,17 @@ mod tests {
             &[1, 2],
             &[Mip::Unrestricted, restricted]
         ));
+    }
+
+    #[test]
+    fn fl9_texture_gather_requires_one_mip_and_clamp_addressing() {
+        assert!(fl9_texture_gather_view_compatible(&[1]));
+        assert!(!fl9_texture_gather_view_compatible(&[2]));
+        assert!(!fl9_texture_gather_view_compatible(&[1, 1]));
+        assert!(!fl9_texture_gather_view_compatible(&[]));
+        assert!(fl9_texture_gather_sampler_compatible(&[true]));
+        assert!(!fl9_texture_gather_sampler_compatible(&[false]));
+        assert!(!fl9_texture_gather_sampler_compatible(&[true, true]));
+        assert!(!fl9_texture_gather_sampler_compatible(&[]));
     }
 }

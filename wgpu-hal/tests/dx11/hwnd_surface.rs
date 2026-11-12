@@ -1,5 +1,8 @@
 use super::*;
-use crate::{CommandEncoder as _, Device as _, Instance as _, Queue as _, Surface as _};
+use crate::{
+    dynamic::DynResource as _, CommandEncoder as _, Device as _, Instance as _, Queue as _,
+    Surface as _,
+};
 use raw_window_handle::{
     RawDisplayHandle, RawWindowHandle, Win32WindowHandle, WindowsDisplayHandle,
 };
@@ -367,16 +370,19 @@ fn run_hidden_hwnd(clone_sample: bool) -> windows::core::Result<()> {
         .unwrap()
         .swapchain
         .clone();
+    assert_eq!(chain.maximum_frame_latency()?, 1);
+    let worker_chain = chain.clone();
     let guard = native.immediate_context();
     let (tx, rx) = std::sync::mpsc::channel();
     let worker = std::thread::spawn(move || {
-        tx.send(chain.size()).unwrap();
+        tx.send(worker_chain.size()).unwrap();
     });
     assert!(rx.recv_timeout(Duration::from_millis(50)).is_err());
     drop(guard);
     assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap()?, [32, 24]);
     worker.join().unwrap();
     let acquired = unsafe { surface.acquire_texture(None, &fence).unwrap() };
+    assert!(chain.has_consumed_latency_ready());
     assert!(unsafe { surface.acquire_texture(None, &fence) }.is_err());
     let texture: &NativeTexture = acquired.texture.borrow();
     let view = unsafe {
@@ -453,20 +459,35 @@ fn run_hidden_hwnd(clone_sample: bool) -> windows::core::Result<()> {
         .is_err());
     let present = unsafe { queue.present(&surface, acquired.texture) };
     assert!(
-        present.is_ok() || matches!(present, Err(crate::SurfaceError::Occluded)),
+        present.is_ok() || matches!(&present, Err(crate::SurfaceError::Occluded)),
         "{present:?}"
     );
+    if required {
+        assert!(
+            present.is_ok(),
+            "strict HWND test requires a queued Present"
+        );
+    }
+    assert_eq!(chain.has_pending_present(), present.is_ok());
     std::println!("Hidden HWND present: {present:?}; BGRA pixel {pixel:?}");
     unsafe {
         queue.wait_for_idle().unwrap();
     }
+    assert!(!chain.has_pending_present());
     config.extent.width = 24;
     config.extent.height = 16;
     unsafe {
         surface.configure(&device, &config).unwrap();
     }
+    assert!(chain.has_consumed_latency_ready());
+    assert_eq!(chain.maximum_frame_latency()?, 1);
     std::println!("Resize with completed command buffer retained: PASS");
-    let resized = unsafe { surface.acquire_texture(None, &fence).unwrap() };
+    let resized = unsafe {
+        surface
+            .acquire_texture(Some(Duration::from_secs(5)), &fence)
+            .unwrap()
+    };
+    assert!(chain.has_consumed_latency_ready());
     let swapchain = surface
         .configured
         .lock()
@@ -529,7 +550,38 @@ fn run_hidden_hwnd(clone_sample: bool) -> windows::core::Result<()> {
     );
     unsafe {
         device.destroy_texture_view(resized_view);
-        surface.discard_texture(resized.texture);
+    }
+    let second_present = unsafe { queue.present(&surface, resized.texture) };
+    assert!(
+        second_present.is_ok() || matches!(&second_present, Err(crate::SurfaceError::Occluded)),
+        "{second_present:?}"
+    );
+    if required {
+        assert!(
+            second_present.is_ok(),
+            "strict HWND test requires a second queued Present"
+        );
+    }
+    assert_eq!(chain.has_pending_present(), second_present.is_ok());
+    if second_present.is_ok() {
+        let immediate = unsafe { surface.acquire_texture(Some(Duration::ZERO), &fence) };
+        let back_to_back = match immediate {
+            Ok(frame) => frame,
+            Err(crate::SurfaceError::Timeout) => unsafe {
+                assert!(chain.has_pending_present());
+                surface
+                    .acquire_texture(Some(Duration::from_secs(5)), &fence)
+                    .unwrap()
+            },
+            Err(error) => panic!("unexpected timed acquisition error: {error:?}"),
+        };
+        assert!(!chain.has_pending_present());
+        unsafe { surface.discard_texture(back_to_back.texture) };
+    }
+    unsafe {
+        queue.wait_for_idle().unwrap();
+        assert!(!chain.has_pending_present());
+        drop(chain);
         surface.unconfigure(&device);
         surface.configure(&device, &config).unwrap();
         let recreated = surface.acquire_texture(None, &fence).unwrap();
@@ -555,6 +607,49 @@ fn run_hidden_hwnd(clone_sample: bool) -> windows::core::Result<()> {
         surface.unconfigure(&device);
     }
     std::println!("Unconfigure after concurrent reservation and recreate: PASS");
+    unsafe { surface.configure(&device, &config).unwrap() };
+    let final_chain = surface
+        .configured
+        .lock()
+        .as_ref()
+        .unwrap()
+        .swapchain
+        .clone();
+    let final_frame = unsafe {
+        surface
+            .acquire_texture(Some(Duration::from_secs(5)), &fence)
+            .unwrap()
+    };
+    let final_texture = final_frame
+        .texture
+        .as_any()
+        .downcast_ref::<SurfaceTexture>()
+        .unwrap();
+    final_texture
+        .frame
+        .as_ref()
+        .unwrap()
+        .clear([0.0, 0.0, 1.0, 1.0])?;
+    unsafe {
+        queue
+            .submit(&[], &[&final_frame.texture], (&fence, 3))
+            .unwrap();
+    }
+    let final_present = unsafe { queue.present(&surface, final_frame.texture) };
+    assert!(
+        final_present.is_ok() || matches!(&final_present, Err(crate::SurfaceError::Occluded)),
+        "{final_present:?}"
+    );
+    if required {
+        assert!(
+            final_present.is_ok(),
+            "strict HWND test requires a queued Present before surface drop"
+        );
+    }
+    assert_eq!(final_chain.has_pending_present(), final_present.is_ok());
+    drop(surface);
+    unsafe { queue.wait_for_idle().unwrap() };
+    assert!(!final_chain.has_pending_present());
     std::println!(
         "PASS: hidden HWND acquire, HAL {} readback, present and resize; visibility not verified",
         if clone_sample {

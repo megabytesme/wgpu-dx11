@@ -91,6 +91,7 @@ fn fl9_texture_emulation_format_supported(
     };
 
     match kind {
+        Kind::Gather => dimension == D2 && format == Rgba8Unorm,
         Kind::Load | Kind::LoadDimensions => {
             dimension == D2
                 && matches!(
@@ -190,7 +191,9 @@ impl RenderState {
         if !self.bindings_compatible() {
             return false;
         }
-        if self.texel_load.is_some() && self.texel_load_resource().is_none() {
+        if self.texel_load.is_some()
+            && (self.texel_load_resource().is_none() || !self.gather_sampler_binding_compatible())
+        {
             return false;
         }
         if self.sampling_pairs.is_empty() {
@@ -252,6 +255,7 @@ impl RenderState {
             load.kind,
             super::hal_shader::Fl9TextureEmulationKind::SampleBiasOffset
                 | super::hal_shader::Fl9TextureEmulationKind::SampleCompareOffset
+                | super::hal_shader::Fl9TextureEmulationKind::Gather
         );
         let depth_comparison = matches!(
             load.kind,
@@ -290,6 +294,50 @@ impl RenderState {
         .then_some((texture, info))
     }
 
+    fn gather_sampler_binding_compatible(&self) -> bool {
+        let Some(load) = &self.texel_load else {
+            return true;
+        };
+        if !matches!(
+            load.kind,
+            super::hal_shader::Fl9TextureEmulationKind::Gather
+        ) {
+            return true;
+        }
+        let Some(binding) = load.gather_sampler_binding else {
+            return false;
+        };
+        let Some(plan) = &self.active_plan else {
+            return false;
+        };
+        let Some(expected) = plan.groups().get(binding.group as usize).copied().flatten() else {
+            return false;
+        };
+        let mut slots = expected
+            .samplers
+            .iter()
+            .enumerate()
+            .filter(|(_, candidate)| **candidate == Some(binding.binding));
+        let Some((local, _)) = slots.next() else {
+            return false;
+        };
+        if slots.next().is_some() {
+            return false;
+        }
+        self.bound_groups
+            .get(binding.group as usize)
+            .and_then(Option::as_ref)
+            .filter(|group| group.kind == expected)
+            .and_then(|group| {
+                group
+                    .resources
+                    .sampling
+                    .samplers_clamp_to_edge_u_v
+                    .get(local)
+            })
+            == Some(&true)
+    }
+
     fn bindings_compatible(&self) -> bool {
         let Some(plan) = &self.active_plan else {
             return false;
@@ -310,6 +358,8 @@ impl RenderState {
                 || bound.resources.samplers.len() != expected.samplers.iter().flatten().count()
                 || bound.resources.sampling.textures.len() != bound.resources.textures.len()
                 || bound.resources.sampling.samplers_wrap.len() != bound.resources.samplers.len()
+                || bound.resources.sampling.samplers_clamp_to_edge_u_v.len()
+                    != bound.resources.samplers.len()
                 || bound.resources.sampling.samplers_lod.len() != bound.resources.samplers.len()
                 || bound.resources.sampling.samplers_bias_compatible.len()
                     != bound.resources.samplers.len()

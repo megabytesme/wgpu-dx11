@@ -895,6 +895,7 @@ impl CommandBuffer {
                         let constants = match kind {
                             super::hal_shader::Fl9TextureEmulationKind::Load
                             | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions
+                            | super::hal_shader::Fl9TextureEmulationKind::Gather
                             | super::hal_shader::Fl9TextureEmulationKind::SampleBiasOffset
                             | super::hal_shader::Fl9TextureEmulationKind::SampleCompareOffset => [
                                 *width as f32,
@@ -944,6 +945,7 @@ impl CommandBuffer {
                             super::hal_shader::Fl9TextureEmulationKind::Load
                                 | super::hal_shader::Fl9TextureEmulationKind::Load3D
                                 | super::hal_shader::Fl9TextureEmulationKind::LoadDimensions
+                                | super::hal_shader::Fl9TextureEmulationKind::Gather
                         ) {
                             context.PSSetSamplers(15, Some(&[Some(sampler.clone())]));
                         }

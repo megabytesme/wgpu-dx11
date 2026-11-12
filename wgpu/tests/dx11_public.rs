@@ -3501,12 +3501,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             cache: None,
         })
     };
-    expect_validation_error_containing(
-        &device,
-        "direct textureGather in FL9_1 fragment entry",
-        "UnsupportedTextureGather",
-        || drop(create_texture_gather_pipeline("gather_direct")),
-    );
+    drop(create_texture_gather_pipeline("gather_direct"));
     expect_validation_error_containing(
         &device,
         "helper textureGather in FL9_1 fragment entry",
@@ -3515,7 +3510,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     );
     drop(create_texture_gather_pipeline("implicit"));
     println!(
-        "PASS: public core rejects direct and helper-reached textureGather at FL9_1 and compiles an implicit-sampling sibling"
+        "PASS: public core compiles the proven direct FL9_1 textureGather subset and rejects helper-reached gather"
     );
 
     let texture_query_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
@@ -33648,6 +33643,18 @@ fn public_dx11_query_gated_fl91_comparison_sample_offset() {
 }
 
 #[test]
+fn public_dx11_query_gated_fl91_comparison_sample_offset_split_groups() {
+    run_public_fl91_depth_comparison_sampling_with_groups(
+        TextureFormat::Depth16Unorm,
+        false,
+        None,
+        false,
+        true,
+        true,
+    );
+}
+
+#[test]
 fn public_dx11_query_gated_fl91_comparison_level_sample_offset() {
     run_public_fl91_depth_comparison_sampling(TextureFormat::Depth16Unorm, true, None, false, true);
 }
@@ -33724,6 +33731,24 @@ fn run_public_fl91_depth_comparison_sampling(
     border_color: Option<SamplerBorderColor>,
     combined_default_view: bool,
     sample_offset: bool,
+) {
+    run_public_fl91_depth_comparison_sampling_with_groups(
+        depth_format,
+        level_zero,
+        border_color,
+        combined_default_view,
+        sample_offset,
+        false,
+    );
+}
+
+fn run_public_fl91_depth_comparison_sampling_with_groups(
+    depth_format: TextureFormat,
+    level_zero: bool,
+    border_color: Option<SamplerBorderColor>,
+    combined_default_view: bool,
+    sample_offset: bool,
+    split_groups: bool,
 ) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -33849,6 +33874,16 @@ struct VertexOut {
     return vec4f(result, 0.0, 0.0, 1.0);
 }
 "#;
+    let (texture_group, sampler_group) = if split_groups { (1, 2) } else { (0, 0) };
+    let shader_source = shader_source
+        .replace(
+            "@group(0) @binding(7)",
+            &format!("@group({texture_group}) @binding(7)"),
+        )
+        .replace(
+            "@group(0) @binding(42)",
+            &format!("@group({sampler_group}) @binding(42)"),
+        );
     let mut shader_source = if level_zero {
         shader_source.replace("textureSampleCompare(", "textureSampleCompareLevel(")
     } else {
@@ -33876,7 +33911,29 @@ struct VertexOut {
         }),
         source: ShaderSource::Wgsl(shader_source.into()),
     });
-    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+    let texture_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 comparison texture layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Depth,
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    });
+    let sampler_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 comparison sampler layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 42,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Sampler(SamplerBindingType::Comparison),
+            count: None,
+        }],
+    });
+    let combined_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 comparison layout"),
         entries: &[
             BindGroupLayoutEntry {
@@ -33897,11 +33954,19 @@ struct VertexOut {
             },
         ],
     });
-    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-        label: Some("FL9_1 comparison pipeline layout"),
-        bind_group_layouts: &[Some(&layout)],
-        immediate_size: 0,
-    });
+    let pipeline_layout = if split_groups {
+        device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("FL9_1 split-group comparison pipeline layout"),
+            bind_group_layouts: &[None, Some(&texture_layout), Some(&sampler_layout)],
+            immediate_size: 0,
+        })
+    } else {
+        device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("FL9_1 comparison pipeline layout"),
+            bind_group_layouts: &[Some(&combined_layout)],
+            immediate_size: 0,
+        })
+    };
     let sampler = device.create_sampler(&SamplerDescriptor {
         label: Some("FL9_1 LessEqual comparison sampler"),
         address_mode_u: if border_color.is_some() {
@@ -33971,9 +34036,25 @@ struct VertexOut {
             }),
         )
     };
-    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+    let texture_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 depth comparison texture"),
+        layout: &texture_layout,
+        entries: &[BindGroupEntry {
+            binding: 7,
+            resource: BindingResource::TextureView(&depth_sampled),
+        }],
+    });
+    let sampler_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 depth comparison sampler"),
+        layout: &sampler_layout,
+        entries: &[BindGroupEntry {
+            binding: 42,
+            resource: BindingResource::Sampler(&sampler),
+        }],
+    });
+    let combined_bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("FL9_1 depth comparison bindings"),
-        layout: &layout,
+        layout: &combined_layout,
         entries: &[
             BindGroupEntry {
                 binding: 7,
@@ -34113,7 +34194,12 @@ struct VertexOut {
             multiview_mask: None,
         });
         pass.set_pipeline(&comparison_pipeline);
-        pass.set_bind_group(0, &bind_group, &[]);
+        if split_groups {
+            pass.set_bind_group(1, &texture_bind_group, &[]);
+            pass.set_bind_group(2, &sampler_bind_group, &[]);
+        } else {
+            pass.set_bind_group(0, &combined_bind_group, &[]);
+        }
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..3, 0..1);
     }
@@ -35168,6 +35254,15 @@ fn public_dx11_timestamp_queries_are_not_advertised_at_fl91() {
 
 #[test]
 fn public_dx11_fragment_texture_load_emulation_at_fl91() {
+    run_public_dx11_fragment_texture_load_emulation_at_fl91(0, 7);
+}
+
+#[test]
+fn public_dx11_fragment_texture_load_nonzero_group_at_fl91() {
+    run_public_dx11_fragment_texture_load_emulation_at_fl91(1, 42);
+}
+
+fn run_public_dx11_fragment_texture_load_emulation_at_fl91(group: u32, binding: u32) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -35193,7 +35288,7 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
         .allowed_usages
         .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureLoad emulation; rgba8_srgb_sample_upload={srgb_load_supported}",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureLoad emulation at group {group}/binding {binding}; rgba8_srgb_sample_upload={srgb_load_supported}",
         info.name, info.vendor, info.device, info.driver_info,
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -35246,9 +35341,9 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
     );
     let source_view = texture.create_view(&TextureViewDescriptor::default());
     let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-        label: Some("FL9_1 textureLoad layout"),
+        label: Some("FL9_1 textureLoad sparse layout"),
         entries: &[BindGroupLayoutEntry {
-            binding: 7,
+            binding,
             visibility: ShaderStages::FRAGMENT,
             ty: BindingType::Texture {
                 sample_type: TextureSampleType::Float { filterable: true },
@@ -35262,7 +35357,7 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
         label: Some("FL9_1 textureLoad binding"),
         layout: &bind_group_layout,
         entries: &[BindGroupEntry {
-            binding: 7,
+            binding,
             resource: BindingResource::TextureView(&source_view),
         }],
     });
@@ -35305,36 +35400,39 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
             label: Some("FL9_1 sRGB textureLoad binding"),
             layout: &bind_group_layout,
             entries: &[BindGroupEntry {
-                binding: 7,
+                binding,
                 resource: BindingResource::TextureView(&view),
             }],
         });
         (texture, view, bind_group)
     });
+    let mut bind_group_layouts: Vec<Option<&BindGroupLayout>> = vec![None; group as usize];
+    bind_group_layouts.push(Some(&bind_group_layout));
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("FL9_1 textureLoad pipeline layout"),
-        bind_group_layouts: &[Some(&bind_group_layout)],
+        bind_group_layouts: &bind_group_layouts,
         immediate_size: 0,
     });
+    let shader_source = "@group(__GROUP__) @binding(__BINDING__) var image: texture_2d<f32>;\n\
+         @group(__GROUP__) @binding(__SIBLING__) var sibling_image: texture_2d<f32>;\n\
+         fn inner_load() -> vec4f { return textureLoad(image, vec2i(1, 0), 0); }\n\
+         fn nested_load() -> vec4f { return inner_load(); }\n\
+         fn unused_sibling() -> vec4f { if true { return textureLoad(sibling_image, vec2i(0), 0); } return vec4f(0.0); }\n\
+         struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
+         @vertex fn vs(@location(0) p: vec2f) -> VertexOut { return VertexOut(vec4f(p, 0.0, 1.0), vec2f(p.x + 1.0, 1.0 - p.y)); }\n\
+         fn load_at(coord: vec2f) -> vec4f { return textureLoad(image, vec2i(coord), 0); }\n\
+         @fragment fn inside() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 0); }\n\
+         @fragment fn through_nested_helper() -> @location(0) vec4f { return nested_load(); }\n\
+         @fragment fn through_dynamic_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return load_at(uv); }\n\
+         @fragment fn outside() -> @location(0) vec4f { return textureLoad(image, vec2i(2, 0), 0); }\n\
+         @fragment fn invalid_level() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 1); }\n\
+         @fragment fn inside_srgb() -> @location(0) vec4f { return textureLoad(image, vec2i(0, 0), 0); }"
+        .replace("__GROUP__", &group.to_string())
+        .replace("__BINDING__", &binding.to_string())
+        .replace("__SIBLING__", &(binding + 1).to_string());
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 fragment textureLoad shader"),
-        source: ShaderSource::Wgsl(
-            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
-             @group(0) @binding(8) var sibling_image: texture_2d<f32>;\n\
-             fn inner_load() -> vec4f { return textureLoad(image, vec2i(1, 0), 0); }\n\
-             fn nested_load() -> vec4f { return inner_load(); }\n\
-             fn unused_sibling() -> vec4f { if true { return textureLoad(sibling_image, vec2i(0), 0); } return vec4f(0.0); }\n\
-             struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
-             @vertex fn vs(@location(0) p: vec2f) -> VertexOut { return VertexOut(vec4f(p, 0.0, 1.0), vec2f(p.x + 1.0, 1.0 - p.y)); }\n\
-             fn load_at(coord: vec2f) -> vec4f { return textureLoad(image, vec2i(coord), 0); }\n\
-             @fragment fn inside() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 0); }\n\
-             @fragment fn through_nested_helper() -> @location(0) vec4f { return nested_load(); }\n\
-             @fragment fn through_dynamic_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return load_at(uv); }\n\
-             @fragment fn outside() -> @location(0) vec4f { return textureLoad(image, vec2i(2, 0), 0); }\n\
-             @fragment fn invalid_level() -> @location(0) vec4f { return textureLoad(image, vec2i(1, 0), 1); }\n\
-             @fragment fn inside_srgb() -> @location(0) vec4f { return textureLoad(image, vec2i(0, 0), 0); }"
-                .into(),
-        ),
+        source: ShaderSource::Wgsl(shader_source.into()),
     });
     let make_pipeline = |fragment_entry_point| {
         device.create_render_pipeline(&RenderPipelineDescriptor {
@@ -35374,16 +35472,20 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
             cache: None,
         })
     };
-    let mut pipelines = vec![
-        make_pipeline("inside"),
-        make_pipeline("outside"),
-        make_pipeline("invalid_level"),
-        make_pipeline("through_nested_helper"),
-        make_pipeline("through_dynamic_helper"),
+    let mut fragment_entries = vec![
+        "inside",
+        "outside",
+        "invalid_level",
+        "through_nested_helper",
+        "through_dynamic_helper",
     ];
     if srgb_load_supported {
-        pipelines.push(make_pipeline("inside_srgb"));
+        fragment_entries.push("inside_srgb");
     }
+    let pipelines = fragment_entries
+        .into_iter()
+        .map(make_pipeline)
+        .collect::<Vec<_>>();
     let vertices = [-1.0f32, -1.0, -1.0, 3.0, 3.0, -1.0];
     let vertex_bytes: Vec<u8> = vertices
         .iter()
@@ -35401,94 +35503,24 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
         .copy_from_slice(&vertex_bytes);
     vertex.unmap();
 
-    let mut targets = vec![
-        device.create_texture(&TextureDescriptor {
-            label: Some("FL9_1 in-bounds textureLoad target"),
-            size: Extent3d {
-                width: 8,
-                height: 8,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
-            view_formats: &[],
-        }),
-        device.create_texture(&TextureDescriptor {
-            label: Some("FL9_1 out-of-bounds textureLoad target"),
-            size: Extent3d {
-                width: 8,
-                height: 8,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
-            view_formats: &[],
-        }),
-        device.create_texture(&TextureDescriptor {
-            label: Some("FL9_1 nonzero-mip textureLoad target"),
-            size: Extent3d {
-                width: 8,
-                height: 8,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
-            view_formats: &[],
-        }),
-        device.create_texture(&TextureDescriptor {
-            label: Some("FL9_1 nested-helper textureLoad target"),
-            size: Extent3d {
-                width: 8,
-                height: 8,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
-            view_formats: &[],
-        }),
-        device.create_texture(&TextureDescriptor {
-            label: Some("FL9_1 dynamic-helper textureLoad target"),
-            size: Extent3d {
-                width: 8,
-                height: 8,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
-            view_formats: &[],
-        }),
-    ];
-    if srgb_load_supported {
-        targets.push(device.create_texture(&TextureDescriptor {
-            label: Some("FL9_1 sRGB textureLoad target"),
-            size: Extent3d {
-                width: 8,
-                height: 8,
-                depth_or_array_layers: 1,
-            },
-            mip_level_count: 1,
-            sample_count: 1,
-            dimension: TextureDimension::D2,
-            format: TextureFormat::Rgba8Unorm,
-            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
-            view_formats: &[],
-        }));
-    }
+    let targets = (0..pipelines.len())
+        .map(|_| {
+            device.create_texture(&TextureDescriptor {
+                label: Some("FL9_1 textureLoad target"),
+                size: Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: TextureDimension::D2,
+                format: TextureFormat::Rgba8Unorm,
+                usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+                view_formats: &[],
+            })
+        })
+        .collect::<Vec<_>>();
     let target_views: Vec<_> = targets
         .iter()
         .map(|target| target.create_view(&TextureViewDescriptor::default()))
@@ -35520,12 +35552,13 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
             multiview_mask: None,
         });
         pass.set_pipeline(&pipelines[index]);
-        let selected_bind_group = if index == 5 {
+        let srgb_index = srgb_load_supported.then_some(pipelines.len() - 1);
+        let selected_bind_group = if srgb_index == Some(index) {
             &srgb_resources.as_ref().unwrap().2
         } else {
             &bind_group
         };
-        pass.set_bind_group(0, selected_bind_group, &[]);
+        pass.set_bind_group(group, selected_bind_group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..3, 0..1);
         drop(pass);
@@ -35582,7 +35615,6 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
                 let outside = 8 * 256 + inside;
                 let invalid_level = 16 * 256 + inside;
                 let nested = 24 * 256 + inside;
-                let dynamic_helper = 32 * 256 + inside;
                 assert_eq!(
                     &pixels[inside..inside + 4],
                     &[0, 255, 0, 255],
@@ -35593,6 +35625,7 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
                     &[0, 255, 0, 255],
                     "nested-helper textureLoad output ({x}, {y})"
                 );
+                let dynamic_helper = 4 * 8 * 256 + inside;
                 let dynamic_expected: &[u8; 4] = match (x < 4, y < 4) {
                     (true, true) => &[255, 0, 0, 255],
                     (false, true) => &[0, 255, 0, 255],
@@ -35617,9 +35650,10 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
             }
         }
         if srgb_load_supported {
+            let srgb_index = pipelines.len() - 1;
             for y in 0..8 {
                 for x in 0..8 {
-                    let srgb = 5 * 8 * 256 + y * 256 + x * 4;
+                    let srgb = srgb_index * 8 * 256 + y * 256 + x * 4;
                     let expected = [55, 55, 55, 128];
                     for channel in 0..4 {
                         assert!(
@@ -35635,9 +35669,9 @@ fn public_dx11_fragment_texture_load_emulation_at_fl91() {
     }
     readback.unmap();
     if srgb_load_supported {
-        println!("PASS: direct and nested-helper FL9_1 fragment textureLoad produced expected in-bounds, out-of-bounds and nonzero-mip pixels; the dynamic helper matched all four source quadrants, and sRGB input [128, 128, 128, 128] decoded to [55, 55, 55, 128] across 64 pixels");
+        println!("PASS: direct, nested-helper and dynamic-coordinate FL9_1 fragment textureLoad at group {group}/binding {binding} produced expected in-bounds, out-of-bounds and nonzero-mip pixels; the dynamic helper matched all four source quadrants, and sRGB input [128, 128, 128, 128] decoded to [55, 55, 55, 128] across 64 pixels");
     } else {
-        println!("PASS: direct and nested-helper FL9_1 fragment textureLoad results matched; SKIP: selected adapter did not expose query-gated RGBA8 sRGB sampling and upload");
+        println!("PASS: direct, nested-helper and dynamic-coordinate FL9_1 fragment textureLoad at group {group}/binding {binding} matched; SKIP: selected adapter did not expose query-gated RGBA8 sRGB sampling and upload");
     }
 }
 
@@ -37520,15 +37554,28 @@ fn run_public_dx11_fragment_texture_dimensions_emulation_at_fl91(
 
 #[test]
 fn public_dx11_fragment_texture_dimensions_and_sample_at_fl91() {
-    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(false);
+    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(false, false);
 }
 
 #[test]
 fn public_dx11_fragment_texture_dimensions_helper_and_sample_at_fl91() {
-    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(true);
+    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(true, false);
 }
 
-fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(use_helper: bool) {
+#[test]
+fn public_dx11_fragment_texture_dimensions_and_sample_split_groups_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(false, true);
+}
+
+#[test]
+fn public_dx11_fragment_texture_dimensions_helper_and_sample_split_groups_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(true, true);
+}
+
+fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(
+    use_helper: bool,
+    split_groups: bool,
+) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -37549,6 +37596,8 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(use_helper: bo
     let downlevel = adapter.get_downlevel_capabilities();
     assert!(downlevel.limits.texture_dimensions_2d_float_fragment);
     assert!(!downlevel.limits.texture_query);
+    let image_group = if split_groups { 1 } else { 0 };
+    let sampler_group = if split_groups { 2 } else { 0 };
     let operation = if use_helper {
         "fragment textureDimensions helper plus implicit textureSample"
     } else {
@@ -37589,8 +37638,8 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(use_helper: bo
     });
     let fragment_source = if use_helper {
         r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
-            @group(0) @binding(42) var smp: sampler;
+            @group(__IMAGE_GROUP__) @binding(7) var image: texture_2d<f32>;
+            @group(__SAMPLER_GROUP__) @binding(42) var smp: sampler;
             fn query_dimensions() -> vec2u {
                 return textureDimensions(image);
             }
@@ -37602,18 +37651,58 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(use_helper: bo
         "#
     } else {
         r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
-            @group(0) @binding(42) var smp: sampler;
+            @group(__IMAGE_GROUP__) @binding(7) var image: texture_2d<f32>;
+            @group(__SAMPLER_GROUP__) @binding(42) var smp: sampler;
             @fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
                 let dimensions = vec2f(textureDimensions(image));
                 let sampled = textureSample(image, smp, uv);
                 return sampled * vec4f(dimensions / vec2f(16.0, 8.0), 1.0, 1.0);
             }
         "#
-    };
+    }
+    .replace("__IMAGE_GROUP__", &image_group.to_string())
+    .replace("__SAMPLER_GROUP__", &sampler_group.to_string());
     let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 dimensions and sample fragment shader"),
         source: ShaderSource::Wgsl(fragment_source.into()),
+    });
+    let texture_entry = BindGroupLayoutEntry {
+        binding: 7,
+        visibility: ShaderStages::FRAGMENT,
+        ty: BindingType::Texture {
+            sample_type: TextureSampleType::Float { filterable: true },
+            view_dimension: TextureViewDimension::D2,
+            multisampled: false,
+        },
+        count: None,
+    };
+    let sampler_entry = BindGroupLayoutEntry {
+        binding: 42,
+        visibility: ShaderStages::FRAGMENT,
+        ty: BindingType::Sampler(SamplerBindingType::Filtering),
+        count: None,
+    };
+    let texture_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 dimensions sampled texture layout"),
+        entries: &[texture_entry],
+    });
+    let sampler_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 dimensions sampler layout"),
+        entries: &[sampler_entry],
+    });
+    let combined_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 dimensions combined binding layout"),
+        entries: &[texture_entry, sampler_entry],
+    });
+    let bind_group_layouts = if split_groups {
+        vec![None, Some(&texture_layout), Some(&sampler_layout)]
+    } else {
+        vec![Some(&combined_layout)]
+    };
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 dimensions and sample pipeline layout"),
+        bind_group_layouts: &bind_group_layouts,
+        immediate_size: 0,
     });
     let make_texture = |label, width, height, color: [u8; 4]| {
         let texture = device.create_texture(&TextureDescriptor {
@@ -37704,7 +37793,7 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(use_helper: bo
     })];
     let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some("FL9_1 dimensions and sample pipeline"),
-        layout: None,
+        layout: Some(&pipeline_layout),
         vertex: VertexState {
             module: &vertex_shader,
             entry_point: Some("vs"),
@@ -37723,35 +37812,69 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(use_helper: bo
         multiview_mask: None,
         cache: None,
     });
-    let layout = pipeline.get_bind_group_layout(0);
-    let group_a = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("FL9_1 4x2 dimensions and sample bindings"),
-        layout: &layout,
-        entries: &[
-            BindGroupEntry {
+    let (group_a, group_b, texture_group_a, texture_group_b, sampler_group) = if split_groups {
+        let texture_group_a = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("FL9_1 4x2 dimensions texture group"),
+            layout: &texture_layout,
+            entries: &[BindGroupEntry {
                 binding: 7,
                 resource: BindingResource::TextureView(&view_a),
-            },
-            BindGroupEntry {
-                binding: 42,
-                resource: BindingResource::Sampler(&sampler),
-            },
-        ],
-    });
-    let group_b = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("FL9_1 8x4 dimensions and sample bindings"),
-        layout: &layout,
-        entries: &[
-            BindGroupEntry {
+            }],
+        });
+        let texture_group_b = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("FL9_1 8x4 dimensions texture group"),
+            layout: &texture_layout,
+            entries: &[BindGroupEntry {
                 binding: 7,
                 resource: BindingResource::TextureView(&view_b),
-            },
-            BindGroupEntry {
+            }],
+        });
+        let sampler_group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("FL9_1 dimensions sampler group"),
+            layout: &sampler_layout,
+            entries: &[BindGroupEntry {
                 binding: 42,
                 resource: BindingResource::Sampler(&sampler),
-            },
-        ],
-    });
+            }],
+        });
+        (
+            None,
+            None,
+            Some(texture_group_a),
+            Some(texture_group_b),
+            Some(sampler_group),
+        )
+    } else {
+        let group_a = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("FL9_1 4x2 dimensions and sample bindings"),
+            layout: &combined_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&view_a),
+                },
+                BindGroupEntry {
+                    binding: 42,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        let group_b = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("FL9_1 8x4 dimensions and sample bindings"),
+            layout: &combined_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&view_b),
+                },
+                BindGroupEntry {
+                    binding: 42,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
+        });
+        (Some(group_a), Some(group_b), None, None, None)
+    };
     let vertices = [
         [-1.0_f32, -1.0, 0.5, 0.5],
         [3.0, -1.0, 0.5, 0.5],
@@ -37797,10 +37920,20 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(use_helper: bo
         });
         pass.set_pipeline(&pipeline);
         pass.set_vertex_buffer(0, vertex.slice(..));
-        pass.set_bind_group(0, &group_a, &[]);
+        if split_groups {
+            pass.set_bind_group(1, texture_group_a.as_ref().unwrap(), &[]);
+            pass.set_bind_group(2, sampler_group.as_ref().unwrap(), &[]);
+        } else {
+            pass.set_bind_group(0, group_a.as_ref().unwrap(), &[]);
+        }
         pass.set_scissor_rect(0, 0, 4, 8);
         pass.draw(0..3, 0..1);
-        pass.set_bind_group(0, &group_b, &[]);
+        if split_groups {
+            pass.set_bind_group(1, texture_group_b.as_ref().unwrap(), &[]);
+            pass.set_bind_group(2, sampler_group.as_ref().unwrap(), &[]);
+        } else {
+            pass.set_bind_group(0, group_b.as_ref().unwrap(), &[]);
+        }
         pass.set_scissor_rect(4, 0, 4, 8);
         pass.draw(0..3, 0..1);
     }
@@ -38438,6 +38571,7 @@ fn public_dx11_fragment_texture_num_levels_emulation_at_fl91() {
 
 struct Fl9TextureNumLevelsViewConfig<'a> {
     group: u32,
+    sampler_group: u32,
     image_type: &'a str,
     suffix_levels: u32,
     helper_query: bool,
@@ -38469,9 +38603,12 @@ fn verify_fl91_texture_num_levels_views(
         ("", "let levels = f32(textureNumLevels(image));")
     };
     let sample_declaration = if config.sample {
-        "@group(0) @binding(7) var smp: sampler;"
+        format!(
+            "@group({}) @binding(7) var smp: sampler;",
+            config.sampler_group
+        )
     } else {
-        ""
+        String::new()
     };
     let sample_coordinate = match config.image_type {
         "texture_2d<f32>" => "vec2f(0.5)",
@@ -38548,7 +38685,10 @@ fn verify_fl91_texture_num_levels_views(
             binding: 42,
             resource: BindingResource::TextureView(view),
         }];
-        if let Some(sampler) = sampler.as_ref().filter(|_| config.group == 0) {
+        if let Some(sampler) = sampler
+            .as_ref()
+            .filter(|_| config.group == config.sampler_group)
+        {
             entries.push(BindGroupEntry {
                 binding: 7,
                 resource: BindingResource::Sampler(sampler),
@@ -38562,9 +38702,9 @@ fn verify_fl91_texture_num_levels_views(
     };
     let sampler_group = sampler
         .as_ref()
-        .filter(|_| config.group != 0)
+        .filter(|_| config.group != config.sampler_group)
         .map(|sampler| {
-            let layout = pipeline.get_bind_group_layout(0);
+            let layout = pipeline.get_bind_group_layout(config.sampler_group);
             device.create_bind_group(&BindGroupDescriptor {
                 label: Some(label),
                 layout: &layout,
@@ -38635,7 +38775,7 @@ fn verify_fl91_texture_num_levels_views(
         pass.set_pipeline(&pipeline);
         pass.set_vertex_buffer(0, vertex.slice(..));
         if let Some(sampler_group) = &sampler_group {
-            pass.set_bind_group(0, sampler_group, &[]);
+            pass.set_bind_group(config.sampler_group, sampler_group, &[]);
         }
         pass.set_bind_group(config.group, &first_group, &[]);
         pass.set_scissor_rect(0, 0, 4, 8);
@@ -38820,6 +38960,7 @@ fn public_dx11_fragment_texture_num_levels_selected_helper_at_fl91() {
         &three_level_view,
         Fl9TextureNumLevelsViewConfig {
             group: 2,
+            sampler_group: 0,
             image_type: "texture_2d<f32>",
             suffix_levels: 3,
             helper_query: false,
@@ -38834,6 +38975,7 @@ fn public_dx11_fragment_texture_num_levels_selected_helper_at_fl91() {
         &three_level_view,
         Fl9TextureNumLevelsViewConfig {
             group: 2,
+            sampler_group: 0,
             image_type: "texture_2d<f32>",
             suffix_levels: 3,
             helper_query: false,
@@ -38848,6 +38990,7 @@ fn public_dx11_fragment_texture_num_levels_selected_helper_at_fl91() {
         &three_level_view,
         Fl9TextureNumLevelsViewConfig {
             group: 2,
+            sampler_group: 0,
             image_type: "texture_2d<f32>",
             suffix_levels: 3,
             helper_query: true,
@@ -38862,6 +39005,37 @@ fn public_dx11_fragment_texture_num_levels_selected_helper_at_fl91() {
         &three_level_view,
         Fl9TextureNumLevelsViewConfig {
             group: 2,
+            sampler_group: 0,
+            image_type: "texture_2d<f32>",
+            suffix_levels: 3,
+            helper_query: true,
+            sample: true,
+        },
+    );
+    verify_fl91_texture_num_levels_views(
+        &device,
+        &queue,
+        "FL9_1 direct textureNumLevels with split-group sampler",
+        &one_level_view,
+        &three_level_view,
+        Fl9TextureNumLevelsViewConfig {
+            group: 2,
+            sampler_group: 3,
+            image_type: "texture_2d<f32>",
+            suffix_levels: 3,
+            helper_query: false,
+            sample: true,
+        },
+    );
+    verify_fl91_texture_num_levels_views(
+        &device,
+        &queue,
+        "FL9_1 selected-helper textureNumLevels with split-group sampler",
+        &one_level_view,
+        &three_level_view,
+        Fl9TextureNumLevelsViewConfig {
+            group: 2,
+            sampler_group: 3,
             image_type: "texture_2d<f32>",
             suffix_levels: 3,
             helper_query: true,
@@ -38986,6 +39160,7 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
             &full_chain_view,
             Fl9TextureNumLevelsViewConfig {
                 group: 0,
+                sampler_group: 0,
                 image_type: "texture_3d<f32>",
                 suffix_levels: mip_count,
                 helper_query: false,
@@ -39000,6 +39175,7 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
             &full_chain_view,
             Fl9TextureNumLevelsViewConfig {
                 group: 0,
+                sampler_group: 0,
                 image_type: "texture_3d<f32>",
                 suffix_levels: mip_count,
                 helper_query: true,
@@ -39081,6 +39257,7 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
             &full_chain_view,
             Fl9TextureNumLevelsViewConfig {
                 group: 0,
+                sampler_group: 0,
                 image_type: "texture_cube<f32>",
                 suffix_levels: mip_count,
                 helper_query: false,
@@ -39095,6 +39272,7 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
             &full_chain_view,
             Fl9TextureNumLevelsViewConfig {
                 group: 0,
+                sampler_group: 0,
                 image_type: "texture_cube<f32>",
                 suffix_levels: mip_count,
                 helper_query: true,
@@ -41916,4 +42094,371 @@ fn public_dx11_mat2_mat3_and_vertex_mat4_matrix_inverse_at_fl91() {
     println!(
         "PASS: Core rejected mat4 inverse as a validation error without an internal HAL error"
     );
+}
+
+#[test]
+fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+
+    let info = adapter.get_info();
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    assert!(!downlevel.limits.texture_gather);
+    assert!(downlevel.limits.texture_gather_2d_float_fragment);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false workload=fragment textureGather emulation",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 fragment textureGather test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the physical FL9_1 device");
+
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 textureGather sparse layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 42,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 textureGather pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 direct textureGather shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @group(0) @binding(42) var smp: sampler;\n\
+             struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
+             @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(vec4f(position, 0.0, 1.0), uv); }\n\
+             @fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(2, image, smp, uv); }"
+                .into(),
+        ),
+    });
+    let target_format = TextureFormat::Rgba8Unorm;
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 textureGather pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 16,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[
+                    VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    },
+                    VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 8,
+                        shader_location: 1,
+                    },
+                ],
+            })],
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: target_format,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let input = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 textureGather patterned input"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: target_format,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let texels: Vec<u8> = (0..4)
+        .flat_map(|y| {
+            (0..4).flat_map(move |x| {
+                let index = y * 4 + x;
+                [
+                    index as u8,
+                    (255 - index) as u8,
+                    (16 + index * 15) as u8,
+                    255,
+                ]
+            })
+        })
+        .collect();
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &input,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &texels,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(16),
+            rows_per_image: Some(4),
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+    );
+    let input_view = input.create_view(&TextureViewDescriptor::default());
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        address_mode_u: AddressMode::ClampToEdge,
+        address_mode_v: AddressMode::ClampToEdge,
+        ..Default::default()
+    });
+    let group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 textureGather resources"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&input_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let vertex_data: Vec<u8> = [
+        -1.0f32, -1.0, 0.5, 0.5, 3.0, -1.0, 0.5, 0.5, -1.0, 3.0, 0.5, 0.5,
+    ]
+    .into_iter()
+    .flat_map(f32::to_ne_bytes)
+    .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 textureGather fullscreen triangle"),
+        size: vertex_data.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&vertex, 0, &vertex_data);
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 textureGather output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: target_format,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 textureGather readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 textureGather draw and readback"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 textureGather pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 textureGather execution");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("textureGather readback callback")
+        .expect("map textureGather readback");
+    let expected = [151, 166, 106, 91];
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped textureGather pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                for channel in 0..4 {
+                    let observed = data[offset + channel];
+                    assert!(
+                        observed.abs_diff(expected[channel]) <= 1,
+                        "textureGather pixel ({x}, {y}) channel {channel}: expected {}, observed {observed}",
+                        expected[channel]
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!(
+        "PASS: physical FL9_1 fragment textureGather sampled the expected texels; 64/64 pixels matched {expected:?} within one UNORM step"
+    );
+
+    let multi_mip_input = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 invalid multi-mip textureGather input"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 3,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: target_format,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let multi_mip_view = multi_mip_input.create_view(&TextureViewDescriptor::default());
+    let multi_mip_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 invalid multi-mip textureGather resources"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&multi_mip_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    expect_validation_error_containing(
+        &device,
+        "FL9_1 textureGather with a multi-mip view",
+        "IncompatibleTextureGatherView",
+        || {
+            let mut invalid_encoder =
+                device.create_command_encoder(&CommandEncoderDescriptor::default());
+            {
+                let mut pass = invalid_encoder.begin_render_pass(&RenderPassDescriptor {
+                    label: Some("invalid FL9_1 textureGather pass"),
+                    color_attachments: &[Some(RenderPassColorAttachment {
+                        view: &target_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Load,
+                            store: StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(&pipeline);
+                pass.set_bind_group(0, &multi_mip_group, &[]);
+                pass.set_vertex_buffer(0, vertex.slice(..));
+                pass.draw(0..3, 0..1);
+            }
+            drop(invalid_encoder.finish());
+        },
+    );
+    println!("PASS: Core rejects a used textureGather relationship with a multi-mip view before submission");
 }

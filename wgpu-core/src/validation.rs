@@ -340,6 +340,7 @@ struct EntryPoint {
     texture_sample_level_used: bool,
     fl9_texture_sample_level_zero_pairs: Option<Vec<SamplingPair>>,
     texture_gather_used: bool,
+    fl9_texture_gather_pair: Option<SamplingPair>,
     workgroup_size: [u32; 3],
     dual_source_blending: bool,
     task_payload_size: Option<u32>,
@@ -4025,6 +4026,136 @@ fn entry_point_uses_texture_gather(module: &naga::Module, entry_point: &naga::En
     false
 }
 
+fn entry_point_fl9_texture_gather_pair(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+) -> Option<SamplingPair> {
+    if entry_point.stage != naga::ShaderStage::Fragment
+        || entry_point.function.arguments.len() != 1
+        || !fl9_is_float_vector(
+            module,
+            entry_point.function.arguments[0].ty,
+            naga::VectorSize::Bi,
+        )
+        || !entry_point.function.arguments[0]
+            .binding
+            .as_ref()
+            .is_some_and(|binding| matches!(binding, naga::Binding::Location { location: 0, .. }))
+        || !fl9_is_float_vector(
+            module,
+            entry_point.function.result.as_ref()?.ty,
+            naga::VectorSize::Quad,
+        )
+        || !entry_point
+            .function
+            .result
+            .as_ref()?
+            .binding
+            .as_ref()
+            .is_some_and(|binding| matches!(binding, naga::Binding::Location { location: 0, .. }))
+        || entry_point.function.body.iter().any(|statement| {
+            !matches!(
+                statement,
+                naga::Statement::Emit(_) | naga::Statement::Return { .. }
+            )
+        })
+    {
+        return None;
+    }
+
+    let mut gather_pair = None;
+    let mut image_global = None;
+    let mut sampler_global = None;
+    for (_, expression) in entry_point.function.expressions.iter() {
+        match *expression {
+            naga::Expression::ImageSample {
+                image,
+                sampler,
+                coordinate,
+                array_index: None,
+                offset: None,
+                level: naga::SampleLevel::Zero,
+                depth_ref: None,
+                gather: Some(_),
+                clamp_to_edge: false,
+            } => {
+                if gather_pair.is_some()
+                    || !matches!(
+                        entry_point.function.expressions[coordinate],
+                        naga::Expression::FunctionArgument(0)
+                    )
+                {
+                    return None;
+                }
+                let naga::Expression::GlobalVariable(image) =
+                    entry_point.function.expressions[image]
+                else {
+                    return None;
+                };
+                let naga::Expression::GlobalVariable(sampler) =
+                    entry_point.function.expressions[sampler]
+                else {
+                    return None;
+                };
+                image_global = Some(image);
+                sampler_global = Some(sampler);
+                gather_pair = Some((image, sampler));
+            }
+            naga::Expression::ImageSample { .. }
+            | naga::Expression::ImageLoad { .. }
+            | naga::Expression::ImageQuery { .. } => return None,
+            _ => {}
+        }
+    }
+    let (image, sampler) = gather_pair?;
+
+    for (_, expression) in entry_point.function.expressions.iter() {
+        if let naga::Expression::GlobalVariable(global) = *expression {
+            let inner = &module.types[module.global_variables[global].ty].inner;
+            if matches!(
+                inner,
+                naga::TypeInner::Image { .. } | naga::TypeInner::Sampler { .. }
+            ) && Some(global) != image_global
+                && Some(global) != sampler_global
+            {
+                return None;
+            }
+        }
+    }
+
+    let image_global = &module.global_variables[image];
+    let sampler_global = &module.global_variables[sampler];
+    if image_global.space != naga::AddressSpace::Handle
+        || sampler_global.space != naga::AddressSpace::Handle
+        || !matches!(
+            module.types[image_global.ty].inner,
+            naga::TypeInner::Image {
+                dim: naga::ImageDimension::D2,
+                arrayed: false,
+                class: naga::ImageClass::Sampled {
+                    kind: naga::ScalarKind::Float,
+                    multi: false,
+                },
+            }
+        )
+        || !matches!(
+            module.types[sampler_global.ty].inner,
+            naga::TypeInner::Sampler { comparison: false }
+        )
+    {
+        return None;
+    }
+
+    let image_binding = image_global.binding.as_ref()?;
+    let sampler_binding = sampler_global.binding.as_ref()?;
+    Some(SamplingPair {
+        texture_group: image_binding.group,
+        texture_binding: image_binding.binding,
+        sampler_group: sampler_binding.group,
+        sampler_binding: sampler_binding.binding,
+    })
+}
+
 fn entry_point_uses_texture_load(module: &naga::Module, entry_point: &naga::EntryPoint) -> bool {
     if entry_point
         .function
@@ -4929,10 +5060,7 @@ fn entry_point_supports_fl9_dynamic_2d_texture_load_coordinate(
                 }
             )
             || image_global.space != naga::AddressSpace::Handle
-            || !matches!(
-                image_global.binding,
-                Some(naga::ResourceBinding { group: 0, .. })
-            )
+            || image_global.binding.is_none()
         {
             return false;
         }
@@ -5013,10 +5141,7 @@ fn entry_point_supports_fl9_dynamic_2d_texture_load_coordinate(
             },
         }
     ) || image_global.space != naga::AddressSpace::Handle
-        || !matches!(
-            image_global.binding,
-            Some(naga::ResourceBinding { group: 0, .. })
-        )
+        || image_global.binding.is_none()
     {
         return false;
     }
@@ -5200,7 +5325,7 @@ fn entry_point_supports_fl9_texture_load_dimensions(
 
     let image = &module.global_variables[image_binding];
     image.space == naga::AddressSpace::Handle
-        && matches!(image.binding, Some(naga::ResourceBinding { group: 0, .. }))
+        && image.binding.is_some()
         && matches!(
             module.types[image.ty].inner,
             naga::TypeInner::Image {
@@ -5536,7 +5661,9 @@ fn entry_point_supports_fl9_texture_dimensions(
         && sample_sampler.is_none_or(|sampler| {
             let global = &module.global_variables[sampler];
             global.space == naga::AddressSpace::Handle
-                && matches!(global.binding, Some(naga::ResourceBinding { group: 0, .. }))
+                && global.binding.is_some_and(|binding| {
+                    dimension == naga::ImageDimension::D2 || binding.group == 0
+                })
                 && matches!(
                     module.types[global.ty].inner,
                     naga::TypeInner::Sampler { comparison: false }
@@ -5766,10 +5893,9 @@ fn entry_point_supports_fl9_texture_dimensions_helper(
         || !sample_sampler.is_none_or(|sampler| {
             let sampler = &module.global_variables[sampler];
             sampler.space == naga::AddressSpace::Handle
-                && matches!(
-                    sampler.binding,
-                    Some(naga::ResourceBinding { group: 0, .. })
-                )
+                && sampler.binding.is_some_and(|binding| {
+                    dimension == naga::ImageDimension::D2 || binding.group == 0
+                })
                 && matches!(
                     module.types[sampler.ty].inner,
                     naga::TypeInner::Sampler { comparison: false }
@@ -6045,7 +6171,9 @@ fn entry_point_supports_fl9_texture_num_levels(
         || sample_sampler.is_some_and(|sampler| {
             let global = &module.global_variables[sampler];
             global.space != naga::AddressSpace::Handle
-                || !matches!(global.binding, Some(naga::ResourceBinding { group: 0, .. }))
+                || !global.binding.is_some_and(|binding| {
+                    dimension == naga::ImageDimension::D2 || binding.group == 0
+                })
                 || !matches!(
                     module.types[global.ty].inner,
                     naga::TypeInner::Sampler { comparison: false }
@@ -6309,10 +6437,9 @@ fn entry_point_supports_fl9_texture_num_levels_helper(
         || !sample_sampler.is_none_or(|sampler| {
             let sampler = &module.global_variables[sampler];
             sampler.space == naga::AddressSpace::Handle
-                && matches!(
-                    sampler.binding,
-                    Some(naga::ResourceBinding { group: 0, .. })
-                )
+                && sampler.binding.is_some_and(|binding| {
+                    dimension == naga::ImageDimension::D2 || binding.group == 0
+                })
                 && matches!(
                     module.types[sampler.ty].inner,
                     naga::TypeInner::Sampler { comparison: false }
@@ -8044,6 +8171,7 @@ impl Interface {
                 fl9_texture_sample_level_zero_pairs:
                     entry_point_fl9_texture_sample_level_zero_pairs(module, entry_point),
                 texture_gather_used: entry_point_uses_texture_gather(module, entry_point),
+                fl9_texture_gather_pair: entry_point_fl9_texture_gather_pair(module, entry_point),
                 ..Default::default()
             };
             for arg in entry_point.function.arguments.iter() {
@@ -8803,7 +8931,22 @@ impl Interface {
         let Some(entry_point) = self.entry_points.get(&key) else {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
-        Ok(entry_point.texture_gather_used && !limits.texture_gather)
+        Ok(entry_point.texture_gather_used
+            && !limits.texture_gather
+            && !(limits.texture_gather_2d_float_fragment
+                && entry_point.fl9_texture_gather_pair.is_some()))
+    }
+
+    pub(crate) fn entry_point_fl9_texture_gather_pair(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<Option<SamplingPair>, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.fl9_texture_gather_pair)
     }
 
     pub fn finalize_entry_point_name(
@@ -9687,6 +9830,95 @@ mod tests {
                 naga::ShaderStage::Vertex,
                 "wrong_stage",
                 &restricted_fl9_limits,
+            )
+            .unwrap());
+
+        let sparse_group_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(7) @binding(42) var image: texture_2d<f32>;
+            @group(1) @binding(9) var sibling: texture_2d<f32>;
+
+            fn load_selected() -> vec4f { return textureLoad(image, vec2i(1, 0), 0); }
+            fn load_selected_at(coord: vec2f) -> vec4f {
+                return textureLoad(image, vec2i(coord), 0);
+            }
+
+            @fragment fn direct() -> @location(0) vec4f {
+                return textureLoad(image, vec2i(1, 0), 0);
+            }
+            @fragment fn helper() -> @location(0) vec4f { return load_selected(); }
+            @fragment fn dynamic_helper(@location(0) coord: vec2f) -> @location(0) vec4f {
+                return load_selected_at(coord);
+            }
+            @fragment fn unsupported_sibling() -> @location(0) vec4f {
+                if true { return textureLoad(sibling, vec2i(0), 0); }
+                return vec4f(0.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let sparse_group_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&sparse_group_module)
+        .unwrap();
+        let sparse_group_interface = Interface::new(
+            &sparse_group_module,
+            &sparse_group_info,
+            wgt::Limits::defaults(),
+        );
+        for entry in ["direct", "helper"] {
+            assert!(!sparse_group_interface
+                .entry_point_uses_unsupported_fl9_texture_load(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &load_2d_limits,
+                )
+                .unwrap());
+            assert_eq!(
+                sparse_group_interface
+                    .fl9_texture_load_binding_used(naga::ShaderStage::Fragment, entry)
+                    .unwrap(),
+                Some(crate::validation::TextureLoadBinding {
+                    group: 7,
+                    binding: 42,
+                    dimension: naga::ImageDimension::D2,
+                })
+            );
+        }
+        assert!(!sparse_group_interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "dynamic_helper",
+                &load_2d_limits,
+            )
+            .unwrap());
+        assert!(sparse_group_interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "dynamic_helper",
+                &wgt::DownlevelLimits {
+                    runtime_integer_shader_operations: false,
+                    ..Default::default()
+                },
+            )
+            .unwrap());
+        assert_eq!(
+            sparse_group_interface
+                .fl9_texture_load_binding_used(naga::ShaderStage::Fragment, "dynamic_helper",)
+                .unwrap(),
+            Some(crate::validation::TextureLoadBinding {
+                group: 7,
+                binding: 42,
+                dimension: naga::ImageDimension::D2,
+            })
+        );
+        assert!(sparse_group_interface
+            .entry_point_uses_unsupported_fl9_texture_load(
+                naga::ShaderStage::Fragment,
+                "unsupported_sibling",
+                &load_2d_limits,
             )
             .unwrap());
 
@@ -10858,6 +11090,46 @@ mod tests {
                 &limits,
             )
             .unwrap());
+
+        let split_group_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(1) @binding(17) var shadow: texture_depth_2d;
+            @group(2) @binding(42) var shadow_sampler: sampler_comparison;
+            @fragment fn split_group(@location(0) uv: vec2f) -> @location(0) f32 {
+                return textureSampleCompare(shadow, shadow_sampler, uv, 0.5, vec2i(1, 0));
+            }
+            "#,
+        )
+        .expect("parse split-group FL9 textureSampleCompare offset proof module");
+        let split_group_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&split_group_module)
+        .expect("validate split-group comparison-offset proof module");
+        let split_group_interface = Interface::new(
+            &split_group_module,
+            &split_group_info,
+            wgt::Limits::defaults(),
+        );
+        let split_group_proof = split_group_interface
+            .fl9_texture_sample_compare_offset_binding_used(
+                naga::ShaderStage::Fragment,
+                "split_group",
+            )
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            (split_group_proof.group, split_group_proof.binding),
+            (1, 17)
+        );
+        assert!(!split_group_interface
+            .entry_point_uses_unsupported_texture_sample_compare_offset(
+                naga::ShaderStage::Fragment,
+                "split_group",
+                &limits,
+            )
+            .unwrap());
         assert!(!interface
             .entry_point_uses_unsupported_texture_sample_compare_offset(
                 naga::ShaderStage::Fragment,
@@ -11339,6 +11611,84 @@ mod tests {
                 &fl91,
             )
             .is_err());
+    }
+
+    #[test]
+    fn restricted_fl9_texture_gather_preserves_the_selected_binding_pair() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(1) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            fn helper(uv: vec2f) -> vec4f {
+                return textureGather(2, image, smp, uv);
+            }
+            @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv) * 0.5;
+            }
+            @fragment fn indirect(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return helper(uv);
+            }
+            @fragment fn offset(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv, vec2i(1, 0));
+            }
+            @fragment fn implicit(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSample(image, smp, uv);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let restricted = wgt::DownlevelLimits {
+            texture_gather: false,
+            texture_gather_2d_float_fragment: true,
+            ..Default::default()
+        };
+
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_gather(
+                naga::ShaderStage::Fragment,
+                "direct",
+                &restricted,
+            )
+            .unwrap());
+        assert_eq!(
+            interface
+                .entry_point_fl9_texture_gather_pair(naga::ShaderStage::Fragment, "direct")
+                .unwrap(),
+            Some(SamplingPair {
+                texture_group: 1,
+                texture_binding: 7,
+                sampler_group: 2,
+                sampler_binding: 42,
+            })
+        );
+
+        for entry in ["indirect", "offset"] {
+            assert!(interface
+                .entry_point_uses_unsupported_texture_gather(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &restricted,
+                )
+                .unwrap());
+            assert!(interface
+                .entry_point_fl9_texture_gather_pair(naga::ShaderStage::Fragment, entry)
+                .unwrap()
+                .is_none());
+        }
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_gather(
+                naga::ShaderStage::Fragment,
+                "implicit",
+                &restricted,
+            )
+            .unwrap());
     }
 
     #[test]
@@ -11825,10 +12175,10 @@ mod tests {
         };
         let supported = make_interface(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
-            @group(0) @binding(42) var smp: sampler;
-            @group(1) @binding(3) var sibling_image: texture_2d<f32>;
-            @group(1) @binding(4) var sibling_smp: sampler;
+            @group(1) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            @group(3) @binding(3) var sibling_image: texture_2d<f32>;
+            @group(4) @binding(4) var sibling_smp: sampler;
             fn dimensions_helper() -> vec2u { return textureDimensions(image); }
             @fragment fn selected(@location(0) uv: vec2f) -> @location(0) vec4f {
                 let dimensions = vec2f(dimensions_helper());
@@ -11860,6 +12210,48 @@ mod tests {
                 naga::ShaderStage::Fragment,
                 "sibling",
                 &narrow,
+            )
+            .unwrap());
+
+        let direct = make_interface(
+            r#"
+            @group(7) @binding(17) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let dimensions = vec2f(textureDimensions(image));
+                return textureSample(image, smp, uv) + vec4f(dimensions / 16.0, 0.0, 0.0);
+            }
+            "#,
+        );
+        assert!(!direct
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "main",
+                &narrow,
+            )
+            .unwrap());
+
+        let narrow_3d = wgt::DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_3d_float_fragment: true,
+            ..Default::default()
+        };
+        let three_dimensional = make_interface(
+            r#"
+            @group(1) @binding(7) var image: texture_3d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            fn dimensions_helper() -> vec3u { return textureDimensions(image); }
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSample(image, smp, vec3f(uv, 0.5))
+                    + vec4f(vec3f(dimensions_helper()), 0.0);
+            }
+            "#,
+        );
+        assert!(three_dimensional
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "main",
+                &narrow_3d,
             )
             .unwrap());
 
@@ -11955,18 +12347,6 @@ mod tests {
                 fn sample_helper(uv: vec2f) -> vec4f { return textureSample(image, smp, uv); }
                 @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
                     return sample_helper(uv) + vec4f(vec2f(dimensions_helper()), 0.0, 0.0);
-                }
-                "#,
-            ),
-            (
-                "sample uses a non-group-zero sampler",
-                r#"
-                @group(0) @binding(0) var image: texture_2d<f32>;
-                @group(1) @binding(1) var smp: sampler;
-                fn dimensions_helper() -> vec2u { return textureDimensions(image); }
-                @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
-                    return textureSample(image, smp, uv)
-                        + vec4f(vec2f(dimensions_helper()), 0.0, 0.0);
                 }
                 "#,
             ),
@@ -13170,6 +13550,29 @@ mod tests {
                 .unwrap());
         }
 
+        let split_group = make_interface(
+            r#"
+            @group(2) @binding(7) var image: texture_2d<f32>;
+            @group(3) @binding(42) var smp: sampler;
+            @fragment fn main() -> @location(0) vec4f {
+                let levels = f32(textureNumLevels(image));
+                return textureSample(image, smp, vec2f(0.5)) * vec4f(levels / 4.0);
+            }
+            "#,
+        );
+        let narrow_2d = wgt::DownlevelLimits {
+            texture_query: false,
+            texture_num_levels_2d_float_fragment: true,
+            ..Default::default()
+        };
+        assert!(!split_group
+            .entry_point_uses_unsupported_texture_num_levels(
+                naga::ShaderStage::Fragment,
+                "main",
+                &narrow_2d,
+            )
+            .unwrap());
+
         let narrow = wgt::DownlevelLimits {
             texture_query: false,
             texture_num_levels_2d_float_fragment: true,
@@ -13249,7 +13652,7 @@ mod tests {
         let supported = make_interface(
             r#"
             @group(2) @binding(7) var image: texture_2d<f32>;
-            @group(0) @binding(42) var smp: sampler;
+            @group(3) @binding(42) var smp: sampler;
             @group(1) @binding(3) var sibling_image: texture_2d<f32>;
             @group(1) @binding(4) var sibling_smp: sampler;
             fn levels_helper() -> u32 { return textureNumLevels(image); }
@@ -13349,18 +13752,6 @@ mod tests {
                 }
                 "#,
             ),
-            (
-                "non-group-zero sampler",
-                r#"
-                @group(0) @binding(0) var image: texture_2d<f32>;
-                @group(1) @binding(1) var smp: sampler;
-                fn levels_helper() -> u32 { return textureNumLevels(image); }
-                @fragment fn main() -> @location(0) vec4f {
-                    return textureSample(image, smp, vec2f(0.5))
-                        * vec4f(f32(levels_helper()));
-                }
-                "#,
-            ),
         ];
         for (name, source) in rejected {
             let interface = make_interface(source);
@@ -13374,6 +13765,62 @@ mod tests {
                     .unwrap(),
                 "{name} should not qualify for the restricted helper-plus-sample capability"
             );
+        }
+    }
+
+    #[test]
+    fn fl9_texture_num_levels_3d_and_cube_samples_keep_group_zero_sampler() {
+        fn make_interface(source: &str) -> Interface {
+            let module = naga::front::wgsl::parse_str(source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            Interface::new(&module, &info, wgt::Limits::defaults())
+        }
+
+        for (image_type, level_limit) in [
+            (
+                "texture_3d<f32>",
+                wgt::DownlevelLimits {
+                    texture_query: false,
+                    texture_num_levels_3d_float_fragment: true,
+                    ..Default::default()
+                },
+            ),
+            (
+                "texture_cube<f32>",
+                wgt::DownlevelLimits {
+                    texture_query: false,
+                    texture_num_levels_cube_float_fragment: true,
+                    ..Default::default()
+                },
+            ),
+        ] {
+            for query in ["textureNumLevels(image)", "levels_helper()"] {
+                let helper = if query == "levels_helper()" {
+                    "fn levels_helper() -> u32 { return textureNumLevels(image); }"
+                } else {
+                    ""
+                };
+                let source = format!(
+                    "@group(2) @binding(7) var image: {image_type}; \
+                     @group(3) @binding(42) var smp: sampler; {helper} \
+                     @fragment fn main() -> @location(0) vec4f {{ \
+                         let levels = f32({query}); \
+                         return textureSample(image, smp, vec3f(0.5)) * vec4f(levels / 4.0); \
+                     }}"
+                );
+                assert!(make_interface(&source)
+                    .entry_point_uses_unsupported_texture_num_levels(
+                        naga::ShaderStage::Fragment,
+                        "main",
+                        &level_limit,
+                    )
+                    .unwrap());
+            }
         }
     }
 

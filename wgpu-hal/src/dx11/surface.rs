@@ -309,7 +309,7 @@ impl Surface {
                 .expect("configured")
                 .swapchain
                 .clone();
-            if swapchain.acquire().is_ok() {
+            if swapchain.acquire(None).is_ok() {
                 return Err(crate::SurfaceError::Other(
                     "duplicate acquire unexpectedly succeeded",
                 ));
@@ -807,7 +807,7 @@ impl Surface {
         &self,
         device: &Arc<NativeDevice>,
         mut texture: SurfaceTexture,
-    ) -> Result<(), crate::SurfaceError> {
+    ) -> Result<CoreWindowSwapchain, crate::SurfaceError> {
         if !self.is_window_thread() {
             return Err(crate::SurfaceError::Other(
                 "D3D11 presentation must run on the surface owner thread",
@@ -834,7 +834,7 @@ impl Surface {
             .present_for_hal(1)
             .map_err(surface_error)?
         {
-            Ok(())
+            Ok(configured.swapchain)
         } else {
             Err(crate::SurfaceError::Occluded)
         }
@@ -911,9 +911,15 @@ impl crate::Surface for Surface {
         };
         let configured = self.configured.lock().current.clone();
         if let Some(config) = configured {
-            if config.swapchain.belongs_to(device.native())
-                && config.swapchain.release_bindings().is_ok()
-            {
+            if !config.swapchain.belongs_to(device.native()) {
+                log::error!("D3D11 surface cannot unconfigure with a mismatched device");
+                return;
+            }
+            if let Err(error) = config.swapchain.wait_for_pending_present() {
+                log::error!("D3D11 surface could not wait for pending presentation: {error}");
+                return;
+            }
+            if config.swapchain.release_bindings().is_ok() {
                 let old = self.configured.lock().current.take();
                 drop(old);
                 drop(config);
@@ -927,7 +933,7 @@ impl crate::Surface for Surface {
     }
     unsafe fn acquire_texture(
         &self,
-        _timeout: Option<Duration>,
+        timeout: Option<Duration>,
         fence: &super::fence::NativeFence,
     ) -> Result<crate::AcquiredSurfaceTexture<Self::A>, crate::SurfaceError> {
         if !self.is_window_thread() {
@@ -946,7 +952,13 @@ impl crate::Surface for Surface {
             .device
             .validate_fence(fence)
             .map_err(surface_error)?;
-        let frame = configured.swapchain.acquire().map_err(surface_error)?;
+        let Some(frame) = configured
+            .swapchain
+            .acquire(timeout)
+            .map_err(surface_error)?
+        else {
+            return Err(crate::SurfaceError::Timeout);
+        };
         let raw = frame
             .texture()
             .ok_or(crate::SurfaceError::Other("missing backbuffer"))?

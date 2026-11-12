@@ -692,15 +692,23 @@ unlowered explicit LOD. Strict public readback checked 64/64 pixels for both
 direct and helper forms at requested/actual FL9_1; invalid helper shapes and
 incompatible bindings are rejected before HAL.
 
-WGSL `textureGather` has its own selected-entry downlevel limit. HLSL Gather
-is available to graphics stages at SM4.1 (FL10_1), while compute gather4
-requires SM5 (FL11_0). Because the shared downlevel limit applies to every
-selected entry point, the static all-stage guarantee begins at FL11_0. The
-FL9_1 public projection reports it unavailable. Core follows helper calls and
-rejects direct or indirect gather use before HAL in render and compute
-pipelines. FXC rejects Naga's Gather lowering under the level-9_1 profile
-while the shader-model-5 compiler control accepts it. The backend has no
-gather execution path yet.
+WGSL's general `texture_gather` limit remains false at FL9_1. A separate
+`texture_gather_2d_float_fragment` limit enables only one direct fragment
+gather from a single-mip `Rgba8Unorm` 2D float view using a regular sampler
+whose U and V modes are both clamp-to-edge. The shader must use a location-0 `vec2f`
+coordinate and return the gather result directly at location 0; helper calls,
+other image operations, and unsupported shader shapes remain rejected.
+Because FXC's level-9_1 profile rejects HLSL Gather, Naga lowers the proven
+operation to four point samples at texel centers and assembles the selected
+WGSL channel in the specified component order. The emulation uses reserved
+texture slot t0, constant buffer b13 and point sampler s15; the selected
+texture dimensions are supplied by HAL. Core validates the currently bound
+view and sampler before direct draws and render-bundle draws. The strict public
+test on the physical RTX 3090 Ti at requested/actual FL9_1 verified all 64
+output pixels as `[151, 166, 106, 91]` within one UNORM step, and a negative
+draw using a multi-mip view was rejected before submission. This is a
+backend-emulated subset, not native gather support or historical-driver
+evidence.
 
 Texture image queries are also modeled separately. FXC rejects Naga's
 `GetDimensions` output for `textureDimensions` and `textureNumLevels` with

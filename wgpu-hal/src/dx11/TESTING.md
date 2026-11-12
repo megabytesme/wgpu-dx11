@@ -1,5 +1,46 @@
 # Direct3D 11 validation plan
 
+### Fragment 2D `textureLoad` in a nonzero bind group
+
+The public regression test declares the texture at group 1/binding 42 and uses
+an explicit empty group 0 in the pipeline layout. It validates direct,
+nested-helper and dynamic-coordinate helper loads, out-of-bounds zero,
+nonzero-mip zero, and query-gated sRGB decoding through readback. Core's CPU
+proof test checks the selected binding identity at group 7/binding 42 and
+prevents an unsupported sibling entry from affecting the selected entry.
+
+Run the Core tests and strict public hardware test from a Visual Studio x64
+developer environment:
+
+```powershell
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific -- --nocapture
+cargo +1.93.1 test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_load_nonzero_group_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+The hardware test must select a physical adapter and reports the selected
+feature level. A strict run on the RTX 3090 Ti verifies the direct, nested and
+dynamic-helper loads at nonzero group 1/binding 42, out-of-bounds and nonzero
+mip results, and query-gated sRGB decoding (384 pixels total when sRGB support
+is present) at requested and actual FL9_1.
+
+### D2 `textureDimensions` with a sampler in a separate group
+
+The selected-entry proof permits one implicit sample of the queried D2 image
+through a compatible non-comparison sampler in a different supported bind
+group. Both direct and one-helper query forms are covered. D3 and cube sampler
+groups remain restricted. Run the focused public test on strict hardware:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions -- --nocapture --test-threads=1
+```
+
+The strict filter passed 15/15 on the RTX 3090 Ti at requested and actual
+FL9_1. The new direct and helper split-group tests both transitioned bound
+views and verified all 64 output pixels.
+
 ## Nonzero-group 2D `textureDimensions` helper — 2026-11-11
 
 The narrow helper proof accepts a 2D query texture in a nonzero bind group;
@@ -626,6 +667,12 @@ frame. It obtains its initial settings from `Surface::get_default_config`;
 core resolves the returned `Auto` color/alpha values and clamps the generic
 two-frame latency hint to the D3D11 surface's supported one-frame range. It
 then verifies that acquisition from a different thread is rejected.
+The HWND swap chain is created with
+`DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT` and
+`IDXGISwapChain2::SetMaximumFrameLatency(1)`. Acquisition waits on the owned
+waitable handle; queue idle and surface unconfigure wait for a pending present
+to complete. The strict private tests cover acquire/present, resize and
+reconfigure, repeated acquisition, and teardown while a present is pending.
 It also acquires a frame on the owner thread, attempts presentation from a
 worker, checks the reported validation error, then confirms the owner thread
 can acquire and present another frame. A duplicate acquisition returns a
@@ -972,33 +1019,35 @@ It reported the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
 `32.0.16.2101`), requested and actual FL9_1, physical adapter and
 `software=false`; the split group 1/2 helper path matched all 64 pixels.
 
-### Texture gather shader-model boundary
+### Narrow FL9_1 fragment `textureGather` emulation
 
-Microsoft documents HLSL `Gather` for graphics profiles at shader model 4.1
-(FL10_1), while compute gather4 requires SM5 (FL11_0). Because the shared
-stage-agnostic limit applies to every selected entry point, the all-stage
-hardware guarantee starts at FL11_0. The current FL9_1 backend disables
-`DownlevelLimits::texture_gather`. The selected-entry analysis checks Naga's
-`ImageSample::gather` expression and follows reachable helper calls. This
-prevents FXC failures from escaping as backend compilation errors while
-allowing an unused gather helper or an implicit-sampling sibling entry.
+The general `DownlevelLimits::texture_gather` stays false. The additional
+`texture_gather_2d_float_fragment` limit proves one direct fragment gather on
+a single-mip `Rgba8Unorm` 2D view with a regular clamp-to-edge sampler. FXC
+rejects native Gather at `ps_4_0_level_9_1`, so the Naga writer emits four
+point samples at texel centers and orders the selected channel according to
+WGSL. Core verifies the selected entry and the currently bound view/sampler;
+helper-reached gather, multi-mip views and unsupported operations remain
+rejected. The hidden sampler and dimensions use reserved `s15` and `b13`, with
+the source texture at `t0`.
 
 ```powershell
 cargo +1.93 test --offline -j32 -p wgpu-types --lib texture_gather_is_a_downlevel_capability
 cargo +1.93 test --offline -j32 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl texture_gather_limits_follow_selected_entry_and_helpers
-cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib texture_gather_is_rejected_by_level_9_1_fxc_profile -- --nocapture
+cargo +1.93 test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_gather_emulation_compiles_with_reserved_registers -- --nocapture
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
-cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_gather_emulation_at_fl91 -- --nocapture --test-threads=1
 ```
 
-The compiler test records FXC's actual level-9_1 rejection and verifies that
-the Naga output compiles under pixel shader model 4.1, pixel shader model 5.0
-and compute shader model 5.0. The core analysis test covers selected fragment
-entries plus direct and helper-reached compute entries. The strict public test
-verifies that core rejects direct and helper-reached gather before HAL on the
-selected FL9_1 hardware device and still creates a pipeline for its
-implicit-sampling sibling. This does not claim that the current backend
-implements gather or that the RTX simulates historical FL9_1 drivers.
+The Naga unit tests verify logical binding selection, channel selection, WGSL
+component order and rejection of unproven gather forms. The HAL FXC test
+compiles the restricted output for `ps_4_0_level_9_1` and verifies that a
+conflicting user resource cannot occupy reserved `s15`. The strict public
+test selected the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at requested/actual FL9_1 with `software=false`; all 64
+readback pixels matched `[151, 166, 106, 91]` within one UNORM step. It also
+verified Core rejects helper-reached gather and a multi-mip view before draw
+submission. This does not establish behavior on historical FL9_1 drivers.
 
 A tenth strict public test uploads both `Rg8Snorm` and `Rgba8Snorm`, samples
 them with one non-filtering sampler, converts signed values to visible
@@ -4350,9 +4399,11 @@ cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgs
 ```
 
 The query may share the selected entry with one implicit sample of the same
-texture using one group-zero non-comparison sampler. For helper-backed 2D
-queries, the helper remains query-only and the sample must be a direct entry
-operation. The strict public test switches between one- and three-level views
+texture using one compatible non-comparison sampler. For 2D images, the
+texture and sampler may use different supported bind groups; for 3D and cube
+images the sampler remains group-zero-only. For helper-backed queries, the
+helper remains query-only and the sample must be a direct entry operation.
+The strict public test switches between one- and three-level views
 over an initialized RGBA8 mip chain; the first output channel depends on the
 view mip count and the next two channels depend on the sampled texel. Core,
 Naga and private HAL tests accept the helper-plus-sample shape for 2D, 3D and
@@ -4387,13 +4438,14 @@ the query through one selected parameterless helper for both dimensions. Each
 helper itself remains fragment-only and query-only; extra resources and
 unrelated queries remain rejected.
 
-### `textureNumLevels` image in a nonzero group
+### `textureNumLevels` image and sampler in separate groups
 
-The strict 2D test also puts the queried texture at group 2/binding 42 while
-leaving an optional sampler in group 0. It transitions between one-level and
-three-level views and verifies every output pixel for the direct and selected
-helper forms, both with and without sampling. The sampler's group restriction
-is unchanged. Run the proof tests and physical FL9_1 readback with:
+The strict 2D test puts the queried texture at group 2/binding 42 and tests a
+compatible sampler at group 3/binding 7. It transitions between one-level and
+three-level views and verifies every output pixel for direct and selected
+helper forms. The synthetic Core, Naga and HAL tests retain rejection for
+split-group 3D/cube samplers. Run the proof tests and physical FL9_1 readback
+with:
 
 ```powershell
 cargo +1.93 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_texture_num_levels
@@ -4403,9 +4455,10 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_num_levels_selected_helper_at_fl91 -- --exact --nocapture --test-threads=1
 ```
 
-On the RTX 3090 Ti, all four group-2 configurations matched all 64 pixels at
-requested and actual FL9_1. This remains a restricted emulation and does not
-enable general image queries or unrestricted resource layouts.
+On the RTX 3090 Ti, the direct and helper split-group configurations matched
+all 64 pixels at requested and actual FL9_1. The original group-0 sampler
+configurations remain covered. This remains a restricted emulation and does
+not enable general image queries or unrestricted resource layouts.
 
 ```powershell
 cargo +1.93 test --offline -j8 -p wgpu-types restricted_3d_and_cube_texture_num_levels_are_independent

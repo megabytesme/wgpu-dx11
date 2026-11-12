@@ -565,6 +565,14 @@ pub struct Options {
     /// The host supplies the selected single-mip view dimensions in b13.
     pub fl9_texture_base_clamp_proof: Option<crate::ResourceBinding>,
 
+    /// Experimental opt-in proof for one direct fragment `textureGather` on a
+    /// bound single-mip 2D float texture. The host supplies the selected view's
+    /// dimensions and reciprocals in b13, and a point-clamp sampler in s15.
+    /// The selected entry point must use a location-0 `vec2<f32>` coordinate,
+    /// a non-comparison sampler in a different slot, and no other texture
+    /// operation. The caller must validate clamp-to-edge addressing on U and V.
+    pub fl9_texture_gather_proof: Option<crate::ResourceBinding>,
+
     /// Experimental opt-in proof for one direct fragment `textureSampleBias`
     /// with a constant offset on a bound single-mip 2D float texture. The host
     /// supplies the selected view dimensions and reciprocal dimensions in b13.
@@ -667,6 +675,7 @@ impl Default for Options {
             fl9_texture_dimensions_3d_proof: None,
             fl9_texture_num_levels_proof: None,
             fl9_texture_base_clamp_proof: None,
+            fl9_texture_gather_proof: None,
             fl9_texture_sample_bias_offset_proof: None,
             fl9_texture_sample_compare_offset_proof: None,
             fl9_viewport_transform: None,

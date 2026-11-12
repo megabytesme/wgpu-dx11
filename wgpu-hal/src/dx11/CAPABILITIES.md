@@ -1,5 +1,26 @@
 # D3D11 capability and public-adapter contract
 
+## FL9_1 fragment textureGather emulation
+
+The native FL9_1 shader profile does not provide HLSL Gather. The backend does
+not advertise general `DownlevelLimits::texture_gather`; it reports only the
+narrow `texture_gather_2d_float_fragment` capability. That limit permits one
+direct fragment `textureGather` operation on a single-mip, single-sample
+`Rgba8Unorm` 2D float view with a regular sampler using clamp-to-edge on both
+U and V. The selected entry point must pass its location-0 `vec2f` argument
+directly and return the gathered `vec4f` at location 0. Helper functions,
+additional image operations and other shader shapes remain unavailable.
+
+Naga lowers this proven operation to four point samples at texel centers and
+assembles the requested channel in WGSL gather order. HAL binds the selected
+image at reserved `t0`, supplies dimensions through reserved `b13`, and binds
+an internal point/clamp sampler at reserved `s15`. Core checks the actual
+currently bound view and sampler at render and bundle draw boundaries. The
+physical RTX 3090 Ti at forced FL9_1 verified all 64 output pixels against
+`[151, 166, 106, 91]`; a multi-mip view is rejected before submission. This
+is backend emulation rather than hardware gather support, does not enable the
+general gather limit, and has not been verified on historical FL9_1 drivers.
+
 ## Additional strict FL9_1 evidence — 2026-11-11
 
 Core and the private HAL now support a narrowly proved direct fragment
@@ -847,7 +868,7 @@ lists occlusion queries as unavailable at FL9_1 and available at FL9_2 and
 above. This settles that specific query gap as a hardware boundary for this
 mission. A positive startup timestamp/disjoint probe is diagnostic only: it does not guarantee reliable timestamp pairs across later submissions. The public timestamp features remain disabled until the backend can preserve disjoint validity and interval-specific frequency. Pipeline-statistics support remains unavailable.
 | Compute / storage | No native compute shader or UAV support at FL9_1; private HAL accepts paired empty compute passes but rejects compute pipeline creation, dispatch and shader storage bindings. Core may retain storage bits for transfer-capable buffers but does not bind them as storage. Other APIs may require CPU or graphics emulation. | Strict hardware test verifies ordered copies around an empty pass and rejects dispatch and invalid pass sequences. The controlled core fixture checks stage-specific storage-buffer layout rejection before HAL. Public strict tests verify core rejects compute-pipeline creation and `INDIRECT` buffer creation before reaching the corresponding unsupported HAL paths. No compute/storage feature is exposed; feature/limit gating alone remains insufficient for public device exposure. |
-| Presentation | FL9 hardware can support display through platform/format-specific paths. The opt-in public backend exposes constrained HWND and CoreWindow surfaces: BGRA8 sRGB FIFO, opaque composition, render-attachment usage and one frame of latency. CoreWindow construction requires dispatcher-thread access; configure, acquire and present use the captured owner thread. | Queue and selected context-backed operations serialize against Present; same-thread reentrant mutations are rejected. Strict RTX tests cover hidden-HWND configure/present/resize, wrong-thread acquisition rejection and a visible 60-frame textured indexed scene. A client-area capture was visually inspected and showed distinct red and green faces over the clear color. A fixture-only public test injects `DXGI_ERROR_DEVICE_REMOVED` at Present and verifies exactly one public lost callback plus prompt reentrant-poll rejection; this is synthetic and does not remove the GPU. Deterministic presentation pixels remain unavailable, while equivalent color/depth behavior is covered by offscreen readback. CoreWindow public capability exposure is not runtime-tested; UWP/Lumia execution and historical driver behavior remain unverified. This is not general surface or WebGPU support. |
+| Presentation | FL9 hardware can support display through platform/format-specific paths. The opt-in public backend exposes constrained HWND and CoreWindow surfaces: BGRA8 sRGB FIFO, opaque composition, render-attachment usage and one frame of latency. HWND uses a native DXGI frame-latency waitable swap chain set to one outstanding frame; acquisition waits on its owned handle. CoreWindow construction requires dispatcher-thread access; configure, acquire and present use the captured owner thread. | Queue and selected context-backed operations serialize against Present; queue idle and unconfigure drain a pending present. Strict RTX tests cover hidden-HWND configure/present/resize, waitable acquisition, pending-present completion and destruction, wrong-thread acquisition rejection and a visible 60-frame textured indexed scene. A client-area capture was visually inspected and showed distinct red and green faces over the clear color. A fixture-only public test injects `DXGI_ERROR_DEVICE_REMOVED` at Present and verifies exactly one public lost callback plus prompt reentrant-poll rejection; this is synthetic and does not remove the GPU. Deterministic presentation pixels remain unavailable, while equivalent color/depth behavior is covered by offscreen readback. CoreWindow public capability exposure is not runtime-tested; UWP/Lumia execution and historical driver behavior remain unverified. This is not general surface or WebGPU support. |
 
 The controlled core fixture now also injects a removed-device result from
 `GetDeviceRemovedReason` during `device_poll`. Its lost callback reenters
@@ -1269,13 +1290,16 @@ and linear mipmap filters on the RTX 3090 Ti at FL9_1. Explicit-LOD sampling
 and historical FL9_1 driver behavior remain unverified. The current compiler
 uses FL9_1 profiles even on higher-level devices; a selected entry point that
 can reach `textureSampleBias` is accepted only for finite literal biases in
-[-3, 3] without a sampling offset. WGSL has no separate
-`textureSampleOffset` builtin; the optional constant texel offset belongs to
-`textureSampleBias`. FXC returns X4532 for this biased-offset form under both
-`ps_4_0_level_9_1` and `ps_4_0_level_9_3`, while the SM5 control compiles.
-Core and the private HAL reject direct and helper-reached offset forms before
-shader execution. Dynamic biases, out-of-range values and
-bias expressions that cannot be proven from literals are rejected. Core and HAL
+[-3, 3] for the no-offset form. WGSL has no separate `textureSampleOffset`
+builtin; the optional constant texel offset belongs to `textureSampleBias`.
+FXC returns X4532 for the native biased-offset form under both
+`ps_4_0_level_9_1` and `ps_4_0_level_9_3`, while the SM5 control compiles. A
+separate, narrowly proved path emulates one constant `i32x2` offset in
+`[-8, 7]` for a direct sample or one coordinate-forwarding helper, using a
+single-mip 2D view and the selected view dimensions. Other direct or
+helper-reached offset forms are rejected before shader execution. Dynamic
+biases, out-of-range values and bias expressions that cannot be proven from
+literals are rejected. Core and HAL
 resolve finite literal and unary-negated-literal arguments through nested
 helper calls per call site, so a valid literal forwarded to a helper is not
 mistaken for a dynamic bias; mixed call sites are checked independently. All
@@ -1295,9 +1319,11 @@ Unrelated entries remain usable. The tested FXC emitted an unclamped legacy
 ps_2_0. Nine strict FL9_1 GPU executions checked 64 pixels each, including a
 fractional linear-mipmap blend; direct and indexed draws rejected incompatible
 samplers. The public projection reports a maximum absolute literal bias of 3,
-no dynamic bias and no sampling offsets. Core's selected-entry analysis follows
-helper calls and rejects those unsupported forms as validation errors before
-HAL pipeline compilation. Public readback verifies implicit sampling and
+no dynamic bias and no unrestricted offset support. The separate
+`fragment_texture_sample_bias_offset_2d_single_mip` limit exposes only the
+tested constant-offset subset. Core's selected-entry analysis follows helper
+calls and rejects unsupported forms as validation errors before HAL pipeline
+compilation. Public readback verifies implicit sampling and
 literal biases -3, +1 and +3 selected the expected mip colors across 384
 pixels, including a +1 bias forwarded to a helper; synthetic interface tests
 cover fractional bias, nested helper forwarding, dynamic arguments, mixed
@@ -1632,12 +1658,13 @@ emission. The optional direct-query mip level must be a non-negative literal
 or direct module `const`; the helper form is level-less only. Dimensions are
 relative to the bound view. A direct
 level-less query may share the entry point with exactly one implicit
-`textureSample` of that same texture and one group-0 non-comparison sampler.
-The helper itself remains query-only, but it may coexist with exactly one
-level-less implicit sample of the same image in the selected entry point, using
-one group-0 non-comparison sampler and a `vec2f` coordinate. The direct and
-helper query texture may be in any bind group; an optional sample's sampler
-remains group-0-only. This permits the proven
+`textureSample` of that same texture and one compatible non-comparison sampler.
+For D2, the queried texture and sampler may each use any supported bind group,
+including different groups. The helper itself remains query-only, but it may
+coexist with exactly one level-less implicit sample of the same image in the
+selected entry point, using one compatible non-comparison sampler and a
+`vec2f` coordinate; D2 texture and sampler groups may differ. D3 and cube
+optional samplers remain group-0-only. This permits the proven
 operations without permitting unrelated selected resources, other image
 operations, control flow, `select`, or runtime integer work. A direct query
 with an explicit mip level remains query-only. The HAL supplies
@@ -1693,8 +1720,9 @@ fragment entry point, directly converted from `u32` to `f32`. Each dimension per
 reachable, argument-free straight-line helper called once by the selected
 entry point. The helper must directly return the query and remains query-only.
 The selected entry may also sample the same image once directly through one
-group-0 non-comparison sampler using implicit LOD and coordinates matching the
-image dimension. The 3D and cube limits are enabled only when the selected
+non-comparison sampler using implicit LOD and coordinates matching the image
+dimension. For 2D images, texture and sampler may use different supported bind
+groups. 3D and cube sampling retain the group-0 sampler restriction. The 3D and cube limits are enabled only when the selected
 device reports the corresponding RGBA8 sampled-texture support; mipmap support is not required
 to query a single-mip view. The HAL supplies the currently bound view's mip
 count through the same `b13` emulation resource, including the view's suffix
@@ -1704,9 +1732,10 @@ extra bound resources, other image operations and unrelated integer values
 remain rejected. General `texture_query` remains false. This capability is
 compiler emulation based and does not imply native FL9_1 image-query
 instructions or historical-driver coverage. The strict forced-FL9_1 readback
-test checks that
-the queried mip count and sampled texel contents both affect output across
-bound views with different visible mip counts.
+test checks that the queried mip count and sampled texel contents both affect
+output across bound views with different visible mip counts. The strict 2D
+test exercises direct and helper queries with a texture at group 2 and sampler
+at group 3; 3D/cube sampler group rules are unchanged.
 
 The general `texture_sample_base_clamp_to_edge` limit remains false. The
 FL9_1 projection exposes only the separate

@@ -8,6 +8,7 @@ use alloc::sync::Arc;
 #[cfg(feature = "dx11-test-fixture")]
 use core::sync::atomic::{AtomicI32, Ordering};
 use parking_lot::Mutex;
+use std::os::windows::io::{AsRawHandle, FromRawHandle, OwnedHandle};
 use windows::{
     core::{AgileReference, Error, Interface, Result, HRESULT},
     Win32::{
@@ -20,18 +21,21 @@ use windows::{
             },
             Dxgi::{
                 Common::{DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC},
-                IDXGIDevice, IDXGIFactory2, IDXGISwapChain1, DXGI_ERROR_INVALID_CALL, DXGI_PRESENT,
+                IDXGIDevice, IDXGIFactory2, IDXGISwapChain2, DXGI_ERROR_INVALID_CALL, DXGI_PRESENT,
                 DXGI_SCALING_NONE, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1,
-                DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
-                DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT,
+                DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT,
             },
         },
+        System::Threading::{WaitForSingleObjectEx, INFINITE},
     },
 };
 
 #[derive(Debug, Default)]
 struct State {
     acquired: bool,
+    latency_ready_consumed: bool,
+    pending_present: bool,
 }
 
 struct Reservation<'a> {
@@ -64,7 +68,8 @@ impl Drop for Reservation<'_> {
 struct Inner {
     device: Arc<NativeDevice>,
     _window: Option<AgileReference<windows::UI::Core::ICoreWindow>>,
-    swapchain: IDXGISwapChain1,
+    swapchain: IDXGISwapChain2,
+    frame_latency_waitable: OwnedHandle,
     state: Mutex<State>,
     #[cfg(feature = "dx11-test-fixture")]
     test_next_present: AtomicI32,
@@ -117,13 +122,14 @@ impl CoreWindowSwapchain {
             },
             SwapEffect: DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
             AlphaMode: DXGI_ALPHA_MODE_IGNORE,
+            Flags: DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT.0 as u32,
             ..Default::default()
         };
-        let (swapchain, retained_window) = {
+        let (swapchain, frame_latency_waitable, retained_window) = {
             let _context = device.immediate_context();
             let dxgi: IDXGIDevice = device.raw_device().cast()?;
             let factory: IDXGIFactory2 = unsafe { dxgi.GetAdapter()?.GetParent()? };
-            if let Some(hwnd) = surface.hwnd() {
+            let (swapchain, retained_window) = if let Some(hwnd) = surface.hwnd() {
                 let swapchain = unsafe {
                     factory.CreateSwapChainForHwnd(device.raw_device(), hwnd, &desc, None, None)?
                 };
@@ -140,13 +146,22 @@ impl CoreWindowSwapchain {
                     )?
                 };
                 (swapchain, Some(retained_window))
+            };
+            let swapchain: IDXGISwapChain2 = swapchain.cast()?;
+            unsafe { swapchain.SetMaximumFrameLatency(1)? };
+            let handle = unsafe { swapchain.GetFrameLatencyWaitableObject() };
+            if handle.is_invalid() {
+                return Err(Error::from_hresult(E_FAIL));
             }
+            let handle = unsafe { OwnedHandle::from_raw_handle(handle.0) };
+            (swapchain, handle, retained_window)
         };
         Ok(Self {
             inner: Arc::new(Inner {
                 device,
                 _window: retained_window,
                 swapchain,
+                frame_latency_waitable,
                 state: Mutex::new(State::default()),
                 #[cfg(feature = "dx11-test-fixture")]
                 test_next_present: AtomicI32::new(0),
@@ -194,8 +209,14 @@ impl CoreWindowSwapchain {
     }
 
     /// Acquire the current backbuffer. Only one frame can be outstanding.
-    pub fn acquire(&self) -> Result<CoreWindowFrame> {
+    pub fn acquire(
+        &self,
+        timeout: Option<core::time::Duration>,
+    ) -> Result<Option<CoreWindowFrame>> {
         let mut reservation = Reservation::new(&self.inner.state)?;
+        if !self.wait_for_next_frame(timeout)? {
+            return Ok(None);
+        }
         let texture = {
             let _context = self.inner.device.immediate_context();
             unsafe { self.inner.swapchain.GetBuffer(0)? }
@@ -206,7 +227,7 @@ impl CoreWindowSwapchain {
             active: true,
         };
         reservation.active = false;
-        Ok(frame)
+        Ok(Some(frame))
     }
 
     pub(super) fn belongs_to(&self, device: &Arc<NativeDevice>) -> bool {
@@ -226,12 +247,72 @@ impl CoreWindowSwapchain {
         Ok(())
     }
 
+    #[cfg(test)]
+    pub(super) fn maximum_frame_latency(&self) -> Result<u32> {
+        let _context = self.inner.device.immediate_context();
+        unsafe { self.inner.swapchain.GetMaximumFrameLatency() }
+    }
+
+    pub(super) fn has_pending_present(&self) -> bool {
+        self.inner.state.lock().pending_present
+    }
+
+    #[cfg(test)]
+    pub(super) fn has_consumed_latency_ready(&self) -> bool {
+        self.inner.state.lock().latency_ready_consumed
+    }
+
+    pub(super) fn same_swapchain(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.inner, &other.inner)
+    }
+
+    pub(super) fn wait_for_pending_present(&self) -> Result<()> {
+        let mut state = self.inner.state.lock();
+        if state.pending_present {
+            if !self.wait_for_frame_latency(None)? {
+                return Err(Error::from_hresult(E_FAIL));
+            }
+            state.pending_present = false;
+            state.latency_ready_consumed = true;
+        }
+        Ok(())
+    }
+
+    fn wait_for_next_frame(&self, timeout: Option<core::time::Duration>) -> Result<bool> {
+        let mut state = self.inner.state.lock();
+        if !state.latency_ready_consumed || state.pending_present {
+            if !self.wait_for_frame_latency(timeout)? {
+                return Ok(false);
+            }
+            state.latency_ready_consumed = true;
+            state.pending_present = false;
+        }
+        Ok(true)
+    }
+
+    fn wait_for_frame_latency(&self, timeout: Option<core::time::Duration>) -> Result<bool> {
+        let timeout = timeout.map_or(INFINITE, duration_to_timeout_ms);
+        let handle = windows::Win32::Foundation::HANDLE(
+            self.inner.frame_latency_waitable.as_raw_handle().cast(),
+        );
+        let result = unsafe { WaitForSingleObjectEx(handle, timeout, false) };
+        if result == windows::Win32::Foundation::WAIT_OBJECT_0 {
+            return Ok(true);
+        }
+        if result == windows::Win32::Foundation::WAIT_TIMEOUT {
+            return Ok(false);
+        }
+        unsafe { self.inner.device.raw_device().GetDeviceRemovedReason()? };
+        Err(Error::from_hresult(E_FAIL))
+    }
+
     /// Resize after the acquired frame and all derived views have been released.
     pub fn resize(&self, width: u32, height: u32) -> Result<()> {
         if (width == 0) != (height == 0) {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
         let _reservation = Reservation::new(&self.inner.state)?;
+        self.wait_for_pending_present()?;
         let context = self.inner.device.immediate_context();
         #[cfg(feature = "dx11-test-fixture")]
         let injected_status = self.inner.test_next_resize.swap(0, Ordering::AcqRel);
@@ -246,11 +327,22 @@ impl CoreWindowSwapchain {
                 width,
                 height,
                 DXGI_FORMAT_B8G8R8A8_UNORM,
-                DXGI_SWAP_CHAIN_FLAG(0),
+                DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT,
             )?;
         }
+        drop(context);
         Ok(())
     }
+}
+
+fn duration_to_timeout_ms(duration: core::time::Duration) -> u32 {
+    let round_up = if !duration.subsec_nanos().is_multiple_of(1_000_000) {
+        1
+    } else {
+        0
+    };
+    let milliseconds = duration.as_millis().saturating_add(round_up);
+    milliseconds.min(u128::from(u32::MAX - 1)) as u32
 }
 
 impl CoreWindowFrame {
@@ -283,7 +375,11 @@ impl CoreWindowFrame {
             let _context = self.inner.device.immediate_context();
             unsafe { self.inner.swapchain.Present(sync_interval, DXGI_PRESENT(0)) }
         };
-        classify_present_status(status)
+        let presented = classify_present_status(status)?;
+        if presented {
+            self.inner.state.lock().pending_present = true;
+        }
+        Ok(presented)
     }
 
     /// Clear the current backbuffer for the UWP diagnostic.
@@ -364,6 +460,7 @@ fn classify_present_status(status: HRESULT) -> Result<bool> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use core::time::Duration;
 
     #[test]
     fn reservation_releases_on_return_and_unwind() {
@@ -385,6 +482,14 @@ mod tests {
         assert!(classify_present_status(HRESULT(0)).unwrap());
         assert!(!classify_present_status(HRESULT(0x087a0001)).unwrap());
         assert!(classify_present_status(E_FAIL).is_err());
+    }
+
+    #[test]
+    fn frame_latency_timeout_rounds_up_and_saturates() {
+        assert_eq!(duration_to_timeout_ms(Duration::ZERO), 0);
+        assert_eq!(duration_to_timeout_ms(Duration::from_nanos(1)), 1);
+        assert_eq!(duration_to_timeout_ms(Duration::from_millis(1)), 1);
+        assert_eq!(duration_to_timeout_ms(Duration::MAX), u32::MAX - 1);
     }
 }
 

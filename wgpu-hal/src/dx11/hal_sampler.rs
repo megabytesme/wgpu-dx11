@@ -13,6 +13,7 @@ pub struct Sampler {
     filtering: bool,
     comparison: bool,
     wraps: bool,
+    clamps_to_edge_u_v: bool,
     bias_compatible: bool,
     lod: super::sampling::SamplerLod,
 }
@@ -204,6 +205,8 @@ impl Sampler {
             comparison,
             lod,
             wraps: requires_power_of_two(&desc.address_modes),
+            clamps_to_edge_u_v: desc.address_modes[0] == wgt::AddressMode::ClampToEdge
+                && desc.address_modes[1] == wgt::AddressMode::ClampToEdge,
             bias_compatible: bias_compatible(desc),
         })
     }
@@ -221,6 +224,10 @@ impl Sampler {
 
     pub(super) fn wraps(&self) -> bool {
         self.wraps
+    }
+
+    pub(super) fn clamps_to_edge_u_v(&self) -> bool {
+        self.clamps_to_edge_u_v
     }
 
     pub(super) fn filtering(&self) -> bool {
@@ -602,6 +609,10 @@ mod tests {
                             mip_levels: 1
                         }],
                         samplers_wrap: alloc::vec![requires_power_of_two(&modes)],
+                        samplers_clamp_to_edge_u_v: alloc::vec![
+                            modes[0] == wgt::AddressMode::ClampToEdge
+                                && modes[1] == wgt::AddressMode::ClampToEdge
+                        ],
                         samplers_lod: alloc::vec![SamplerLod::Unrestricted],
                         samplers_bias_compatible: alloc::vec![true],
                     };

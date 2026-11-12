@@ -764,6 +764,11 @@ fn sampler_texture_sample_bias_compatible(
     min_filter == mag_filter && effective_anisotropy == 1
 }
 
+fn sampler_clamps_to_edge_u_v(address_modes: &[wgt::AddressMode; 3]) -> bool {
+    address_modes[0] == wgt::AddressMode::ClampToEdge
+        && address_modes[1] == wgt::AddressMode::ClampToEdge
+}
+
 #[cfg(test)]
 mod sampler_repeat_limit_tests {
     use super::validate_texture_repeat_limit;
@@ -879,6 +884,31 @@ mod sampler_texture_sample_bias_tests {
         assert!(sampler_texture_sample_bias_compatible(Linear, Linear, 1));
         assert!(!sampler_texture_sample_bias_compatible(Nearest, Linear, 1));
         assert!(!sampler_texture_sample_bias_compatible(Linear, Linear, 2));
+    }
+}
+
+#[cfg(test)]
+mod sampler_gather_address_tests {
+    use super::sampler_clamps_to_edge_u_v;
+    use wgt::AddressMode;
+
+    #[test]
+    fn fl9_texture_gather_checks_u_and_v_addressing_independently() {
+        assert!(sampler_clamps_to_edge_u_v(&[
+            AddressMode::ClampToEdge,
+            AddressMode::ClampToEdge,
+            AddressMode::Repeat,
+        ]));
+        assert!(!sampler_clamps_to_edge_u_v(&[
+            AddressMode::Repeat,
+            AddressMode::ClampToEdge,
+            AddressMode::ClampToEdge,
+        ]));
+        assert!(!sampler_clamps_to_edge_u_v(&[
+            AddressMode::ClampToEdge,
+            AddressMode::MirrorRepeat,
+            AddressMode::ClampToEdge,
+        ]));
     }
 }
 
@@ -4331,6 +4361,7 @@ impl Device {
         let mut sampled_texture_mip_levels = FastHashMap::default();
         let mut fl9_texture_load_compatible = FastHashMap::default();
         let mut sampler_uses_repeat = FastHashMap::default();
+        let mut sampler_clamp_to_edge = FastHashMap::default();
         let mut sampler_mip_compatibility = FastHashMap::default();
         let mut sampler_texture_sample_bias_compatible = FastHashMap::default();
         // Map of binding -> shader reflected size
@@ -4395,10 +4426,12 @@ impl Device {
                 }
                 Br::Sampler(ref sampler) => {
                     let uses_repeat = sampler.address_modes.contains(&wgt::AddressMode::Repeat);
+                    let clamp_to_edge = sampler_clamps_to_edge_u_v(&sampler.address_modes);
                     let bias_compatible = sampler.texture_sample_bias_compatible;
                     sampler_mip_compatibility.insert(binding, vec![sampler.mip_compatibility]);
                     let sampler = self.create_sampler_binding(&mut used, binding, decl, sampler)?;
                     sampler_uses_repeat.insert(binding, vec![uses_repeat]);
+                    sampler_clamp_to_edge.insert(binding, vec![clamp_to_edge]);
                     sampler_texture_sample_bias_compatible.insert(binding, vec![bias_compatible]);
 
                     let res_index = hal_samplers.len();
@@ -4416,6 +4449,13 @@ impl Device {
                             .map(|sampler| {
                                 sampler.address_modes.contains(&wgt::AddressMode::Repeat)
                             })
+                            .collect(),
+                    );
+                    sampler_clamp_to_edge.insert(
+                        binding,
+                        samplers
+                            .iter()
+                            .map(|sampler| sampler_clamps_to_edge_u_v(&sampler.address_modes))
                             .collect(),
                     );
                     sampler_texture_sample_bias_compatible.insert(
@@ -4634,6 +4674,7 @@ impl Device {
             sampled_texture_mip_levels,
             fl9_texture_load_compatible,
             sampler_uses_repeat,
+            sampler_clamp_to_edge,
             sampler_mip_compatibility,
             sampler_texture_sample_bias_compatible,
         };
@@ -5755,6 +5796,7 @@ impl Device {
         let mut immediate_slots_required = naga::valid::ImmediateSlots::default();
         let mut sampling_pairs = Vec::new();
         let mut fl9_texture_sample_level_zero_pairs = Vec::new();
+        let mut fl9_texture_gather_pair = None;
         let mut fl9_texture_load_binding = None;
         let mut fl9_texture_sample_bias_offset_binding = None;
         let mut fl9_texture_sample_compare_offset_binding = None;
@@ -6491,6 +6533,19 @@ impl Device {
                     );
                 }
 
+                if !self.downlevel.limits.texture_gather
+                    && self.downlevel.limits.texture_gather_2d_float_fragment
+                {
+                    if let Some(interface) = shader_module.interface.interface() {
+                        fl9_texture_gather_pair = interface
+                            .entry_point_fl9_texture_gather_pair(
+                                stage.to_naga(),
+                                &fragment_entry_point_name,
+                            )
+                            .map_err(stage_err)?;
+                    }
+                }
+
                 if match shader_module.interface.interface() {
                     Some(interface) => interface
                         .entry_point_uses_unsupported_fragment_derivatives(
@@ -7098,6 +7153,7 @@ impl Device {
             immediate_slots_required,
             sampling_pairs,
             fl9_texture_sample_level_zero_pairs,
+            fl9_texture_gather_pair,
             fl9_texture_load_binding,
             fl9_texture_sample_bias_offset_binding,
             fl9_texture_sample_compare_offset_binding,

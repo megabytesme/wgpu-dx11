@@ -1,15 +1,37 @@
 # FL9_1 handoff
 
+## Latest verified increment — 2026-11-12
+
+The backend now exposes only the restricted fragment `textureGather` subset:
+one direct operation on a single-mip `Rgba8Unorm` 2D view using a regular
+clamp-to-edge sampler. Naga emulates gather using four point samples, and Core
+validates the selected entry plus the live view and sampler before draw.
+The physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) executed the
+public test at requested/actual FL9_1 and matched `[151, 166, 106, 91]` for
+all 64 pixels. The general `texture_gather` limit remains false.
+
+Validation passed Naga 169/169, wgpu-types 118/118, Core DX11 136/136, Core
+DX12 135/135, strict private HAL 514/514 and strict public D3D11 149/149; the
+public suite had zero ignored Rust tests and three optional capability
+subcase skips. Six existing HAL Clippy warnings remain. Exact commands and
+diagnostics are in `FL9_1_PROGRESS.md`.
+
 ## Current mission status — 2026-11-12
 
-The latest verified slice adds a bounded f32 `mat4x4` inverse lowering for the
-FL9_1 vertex stage only. The strict RTX 3090 Ti test passed at requested and
-actual FL9_1 using a non-symmetric matrix in runtime vertex attributes; all 64
-pixels matched `[64, 128, 128, 255]` within two UNORM steps. Core still rejects
-fragment mat4 inverse and the general inverse limit remains false. The full
-strict public D3D11 suite passed 144/144, private HAL 510/510, Core DX11
-132/132, Core DX12 131/131 and Naga 164/164. See the current
-`FL9_1_PROGRESS.md` entry for exact commands and lint results.
+The latest verified software slice permits narrow fragment 2D
+`textureDimensions` and `textureNumLevels` queries to sample the same image
+through a compatible sampler in a different supported bind group. D3/cube
+sampler-group restrictions remain unchanged. The direct and helper forms
+passed strict forced-FL9_1 readback on the physical RTX 3090 Ti. A separate
+test also verifies a comparison sampler in a different group for the existing
+constant-offset proof. The latest integrated validation passed the complete
+strict public D3D11 suite 148/148, private HAL 512/512, Core DX11 133/133,
+Core DX12 132/132 and Naga 167/167.
+The public offscreen textured indexed cube verified 1,024 pixels, and the
+public HWND example presented five textured depth-tested frames. The prior
+vertex-only f32 `mat4x4` inverse lowering remains available. Exact commands,
+device details, optional skips and lint warnings are recorded in
+`FL9_1_PROGRESS.md`.
 
 An earlier increment accepts query-gated `Bgra8Unorm` and `Bgra8UnormSrgb`
 views in the narrow fragment 2D `textureLoad` subset. The strict RTX 3090 Ti
@@ -32,13 +54,14 @@ Exact commands and existing warnings are recorded in `FL9_1_PROGRESS.md`.
 
 The explicit `Backends::DX11` public path is available with a conservative
 FL9_1 projection; default backend selection excludes DX11. This supports
-constrained opt-in applications, not arbitrary wgpu workloads. One confirmed
-queue contract gap remains: D3D11 `wait_for_idle` drains immediate-context
-commands but does not prove completion of pending DXGI presentation. Closing
-it requires a presentation-aware completion design and desktop/UWP validation.
-The earlier 3D RGBA8 copy path remains a CPU-shadow fallback and cannot copy
-GPU-written 3D resources. Historical FL9_1 drivers, Lumia ARM32/CoreWindow and
-physical device-removal recovery remain external verification gaps.
+constrained opt-in applications, not arbitrary wgpu workloads. The HWND
+presentation path now uses DXGI's frame-latency-waitable object, tracks pending
+presents and drains them from queue idle and unconfigure; strict hidden-HWND
+tests exercise presentation, resize and teardown. CoreWindow behavior and
+Lumia ARM32 remain externally unverified. The earlier 3D RGBA8 copy path
+remains a CPU-shadow fallback and cannot copy GPU-written 3D resources.
+Historical FL9_1 drivers and physical device-removal recovery remain external
+verification gaps.
 
 This is a substantial constrained opt-in graphics subset, not feature-complete
 FL9_1 wgpu. The explicit DX11 backend supports public wgpu adapter/device
@@ -3044,6 +3067,12 @@ DXGI's getter returned `DXGI_ERROR_INVALID_CALL` for the non-waitable chain,
 so no waitable-swapchain behavior was introduced. Microsoft's documented
 default is one. Continue the broad API-contract audit and retain the explicit
 unknowns for historical FL9_1 and ARM32.
+
+This was the state at that checkpoint and was superseded on 2026-11-12. The
+HWND surface now creates a waitable swap chain, explicitly sets maximum frame
+latency to one, waits before acquisition, and drains pending presents during
+queue idle and unconfigure. Strict hidden-HWND tests cover these behaviors;
+CoreWindow runtime behavior and historical-driver behavior remain unverified.
 
 ## Follow-up — query-gated B5G6R5 attachment
 

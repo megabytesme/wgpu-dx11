@@ -1419,6 +1419,13 @@ pub struct DownlevelLimits {
     /// does not support texture gather instructions.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub texture_gather: bool,
+    /// Whether fragment shaders may use the restricted one-operation `textureGather` subset for
+    /// one non-array `texture_2d<f32>` with a clamp-to-edge sampler.
+    ///
+    /// This does not imply general texture gather support, support in other shader stages, or
+    /// support for texture shapes and sampler modes outside the validated subset.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub texture_gather_2d_float_fragment: bool,
     /// Whether shader entry points may use `textureLoad` operations.
     ///
     /// This can be unavailable when the backend cannot preserve texel-load semantics for its
@@ -1679,6 +1686,7 @@ impl Default for DownlevelLimits {
             texture_sample_level: true,
             texture_sample_level_zero_2d_float_fragment: false,
             texture_gather: true,
+            texture_gather_2d_float_fragment: false,
             texture_load: true,
             texture_load_2d_float_fragment: false,
             texture_load_3d_float_fragment: false,
@@ -1975,6 +1983,9 @@ impl DownlevelLimits {
             && (!required.texture_sample_level_zero_2d_float_fragment
                 || self.texture_sample_level_zero_2d_float_fragment)
             && (!required.texture_gather || self.texture_gather)
+            && (!required.texture_gather_2d_float_fragment
+                || self.texture_gather
+                || self.texture_gather_2d_float_fragment)
             && (!required.texture_load || self.texture_load)
             && (!required.texture_load_2d_float_fragment
                 || self.texture_load
@@ -2777,6 +2788,7 @@ mod tests {
             texture_sample_level: false,
             texture_sample_level_zero_2d_float_fragment: true,
             texture_gather: false,
+            texture_gather_2d_float_fragment: false,
             texture_load: true,
             texture_load_2d_float_fragment: true,
             texture_load_3d_float_fragment: false,
@@ -2867,6 +2879,7 @@ mod tests {
             texture_sample_level: false,
             texture_sample_level_zero_2d_float_fragment: true,
             texture_gather: false,
+            texture_gather_2d_float_fragment: false,
             texture_load: true,
             texture_load_2d_float_fragment: true,
             texture_load_3d_float_fragment: false,
@@ -3211,6 +3224,26 @@ mod tests {
     }
 
     #[test]
+    fn restricted_texture_gather_does_not_imply_general_gather() {
+        let restricted = DownlevelLimits {
+            texture_gather: false,
+            texture_gather_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        };
+        assert!(restricted.check_limits(&DownlevelLimits {
+            texture_gather: false,
+            texture_gather_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!restricted.check_limits(&DownlevelLimits::default()));
+        assert!(DownlevelLimits::default().check_limits(&DownlevelLimits {
+            texture_gather: false,
+            texture_gather_2d_float_fragment: true,
+            ..DownlevelLimits::default()
+        }));
+    }
+
+    #[test]
     fn texture_query_is_a_downlevel_capability() {
         let available = DownlevelLimits {
             texture_query: false,
@@ -3453,6 +3486,7 @@ mod tests {
             "texture_num_levels_cube_float_fragment",
             "texture_sample_base_clamp_to_edge",
             "texture_gather",
+            "texture_gather_2d_float_fragment",
             "texture_load",
             "texture_load_2d_float_fragment",
             "texture_load_3d_float_fragment",
