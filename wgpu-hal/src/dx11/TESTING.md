@@ -2336,6 +2336,20 @@ its unsupported format request masks that issue in this run. This probe does
 not establish broad depth conformance. Full output is in
 `E:\Temp\wgpu_dx11_depth_cts.log`.
 
+The filtered `depth_bias_24bit_format` CTS selectors are not valid execution
+evidence for the current D24 projection: both `Depth24Plus` and
+`Depth24PlusStencil8` fixtures request `COPY_SRC` on the depth texture, which
+core rejects. Each format selector therefore failed 3/3, including black
+readback from error resources and an unexpected validation error during test
+teardown. A separate strict public test uses only the supported D24 render
+attachment usage and verified zero, positive and negative constant bias on the
+physical RTX 3090 Ti at forced FL9_1, checking all 64 output pixels.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j16 -p wgpu --features dx11-test-fixture --test dx11_public public_dx11_depth24plus_constant_depth_bias_at_fl91 -- --nocapture --test-threads=1
+```
+
 ## Hardware and validation matrix
 
 For each applicable phase, exercise native D3D feature levels 9_1, 9_3 and

@@ -1,3 +1,27 @@
+## Public D24 depth-bias validation and CTS fixture triage — 2026-11-12
+
+The `depth_bias_24bit_format` CTS fixture requests `COPY_SRC` on its D24 depth
+texture. The current downlevel projection correctly rejects that usage, so the
+selector produces invalid texture error resources and teardown validation
+errors; its black color readback does not diagnose depth-bias rendering. The
+strict selectors for both `Depth24Plus` and `Depth24PlusStencil8` consequently
+failed 3/3 on fixture validation, with no cases skipped. No texture-copy
+capability was added to accommodate this fixture.
+
+A strict public integration test now renders three Depth24Plus regions using
+zero, positive and negative constant bias, then reads back the color target.
+All 64 pixels matched (red, green, red by region) on the physical NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`), driver version `32.0.16.2101`, software
+false, requested and actual FL9_1. This isolates the supported render-attach
+path from the unsupported CTS copy request.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --features dx11-test-fixture --test dx11_public public_dx11_depth24plus_constant_depth_bias_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,depth_bias:depth_bias_24bit_format:format="depth24plus";*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,depth_bias:depth_bias_24bit_format:format="depth24plus-stencil8";*'
+```
+
 ## Strict depth comparison CTS and GLES initializer fix — 2026-11-12
 
 The filtered `depth_compare_func` selectors exercised all seven comparison
