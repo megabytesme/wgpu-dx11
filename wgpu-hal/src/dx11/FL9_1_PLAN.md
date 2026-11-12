@@ -1,6 +1,28 @@
 # FL9_1 completion plan
 
-## Current coordinator checkpoint — nonzero-group base-clamp sampling — 2026-11-12
+## Current coordinator checkpoint — vertex-only mat4 inverse — 2026-11-12
+
+Naga's HLSL writer now lowers f32 4x4 matrix inverse through explicit
+cofactors. DX11 exposes a stage-specific `matrix_inverse_4x4_vertex` limit;
+Core permits the operation only in the selected vertex entry and its reachable
+helpers, while fragment mat4 inverse remains rejected. A strict RTX 3090 Ti
+FL9_1 test uses a non-symmetric runtime vertex-input matrix and validates all
+64 pixels as `[64, 128, 128, 255]` within two UNORM steps. The 2x2/3x3 paths
+remain covered. Full validation passed: Naga 164, wgpu-types 117, Core DX11
+132, Core DX12 131, strict private HAL 510 and strict public D3D11 144; the
+focused strict public render and capability gate passed 1/1 each. Clippy and
+format checks passed, with six existing HAL warnings. Exact commands and
+hardware details are in `FL9_1_PROGRESS.md`.
+
+The next audit candidates are nonzero-group fragment `textureLoad`, removing
+remaining group-0 proof restrictions from optional sampler/query forms, and
+the DXGI presentation-completion/frame-latency contract. The first two are
+narrow proof generalizations; presentation latency needs a distinct lifecycle
+design and CoreWindow testing. Compute/UAV, geometry shaders, MRT, indirect
+drawing, 1D textures and ordinary arrays remain FL9_1/profile or public API
+boundaries, not candidates for emulation in this slice.
+
+## Previous coordinator checkpoint — nonzero-group base-clamp sampling — 2026-11-12
 
 The selected-entry fragment `textureSampleBaseClampToEdge` proof now accepts
 its single 2D float image and non-comparison sampler from any supported bind

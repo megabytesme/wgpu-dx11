@@ -409,6 +409,7 @@ pub(super) struct BackendCapabilities {
     pub matrix_inverse: bool,
     pub matrix_inverse_2x2: bool,
     pub matrix_inverse_3x3: bool,
+    pub matrix_inverse_4x4_vertex: bool,
     pub matrix_outer_product: bool,
     pub matrix_aggregate_stores: bool,
     pub shader_loops: bool,
@@ -575,6 +576,7 @@ impl BackendCapabilities {
         matrix_inverse: false,
         matrix_inverse_2x2: true,
         matrix_inverse_3x3: true,
+        matrix_inverse_4x4_vertex: true,
         matrix_outer_product: true,
         matrix_aggregate_stores: false,
         shader_loops: false,
@@ -1009,6 +1011,7 @@ impl Capabilities {
                 matrix_inverse: self.backend.matrix_inverse,
                 matrix_inverse_2x2: self.backend.matrix_inverse_2x2,
                 matrix_inverse_3x3: self.backend.matrix_inverse_3x3,
+                matrix_inverse_4x4_vertex: self.backend.matrix_inverse_4x4_vertex,
                 matrix_outer_product: self.backend.matrix_outer_product,
                 matrix_aggregate_stores: self.backend.matrix_aggregate_stores,
                 vertex_format_mask: self.vertex_input_format_mask(),
@@ -3203,6 +3206,7 @@ mod tests {
         assert!(!exposed.downlevel.limits.matrix_inverse);
         assert!(exposed.downlevel.limits.matrix_inverse_2x2);
         assert!(exposed.downlevel.limits.matrix_inverse_3x3);
+        assert!(exposed.downlevel.limits.matrix_inverse_4x4_vertex);
         assert!(exposed.downlevel.limits.matrix_outer_product);
         assert!(!exposed.downlevel.limits.matrix_aggregate_stores);
         assert_eq!(

@@ -1470,6 +1470,13 @@ pub struct DownlevelLimits {
     /// inverses but do not implement larger matrix shapes.
     #[cfg_attr(feature = "serde", serde(default))]
     pub matrix_inverse_3x3: bool,
+    /// Whether vertex shaders may use floating-point 4x4 matrix inverse operations when general
+    /// floating-point matrix inverse operations are unavailable.
+    ///
+    /// This narrower capability is useful for shader translators whose target profile can lower
+    /// 4x4 inverses in vertex shaders but not in fragment shaders.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub matrix_inverse_4x4_vertex: bool,
     /// Whether shader entry points may use floating-point matrix outer-product operations.
     ///
     /// This can be unavailable when the selected shader translator has no implementation for
@@ -1680,6 +1687,7 @@ impl Default for DownlevelLimits {
             matrix_inverse: true,
             matrix_inverse_2x2: false,
             matrix_inverse_3x3: false,
+            matrix_inverse_4x4_vertex: false,
             matrix_outer_product: true,
             matrix_aggregate_stores: true,
             max_texture_sample_bias: u32::MAX,
@@ -1980,6 +1988,9 @@ impl DownlevelLimits {
             && (!required.matrix_inverse || self.matrix_inverse)
             && (!required.matrix_inverse_2x2 || self.matrix_inverse || self.matrix_inverse_2x2)
             && (!required.matrix_inverse_3x3 || self.matrix_inverse || self.matrix_inverse_3x3)
+            && (!required.matrix_inverse_4x4_vertex
+                || self.matrix_inverse
+                || self.matrix_inverse_4x4_vertex)
             && (!required.matrix_outer_product || self.matrix_outer_product)
             && (!required.matrix_aggregate_stores || self.matrix_aggregate_stores)
             && self.max_texture_sample_bias >= required.max_texture_sample_bias
@@ -2774,6 +2785,7 @@ mod tests {
             matrix_inverse: false,
             matrix_inverse_2x2: false,
             matrix_inverse_3x3: false,
+            matrix_inverse_4x4_vertex: false,
             matrix_outer_product: false,
             matrix_aggregate_stores: false,
             max_texture_sample_bias: 3,
@@ -2863,6 +2875,7 @@ mod tests {
             matrix_inverse: false,
             matrix_inverse_2x2: false,
             matrix_inverse_3x3: false,
+            matrix_inverse_4x4_vertex: false,
             matrix_outer_product: false,
             matrix_aggregate_stores: false,
             max_texture_sample_bias: 3,
@@ -3448,6 +3461,7 @@ mod tests {
             "matrix_inverse",
             "matrix_inverse_2x2",
             "matrix_inverse_3x3",
+            "matrix_inverse_4x4_vertex",
             "matrix_outer_product",
             "matrix_aggregate_stores",
             "texture_sample_level",
@@ -3868,6 +3882,41 @@ mod tests {
             ..DownlevelLimits::default()
         }));
         assert!(narrow.check_limits(&narrow));
+    }
+
+    #[test]
+    fn vertex_matrix_inverse_4x4_is_an_independent_narrow_downlevel_capability() {
+        let vertex_only = DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_2x2: false,
+            matrix_inverse_3x3: false,
+            matrix_inverse_4x4_vertex: true,
+            ..DownlevelLimits::default()
+        };
+        let no_inverse = DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_2x2: false,
+            matrix_inverse_3x3: false,
+            matrix_inverse_4x4_vertex: false,
+            ..DownlevelLimits::default()
+        };
+
+        assert!(vertex_only.check_limits(&DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_4x4_vertex: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(DownlevelLimits::default().check_limits(&DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_4x4_vertex: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(!no_inverse.check_limits(&DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_4x4_vertex: true,
+            ..DownlevelLimits::default()
+        }));
+        assert!(vertex_only.check_limits(&vertex_only));
     }
 
     #[test]

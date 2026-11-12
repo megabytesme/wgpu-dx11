@@ -5688,9 +5688,31 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     write!(self.out, ")")?;
                     return Ok(());
                 }
+                (crate::VectorSize::Quad, crate::VectorSize::Quad) => {
+                    write!(self.out, "float4x4(")?;
+                    for row in 0..4 {
+                        for column in 0..4 {
+                            if row != 0 || column != 0 {
+                                write!(self.out, ", ")?;
+                            }
+                            self.write_inverse_cofactor4(module, arg, func_ctx, column, row)?;
+                        }
+                    }
+                    write!(self.out, ") / (")?;
+                    for column in 0..4 {
+                        if column != 0 {
+                            write!(self.out, " + ")?;
+                        }
+                        self.write_expr(module, arg, func_ctx)?;
+                        write!(self.out, "[0][{column}] * ")?;
+                        self.write_inverse_cofactor4(module, arg, func_ctx, 0, column)?;
+                    }
+                    write!(self.out, ")")?;
+                    return Ok(());
+                }
                 _ => {
                     return Err(Error::Unimplemented(String::from(
-                        "write_expr_math Inverse for matrices other than mat2x2<f32> or mat3x3<f32>",
+                        "write_expr_math Inverse for matrices other than mat2x2<f32>, mat3x3<f32> or mat4x4<f32>",
                     )));
                 }
             }
@@ -6283,6 +6305,79 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             write!(self.out, "[{column}][{row}]")?;
         }
         write!(self.out, ")")?;
+        Ok(())
+    }
+
+    fn write_inverse_cofactor4(
+        &mut self,
+        module: &Module,
+        arg: Handle<crate::Expression>,
+        func_ctx: &back::FunctionCtx<'_>,
+        row: usize,
+        column: usize,
+    ) -> BackendResult {
+        let rows = match row {
+            0 => [1, 2, 3],
+            1 => [0, 2, 3],
+            2 => [0, 1, 3],
+            _ => [0, 1, 2],
+        };
+        let columns = match column {
+            0 => [1, 2, 3],
+            1 => [0, 2, 3],
+            2 => [0, 1, 3],
+            _ => [0, 1, 2],
+        };
+        if !(row + column).is_multiple_of(2) {
+            write!(self.out, "-")?;
+        }
+        self.write_inverse_determinant3(module, arg, func_ctx, rows, columns)
+    }
+
+    fn write_inverse_determinant3(
+        &mut self,
+        module: &Module,
+        arg: Handle<crate::Expression>,
+        func_ctx: &back::FunctionCtx<'_>,
+        rows: [usize; 3],
+        columns: [usize; 3],
+    ) -> BackendResult {
+        let write_element = |this: &mut Self, row, column| -> BackendResult {
+            this.write_expr(module, arg, func_ctx)?;
+            write!(this.out, "[{row}][{column}]")?;
+            Ok(())
+        };
+        write!(self.out, "(")?;
+        write_element(self, rows[0], columns[0])?;
+        write!(self.out, " * (")?;
+        write_element(self, rows[1], columns[1])?;
+        write!(self.out, " * ")?;
+        write_element(self, rows[2], columns[2])?;
+        write!(self.out, " - ")?;
+        write_element(self, rows[1], columns[2])?;
+        write!(self.out, " * ")?;
+        write_element(self, rows[2], columns[1])?;
+        write!(self.out, ") - ")?;
+        write_element(self, rows[0], columns[1])?;
+        write!(self.out, " * (")?;
+        write_element(self, rows[1], columns[0])?;
+        write!(self.out, " * ")?;
+        write_element(self, rows[2], columns[2])?;
+        write!(self.out, " - ")?;
+        write_element(self, rows[1], columns[2])?;
+        write!(self.out, " * ")?;
+        write_element(self, rows[2], columns[0])?;
+        write!(self.out, ") + ")?;
+        write_element(self, rows[0], columns[2])?;
+        write!(self.out, " * (")?;
+        write_element(self, rows[1], columns[0])?;
+        write!(self.out, " * ")?;
+        write_element(self, rows[2], columns[1])?;
+        write!(self.out, " - ")?;
+        write_element(self, rows[1], columns[1])?;
+        write!(self.out, " * ")?;
+        write_element(self, rows[2], columns[0])?;
+        write!(self.out, "))")?;
         Ok(())
     }
 
@@ -8172,8 +8267,8 @@ mod fl9_viewport_tests {
 
     #[cfg(feature = "glsl-in")]
     #[test]
-    fn matrix_inverse_rejects_larger_shapes() {
-        let source = "#version 450\nvoid main() { mat4 m = mat4(1.0); mat4 inv = inverse(m); gl_Position = inv[0]; }";
+    fn matrix_inverse_emits_a_mat4_cofactor_lowering() {
+        let source = "#version 450\nmat4 invert(mat4 m) { return inverse(m); }\nvoid main() { mat4 m = mat4(1.0); mat4 inv = invert(m); gl_Position = inv[0]; }";
         let mut parser = crate::front::glsl::Frontend::default();
         let module = parser
             .parse(
@@ -8188,11 +8283,27 @@ mod fl9_viewport_tests {
             entry_point: Some((ShaderStage::Vertex, "main".into())),
         };
         let mut output = String::new();
+        super::super::Writer::new(&mut output, &make_options(), &pipeline)
+            .write(&module, &info, None)
+            .unwrap();
+
+        assert!(output.contains("float4x4("), "{output}");
         assert!(
-            super::super::Writer::new(&mut output, &make_options(), &pipeline)
-                .write(&module, &info, None)
-                .is_err()
+            output.contains("[1][1] * ") && output.contains("[2][2] - "),
+            "expected a 3x3 cofactor in:\n{output}"
         );
+        assert!(
+            output.contains("[0][0] * ")
+                && output.contains("[0][1] * ")
+                && output.contains("[0][2] * ")
+                && output.contains("[0][3] * "),
+            "expected a four-term determinant in:\n{output}"
+        );
+        assert!(
+            output.contains("_e2[1][1] * ") && output.contains("_e2[2][2]"),
+            "expected matrix components in the cofactor expression:\n{output}"
+        );
+        assert!(!output.contains("inverse("), "{output}");
     }
 
     #[test]

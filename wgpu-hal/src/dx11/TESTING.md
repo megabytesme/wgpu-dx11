@@ -4630,7 +4630,7 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 & 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
 ```
 
-### Narrow FL9_1 `mat2x2<f32>` and `mat3x3<f32>` matrix inverse
+### Narrow FL9_1 `mat2x2<f32>`, `mat3x3<f32>`, and vertex `mat4x4<f32>` matrix inverse
 
 ```powershell
 cargo +1.93.1 test --offline -j8 -p naga --features glsl-in --lib matrix_inverse_
@@ -4639,19 +4639,24 @@ cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features d
 cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib matrix_inverse
 cargo +1.93.1 test --offline -j8 -p wgpu-types matrix_inverse
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
-cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_mat2_and_mat3_matrix_inverse_at_fl91 -- --exact --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_mat2_mat3_and_vertex_mat4_matrix_inverse_at_fl91 -- --exact --nocapture --test-threads=1
 ```
 
 The selected D3D11 projection permits f32 `mat2x2` and `mat3x3` inverse via
-independent narrow limits; general `matrix_inverse` remains false. Core checks
-the selected entry point and reachable helpers, and rejects mat4 inverse
-before HAL. The public GLSL test executes both supported sizes in vertex and
+independent narrow limits, plus `mat4x4` inverse in vertex shaders through
+`matrix_inverse_4x4_vertex`; general `matrix_inverse` remains false. Core checks
+the selected entry point and reachable helpers, and rejects fragment `mat4x4`
+inverse before HAL. The public GLSL test executes mat2 and mat3 in vertex and
 fragment stages at requested/actual FL9_1. It checks all 64 pixels for the
 non-symmetric mat2 result `[0, 255, 0, 255]` and mat3 result
-`[64, 64, 64, 255]`, with vertex and fragment inverse outputs checked
-independently. WGSL does not define an inverse builtin; this path covers
-GLSL and other Naga IR sources that contain the operation. The RTX result does
-not establish historical driver behavior.
+`[64, 64, 64, 255]`, with vertex and fragment outputs checked independently.
+The mat4 case takes a non-symmetric matrix from runtime vertex attributes,
+checks the inverse result `[64, 128, 128, 255]` on all 64 pixels with a two-
+step UNORM tolerance, and therefore exercises the generated inverse rather
+than a compile-time matrix constant. The test selects the physical RTX 3090 Ti
+at requested/actual FL9_1. WGSL has no inverse builtin; this covers GLSL and
+other Naga IR sources containing the operation and does not establish behavior
+on historical drivers.
 
 ### Direct 2D `textureLoad` with `textureDimensions`
 

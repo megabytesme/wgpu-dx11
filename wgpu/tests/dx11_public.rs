@@ -17926,6 +17926,7 @@ fn public_dx11_gates_matrix_inverse_shape_and_accepts_outer_product_at_fl91() {
     let downlevel = adapter.get_downlevel_capabilities();
     assert!(downlevel.limits.matrix_inverse_2x2);
     assert!(downlevel.limits.matrix_inverse_3x3);
+    assert!(downlevel.limits.matrix_inverse_4x4_vertex);
     assert!(!downlevel.limits.matrix_inverse);
     let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public FL9_1 matrix inverse validation test"),
@@ -17978,11 +17979,11 @@ fn public_dx11_gates_matrix_inverse_shape_and_accepts_outer_product_at_fl91() {
         "#version 450\nmat3 invert(mat3 m) { return inverse(m); }\nvoid main() { gl_Position = vec4(0.0, 0.0, 0.0, 1.0); }",
     );
     let inverse_4x4 = vertex(
-        "unsupported FL9_1 mat4 matrix inverse GLSL shader",
+        "supported FL9_1 vertex mat4 matrix inverse GLSL shader",
         "#version 450\nvoid main() { mat4 m = inverse(mat4(1.0)); gl_Position = m[0]; }",
     );
     let inverse_4x4_helper = vertex(
-        "reachable unsupported FL9_1 mat4 matrix inverse GLSL helper",
+        "supported FL9_1 vertex mat4 matrix inverse GLSL helper",
         "#version 450\nmat4 invert(mat4 m) { return inverse(m); }\nvoid main() { gl_Position = invert(mat4(1.0))[0]; }",
     );
     let outer_product = vertex(
@@ -18035,29 +18036,15 @@ fn public_dx11_gates_matrix_inverse_shape_and_accepts_outer_product_at_fl91() {
 
     drop(pipeline(&inverse));
     drop(pipeline(&inverse_helper));
-    expect_validation_error_containing(
-        &device,
-        "unsupported FL9_1 mat4 inverse",
-        "Matrix inverse",
-        || {
-            drop(pipeline(&inverse_4x4));
-        },
-    );
+    drop(pipeline(&inverse_4x4));
+    drop(pipeline(&inverse_4x4_helper));
     drop(pipeline(&inverse_3x3));
     drop(pipeline(&inverse_3x3_helper));
-    expect_validation_error_containing(
-        &device,
-        "unsupported FL9_1 mat4 inverse helper",
-        "Matrix inverse",
-        || {
-            drop(pipeline(&inverse_4x4_helper));
-        },
-    );
     drop(pipeline(&outer_product));
     drop(pipeline(&outer_product_helper));
     drop(pipeline(&ordinary));
     println!(
-        "PASS: Core accepted mat2/mat3 inverse and unreachable mat3 helpers, rejected mat4 inverse before HAL, and accepted outer product in selected and helper entries"
+        "PASS: Core and HAL accepted supported vertex mat2/mat3/mat4 inverse entries and accepted matrix outer product"
     );
 }
 
@@ -41346,7 +41333,7 @@ fn public_dx11_format_usage_projection_matches_core_creation_at_fl91() {
 
 #[cfg(feature = "glsl")]
 #[test]
-fn public_dx11_mat2_and_mat3_matrix_inverse_at_fl91() {
+fn public_dx11_mat2_mat3_and_vertex_mat4_matrix_inverse_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -41378,11 +41365,15 @@ fn public_dx11_mat2_and_mat3_matrix_inverse_at_fl91() {
         "selected FL9_1 projection must expose the narrow mat3 inverse path"
     );
     assert!(
+        downlevel.limits.matrix_inverse_4x4_vertex,
+        "selected FL9_1 projection must expose the narrow vertex mat4 inverse path"
+    );
+    assert!(
         !downlevel.limits.matrix_inverse,
         "general matrix inverse must remain unavailable"
     );
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=vertex and fragment mat2/mat3 inverse",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=vertex mat2/mat3/mat4 and fragment mat2/mat3 inverse",
         info.name, info.vendor, info.device, info.driver, info.driver_info
     );
 
@@ -41694,6 +41685,186 @@ fn public_dx11_mat2_and_mat3_matrix_inverse_at_fl91() {
         }
         println!(
             "PASS: mat3 inverse in vertex and fragment stages matched all 64 pixels [64, 64, 64, 255]"
+        );
+    }
+    readback.unmap();
+
+    let mat4_vertex_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 vertex mat4 matrix inverse shader"),
+        source: ShaderSource::Glsl {
+            shader: std::borrow::Cow::Borrowed(
+                "#version 450\nlayout(location=0) in vec2 position; layout(location=1) in vec4 c0; layout(location=2) in vec4 c1; layout(location=3) in vec4 c2; layout(location=4) in vec4 c3; layout(location=0) out vec4 inverse_result; void main() { mat4 m = mat4(c0, c1, c2, c3); inverse_result = inverse(m) * vec4(1.0, 2.0, 3.0, 5.0); gl_Position = vec4(position, 0.0, 1.0); }",
+            ),
+            stage: naga::ShaderStage::Vertex,
+            defines: &[],
+        },
+    });
+    let mat4_fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 vertex mat4 matrix inverse result shader"),
+        source: ShaderSource::Glsl {
+            shader: std::borrow::Cow::Borrowed(
+                "#version 450\nlayout(location=0) in vec4 inverse_result; layout(location=0) out vec4 color; void main() { color = inverse_result; }",
+            ),
+            stage: naga::ShaderStage::Fragment,
+            defines: &[],
+        },
+    });
+    let mat4_attributes = [
+        VertexAttribute {
+            format: VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        },
+        VertexAttribute {
+            format: VertexFormat::Float32x4,
+            offset: 8,
+            shader_location: 1,
+        },
+        VertexAttribute {
+            format: VertexFormat::Float32x4,
+            offset: 24,
+            shader_location: 2,
+        },
+        VertexAttribute {
+            format: VertexFormat::Float32x4,
+            offset: 40,
+            shader_location: 3,
+        },
+        VertexAttribute {
+            format: VertexFormat::Float32x4,
+            offset: 56,
+            shader_location: 4,
+        },
+    ];
+    let mat4_vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 72,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &mat4_attributes,
+    })];
+    let mat4_validation_scope = device.push_error_scope(ErrorFilter::Validation);
+    let mat4_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 vertex mat4 matrix inverse pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &mat4_vertex_shader,
+            entry_point: Some("main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &mat4_vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &mat4_fragment_shader,
+            entry_point: Some("main"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let mat4_validation_error = poll_ready(mat4_validation_scope.pop());
+    assert!(
+        mat4_validation_error.is_none(),
+        "vertex mat4 inverse must compile for vs_4_0_level_9_1: {mat4_validation_error:?}"
+    );
+    let mat4_vertex_data = [
+        -1.0_f32, -1.0, 2.0, 0.0, 0.0, 0.0, 1.0, 3.0, 0.0, 0.0, 0.0, 1.0, 4.0, 0.0, 0.0, 0.0, 1.0,
+        5.0, 3.0, -1.0, 2.0, 0.0, 0.0, 0.0, 1.0, 3.0, 0.0, 0.0, 0.0, 1.0, 4.0, 0.0, 0.0, 0.0, 1.0,
+        5.0, -1.0, 3.0, 2.0, 0.0, 0.0, 0.0, 1.0, 3.0, 0.0, 0.0, 0.0, 1.0, 4.0, 0.0, 0.0, 0.0, 1.0,
+        5.0,
+    ];
+    let mat4_vertex_bytes: Vec<u8> = mat4_vertex_data
+        .iter()
+        .flat_map(|component| component.to_ne_bytes())
+        .collect();
+    let mat4_vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 mat4 inverse runtime matrix vertex data"),
+        size: mat4_vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&mat4_vertex, 0, &mat4_vertex_bytes);
+    let mut mat4_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 vertex mat4 inverse render and readback"),
+    });
+    {
+        let mut pass = mat4_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 vertex mat4 inverse pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&mat4_pipeline);
+        pass.set_vertex_buffer(0, mat4_vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    mat4_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let mat4_submission = queue.submit([mat4_encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(mat4_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 vertex mat4 inverse rendering");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("vertex mat4 inverse readback callback")
+        .expect("map vertex mat4 inverse output");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped vertex mat4 inverse pixels");
+        let expected = [64_u8, 128, 128, 255];
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                for (channel, expected) in expected.iter().enumerate() {
+                    let observed = pixels[offset + channel];
+                    assert!(
+                        observed.abs_diff(*expected) <= 2,
+                        "vertex mat4 inverse pixel ({x}, {y}) channel {channel}: observed={observed} expected={expected}"
+                    );
+                }
+            }
+        }
+        println!(
+            "PASS: all 64 pixels matched runtime non-symmetric vertex mat4 inverse [64, 128, 128, 255] within 2 UNORM steps"
         );
     }
     readback.unmap();

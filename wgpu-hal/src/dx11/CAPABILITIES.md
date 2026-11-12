@@ -1493,19 +1493,20 @@ Strict forced-FL9_1 public rendering verified the narrow exception through
 Core, HAL, D3D11 and readback; CPU tests cover its pointer and index boundaries.
 These are backend/compiler restrictions, not feature-level hardware
 guarantees.
-Naga's HLSL writer lowers f32 `mat2x2` and `mat3x3` inverse using explicit
-cofactors. DX11 exposes these independent subsets through
-`DownlevelLimits::matrix_inverse_2x2` and `matrix_inverse_3x3`, while keeping
-general `matrix_inverse` false. Core checks the selected entry point and its
-reachable helpers, and rejects inverse shapes outside the enabled limits
-before HAL. A strict forced-FL9_1 GLSL test executes both shapes in vertex and
-fragment stages; the non-symmetric mat3 case matched all 64 pixels at
-`[64, 64, 64, 255]`, with separate channels sourced from each stage. CPU tests
-cover shape-specific limits and mat4 rejection.
-WGSL has no `inverse` builtin, so this is useful for GLSL/SPIR-V or Naga IR
-inputs, not an expansion of WGSL functionality. Other shapes and DX12/Metal
-capability exposure remain disabled; this is a translator subset, not an
-FL9_1 hardware guarantee.
+Naga's HLSL writer lowers f32 `mat2x2`, `mat3x3`, and `mat4x4` inverse using
+explicit cofactors. DX11 exposes `mat2x2` and `mat3x3` through independent
+`DownlevelLimits::matrix_inverse_2x2` and `matrix_inverse_3x3` limits. The
+tested Level 9 vertex profile also supports the separate
+`matrix_inverse_4x4_vertex` limit; Core rejects `mat4x4` inverse in fragment
+shaders and keeps general `matrix_inverse` false. Core checks the selected
+entry point and reachable helpers before HAL. Strict forced-FL9_1 GLSL tests
+execute `mat2x2` and `mat3x3` in both stages and a runtime-data, non-symmetric
+`mat4x4` inverse in the vertex stage. The mat4 case matched all 64 pixels at
+`[64, 128, 128, 255]` within two UNORM steps; a fragment mat4 inverse is still
+rejected before HAL. WGSL has no `inverse` builtin, so this applies to GLSL,
+SPIR-V, or Naga IR inputs. It is a measured compiler/backend subset, not a
+guarantee for every historical FL9_1 driver; DX12 and Metal keep the narrow
+limit disabled.
 Naga's HLSL writer now lowers `outerProduct` for validated f32 vectors and
 square or rectangular matrices. The DX11 FL9_1 projection enables
 `DownlevelLimits::matrix_outer_product`; selected-entry validation still

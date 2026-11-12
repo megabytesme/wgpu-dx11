@@ -1991,3 +1991,15 @@ nonfiltering layout is sufficient. Strict RTX 3090 Ti execution at requested
 and actual FL9_1 verified signed RG normalization for four texels across all
 64 output pixels and zero for 64 out-of-bounds pixels. This is optional
 format-query evidence from a modern driver, not historical FL9_1 validation.
+
+## Vertex-only FL9_1 f32 `mat4x4` inverse
+
+The Naga HLSL writer lowers f32 4x4 inverse with explicit cofactors. DX11
+projects this through `DownlevelLimits::matrix_inverse_4x4_vertex`; selected
+entry-point validation permits it only in the vertex stage and only for f32
+square 4x4 matrices. General matrix inverse remains disabled, as does fragment
+mat4 inverse. A strict forced-FL9_1 public test feeds a non-symmetric matrix
+through runtime vertex attributes and verifies all 64 readback pixels as
+`[64, 128, 128, 255]` within two UNORM steps. This measures the installed FXC
+and RTX 3090 Ti path; historical FL9_1 compiler/driver behavior is not
+established. WGSL has no matrix inverse builtin.

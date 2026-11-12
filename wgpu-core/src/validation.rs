@@ -286,6 +286,7 @@ struct EntryPointMeshInfo {
 struct MatrixInverseUsage {
     mat2x2: bool,
     mat3x3: bool,
+    mat4x4: bool,
     other: bool,
 }
 
@@ -6368,6 +6369,11 @@ fn function_matrix_inverse_usage(
                 rows: naga::VectorSize::Tri,
                 scalar: naga::Scalar::F32,
             } => usage.mat3x3 = true,
+            naga::TypeInner::Matrix {
+                columns: naga::VectorSize::Quad,
+                rows: naga::VectorSize::Quad,
+                scalar: naga::Scalar::F32,
+            } => usage.mat4x4 = true,
             _ => usage.other = true,
         }
     }
@@ -6395,6 +6401,7 @@ fn entry_point_matrix_inverse_usage(
             function_matrix_inverse_usage(function, &module_info[handle], &module.types);
         usage.mat2x2 |= function_usage.mat2x2;
         usage.mat3x3 |= function_usage.mat3x3;
+        usage.mat4x4 |= function_usage.mat4x4;
         usage.other |= function_usage.other;
         collect_called_functions(&function.body, &mut called_functions);
     }
@@ -8591,6 +8598,8 @@ impl Interface {
         Ok(!limits.matrix_inverse
             && ((usage.mat2x2 && !limits.matrix_inverse_2x2)
                 || (usage.mat3x3 && !limits.matrix_inverse_3x3)
+                || (usage.mat4x4
+                    && (stage != naga::ShaderStage::Vertex || !limits.matrix_inverse_4x4_vertex))
                 || usage.other))
     }
 
@@ -14112,13 +14121,10 @@ mod tests {
     #[test]
     #[cfg(feature = "glsl")]
     fn narrow_matrix_inverse_limit_is_shape_and_entry_point_specific() {
-        fn interface(source: &str) -> Interface {
+        fn interface(source: &str, stage: naga::ShaderStage) -> Interface {
             let mut parser = naga::front::glsl::Frontend::default();
             let module = parser
-                .parse(
-                    &naga::front::glsl::Options::from(naga::ShaderStage::Vertex),
-                    source,
-                )
+                .parse(&naga::front::glsl::Options::from(stage), source)
                 .unwrap();
             let info = naga::valid::Validator::new(
                 naga::valid::ValidationFlags::all(),
@@ -14131,12 +14137,23 @@ mod tests {
 
         let inverse_2x2_with_unused_3x3 = interface(
             "#version 450\nmat3 unused(mat3 m) { return inverse(m); }\nmat2 apply_inverse(mat2 m) { return inverse(m); }\nvoid main() { mat2 inv = apply_inverse(mat2(1.0)); gl_Position = vec4(inv[0], 0.0, 1.0); }",
+            naga::ShaderStage::Vertex,
         );
         let inverse_2x2_only = interface(
             "#version 450\nmat2 apply_inverse(mat2 m) { return inverse(m); }\nvoid main() { mat2 inv = apply_inverse(mat2(1.0)); gl_Position = vec4(inv[0], 0.0, 1.0); }",
+            naga::ShaderStage::Vertex,
         );
         let inverse_3x3 = interface(
             "#version 450\nmat3 apply_inverse(mat3 m) { return inverse(m); }\nvoid main() { mat3 inv = apply_inverse(mat3(1.0)); gl_Position = vec4(inv[0], 1.0); }",
+            naga::ShaderStage::Vertex,
+        );
+        let inverse_4x4 = interface(
+            "#version 450\nmat4 apply_inverse(mat4 m) { return inverse(m); }\nvoid main() { mat4 inv = apply_inverse(mat4(1.0)); gl_Position = inv[0]; }",
+            naga::ShaderStage::Vertex,
+        );
+        let fragment_inverse_4x4 = interface(
+            "#version 450\nlayout(location = 0) out vec4 color; void main() { mat4 inv = inverse(mat4(1.0)); color = inv[0]; }",
+            naga::ShaderStage::Fragment,
         );
         let narrow_limits = wgt::DownlevelLimits {
             matrix_inverse: false,
@@ -14152,6 +14169,13 @@ mod tests {
             matrix_inverse: false,
             matrix_inverse_2x2: true,
             matrix_inverse_3x3: true,
+            ..Default::default()
+        };
+        let vertex_mat4_limits = wgt::DownlevelLimits {
+            matrix_inverse: false,
+            matrix_inverse_2x2: true,
+            matrix_inverse_3x3: true,
+            matrix_inverse_4x4_vertex: true,
             ..Default::default()
         };
 
@@ -14197,14 +14221,25 @@ mod tests {
                 &combined_limits,
             )
             .unwrap());
-        let inverse_4x4 = interface(
-            "#version 450\nmat4 apply_inverse(mat4 m) { return inverse(m); }\nvoid main() { mat4 inv = apply_inverse(mat4(1.0)); gl_Position = inv[0]; }",
-        );
         assert!(inverse_4x4
             .entry_point_uses_unsupported_matrix_inverse(
                 naga::ShaderStage::Vertex,
                 "main",
                 &combined_limits,
+            )
+            .unwrap());
+        assert!(!inverse_4x4
+            .entry_point_uses_unsupported_matrix_inverse(
+                naga::ShaderStage::Vertex,
+                "main",
+                &vertex_mat4_limits,
+            )
+            .unwrap());
+        assert!(fragment_inverse_4x4
+            .entry_point_uses_unsupported_matrix_inverse(
+                naga::ShaderStage::Fragment,
+                "main",
+                &vertex_mat4_limits,
             )
             .unwrap());
         assert!(inverse_2x2_only

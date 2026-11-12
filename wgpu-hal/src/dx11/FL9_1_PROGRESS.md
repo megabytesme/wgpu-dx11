@@ -114,7 +114,6 @@ $env:WGPU_DX11_REQUIRE_HARDWARE='1'
 cargo +1.93.1 fmt --all -- --check
 git diff --check
 ```
-
 ## Nonzero-group 3D/cube `textureDimensions` — 2026-11-11
 
 Removed the unnecessary group-0 restriction from the selected-entry fragment
@@ -17719,3 +17718,68 @@ Retried the read-only Device Portal query `Invoke-LumiaPortal -Path
 '/api/os/devicefamily'` using the configured PowerShell helper. The HTTPS
 request timed out before returning device information. No device settings
 were changed; CoreWindow and ARM32 execution remain externally unverified.
+## Vertex-only FL9_1 f32 `mat4x4` inverse — 2026-11-12
+
+Naga's HLSL writer now emits a transposed cofactor matrix divided by its
+determinant for f32 `mat4x4` inverse. DX11 projects this narrow path through
+`DownlevelLimits::matrix_inverse_4x4_vertex`; the general inverse limit stays
+false. Core collects inverse shapes for the selected entry point and reachable
+helpers, permits mat4 only for vertex stage, and rejects fragment mat4 before
+HAL. The public/serde limits field defaults false for old serialized
+capability objects; general matrix inverse satisfies the narrow request when
+checking limits. Other backends do not project this new capability.
+
+The strict public test supplied a non-symmetric upper-triangular mat4 from
+runtime vertex attributes, so the shader executed the inverse on runtime data
+rather than a compile-time literal. At requested and actual FL9_1, the physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+`software=false`) produced `[64, 128, 128, 255]` at all 64 pixels, within two
+UNORM steps. The same test retained the mat2/mat3 stage checks and confirmed
+Core rejects fragment mat4 inverse without an internal HAL error. This is
+compiler/driver evidence for this machine, not historical FL9_1 portability.
+WGSL has no matrix inverse builtin, so this adds no WGSL functionality.
+
+The first hardware attempt caught two implementation issues: the initial
+Naga test asserted the wrong determinant expansion indices, and FXC rejected
+an unmatched determinant parenthesis. Both were corrected before the passing
+run; the final HLSL unit test checks cofactor layout and the full Naga suite.
+
+Pinned Rust 1.93.1, Visual Studio x64, offline, bounded Cargo `-j16` results:
+
+- Naga HLSL/WGSL/GLSL library tests: 164/164.
+- `wgpu-types` library tests: 117/117.
+- Legacy `DownlevelLimits` serde-shape defaulting test: 1/1.
+- Core DX11 library tests: 132/132.
+- Core DX12 library tests: 131/131.
+- Strict private D3D11 HAL suite: 510/510.
+- Strict public D3D11 suite: 144/144.
+- Strict focused inverse GPU test: 1/1; the three matrix-stage outputs
+  matched their expected readbacks, and fragment mat4 rejection was a Core
+  validation error.
+- Strict public capability gate test: 1/1.
+- Naga, `wgpu-types`, Core DX11, HAL DX11 and public-test Clippy passed. HAL
+  Clippy reports six pre-existing warnings in index/transfer/texture code; no
+  warning remains in the new Naga lowering.
+- `cargo +1.93.1 fmt --all` completed. Final format and diff checks are
+  recorded with the checkpoint.
+
+Commands:
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --features hlsl-out,glsl-in --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-types --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-types --features serde --lib previous_downlevel_limits_serde_shape_defaults_new_caps
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_mat2_mat3_and_vertex_mat4_matrix_inverse_at_fl91 -- --exact --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p naga --features hlsl-out,glsl-in,wgsl-in --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-types --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```

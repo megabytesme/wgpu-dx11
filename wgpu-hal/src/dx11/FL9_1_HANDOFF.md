@@ -2,17 +2,16 @@
 
 ## Current mission status — 2026-11-12
 
-The latest verified slice allows the narrow selected-entry fragment
-`textureSampleBaseClampToEdge` proof to use one image and one non-comparison
-sampler from any supported bind groups, including separate groups. Strict RTX
-3090 Ti FL9_1 execution with the texture in group 1 and sampler in group 2
-matched all 64 pixels for out-of-range coordinates. Naga passed 164 tests,
-Core DX11 132, Core DX12 131, private HAL 510 and strict public D3D11 144; the
-focused strict public test passed 1/1 without skipping. Targeted Clippy passed
-with six existing HAL warnings and no new warnings. Rust 1.93.1 formatting
-and diff checks passed. Exact commands are at the top of `FL9_1_PROGRESS.md`.
+The latest verified slice adds a bounded f32 `mat4x4` inverse lowering for the
+FL9_1 vertex stage only. The strict RTX 3090 Ti test passed at requested and
+actual FL9_1 using a non-symmetric matrix in runtime vertex attributes; all 64
+pixels matched `[64, 128, 128, 255]` within two UNORM steps. Core still rejects
+fragment mat4 inverse and the general inverse limit remains false. The full
+strict public D3D11 suite passed 144/144, private HAL 510/510, Core DX11
+132/132, Core DX12 131/131 and Naga 164/164. See the current
+`FL9_1_PROGRESS.md` entry for exact commands and lint results.
 
-The latest increment accepts query-gated `Bgra8Unorm` and `Bgra8UnormSrgb`
+An earlier increment accepts query-gated `Bgra8Unorm` and `Bgra8UnormSrgb`
 views in the narrow fragment 2D `textureLoad` subset. The strict RTX 3090 Ti
 FL9_1 run verified BGRA channel order and sRGB decode for all 128 output
 pixels. Full strict regressions passed: private HAL 510/510, Core DX11
@@ -60,9 +59,9 @@ Historical FL9_1 drivers, Lumia ARM32/CoreWindow execution and physical
 device-removal recovery remain external verification gaps. Use agents for
 independent audits, CTS triage and compiler probes, but assign each coupled
 Core/Naga/HAL feature to one implementation owner and keep end-to-end GPU
-validation under the coordinator. An earlier matrix-inverse increment
-implemented and GPU-verified f32 mat2 and mat3 GLSL/Naga IR lowering;
-mat4/general matrix inverse remain rejected.
+validation under the coordinator. The matrix-inverse subset currently covers
+f32 mat2 and mat3 in both shader stages and f32 mat4 only in the vertex stage.
+General matrix inverse remains rejected.
 
 ## Current coordinator checkpoint — query-gated Rg16Snorm texture load — 2026-11-11
 
