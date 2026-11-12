@@ -18195,6 +18195,11 @@ $env:WGPU_DX11_REQUIRE_HARDWARE='1'
 & 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
 ```
 
+Checkpoint commit: `56197ccfeb0efccd24ccb7806b8f8d1ffdcc4965`
+(`dx11: expand verified FL9_1 shader and query paths`). The commit contains
+only the reviewed 24-file FL9_1 shader/query, validation, testing and
+capability-documentation expansion described above.
+
 ## D2 `textureNumLevels` with a split-group sampler — 2026-11-12
 
 The selected fragment 2D `textureNumLevels` proof now permits its one
