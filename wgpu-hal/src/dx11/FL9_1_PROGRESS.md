@@ -1,3 +1,38 @@
+## Nonzero-group fragment `textureNumLevels` — 2026-11-12
+
+Core, Naga and HAL now preserve the queried texture's logical group when
+validating and lowering the selected-entry `textureNumLevels` subset. Only the
+image-group restriction was removed; the optional implicit sampler remains
+group 0, and the selected-entry, helper, image-shape and view-mip constraints
+remain. Synthetic proof tests passed in Naga (3/3 selected tests), Core (6/6)
+and HAL (6/6). The strict public GPU test passed 1/1 on the NVIDIA GeForce RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) with requested and actual
+FL9_1, physical adapter and `software=false`. It tested group 2/binding 42,
+direct and helper queries, with and without one same-image sample; each
+configuration switched one-level and three-level views and all 64 pixels
+matched. No GPU subcase skipped.
+
+Full regression validation passed: Naga 164/164, Core DX11 132/132, Core
+DX12 131/131, private HAL 510/510, and the strict public D3D11 target 144/144.
+The public run logged three optional capability subcase skips (two vertex
+input formats and `Rg8Unorm` mip support); no hardware-required test skipped.
+The strict public test command used `WGPU_DX11_REQUIRE_HARDWARE=1`. Targeted
+Clippy passed for all four affected crate/target combinations. It found one
+new Naga `question_mark` warning, now corrected; six existing HAL warnings
+remain, in `hal_index.rs`, `hal_transfer.rs` and `texture.rs`. Rust 1.93.1
+formatting and `git diff --check` both passed after that correction. Local
+MSVC builds use
+`E:\Temp\wgpu_mission_cargo.bat` because the default shell does not expose
+`link.exe`.
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_texture_num_levels
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib fl9_texture_num_levels
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_num_levels_selected_helper_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
 ## Query-gated BGRA8 fragment `textureLoad` — 2026-11-11
 
 Extended the private 2D point-load format gate and Core's bound-view

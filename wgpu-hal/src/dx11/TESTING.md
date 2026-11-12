@@ -4366,6 +4366,26 @@ the query through one selected parameterless helper for both dimensions. Each
 helper itself remains fragment-only and query-only; extra resources and
 unrelated queries remain rejected.
 
+### `textureNumLevels` image in a nonzero group
+
+The strict 2D test also puts the queried texture at group 2/binding 42 while
+leaving an optional sampler in group 0. It transitions between one-level and
+three-level views and verifies every output pixel for the direct and selected
+helper forms, both with and without sampling. The sampler's group restriction
+is unchanged. Run the proof tests and physical FL9_1 readback with:
+
+```powershell
+cargo +1.93 test --offline -j8 -p naga --no-default-features --features hlsl-out,wgsl-in --lib fl9_texture_num_levels
+cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib fl9_texture_num_levels
+cargo +1.93 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_num_levels
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_fragment_texture_num_levels_selected_helper_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti, all four group-2 configurations matched all 64 pixels at
+requested and actual FL9_1. This remains a restricted emulation and does not
+enable general image queries or unrestricted resource layouts.
+
 ```powershell
 cargo +1.93 test --offline -j8 -p wgpu-types restricted_3d_and_cube_texture_num_levels_are_independent
 cargo +1.93 test --offline -j8 -p wgpu-core --no-default-features --features dx11,wgsl,std --lib fl9_texture_num_levels_3d_and_cube_limits_are_independent

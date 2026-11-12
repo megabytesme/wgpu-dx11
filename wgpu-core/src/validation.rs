@@ -6058,7 +6058,7 @@ fn entry_point_supports_fl9_texture_num_levels(
     }
     let image = &module.global_variables[image_binding];
     image.space == naga::AddressSpace::Handle
-        && matches!(image.binding, Some(naga::ResourceBinding { group: 0, .. }))
+        && image.binding.is_some()
         && matches!(
             module.types[image.ty].inner,
             naga::TypeInner::Image {
@@ -6327,10 +6327,7 @@ fn entry_point_supports_fl9_texture_num_levels_helper(
         return false;
     }
     texture.space == naga::AddressSpace::Handle
-        && matches!(
-            texture.binding,
-            Some(naga::ResourceBinding { group: 0, .. })
-        )
+        && texture.binding.is_some()
         && matches!(
             module.types[texture.ty].inner,
             naga::TypeInner::Image {
@@ -12599,7 +12596,7 @@ mod tests {
 
         let supported = make_interface(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(7) var image: texture_2d<f32>;
             @fragment fn levels() -> @location(0) vec4f {
                 return vec4f(f32(textureNumLevels(image)), 0.0, 0.0, 1.0);
             }
@@ -12769,16 +12766,6 @@ mod tests {
                 naga::ShaderStage::Fragment,
             ),
             (
-                "other bind group",
-                r#"
-                @group(1) @binding(0) var image: texture_2d<f32>;
-                @fragment fn main() -> @location(0) vec4f {
-                    return vec4f(f32(textureNumLevels(image)), 0.0, 0.0, 1.0);
-                }
-                "#,
-                naga::ShaderStage::Fragment,
-            ),
-            (
                 "vertex stage",
                 r#"
                 @group(0) @binding(0) var image: texture_2d<f32>;
@@ -12860,7 +12847,7 @@ mod tests {
                 &limits,
             )
             .unwrap());
-        assert!(selected
+        assert!(!selected
             .entry_point_uses_unsupported_texture_num_levels(
                 naga::ShaderStage::Fragment,
                 "sibling",
@@ -13258,7 +13245,7 @@ mod tests {
         };
         let supported = make_interface(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(7) var image: texture_2d<f32>;
             @group(0) @binding(42) var smp: sampler;
             @group(1) @binding(3) var sibling_image: texture_2d<f32>;
             @group(1) @binding(4) var sibling_smp: sampler;

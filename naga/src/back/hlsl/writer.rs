@@ -829,12 +829,7 @@ fn fl9_texture_num_levels_functions(
         return None;
     };
     let image_global = &module.global_variables[image_handle];
-    if !matches!(
-        image_global.binding,
-        Some(crate::ResourceBinding { group: 0, .. })
-    ) {
-        return None;
-    }
+    let _ = image_global.binding?;
     let coordinate_size = match module.types[image_global.ty].inner {
         TypeInner::Image {
             dim: crate::ImageDimension::D2,
@@ -9057,7 +9052,7 @@ mod fl9_viewport_tests {
     #[test]
     fn fl9_texture_num_levels_can_share_texture_with_one_implicit_sample() {
         let texture_binding = crate::ResourceBinding {
-            group: 0,
+            group: 2,
             binding: 7,
         };
         let sampler_binding = crate::ResourceBinding {
@@ -9070,7 +9065,7 @@ mod fl9_viewport_tests {
             ("texture_cube<f32>", "vec3f(0.5)"),
         ] {
             let source = format!(
-                "@group(0) @binding(7) var image: {image_type}; \
+                "@group(2) @binding(7) var image: {image_type}; \
                  @group(0) @binding(42) var smp: sampler; \
                  @fragment fn main() -> @location(0) vec4f {{ \
                      let levels = f32(textureNumLevels(image)); \
@@ -9138,7 +9133,7 @@ mod fl9_viewport_tests {
     #[test]
     fn fl9_texture_num_levels_helper_can_sample_same_texture() {
         let texture_binding = crate::ResourceBinding {
-            group: 0,
+            group: 2,
             binding: 7,
         };
         let sampler_binding = crate::ResourceBinding {
@@ -9150,7 +9145,7 @@ mod fl9_viewport_tests {
             binding: 3,
         };
         let source = r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(7) var image: texture_2d<f32>;
             @group(0) @binding(42) var smp: sampler;
             @group(1) @binding(3) var sibling_image: texture_2d<f32>;
             fn levels_helper() -> u32 { return textureNumLevels(image); }

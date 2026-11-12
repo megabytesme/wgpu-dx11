@@ -1686,9 +1686,9 @@ The opt-in FL9_1 projection exposes separate
 `texture_num_levels_2d_float_fragment`,
 `texture_num_levels_3d_float_fragment` and
 `texture_num_levels_cube_float_fragment` limits. Each permits one
-`textureNumLevels` query on one group-0, non-array float image of the matching
-dimension in a simple fragment entry point, directly converted from `u32` to
-`f32`. Each dimension permits the query to be returned through exactly one
+`textureNumLevels` query on one non-array float image of the matching
+dimension from any bind group supported by the resource mapping, in a simple
+fragment entry point, directly converted from `u32` to `f32`. Each dimension permits the query to be returned through exactly one
 reachable, argument-free straight-line helper called once by the selected
 entry point. The helper must directly return the query and remains query-only.
 The selected entry may also sample the same image once directly through one

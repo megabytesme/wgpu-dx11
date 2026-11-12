@@ -1,3 +1,15 @@
+## Nonzero-group `textureNumLevels` — 2026-11-12
+
+The selected-entry fragment `textureNumLevels` proofs now accept the queried
+non-array float image from any bind group supported by the existing resource
+mapping. The optional implicit sample still requires its non-comparison
+sampler in group 0. Direct and one-helper forms retain their existing
+operation, entry-point and view restrictions. Strict RTX 3090 Ti FL9_1 tests
+switched between one- and three-level views at group 2/binding 42; direct and
+helper forms, each with and without the same-image sample, matched all 64
+pixels. This does not enable general image queries or general multi-bind-group
+support.
+
 ## Query-gated BGRA8 fragment `textureLoad` — 2026-11-11
 
 The selected-entry fragment 2D `textureLoad` subset now supports query-gated
@@ -688,11 +700,12 @@ unused query entries do not block safe siblings. The FL9_1 public projection
 reports this limit unavailable, and `wgpu-info` displays it.
 
 The projection now has separate narrow limits for fragment `textureDimensions`
-and `textureNumLevels` on one non-array `texture_2d<f32>`. A direct dimensions
-query may use any valid bind group; its one-helper form remains group-0-only.
-The `textureNumLevels` proof remains group-0-only and uses the bound view's
-host-known mip count in private constant `b13`, including supported multi-mip
-views. Neither limit enables general image queries; the proofs retain their
+and `textureNumLevels` on one non-array `texture_2d<f32>`. Direct dimensions
+queries and their selected-helper form may use any supported bind group.
+The queried `textureNumLevels` image may use any supported bind group and uses
+the bound view's host-known mip count in private constant `b13`, including
+supported multi-mip views. Its optional implicit sample still requires a
+group-0 sampler. Neither limit enables general image queries; the proofs retain their
 selected-entry and resource-shape restrictions. Strict public readback and
 compiler validation are recorded in `TESTING.md`.
 

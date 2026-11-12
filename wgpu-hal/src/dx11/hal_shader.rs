@@ -1021,7 +1021,7 @@ mod tests {
     }
 
     #[test]
-    fn fl9_texture_dimensions_accepts_one_selected_helper() {
+    fn fl9_texture_dimensions_and_num_levels_helpers_are_entry_specific() {
         let module = naga::front::wgsl::parse_str(
             r#"
             @group(7) @binding(7) var image: texture_2d<f32>;
@@ -1079,13 +1079,13 @@ mod tests {
                 &[],
             )
         );
-        assert!(fl9_texture_emulation_binding(
-            &module,
-            &info,
-            naga::ShaderStage::Fragment,
-            "sibling"
-        )
-        .is_err());
+        let sibling =
+            fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "sibling")
+                .unwrap()
+                .expect("the sibling entry may query a texture from its own group");
+        assert_eq!(sibling.binding.group, 1);
+        assert_eq!(sibling.binding.binding, 9);
+        assert!(matches!(sibling.kind, Fl9TextureEmulationKind::NumLevels));
 
         for source in [
             r#"
@@ -1944,7 +1944,7 @@ mod tests {
     fn fl9_texture_num_levels_binding_is_selected_entry_specific() {
         let module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(42) var image: texture_2d<f32>;
+            @group(2) @binding(42) var image: texture_2d<f32>;
             @fragment fn levels() -> @location(0) vec4f {
                 return vec4f(f32(textureNumLevels(image)), 0.0, 0.0, 1.0);
             }
@@ -1965,7 +1965,7 @@ mod tests {
         assert_eq!(
             proof.binding,
             naga::ResourceBinding {
-                group: 0,
+                group: 2,
                 binding: 42,
             }
         );
@@ -2139,13 +2139,11 @@ mod tests {
                 &[],
             )
         );
-        assert!(fl9_texture_emulation_binding(
-            &module,
-            &info,
-            naga::ShaderStage::Fragment,
-            "sibling"
-        )
-        .is_err());
+        let sibling =
+            fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "sibling")
+                .unwrap()
+                .expect("the sibling query remains entry-point specific");
+        assert_eq!(sibling.binding.group, 1);
 
         for source in [
             r#"
@@ -2252,7 +2250,7 @@ mod tests {
     fn fl9_texture_num_levels_helper_accepts_one_same_texture_sample() {
         let module = naga::front::wgsl::parse_str(
             r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(7) var image: texture_2d<f32>;
             @group(0) @binding(42) var smp: sampler;
             @group(1) @binding(9) var sibling_image: texture_2d<f32>;
             fn levels_helper() -> u32 { return textureNumLevels(image); }
@@ -2277,16 +2275,22 @@ mod tests {
             fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "selected")
                 .unwrap()
                 .expect("the selected mip-count helper may sample its image once");
+        assert_eq!(
+            proof.binding,
+            naga::ResourceBinding {
+                group: 2,
+                binding: 7,
+            }
+        );
         assert!(matches!(proof.kind, Fl9TextureEmulationKind::NumLevels));
         assert!(proof.has_helper);
         assert!(proof.has_implicit_sample);
-        assert!(fl9_texture_emulation_binding(
-            &module,
-            &info,
-            naga::ShaderStage::Fragment,
-            "sibling"
-        )
-        .is_err());
+        let sibling =
+            fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "sibling")
+                .unwrap()
+                .expect("the sibling query remains entry-point specific");
+        assert_eq!(sibling.binding.group, 1);
+        assert!(matches!(sibling.kind, Fl9TextureEmulationKind::NumLevels));
 
         for source in [
             r#"
@@ -6303,7 +6307,7 @@ fn fl9_texture_num_levels_helper(
     }
     let image = &module.global_variables[image_handle];
     if image.space != naga::AddressSpace::Handle
-        || !matches!(image.binding, Some(naga::ResourceBinding { group: 0, .. }))
+        || image.binding.is_none()
         || !matches!(
             module.types[image.ty].inner,
             naga::TypeInner::Image {

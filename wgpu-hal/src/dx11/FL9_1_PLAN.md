@@ -1,6 +1,24 @@
 # FL9_1 completion plan
 
-## Current coordinator checkpoint — query-gated BGRA8 texture loads — 2026-11-11
+## Current coordinator checkpoint — nonzero-group `textureNumLevels` — 2026-11-12
+
+The narrow selected-entry fragment `textureNumLevels` proof now accepts its
+queried float image from any bind group supported by the shared binding map.
+The optional implicit sample remains restricted to a group-0 non-comparison
+sampler; the direct/helper shape, view-mip emulation and general query
+rejections remain unchanged. Strict RTX 3090 Ti execution at requested and
+actual FL9_1 tested group 2/binding 42 and switched one- and three-level views.
+Direct and helper forms, with and without a same-image implicit sample, each
+matched all 64 output pixels. Naga, Core and HAL proof tests passed. Full
+regression results and exact commands are in `FL9_1_PROGRESS.md`.
+
+The next small binding-identity slice is the selected `textureSampleBaseClampToEdge`
+path, after verifying its compiler/runtime identity flow. Vertex-only f32
+mat4 inverse remains a larger shader/Core slice; the independent probe found
+it plausible but not implemented. Presentation completion, historical FL9_1
+drivers and Lumia/CoreWindow remain separate validation gaps.
+
+## Previous coordinator checkpoint — query-gated BGRA8 texture loads — 2026-11-11
 
 The narrow fragment 2D `textureLoad` path now accepts query-gated BGRA8
 unorm and sRGB views. Core protects the single-mip and exact sRGB resource/view
@@ -17,7 +35,7 @@ warnings remain. Details are recorded in `FL9_1_PROGRESS.md`.
 
 Three probes recommend keeping agent work focused: vertex-only f32 mat4 inverse
 is feasible but needs a new stage-specific limit and exact Naga/HAL/GPU proof;
-nonzero-group `textureNumLevels` is a smaller query-proof candidate; and
+`textureSampleBaseClampToEdge` remains group-0-restricted; and
 `Queue::wait_for_idle` still does not prove DXGI present completion. Continue
 with one integrated vertical slice at a time. Compute/UAV, geometry shaders,
 MRT, indirect draws and other documented profile/API limits are not software

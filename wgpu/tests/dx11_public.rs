@@ -38450,6 +38450,7 @@ fn public_dx11_fragment_texture_num_levels_emulation_at_fl91() {
 }
 
 struct Fl9TextureNumLevelsViewConfig<'a> {
+    group: u32,
     image_type: &'a str,
     suffix_levels: u32,
     helper_query: bool,
@@ -38496,11 +38497,12 @@ fn verify_fl91_texture_num_levels_views(
         "return vec4f(levels / 3.0, 0.0, 0.0, 1.0);".to_string()
     };
     let fragment_source = format!(
-        "@group(0) @binding(42) var image: {image_type}; {sample_declaration} {helper} \
+        "@group({}) @binding(42) var image: {image_type}; {sample_declaration} {helper} \
          @fragment fn fs() -> @location(0) vec4f {{ \
              {query} \
              {output} \
          }}",
+        config.group,
         image_type = config.image_type,
     );
     let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -38543,7 +38545,7 @@ fn verify_fl91_texture_num_levels_views(
         multiview_mask: None,
         cache: None,
     });
-    let layout = pipeline.get_bind_group_layout(0);
+    let layout = pipeline.get_bind_group_layout(config.group);
     let sampler = config.sample.then(|| {
         device.create_sampler(&SamplerDescriptor {
             address_mode_u: AddressMode::ClampToEdge,
@@ -38559,7 +38561,7 @@ fn verify_fl91_texture_num_levels_views(
             binding: 42,
             resource: BindingResource::TextureView(view),
         }];
-        if let Some(sampler) = &sampler {
+        if let Some(sampler) = sampler.as_ref().filter(|_| config.group == 0) {
             entries.push(BindGroupEntry {
                 binding: 7,
                 resource: BindingResource::Sampler(sampler),
@@ -38571,6 +38573,20 @@ fn verify_fl91_texture_num_levels_views(
             entries: &entries,
         })
     };
+    let sampler_group = sampler
+        .as_ref()
+        .filter(|_| config.group != 0)
+        .map(|sampler| {
+            let layout = pipeline.get_bind_group_layout(0);
+            device.create_bind_group(&BindGroupDescriptor {
+                label: Some(label),
+                layout: &layout,
+                entries: &[BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::Sampler(sampler),
+                }],
+            })
+        });
     let first_group = bind_group(first_view, "FL9_1 first mip-count view");
     let suffix_group = bind_group(suffix_view, "FL9_1 suffix mip-count view");
     let vertices = [[-1.0_f32, -1.0], [3.0, -1.0], [-1.0, 3.0]];
@@ -38631,10 +38647,13 @@ fn verify_fl91_texture_num_levels_views(
         });
         pass.set_pipeline(&pipeline);
         pass.set_vertex_buffer(0, vertex.slice(..));
-        pass.set_bind_group(0, &first_group, &[]);
+        if let Some(sampler_group) = &sampler_group {
+            pass.set_bind_group(0, sampler_group, &[]);
+        }
+        pass.set_bind_group(config.group, &first_group, &[]);
         pass.set_scissor_rect(0, 0, 4, 8);
         pass.draw(0..3, 0..1);
-        pass.set_bind_group(0, &suffix_group, &[]);
+        pass.set_bind_group(config.group, &suffix_group, &[]);
         pass.set_scissor_rect(4, 0, 4, 8);
         pass.draw(0..3, 0..1);
     }
@@ -38809,10 +38828,39 @@ fn public_dx11_fragment_texture_num_levels_selected_helper_at_fl91() {
     verify_fl91_texture_num_levels_views(
         &device,
         &queue,
+        "FL9_1 nonzero-group textureNumLevels",
+        &one_level_view,
+        &three_level_view,
+        Fl9TextureNumLevelsViewConfig {
+            group: 2,
+            image_type: "texture_2d<f32>",
+            suffix_levels: 3,
+            helper_query: false,
+            sample: false,
+        },
+    );
+    verify_fl91_texture_num_levels_views(
+        &device,
+        &queue,
+        "FL9_1 nonzero-group textureNumLevels plus sample",
+        &one_level_view,
+        &three_level_view,
+        Fl9TextureNumLevelsViewConfig {
+            group: 2,
+            image_type: "texture_2d<f32>",
+            suffix_levels: 3,
+            helper_query: false,
+            sample: true,
+        },
+    );
+    verify_fl91_texture_num_levels_views(
+        &device,
+        &queue,
         "FL9_1 selected-helper textureNumLevels",
         &one_level_view,
         &three_level_view,
         Fl9TextureNumLevelsViewConfig {
+            group: 2,
             image_type: "texture_2d<f32>",
             suffix_levels: 3,
             helper_query: true,
@@ -38826,6 +38874,7 @@ fn public_dx11_fragment_texture_num_levels_selected_helper_at_fl91() {
         &one_level_view,
         &three_level_view,
         Fl9TextureNumLevelsViewConfig {
+            group: 2,
             image_type: "texture_2d<f32>",
             suffix_levels: 3,
             helper_query: true,
@@ -38949,6 +38998,7 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
             &lowest_mip_view,
             &full_chain_view,
             Fl9TextureNumLevelsViewConfig {
+                group: 0,
                 image_type: "texture_3d<f32>",
                 suffix_levels: mip_count,
                 helper_query: false,
@@ -38962,6 +39012,7 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
             &lowest_mip_view,
             &full_chain_view,
             Fl9TextureNumLevelsViewConfig {
+                group: 0,
                 image_type: "texture_3d<f32>",
                 suffix_levels: mip_count,
                 helper_query: true,
@@ -39042,6 +39093,7 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
             &lowest_mip_view,
             &full_chain_view,
             Fl9TextureNumLevelsViewConfig {
+                group: 0,
                 image_type: "texture_cube<f32>",
                 suffix_levels: mip_count,
                 helper_query: false,
@@ -39055,6 +39107,7 @@ fn public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91() {
             &lowest_mip_view,
             &full_chain_view,
             Fl9TextureNumLevelsViewConfig {
+                group: 0,
                 image_type: "texture_cube<f32>",
                 suffix_levels: mip_count,
                 helper_query: true,
