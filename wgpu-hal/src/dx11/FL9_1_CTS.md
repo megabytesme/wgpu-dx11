@@ -296,3 +296,38 @@ The runner reported NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver
 FL9_1 marker: 1/1 passed. The build emitted the existing unused `level`
 warning at `wgpu-core/src/validation.rs:4012`; the runner also printed its
 expected experimental-DX11 warning.
+
+## Partial buffer map and render state tracking — 2026-11-13
+
+Four additional narrow selectors passed in strict DX11 mode on the physical
+RTX 3090 Ti at requested and verified FL9_1. They cover both map modes across
+three buffer offsets, pipeline changes around vertex-buffer state, vertex
+buffer rebinding, and index-buffer rebinding. There were five CTS cases total,
+with no skips or failures.
+
+```text
+webgpu:api,operation,resource_init,buffer:map_partial_buffer:*
+webgpu:api,operation,command_buffer,render,state_tracking:change_pipeline_before_and_after_vertex_buffer:*
+webgpu:api,operation,command_buffer,render,state_tracking:set_vertex_buffer_without_changing_buffer:*
+webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_without_changing_buffer:*
+```
+
+The test runner identified NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`),
+driver `32.0.16.2101`, and the physical adapter. Invocation used the pinned
+Rust 1.93.1 toolchain, `WGPU_DX11_REQUIRE_HARDWARE=1`, four Cargo jobs, and the
+system-temp target directory:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_BUILD_JOBS = '4'
+$env:CARGO_TARGET_DIR = 'C:\Users\ben\AppData\Local\Temp\wgpu-dx11-cts-probe-target'
+$env:CARGO_NET_OFFLINE = 'true'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,resource_init,buffer:map_partial_buffer:*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,render,state_tracking:change_pipeline_before_and_after_vertex_buffer:*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,render,state_tracking:set_vertex_buffer_without_changing_buffer:*'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_without_changing_buffer:*'
+```
+
+The build reported the existing unused `level` warning in
+`wgpu-core/src/validation.rs`; Visual Studio also printed its existing
+`vError: Unknown error` startup banner, but all four invocations completed.

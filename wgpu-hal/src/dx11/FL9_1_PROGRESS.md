@@ -19614,3 +19614,15 @@ warning. The Visual Studio setup wrapper still prints `vError: Unknown error`
 before successful Cargo execution. A failed direct base-only SRV experiment
 was replaced by the scratch-copy path described above; strict readback verifies
 the replacement, but historical FL9_1 drivers remain untested.
+
+## Strict CTS buffer-map and render-state coverage — 2026-11-13
+
+After commit `7861eb571`, four narrowly filtered strict CTS selectors passed
+5/5 cases on the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), requested and verified FL9_1, with zero skips or failures.
+The cases cover partial buffer mapping at three offsets, pipeline transitions
+around vertex-buffer state, vertex-buffer rebinding, and index-buffer
+rebinding. Exact selectors, commands, and warnings are recorded in
+`FL9_1_CTS.md`. The run adds evidence for existing buffer and command-state
+paths; it does not broaden the advertised API contract. The unused `level`
+warning and Visual Studio startup banner are pre-existing.
