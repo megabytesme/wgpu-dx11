@@ -19681,3 +19681,24 @@ Formatting,
 `git diff --check` and winit-example Clippy passed. Clippy reports the existing
 eight D3D11 HAL warnings. The Visual Studio wrapper prints its pre-existing
 `vError: Unknown error` banner before successful commands.
+
+## Public backend selection and physical adapter enumeration — 2026-11-13
+
+The public wgpu isolation test passed 1/1: a default `Instance` exposes no
+D3D11 adapter because DX11 is not in `Backends::default()`. With
+`WGPU_DX11_REQUIRE_HARDWARE=1`, Core's explicit DX11 enumeration test passed
+1/1 and reported one physical adapter with an FL9_1 device. This confirms the
+current contract: applications can opt in explicitly, while default backend
+selection remains unchanged.
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public experimental_dx11_is_not_enabled_by_default -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib requesting_dx11_exposes_only_fl91_hardware_adapters -- --nocapture --test-threads=1
+```
+
+Both strict runs completed with zero test failures or skips. The Core test
+selected the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at requested/actual FL9_1. This does not claim general Core
+WebGPU compliance; the selected projection remains a constrained native
+adapter and Core's compliance filter continues to reject WebGPU compliance.

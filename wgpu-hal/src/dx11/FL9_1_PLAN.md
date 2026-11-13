@@ -3535,3 +3535,12 @@ usage is present. Public wgpu → Core → HAL → D3D11 offscreen rendering and
 presentation are therefore demonstrated on this driver; this does not close
 the broader capability/validation audit, historical-driver evidence or
 CoreWindow runtime requirement.
+
+## Coordinator update — explicit opt-in selection verified — 2026-11-13
+
+The default-backend isolation test passed while Core's strict explicit-DX11
+enumeration test selected one physical RTX 3090 Ti at requested/actual FL9_1.
+DX11 is a public, explicit opt-in backend, not an ordinary default backend and
+not a Core WebGPU-compliant adapter. The independent projection audit found no
+concrete mismatch in its reviewed limits/flags. Broad advertised-capability
+validation remains incomplete and is still the main software assurance task.
