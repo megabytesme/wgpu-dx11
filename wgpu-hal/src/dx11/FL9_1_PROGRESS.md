@@ -19705,6 +19705,8 @@ adapter and Core's compliance filter continues to reject WebGPU compliance.
 
 ## Optional FL9_1 floating-point texture format probe — 2026-11-13
 
+Checkpoint: `15a25b8c9b8cc6f88649244cc4e4eea4fc69ab0b`.
+
 The native `dx11_probe` now reports `CheckFormatSupport` for five common float
 formats on devices explicitly opened at FL9_1. On the physical RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`), `R32_FLOAT` and `R32G32_FLOAT`
