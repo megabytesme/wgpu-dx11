@@ -19741,8 +19741,25 @@ to intentional FL9_1 exclusions already documented in `CAPABILITIES.md`, not
 new mismatches. The coverage audit's latest journaled suite counts were private
 HAL 529/529, Core FL9_1 fixture 149/149, strict public DX11 153/153 with no
 skips, Core DX12 133/133 and Naga 173/173; these are prior recorded runs, not
-tests rerun for the read-only audits. A focused strict CTS run is in progress.
+tests rerun for the read-only audits. Focused strict CTS runs are recorded
+below.
 
 A retry of the Lumia Device Portal `/api/os/devicefamily` request timed out
 again. This leaves CoreWindow execution on Lumia/ARM32 as an external
 verification gap; it does not block independent desktop work.
+
+The focused strict CTS follow-up passed two already-ledgered public rendering
+selectors: `webgpu:api,operation,rendering,basic:clear:*` and
+`webgpu:api,operation,rendering,basic:fullscreen_quad:*`, each 1 passed, 0
+failed and 0 skipped. Both selected the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) at explicitly requested and verified
+FL9_1. The only diagnostic was the existing `wgpu-core::validation`
+unused-variable warning. These focused runs refresh API-level evidence but do
+not constitute a full CTS run or add selectors to the ledger.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_BUILD_JOBS = '8'
+cargo xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,basic:clear:*'
+cargo xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,basic:fullscreen_quad:*'
+```
