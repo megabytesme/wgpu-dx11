@@ -76,8 +76,9 @@ report before relying on a particular operation:
 
 `cargo run -p wgpu-hal --example dx11_probe --no-default-features --features dx11`
 is a native diagnostic. It tries a descending feature-level list and separately
-requests FL9_1; it reports DXGI identity and device-creation failures without
-claiming wgpu compatibility.
+requests FL9_1; it reports DXGI identity, selected-device support for several
+optional float texture formats, and device-creation failures without claiming
+that a native format query alone implies HAL or wgpu compatibility.
 
 The HAL supports WinRT CoreWindow and borrowed HWND swapchain paths, and the
 public capability model now exposes both. Hidden-HWND tests cover clear,

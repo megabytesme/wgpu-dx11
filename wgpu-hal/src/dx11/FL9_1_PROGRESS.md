@@ -19702,3 +19702,27 @@ selected the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
 `32.0.16.2101`) at requested/actual FL9_1. This does not claim general Core
 WebGPU compliance; the selected projection remains a constrained native
 adapter and Core's compliance filter continues to reject WebGPU compliance.
+
+## Optional FL9_1 floating-point texture format probe — 2026-11-13
+
+The native `dx11_probe` now reports `CheckFormatSupport` for five common float
+formats on devices explicitly opened at FL9_1. On the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), `R32_FLOAT` and `R32G32_FLOAT`
+returned only `IA_VERTEX_BUFFER` (`0x00000002`), with no `TEXTURE2D`, shader
+sampling, mip or render-target flags. `R16_FLOAT`, `R16G16_FLOAT` and
+`R16G16B16A16_FLOAT` queries returned `E_FAIL` (`0x80004005`). No format
+projection changed. Microsoft's [required DXGI format table](https://learn.microsoft.com/en-us/windows-hardware/drivers/display/required-dxgi-formats)
+also places R32_FLOAT texture use at FL9_2 and R16G16B16A16_FLOAT texture use
+at FL9_2; `CheckFormatSupport` remains necessary for selected-driver support.
+
+The probe command succeeded with the physical adapter; it also listed the
+Microsoft Basic Render Driver as software and did not open it. Formatting and
+`git diff --check` passed. Probe-example Clippy passed with the existing eight
+HAL warnings. The probe creates no rendering path and does not treat a positive
+native query as HAL or wgpu support.
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j16 -p wgpu-hal --no-default-features --features dx11 --example dx11_probe
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --example dx11_probe
+cargo +1.93.1 fmt --all -- --check
+```

@@ -2,6 +2,17 @@
 //! examples.
 #[cfg(all(windows, feature = "dx11"))]
 fn main() {
+    use windows::Win32::Graphics::{
+        Direct3D11::{
+            D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
+            D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
+        },
+        Dxgi::Common::{
+            DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R16_FLOAT,
+            DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32_FLOAT,
+        },
+    };
+
     match wgpu_hal::dx11::enumerate_adapters() {
         Ok(adapters) => {
             println!("DX11 native adapter diagnostics; this probe does not render");
@@ -21,6 +32,24 @@ fn main() {
                             "Forced D3D11 FL 9_1 device created on {}",
                             adapter.identity().name
                         );
+                        for (name, format) in [
+                            ("R16_FLOAT", DXGI_FORMAT_R16_FLOAT),
+                            ("R16G16_FLOAT", DXGI_FORMAT_R16G16_FLOAT),
+                            ("R16G16B16A16_FLOAT", DXGI_FORMAT_R16G16B16A16_FLOAT),
+                            ("R32_FLOAT", DXGI_FORMAT_R32_FLOAT),
+                            ("R32G32_FLOAT", DXGI_FORMAT_R32G32_FLOAT),
+                        ] {
+                            match device.check_format_support(format) {
+                                Ok(flags) => println!(
+                                    "FL9_1 {name}: flags={flags:#010x} texture2d={} sample={} mip={} render_target={}",
+                                    flags & D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32 != 0,
+                                    flags & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32 != 0,
+                                    flags & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0,
+                                    flags & D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32 != 0,
+                                ),
+                                Err(error) => println!("FL9_1 {name}: query failed: {error}"),
+                            }
+                        }
                     }
                     Err(error) => println!(
                         "D3D11 FL 9_1 unavailable on {}: {error}",

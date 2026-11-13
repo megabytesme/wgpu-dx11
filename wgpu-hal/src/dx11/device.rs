@@ -288,6 +288,14 @@ impl NativeDevice {
         self.level
     }
 
+    /// Query native format support. This does not include HAL or wgpu support.
+    pub fn check_format_support(
+        &self,
+        format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
+    ) -> Result<u32> {
+        unsafe { self.raw.CheckFormatSupport(format) }
+    }
+
     pub(super) fn timestamp_frequency(&self) -> Option<u64> {
         self.timestamp_frequency
     }

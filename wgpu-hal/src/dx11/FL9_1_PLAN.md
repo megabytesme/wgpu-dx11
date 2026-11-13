@@ -3544,3 +3544,13 @@ DX11 is a public, explicit opt-in backend, not an ordinary default backend and
 not a Core WebGPU-compliant adapter. The independent projection audit found no
 concrete mismatch in its reviewed limits/flags. Broad advertised-capability
 validation remains incomplete and is still the main software assurance task.
+
+## Coordinator update — optional float-format query probe — 2026-11-13
+
+A native diagnostic now queries five common float formats after forcing
+FL9_1. The RTX reports only vertex-input support for R32_FLOAT and
+R32G32_FLOAT and fails the three tested 16-bit float queries; no existing
+wgpu format projection was broadened. Future format work needs an individually
+positive selected-device query plus a tested upload, view, shader and readback
+path. The capability-to-validation-to-HAL audit remains incomplete; no
+unverified format is being advertised.
