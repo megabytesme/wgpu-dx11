@@ -51,7 +51,7 @@ struct RenderState {
     sampling_pairs: Arc<Vec<super::sampling::SamplingPair>>,
     texel_load: Option<super::hal_pipeline::TexelLoadPipeline>,
     full_npot: super::capabilities::Query<bool>,
-    required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
+    required_uniform_sizes: [[u64; super::hal_bind_group::MAX_UNIFORMS]; 2],
     viewport_buffer: windows::Win32::Graphics::Direct3D11::ID3D11Buffer,
     viewport_transform: [f32; 4],
     uses_instance_index: bool,
@@ -378,17 +378,26 @@ impl RenderState {
             {
                 return false;
             }
-            let Some(slots) = plan.slots(index) else {
-                return false;
-            };
             for (local, uniform) in bound.resources.uniforms.iter().enumerate() {
-                let slot = slots.uniforms as usize + local;
-                if self
-                    .required_uniform_sizes
-                    .get(slot)
-                    .is_none_or(|&size| uniform.len() < size)
-                {
+                let Some(layout) = expected.uniforms[local] else {
                     return false;
+                };
+                for (stage, stage_index) in [
+                    (wgt::ShaderStages::VERTEX, 0),
+                    (wgt::ShaderStages::FRAGMENT, 1),
+                ] {
+                    if !layout.visibility.contains(stage) {
+                        continue;
+                    }
+                    let Some(slot) = plan.uniform_slot(index, local, stage) else {
+                        return false;
+                    };
+                    if self.required_uniform_sizes[stage_index]
+                        .get(slot as usize)
+                        .is_none_or(|&size| uniform.len() < size)
+                    {
+                        return false;
+                    }
                 }
             }
         }
@@ -412,10 +421,23 @@ impl RenderState {
             };
             for (local, uniform) in bound.resources.uniforms.iter().enumerate() {
                 let layout = bound.kind.uniforms.get(local).copied().flatten()?;
+                let vertex_slot = if layout.visibility.contains(wgt::ShaderStages::VERTEX) {
+                    Some(plan.uniform_slot(index, local, wgt::ShaderStages::VERTEX)?)
+                } else {
+                    None
+                };
+                let fragment_slot = if layout.visibility.contains(wgt::ShaderStages::FRAGMENT) {
+                    Some(plan.uniform_slot(index, local, wgt::ShaderStages::FRAGMENT)?)
+                } else {
+                    None
+                };
+                if vertex_slot.is_none() && fragment_slot.is_none() {
+                    return None;
+                }
                 commands.push(NativeCommand::SetUniformGroup {
                     uniform: uniform.clone(),
-                    slot: slots.uniforms + local as u32,
-                    visibility: layout.visibility,
+                    vertex_slot,
+                    fragment_slot,
                     source_box: *bound.ranges.get(local)?,
                 });
             }
@@ -1265,12 +1287,18 @@ impl crate::CommandEncoder for CommandEncoder {
                 wgt::TextureFormat::Bgra8Unorm => {
                     windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM
                 }
+                wgt::TextureFormat::Rgb5g6b5Unorm => {
+                    windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B5G6R5_UNORM
+                }
                 _ => {
                     self.reject();
                     return Err(DeviceError::Unexpected);
                 }
             };
             if target_sample_count <= 1
+                || !self
+                    .device
+                    .color_multisample_resolve_supported(native_resolve_format, target_sample_count)
                 || resolve_samples != 1
                 || (attachment.usage != wgt::TextureUses::COLOR_TARGET
                     && attachment.usage
@@ -1335,7 +1363,7 @@ impl crate::CommandEncoder for CommandEncoder {
             sampling_pairs: Arc::new(Vec::new()),
             texel_load: None,
             full_npot: super::capabilities::Query::Unavailable(0),
-            required_uniform_sizes: [0; super::hal_bind_group::MAX_UNIFORMS],
+            required_uniform_sizes: [[0; super::hal_bind_group::MAX_UNIFORMS]; 2],
             viewport_buffer: viewport_buffer.clone(),
             viewport_transform: [1., 1., 0., 0.],
             uses_instance_index: false,
@@ -2705,6 +2733,209 @@ mod tests {
     }
 
     #[test]
+    fn fl9_1_hardware_rgb565_multisample_resolve() -> windows::core::Result<()> {
+        use crate::dx11::Device;
+        use windows::Win32::Graphics::{
+            Direct3D11::{
+                D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
+                D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
+            },
+            Dxgi::Common::{DXGI_FORMAT_B5G6R5_UNORM, DXGI_SAMPLE_DESC},
+        };
+
+        let adapters = enumerate_native_adapters()?;
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|message| panic!("{message}"))
+        else {
+            std::println!(
+                "SKIP: no physical D3D11 adapter; executed=0 passed=0 failed=0 skipped=1"
+            );
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+        let format_support = unsafe {
+            native
+                .raw_device()
+                .CheckFormatSupport(DXGI_FORMAT_B5G6R5_UNORM)
+        };
+        let sample_count = [2, 4, 8, 16].into_iter().find(|&count| {
+            native.color_multisample_resolve_supported(DXGI_FORMAT_B5G6R5_UNORM, count)
+        });
+        let Some(sample_count) = sample_count else {
+            std::println!(
+                "SKIP: {} has no query-positive FL9_1 RGB565 multisample-resolve count; CheckFormatSupport={format_support:?}; executed=0 passed=0 failed=0 skipped=1",
+                adapter.identity().name
+            );
+            return Ok(());
+        };
+        std::println!(
+            "RGB565 MSAA hardware: {}; vendor={:#06x} device={:#06x}; requested/actual FL9_1; samples={sample_count}; CheckFormatSupport={format_support:?}",
+            adapter.identity().name,
+            adapter.identity().vendor_id,
+            adapter.identity().device_id,
+        );
+
+        let device = Device::new(native.clone());
+        let queue = Queue::new(native.clone());
+        let extent = wgt::Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        };
+        let source = unsafe {
+            crate::Device::create_texture(
+                &device,
+                &TextureDescriptor {
+                    label: None,
+                    size: extent,
+                    mip_level_count: 1,
+                    sample_count,
+                    dimension: wgt::TextureDimension::D2,
+                    format: wgt::TextureFormat::Rgb5g6b5Unorm,
+                    usage: wgt::TextureUses::COLOR_TARGET,
+                    memory_flags: MemoryFlags::empty(),
+                    view_formats: vec![],
+                },
+            )
+        }
+        .expect("query-positive FL9_1 RGB565 multisampled render target");
+        let destination = unsafe {
+            crate::Device::create_texture(
+                &device,
+                &TextureDescriptor {
+                    label: None,
+                    size: extent,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgt::TextureDimension::D2,
+                    format: wgt::TextureFormat::Rgb5g6b5Unorm,
+                    usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::RESOURCE,
+                    memory_flags: MemoryFlags::empty(),
+                    view_formats: vec![],
+                },
+            )
+        }
+        .expect("single-sample RGB565 resolve and sample destination");
+        let view_desc = |usage| TextureViewDescriptor {
+            label: None,
+            format: wgt::TextureFormat::Rgb5g6b5Unorm,
+            dimension: wgt::TextureViewDimension::D2,
+            usage,
+            range: wgt::ImageSubresourceRange::default(),
+        };
+        let source_view = unsafe {
+            crate::Device::create_texture_view(
+                &device,
+                &source,
+                &view_desc(wgt::TextureUses::COLOR_TARGET),
+            )
+        }
+        .expect("multisampled RGB565 render-target view");
+        let destination_view = unsafe {
+            crate::Device::create_texture_view(
+                &device,
+                &destination,
+                &view_desc(wgt::TextureUses::COLOR_TARGET),
+            )
+        }
+        .expect("RGB565 resolve-target view");
+        let attachment = [Some(ColorAttachment {
+            target: Attachment {
+                view: &source_view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            },
+            depth_slice: None,
+            resolve_target: Some(Attachment {
+                view: &destination_view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            }),
+            ops: AttachmentOps::LOAD_CLEAR | AttachmentOps::STORE,
+            clear_value: wgt::Color::RED,
+        })];
+        let pass = RenderPassDescriptor {
+            label: None,
+            extent,
+            sample_count,
+            color_attachments: &attachment,
+            depth_stencil_attachment: None,
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        let mut encoder = unsafe {
+            crate::Device::create_command_encoder(
+                &device,
+                &CommandEncoderDescriptor {
+                    label: None,
+                    queue: &queue,
+                },
+            )
+            .expect("RGB565 resolve command encoder")
+        };
+        let commands = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        let fence = native.create_native_fence();
+        unsafe { crate::Queue::submit(&queue, &[&commands], &[], (&fence, 1)).unwrap() };
+        assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+
+        let staging_desc = D3D11_TEXTURE2D_DESC {
+            Width: extent.width,
+            Height: extent.height,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: DXGI_FORMAT_B5G6R5_UNORM,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_STAGING,
+            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+            ..Default::default()
+        };
+        let mut staging = None;
+        unsafe {
+            native
+                .raw_device()
+                .CreateTexture2D(&staging_desc, None, Some(&mut staging))?;
+        }
+        let staging = staging.expect("RGB565 staging texture");
+        let context = native.immediate_context();
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        unsafe {
+            context.CopySubresourceRegion(&staging, 0, 0, 0, 0, destination.raw.as_2d()?, 0, None);
+            context.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+            assert!(!mapped.pData.is_null() && mapped.RowPitch >= extent.width * 2);
+            for y in 0..extent.height as usize {
+                for x in 0..extent.width as usize {
+                    let offset = y * mapped.RowPitch as usize + x * 2;
+                    let bytes =
+                        core::slice::from_raw_parts(mapped.pData.cast::<u8>().add(offset), 2);
+                    assert_eq!(u16::from_le_bytes([bytes[0], bytes[1]]), 0xf800);
+                }
+            }
+            context.Unmap(&staging, 0);
+        }
+        std::println!(
+            "PASS: executed=1 passed=1 failed=0 skipped=0; RGB565 resolve readback 64/64 pixels packed red=0xf800"
+        );
+        unsafe {
+            crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(commands));
+            crate::Device::destroy_texture_view(&device, source_view);
+            crate::Device::destroy_texture_view(&device, destination_view);
+            crate::Device::destroy_texture(&device, source);
+            crate::Device::destroy_texture(&device, destination);
+        }
+        Ok(())
+    }
+
+    #[test]
     fn instance_stream_range_checks_last_element_and_native_offset() {
         assert!(instance_range_fits(8, 68, 24, 20, 0, 3));
         assert!(!instance_range_fits(8, 67, 24, 20, 0, 3));
@@ -3747,7 +3978,9 @@ mod tests {
             .read_rgba_texture(&texture, 0, 0)?
             .chunks_exact(4)
             .all(|pixel| pixel == [255, 0, 0, 255]));
-        std::println!("PASS: high effective u32 indices, later direct and u16 draws rendered 64/64 red pixels");
+        std::println!(
+            "PASS: high effective u32 indices, later direct and u16 draws rendered 64/64 red pixels"
+        );
         let gather_indices: Vec<u8> = [1u32, 2, 65536]
             .into_iter()
             .flat_map(u32::to_ne_bytes)
@@ -3898,7 +4131,9 @@ mod tests {
             crate::Device::destroy_buffer(&device, near_vertices);
             crate::Device::destroy_buffer(&device, near_upload);
         }
-        std::println!("PASS: sparse u32 triangle gathered GPU-written short-stride vertices for 0/1/2 instances");
+        std::println!(
+            "PASS: sparse u32 triangle gathered GPU-written short-stride vertices for 0/1/2 instances"
+        );
         let u32_discarded = unsafe {
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             crate::CommandEncoder::copy_buffer_to_buffer(
@@ -4057,7 +4292,9 @@ mod tests {
             };
             assert_eq!(pixel, expected, "discarded indexed draw pixel {index}");
         }
-        std::println!("PASS: late out-of-bounds index discarded whole draw; later GPU upload and draw succeeded");
+        std::println!(
+            "PASS: late out-of-bounds index discarded whole draw; later GPU upload and draw succeeded"
+        );
         let order_module = naga::front::wgsl::parse_str(
             "struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f } @vertex fn vs(@location(0) p: vec2f, @location(1) color: vec4f) -> Out { var o: Out; o.pos = vec4f(p, 0.5, 1.0); o.color = color; return o; } @fragment fn fs(i: Out) -> @location(0) vec4f { return i.color; }",
         ).unwrap();
@@ -4478,12 +4715,12 @@ mod tests {
                     };
                     let pixel = &pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4];
                     assert!(
-                    pixel
-                        .iter()
-                        .zip(expected)
-                        .all(|(&actual, expected)| actual.abs_diff(expected) <= 3),
-                    "indexed {format:?}, first instance {first_instance}, {instances} instances: {pixel:?}, expected {expected:?}"
-                );
+                        pixel
+                            .iter()
+                            .zip(expected)
+                            .all(|(&actual, expected)| actual.abs_diff(expected) <= 3),
+                        "indexed {format:?}, first instance {first_instance}, {instances} instances: {pixel:?}, expected {expected:?}"
+                    );
                     instance_commands.push(commands);
                 }
             }

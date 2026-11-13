@@ -329,7 +329,9 @@ fn main() -> Result<(), Box<dyn Error>> {
     let capabilities = surface.get_capabilities(&adapter);
     if capabilities.formats != [TextureFormat::Bgra8Unorm]
         || capabilities.present_modes != [PresentMode::Fifo]
-        || capabilities.usages != TextureUsages::RENDER_ATTACHMENT
+        || !capabilities
+            .usages
+            .contains(TextureUsages::RENDER_ATTACHMENT)
     {
         return Err(format!("unsupported FL9_1 HWND surface contract: {capabilities:?}").into());
     }
@@ -409,6 +411,19 @@ fn main() -> Result<(), Box<dyn Error>> {
             count: None,
         }],
     });
+    let material_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("cube material layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 27,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(16),
+            },
+            count: None,
+        }],
+    });
     let texture_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("cube sampled-resource layout"),
         entries: &[
@@ -447,6 +462,25 @@ fn main() -> Result<(), Box<dyn Error>> {
             resource: transform_buffer.as_entire_binding(),
         }],
     });
+    let material_data: Vec<u8> = [0.9f32, 0.95, 1.0, 1.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let material_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("cube material tint uniform"),
+        size: material_data.len() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&material_buffer, 0, &material_data);
+    let material_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("cube material tint"),
+        layout: &material_layout,
+        entries: &[BindGroupEntry {
+            binding: 27,
+            resource: material_buffer.as_entire_binding(),
+        }],
+    });
     let texture_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("cube texture and sampler"),
         layout: &texture_layout,
@@ -466,7 +500,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         bind_group_layouts: &[
             Some(&uniform_layout),
             None,
-            None,
+            Some(&material_layout),
             None,
             None,
             None,
@@ -479,11 +513,12 @@ fn main() -> Result<(), Box<dyn Error>> {
         label: Some("textured cube WGSL"),
         source: ShaderSource::Wgsl(
             "@group(0) @binding(3) var<uniform> view_projection: mat4x4f;\n\
+             @group(2) @binding(27) var<uniform> material_tint: vec4f;\n\
              @group(7) @binding(3) var image: texture_2d<f32>;\n\
              @group(7) @binding(17) var image_sampler: sampler;\n\
              struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f };\n\
              @vertex fn vs(@location(0) position: vec3f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(view_projection * vec4f(position, 1.0), uv); }\n\
-             @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(image, image_sampler, input.uv); }"
+             @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(image, image_sampler, input.uv) * material_tint; }"
                 .into(),
         ),
     });
@@ -643,6 +678,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             });
             pass.set_pipeline(&pipeline);
             pass.set_bind_group(0, &uniform_group, &[]);
+            pass.set_bind_group(2, &material_group, &[]);
             pass.set_bind_group(7, &texture_group, &[]);
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);

@@ -239,8 +239,8 @@ pub(super) enum NativeCommand {
     SetVertexShader(ID3D11VertexShader),
     SetUniformGroup {
         uniform: Arc<UniformBinding>,
-        slot: u32,
-        visibility: wgt::ShaderStages,
+        vertex_slot: Option<u32>,
+        fragment_slot: Option<u32>,
         source_box: D3D11_BOX,
     },
     RefreshSampledTextures {
@@ -852,10 +852,10 @@ impl CommandBuffer {
                     }
                     NativeCommand::SetUniformGroup {
                         uniform,
-                        slot,
-                        visibility,
+                        vertex_slot,
+                        fragment_slot,
                         source_box,
-                    } => uniform.execute(context, *slot, *visibility, source_box)?,
+                    } => uniform.execute(context, *vertex_slot, *fragment_slot, source_box)?,
                     NativeCommand::RefreshSampledTextures { textures } => {
                         let mut targets = [None];
                         let mut depth = None;

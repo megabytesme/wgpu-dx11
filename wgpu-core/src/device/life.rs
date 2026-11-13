@@ -418,6 +418,19 @@ impl LifetimeTracker {
         }
         (pending_callbacks, lost)
     }
+
+    pub(crate) fn fail_pending_mappings(
+        &mut self,
+        snatch_guard: &SnatchGuard,
+    ) -> (
+        Vec<super::BufferMapPendingClosure>,
+        SmallVec<[super::DeviceLostInvocation; 1]>,
+    ) {
+        for active in &mut self.active {
+            self.ready_to_map.append(&mut active.mapped);
+        }
+        self.handle_mapping(snatch_guard)
+    }
     /// Read back compact sizes from the BLASes in `self.ready_to_compact`.
     ///
     /// Return a list of mapping notifications to send.

@@ -438,7 +438,9 @@ impl crate::Device for Device {
                     } else {
                         !matches!(
                             desc.format,
-                            wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+                            wgt::TextureFormat::Rgba8Unorm
+                                | wgt::TextureFormat::Bgra8Unorm
+                                | wgt::TextureFormat::Rgb5g6b5Unorm
                         ) || (desc.usage != wgt::TextureUses::COLOR_TARGET
                             && desc.usage
                                 != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
@@ -905,7 +907,9 @@ impl crate::Device for Device {
                 let color_msaa = !depth
                     && matches!(
                         format,
-                        wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+                        wgt::TextureFormat::Rgba8Unorm
+                            | wgt::TextureFormat::Bgra8Unorm
+                            | wgt::TextureFormat::Rgb5g6b5Unorm
                     )
                     && target
                     && (desc.usage == wgt::TextureUses::COLOR_TARGET

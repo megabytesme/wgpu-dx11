@@ -541,7 +541,9 @@ pub enum SurfaceError {
     Outdated,
     #[error("Timed out waiting for a surface texture")]
     Timeout,
-    #[error("The window is occluded (e.g. minimized or behind another window). Try again once the window is no longer occluded.")]
+    #[error(
+        "The window is occluded (e.g. minimized or behind another window). Try again once the window is no longer occluded."
+    )]
     Occluded,
     #[error(transparent)]
     Device(#[from] DeviceError),
@@ -712,6 +714,26 @@ pub trait Surface: WasmNotSendSync {
     /// - All [`Api::TextureView`]s derived from the [`AcquiredSurfaceTexture`]s must have been destroyed.
     /// - The surface `self` must have been configured on `device`.
     unsafe fn unconfigure(&self, device: &<Self::A as Api>::Device);
+
+    /// Unconfigure `self`, reporting backends that cannot safely release it yet.
+    ///
+    /// The default preserves the historical infallible behavior. Backends with
+    /// asynchronous presentation resources can override this to keep Core's
+    /// surface configuration intact when teardown must be retried.
+    /// If `Device(Lost)` is returned, the backend must have discarded the
+    /// configuration so callers may safely configure the surface on another
+    /// device.
+    ///
+    /// # Safety
+    ///
+    /// The safety requirements are the same as [`Surface::unconfigure`].
+    unsafe fn unconfigure_with_result(
+        &self,
+        device: &<Self::A as Api>::Device,
+    ) -> Result<(), SurfaceError> {
+        unsafe { self.unconfigure(device) };
+        Ok(())
+    }
 
     /// Return the next texture to be presented by `self`, for the caller to draw on.
     ///
@@ -1347,6 +1369,27 @@ pub trait Queue: WasmNotSendSync {
         surface: &<Self::A as Api>::Surface,
         texture: <Self::A as Api>::SurfaceTexture,
     ) -> Result<(), SurfaceError>;
+
+    /// Try to wait for queue idle for at most `timeout`.
+    ///
+    /// `None` means that this backend does not implement bounded idle waits and
+    /// the call did not block. `Some(QueueIdleStatus::TimedOut)` means GPU work
+    /// or presentations may still be in flight. Callers must retain the queue
+    /// and associated resources until a later wait confirms completion.
+    ///
+    /// # Safety
+    ///
+    /// - Must be externally synchronized with all other queue operations on
+    ///   the same queue.
+    #[allow(dead_code)]
+    unsafe fn wait_for_idle_timeout(
+        &self,
+        timeout: core::time::Duration,
+    ) -> Result<Option<QueueIdleStatus>, DeviceError> {
+        let _ = timeout;
+        Ok(None)
+    }
+
     /// Block until all previously submitted work on this queue has completed,
     /// including any pending presentations.
     ///
@@ -1357,6 +1400,15 @@ pub trait Queue: WasmNotSendSync {
     ///   [`wait_for_idle`][Queue::wait_for_idle]) on the same queue.
     unsafe fn wait_for_idle(&self) -> Result<(), DeviceError>;
     unsafe fn get_timestamp_period(&self) -> f32;
+}
+
+/// Result of a timeout-aware queue idle wait.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum QueueIdleStatus {
+    /// All submitted work and pending presentations have completed.
+    Idle,
+    /// The timeout elapsed before completion was confirmed.
+    TimedOut,
 }
 
 /// Encoder and allocation pool for `CommandBuffer`s.

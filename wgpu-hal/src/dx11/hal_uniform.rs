@@ -126,17 +126,18 @@ impl UniformBinding {
         shifted_range(self.source_box, self.source_size, dynamic_offset)
     }
 
-    /// Copy the source range and bind it to the requested stages and slot.
+    /// Copy the source range and bind it to each requested stage slot.
     /// The caller holds the owning device's immediate-context lock.
     #[allow(dead_code)]
     pub(super) fn execute(
         &self,
         context: &ID3D11DeviceContext,
-        slot: u32,
-        visibility: wgt::ShaderStages,
+        vertex_slot: Option<u32>,
+        fragment_slot: Option<u32>,
         source_box: &D3D11_BOX,
     ) -> Result<()> {
-        if source_box.right.checked_sub(source_box.left) != Some(self.len() as u32)
+        if vertex_slot.is_none() && fragment_slot.is_none()
+            || source_box.right.checked_sub(source_box.left) != Some(self.len() as u32)
             || source_box.right > self.source_size
             || !source_box.left.is_multiple_of(4)
             || source_box.top != 0
@@ -170,10 +171,10 @@ impl UniformBinding {
             ));
             context.Unmap(&self.staging, 0);
             context.UpdateSubresource(&self.constant, 0, None, scratch.as_ptr().cast(), 0, 0);
-            if visibility.contains(wgt::ShaderStages::VERTEX) {
+            if let Some(slot) = vertex_slot {
                 context.VSSetConstantBuffers(slot, Some(&[Some(self.constant.clone())]));
             }
-            if visibility.contains(wgt::ShaderStages::FRAGMENT) {
+            if let Some(slot) = fragment_slot {
                 context.PSSetConstantBuffers(slot, Some(&[Some(self.constant.clone())]));
             }
         }
@@ -313,8 +314,8 @@ mod tests {
         };
         let readback = readback.ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let context = native.immediate_context();
-        first.execute(&context, 0, wgt::ShaderStages::VERTEX, &first.range(0)?)?;
-        second.execute(&context, 1, wgt::ShaderStages::VERTEX, &second.range(16)?)?;
+        first.execute(&context, Some(0), None, &first.range(0)?)?;
+        second.execute(&context, Some(1), None, &second.range(16)?)?;
         for (binding, expected) in [(&first, &data[0..16]), (&second, &data[16..32])] {
             unsafe {
                 context.CopyResource(&readback, &binding.constant);
@@ -404,12 +405,7 @@ mod tests {
                 native.write_byte_buffer(&source, 20, &data[20..24])?;
             }
             let context = native.immediate_context();
-            binding.execute(
-                &context,
-                0,
-                wgt::ShaderStages::VERTEX | wgt::ShaderStages::FRAGMENT,
-                &binding.range(0)?,
-            )?;
+            binding.execute(&context, Some(0), Some(0), &binding.range(0)?)?;
             unsafe {
                 use windows::core::Interface;
                 let mut vertex = [None];
@@ -454,7 +450,7 @@ mod tests {
             }
             let readback = readback.ok_or_else(|| Error::from_hresult(E_FAIL))?;
             let context = native.immediate_context();
-            binding.execute(&context, 0, wgt::ShaderStages::VERTEX, &binding.range(0)?)?;
+            binding.execute(&context, Some(0), None, &binding.range(0)?)?;
             unsafe {
                 context.CopyResource(&readback, &binding.constant);
                 let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
@@ -539,7 +535,7 @@ mod tests {
             (&dynamic, range, &data[..5]),
             (&end, end.range(0)?, &odd_data[60..65]),
         ] {
-            binding.execute(&context, 0, wgt::ShaderStages::VERTEX, &range)?;
+            binding.execute(&context, Some(0), None, &range)?;
             unsafe {
                 context.CopyResource(&readback, &binding.constant);
                 let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();

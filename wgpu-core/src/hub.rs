@@ -116,7 +116,7 @@ when replaying a trace.
 
 */
 
-use alloc::sync::Arc;
+use alloc::{sync::Arc, vec::Vec};
 use core::fmt::Debug;
 
 use crate::{
@@ -194,6 +194,7 @@ pub struct Hub {
     pub(crate) adapters: Registry<Arc<Adapter>>,
     pub(crate) devices: Registry<Arc<Device>>,
     pub(crate) queues: Registry<Arc<Queue>>,
+    orphaned_queues: Mutex<Vec<Arc<Queue>>>,
     pub(crate) pipeline_layouts: Registry<Arc<PipelineLayout>>,
     pub(crate) shader_modules: Registry<Fallible<ShaderModule>>,
     pub(crate) bind_group_layouts: Registry<Arc<BindGroupLayout>>,
@@ -231,6 +232,7 @@ impl Hub {
             adapters: Registry::new(),
             devices: Registry::new(),
             queues: Registry::new(),
+            orphaned_queues: Mutex::new(Vec::new()),
             pipeline_layouts: Registry::new(),
             shader_modules: Registry::new(),
             bind_group_layouts: Registry::new(),
@@ -280,6 +282,70 @@ impl Hub {
             render_passes: self.render_passes.generate_report(),
             compute_passes: self.compute_passes.generate_report(),
             render_bundle_encoders: self.render_bundle_encoders.generate_report(),
+        }
+    }
+}
+
+impl Hub {
+    pub(crate) fn retain_orphaned_queue(&self, queue: Arc<Queue>) {
+        self.orphaned_queues.lock().push(queue);
+    }
+
+    pub(crate) fn has_orphaned_queues(&self) -> bool {
+        !self.orphaned_queues.lock().is_empty()
+    }
+
+    pub(crate) fn take_orphaned_queues_for(&self, device: &Arc<Device>) -> Vec<Arc<Queue>> {
+        let mut orphaned_queues = self.orphaned_queues.lock();
+        let mut retained = Vec::new();
+        let mut matching = Vec::new();
+
+        for queue in orphaned_queues.drain(..) {
+            if Arc::ptr_eq(&queue.device, device) && Arc::strong_count(&queue) == 1 {
+                matching.push(queue);
+            } else {
+                retained.push(queue);
+            }
+        }
+
+        *orphaned_queues = retained;
+        matching
+    }
+
+    pub(crate) fn take_orphaned_queues_for_reaping(&self) -> Vec<Arc<Queue>> {
+        let mut orphaned_queues = self.orphaned_queues.lock();
+        let mut retained = Vec::new();
+        let mut ready = Vec::new();
+
+        for queue in orphaned_queues.drain(..) {
+            if Arc::strong_count(&queue) == 1 {
+                ready.push(queue);
+            } else {
+                retained.push(queue);
+            }
+        }
+
+        *orphaned_queues = retained;
+        ready
+    }
+
+    #[cfg(feature = "dx11-test-fixture")]
+    pub(crate) fn test_fixture_orphaned_queue_count(&self) -> usize {
+        self.orphaned_queues.lock().len()
+    }
+}
+
+impl Drop for Hub {
+    fn drop(&mut self) {
+        let orphaned_queues = self.orphaned_queues.get_mut();
+        if !orphaned_queues.is_empty() {
+            log::error!(
+                "Leaking {} orphaned queues because idle completion was not confirmed",
+                orphaned_queues.len()
+            );
+        }
+        for queue in orphaned_queues.drain(..) {
+            core::mem::forget(queue);
         }
     }
 }

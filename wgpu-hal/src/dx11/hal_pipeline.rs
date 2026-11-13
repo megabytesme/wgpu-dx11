@@ -691,7 +691,7 @@ pub struct RenderPipeline {
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
     pub(super) texel_load: Option<TexelLoadPipeline>,
     pub(super) full_npot: super::capabilities::Query<bool>,
-    pub(super) required_uniform_sizes: [u64; super::hal_bind_group::MAX_UNIFORMS],
+    pub(super) required_uniform_sizes: [[u64; super::hal_bind_group::MAX_UNIFORMS]; 2],
     pub(super) vertex_layouts: [Option<(u32, u32, wgt::VertexStepMode)>; crate::MAX_VERTEX_BUFFERS],
     pub(super) vertex_slots: [Option<usize>; crate::MAX_VERTEX_BUFFERS],
     pub(super) vertex_index_slot: Option<u32>,
@@ -2079,7 +2079,9 @@ mod tests {
                 "point/triangle/point transition pixel {index}"
             );
         }
-        std::println!("PASS: zero-input point and 65,536-point batch: one green and 63 blue pixels; zero-input triangle: 64 blue pixels; point/triangle/point transitions: one green and 63 red pixels");
+        std::println!(
+            "PASS: zero-input point and 65,536-point batch: one green and 63 blue pixels; zero-input triangle: 64 blue pixels; point/triangle/point transitions: one green and 63 red pixels"
+        );
         let blend_module = naga::front::wgsl::parse_str(
             "@vertex fn vs() -> @builtin(position) vec4f { return vec4f(-0.125, -0.125, 0.5, 1.0); } @fragment fn fs() -> @location(0) vec4f { return vec4f(0.25, 0.5, 0.75, 0.25); }",
         ).unwrap();
@@ -2890,17 +2892,16 @@ impl RenderPipeline {
         if desc.multisample.count > 1
             && ((target.is_none() && desc.depth_stencil.is_none())
                 || target.is_some_and(|target| {
-                    target.format != wgt::TextureFormat::Rgba8Unorm
-                        || super::capabilities::Capabilities::query(owner)
-                            .check_private_texture_2d(
-                                wgt::TextureFormat::Rgba8Unorm,
-                                wgt::TextureUses::COLOR_TARGET,
-                                [8, 8],
-                                1,
-                                1,
-                                desc.multisample.count,
-                            )
-                            .is_err()
+                    super::capabilities::Capabilities::query(owner)
+                        .check_private_texture_2d(
+                            target.format,
+                            wgt::TextureUses::COLOR_TARGET,
+                            [8, 8],
+                            1,
+                            1,
+                            desc.multisample.count,
+                        )
+                        .is_err()
                 })
                 || desc.depth_stencil.as_ref().is_some_and(|depth| {
                     super::capabilities::Capabilities::query(owner)
@@ -3003,7 +3004,7 @@ impl RenderPipeline {
         } else {
             None
         };
-        let mut required_uniform_sizes = [0; super::hal_bind_group::MAX_UNIFORMS];
+        let mut required_uniform_sizes = [[0; super::hal_bind_group::MAX_UNIFORMS]; 2];
         for (stage, module, entry, visibility) in core::iter::once((
             naga::ShaderStage::Vertex,
             vertex_stage.module,
@@ -3028,11 +3029,6 @@ impl RenderPipeline {
                     .copied()
                     .flatten()
                     .ok_or_else(invalid)?;
-                let slots = desc
-                    .layout
-                    .bindings
-                    .slots(group_index)
-                    .ok_or_else(invalid)?;
                 let (slot, uniform) = group
                     .uniforms
                     .iter()
@@ -3047,8 +3043,18 @@ impl RenderPipeline {
                 if uniform.minimum != 0 && size > uniform.minimum {
                     return Err(invalid());
                 }
-                let slot = slot + slots.uniforms as usize;
-                required_uniform_sizes[slot] = required_uniform_sizes[slot].max(size);
+                let slot = desc
+                    .layout
+                    .bindings
+                    .uniform_slot(group_index, slot, visibility)
+                    .ok_or_else(invalid)? as usize;
+                let stage_index = match visibility {
+                    wgt::ShaderStages::VERTEX => 0,
+                    wgt::ShaderStages::FRAGMENT => 1,
+                    _ => return Err(invalid()),
+                };
+                required_uniform_sizes[stage_index][slot] =
+                    required_uniform_sizes[stage_index][slot].max(size);
             }
         }
         let vertex_bindings = desc

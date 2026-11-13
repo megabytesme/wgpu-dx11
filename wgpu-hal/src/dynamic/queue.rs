@@ -2,7 +2,7 @@ use alloc::{boxed::Box, vec::Vec};
 
 use crate::{
     DeviceError, DynCommandBuffer, DynFence, DynResource, DynSurface, DynSurfaceTexture,
-    FenceValue, Queue, SurfaceError,
+    FenceValue, Queue, QueueIdleStatus, SurfaceError,
 };
 
 use super::DynResourceExt as _;
@@ -21,6 +21,10 @@ pub trait DynQueue: DynResource {
     ) -> Result<(), SurfaceError>;
     unsafe fn get_timestamp_period(&self) -> f32;
     unsafe fn wait_for_idle(&self) -> Result<(), DeviceError>;
+    unsafe fn wait_for_idle_timeout(
+        &self,
+        timeout: core::time::Duration,
+    ) -> Result<Option<QueueIdleStatus>, DeviceError>;
 }
 
 impl<Q: Queue + DynResource> DynQueue for Q {
@@ -57,5 +61,12 @@ impl<Q: Queue + DynResource> DynQueue for Q {
 
     unsafe fn wait_for_idle(&self) -> Result<(), DeviceError> {
         unsafe { Q::wait_for_idle(self) }
+    }
+
+    unsafe fn wait_for_idle_timeout(
+        &self,
+        timeout: core::time::Duration,
+    ) -> Result<Option<QueueIdleStatus>, DeviceError> {
+        unsafe { Q::wait_for_idle_timeout(self, timeout) }
     }
 }

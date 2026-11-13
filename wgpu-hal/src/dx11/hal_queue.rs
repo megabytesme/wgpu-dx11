@@ -2,13 +2,39 @@
 use super::{device::NativeDevice, Api};
 use alloc::sync::Arc;
 use alloc::vec::Vec;
+use core::sync::atomic::{AtomicU64, Ordering};
 use parking_lot::Mutex;
+use std::time::{Duration, Instant};
+use windows::{
+    core::{Interface, HRESULT},
+    Win32::{
+        Foundation::{S_FALSE, S_OK},
+        Graphics::Direct3D11::{
+            ID3D11Asynchronous, ID3D11DeviceContext, D3D11_ASYNC_GETDATA_DONOTFLUSH,
+            D3D11_QUERY_DESC, D3D11_QUERY_EVENT,
+        },
+    },
+};
+
+#[derive(Debug)]
+struct PendingIdleQuery {
+    query: ID3D11Asynchronous,
+    submission_generation: u64,
+}
 
 /// A serialized immediate-context queue for the restricted command path.
 #[derive(Debug)]
 pub struct Queue {
     device: Arc<NativeDevice>,
     pending_presents: Mutex<Vec<super::swapchain::CoreWindowSwapchain>>,
+    idle_query: Mutex<Option<PendingIdleQuery>>,
+    submission_generation: AtomicU64,
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    forced_idle_query_pending_polls: AtomicU64,
+    #[cfg(test)]
+    force_idle_query_pending_once: std::sync::atomic::AtomicBool,
+    #[cfg(test)]
+    idle_query_end_count: AtomicU64,
 }
 
 impl Queue {
@@ -17,6 +43,14 @@ impl Queue {
         Self {
             device,
             pending_presents: Mutex::new(Vec::new()),
+            idle_query: Mutex::new(None),
+            submission_generation: AtomicU64::new(0),
+            #[cfg(any(test, feature = "dx11-test-fixture"))]
+            forced_idle_query_pending_polls: AtomicU64::new(0),
+            #[cfg(test)]
+            force_idle_query_pending_once: std::sync::atomic::AtomicBool::new(false),
+            #[cfg(test)]
+            idle_query_end_count: AtomicU64::new(0),
         }
     }
 
@@ -32,10 +66,150 @@ impl Queue {
             .test_fixture_remove_device_on_next_wait_for_idle();
     }
 
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    #[doc(hidden)]
+    pub fn test_fixture_fail_next_wait_for_idle_with_oom(&self) {
+        self.device.test_fixture_fail_next_wait_for_idle_with_oom();
+    }
+
+    #[cfg(feature = "dx11-test-fixture")]
+    #[doc(hidden)]
+    pub fn test_fixture_force_idle_query_pending_polls(&self, polls: u64) {
+        self.forced_idle_query_pending_polls
+            .store(polls, Ordering::Release);
+    }
+
     fn prune_completed_presents(&self) {
         self.pending_presents
             .lock()
             .retain(super::swapchain::CoreWindowSwapchain::has_pending_present);
+    }
+
+    fn wait_for_gpu_idle_timeout(
+        &self,
+        timeout: Duration,
+        started: Instant,
+    ) -> Result<bool, crate::DeviceError> {
+        #[cfg(any(test, feature = "dx11-test-fixture"))]
+        if let Some(status) = self.device.take_test_fixture_wait_for_idle_status() {
+            self.idle_query.lock().take();
+            return Err(super::hal_device::device_error(
+                windows::core::Error::from_hresult(status),
+            ));
+        }
+
+        let mut pending = self.idle_query.lock();
+        loop {
+            let current_generation = self.submission_generation.load(Ordering::Acquire);
+            let needs_query = pending.is_none();
+            if needs_query {
+                let desc = D3D11_QUERY_DESC {
+                    Query: D3D11_QUERY_EVENT,
+                    MiscFlags: 0,
+                };
+                let mut query = None;
+                unsafe {
+                    self.device
+                        .raw_device()
+                        .CreateQuery(&desc, Some(&mut query))
+                }
+                .map_err(super::hal_device::device_error)?;
+                let query = query
+                    .ok_or(crate::DeviceError::Unexpected)?
+                    .cast::<ID3D11Asynchronous>()
+                    .map_err(super::hal_device::device_error)?;
+                {
+                    let context = self.device.immediate_context();
+                    unsafe {
+                        context.End(&query);
+                        context.Flush();
+                    }
+                }
+                #[cfg(test)]
+                self.idle_query_end_count.fetch_add(1, Ordering::Relaxed);
+                *pending = Some(PendingIdleQuery {
+                    query,
+                    submission_generation: current_generation,
+                });
+            }
+
+            let pending_query = pending.as_ref().ok_or(crate::DeviceError::Unexpected)?;
+            let query = pending_query.query.clone();
+            let query_generation = pending_query.submission_generation;
+            let context = self.device.immediate_context();
+            let raw_context: &ID3D11DeviceContext = &context;
+            #[cfg(any(test, feature = "dx11-test-fixture"))]
+            let forced_pending = self
+                .forced_idle_query_pending_polls
+                .fetch_update(Ordering::AcqRel, Ordering::Acquire, |polls| {
+                    polls.checked_sub(1)
+                })
+                .is_ok();
+            #[cfg(test)]
+            let forced_pending = forced_pending
+                || self
+                    .force_idle_query_pending_once
+                    .swap(false, Ordering::AcqRel);
+            #[cfg(any(test, feature = "dx11-test-fixture"))]
+            let status = if forced_pending {
+                S_FALSE
+            } else {
+                unsafe {
+                    (Interface::vtable(raw_context).GetData)(
+                        raw_context.as_raw(),
+                        query.as_raw(),
+                        core::ptr::null_mut(),
+                        0,
+                        D3D11_ASYNC_GETDATA_DONOTFLUSH.0 as u32,
+                    )
+                }
+            };
+            #[cfg(not(any(test, feature = "dx11-test-fixture")))]
+            let status = unsafe {
+                (Interface::vtable(raw_context).GetData)(
+                    raw_context.as_raw(),
+                    query.as_raw(),
+                    core::ptr::null_mut(),
+                    0,
+                    D3D11_ASYNC_GETDATA_DONOTFLUSH.0 as u32,
+                )
+            };
+
+            if status == S_OK {
+                pending.take();
+                if self.submission_generation.load(Ordering::Acquire) <= query_generation {
+                    return Ok(true);
+                }
+                continue;
+            }
+            if status == S_FALSE {
+                drop(context);
+                if let Err(error) = unsafe { self.device.raw_device().GetDeviceRemovedReason() } {
+                    pending.take();
+                    return Err(super::hal_device::device_error(error));
+                }
+                let remaining = timeout.saturating_sub(started.elapsed());
+                if remaining.is_zero() {
+                    return Ok(false);
+                }
+                std::thread::sleep(remaining.min(Duration::from_millis(1)));
+                continue;
+            }
+
+            drop(context);
+            pending.take();
+            let error = HRESULT(status.0);
+            if let Err(error) = error.ok() {
+                return Err(super::hal_device::device_error(error));
+            }
+            return Err(crate::DeviceError::Unexpected);
+        }
+    }
+
+    #[cfg(test)]
+    fn test_force_idle_query_pending_once(&self) {
+        self.force_idle_query_pending_once
+            .store(true, Ordering::Release);
     }
 }
 
@@ -59,7 +233,9 @@ impl crate::Queue for Queue {
         }
         self.device
             .submit_copy_batches_signaled(command_buffers, signal_fence.0, signal_fence.1)
-            .map_err(super::hal_device::device_error)
+            .map_err(super::hal_device::device_error)?;
+        self.submission_generation.fetch_add(1, Ordering::AcqRel);
+        Ok(())
     }
 
     unsafe fn present(
@@ -91,6 +267,35 @@ impl crate::Queue for Queue {
             pending.remove(0);
         }
         Ok(())
+    }
+
+    unsafe fn wait_for_idle_timeout(
+        &self,
+        timeout: Duration,
+    ) -> Result<Option<crate::QueueIdleStatus>, crate::DeviceError> {
+        let started = Instant::now();
+        let mut pending = self.pending_presents.lock();
+        pending.retain(super::swapchain::CoreWindowSwapchain::has_pending_present);
+
+        if !self.wait_for_gpu_idle_timeout(timeout, started)? {
+            return Ok(Some(crate::QueueIdleStatus::TimedOut));
+        }
+
+        while !pending.is_empty() {
+            let remaining = timeout.saturating_sub(started.elapsed());
+            if pending[0]
+                .wait_for_pending_present_timeout(remaining)
+                .map_err(super::hal_device::device_error)?
+            {
+                pending.remove(0);
+                continue;
+            }
+            if remaining.is_zero() || timeout.saturating_sub(started.elapsed()).is_zero() {
+                return Ok(Some(crate::QueueIdleStatus::TimedOut));
+            }
+        }
+
+        Ok(Some(crate::QueueIdleStatus::Idle))
     }
 
     unsafe fn get_timestamp_period(&self) -> f32 {
@@ -306,10 +511,56 @@ mod tests {
         }
         assert!(device.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
         assert_eq!(device.read_byte_buffer(&dst, 0, 16)?, vec![0x5a; 16]);
+        let other_queue = Queue::new(device.clone());
+        unsafe {
+            queue.wait_for_idle().unwrap();
+        }
+        std::thread::scope(|scope| {
+            let first = scope.spawn(|| unsafe { queue.wait_for_idle() });
+            let second = scope.spawn(|| unsafe { other_queue.wait_for_idle() });
+            first.join().unwrap().unwrap();
+            second.join().unwrap().unwrap();
+        });
         unsafe {
             queue.wait_for_idle().unwrap();
         }
         assert_eq!(unsafe { queue.get_timestamp_period() }, 0.0);
+        Ok(())
+    }
+
+    #[test]
+    fn bounded_idle_wait_resumes_the_same_event_query_after_timeout() -> Result<()> {
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|error| panic!("{error}"))
+        else {
+            std::println!("SKIP: no physical D3D11 adapter");
+            return Ok(());
+        };
+        let identity = adapter.identity();
+        let driver = adapter.driver_version();
+        let device = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(device.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: {identity:?}; driver={driver:?}; requested and actual FL9_1; first query timeout is synthetic"
+        );
+        let queue = Queue::new(device);
+        queue.test_force_idle_query_pending_once();
+
+        assert_eq!(
+            unsafe { queue.wait_for_idle_timeout(Duration::ZERO) }
+                .expect("zero-timeout query poll"),
+            Some(crate::QueueIdleStatus::TimedOut)
+        );
+        assert_eq!(queue.idle_query_end_count.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            unsafe { queue.wait_for_idle_timeout(Duration::from_secs(5)) }
+                .expect("query completion after resuming"),
+            Some(crate::QueueIdleStatus::Idle)
+        );
+        assert_eq!(queue.idle_query_end_count.load(Ordering::Relaxed), 1);
         Ok(())
     }
 }

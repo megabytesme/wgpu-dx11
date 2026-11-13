@@ -38,6 +38,17 @@ struct State {
     pending_present: bool,
 }
 
+fn record_pending_present_completion(state: &mut State, signaled: bool) -> bool {
+    if !state.pending_present {
+        return true;
+    }
+    if signaled {
+        state.pending_present = false;
+        state.latency_ready_consumed = true;
+    }
+    signaled
+}
+
 struct Reservation<'a> {
     state: &'a Mutex<State>,
     active: bool,
@@ -75,6 +86,8 @@ struct Inner {
     test_next_present: AtomicI32,
     #[cfg(feature = "dx11-test-fixture")]
     test_next_resize: AtomicI32,
+    #[cfg(feature = "dx11-test-fixture")]
+    test_next_present_wait_timeout: AtomicI32,
 }
 
 /// Private-backend building block for a window swap chain.
@@ -167,6 +180,8 @@ impl CoreWindowSwapchain {
                 test_next_present: AtomicI32::new(0),
                 #[cfg(feature = "dx11-test-fixture")]
                 test_next_resize: AtomicI32::new(0),
+                #[cfg(feature = "dx11-test-fixture")]
+                test_next_present_wait_timeout: AtomicI32::new(0),
             }),
         })
     }
@@ -190,6 +205,14 @@ impl CoreWindowSwapchain {
         self.inner
             .test_next_resize
             .store(error.0, Ordering::Release);
+        true
+    }
+
+    #[cfg(feature = "dx11-test-fixture")]
+    pub(super) fn test_fixture_timeout_next_present_wait(&self) -> bool {
+        self.inner
+            .test_next_present_wait_timeout
+            .store(1, Ordering::Release);
         true
     }
 
@@ -269,13 +292,33 @@ impl CoreWindowSwapchain {
     pub(super) fn wait_for_pending_present(&self) -> Result<()> {
         let mut state = self.inner.state.lock();
         if state.pending_present {
-            if !self.wait_for_frame_latency(None)? {
+            let signaled = self.wait_for_frame_latency(None)?;
+            if !record_pending_present_completion(&mut state, signaled) {
                 return Err(Error::from_hresult(E_FAIL));
             }
-            state.pending_present = false;
-            state.latency_ready_consumed = true;
         }
         Ok(())
+    }
+
+    pub(super) fn wait_for_pending_present_timeout(
+        &self,
+        timeout: core::time::Duration,
+    ) -> Result<bool> {
+        let mut state = self.inner.state.lock();
+        if !state.pending_present {
+            return Ok(true);
+        }
+        #[cfg(feature = "dx11-test-fixture")]
+        if self
+            .inner
+            .test_next_present_wait_timeout
+            .swap(0, Ordering::AcqRel)
+            != 0
+        {
+            return Ok(false);
+        }
+        let signaled = self.wait_for_frame_latency(Some(timeout))?;
+        Ok(record_pending_present_completion(&mut state, signaled))
     }
 
     fn wait_for_next_frame(&self, timeout: Option<core::time::Duration>) -> Result<bool> {
@@ -313,6 +356,27 @@ impl CoreWindowSwapchain {
         }
         let _reservation = Reservation::new(&self.inner.state)?;
         self.wait_for_pending_present()?;
+        self.resize_buffers(width, height)
+    }
+
+    pub(super) fn resize_timeout(
+        &self,
+        width: u32,
+        height: u32,
+        timeout: core::time::Duration,
+    ) -> Result<bool> {
+        if (width == 0) != (height == 0) {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let _reservation = Reservation::new(&self.inner.state)?;
+        if !self.wait_for_pending_present_timeout(timeout)? {
+            return Ok(false);
+        }
+        self.resize_buffers(width, height)?;
+        Ok(true)
+    }
+
+    fn resize_buffers(&self, width: u32, height: u32) -> Result<()> {
         let context = self.inner.device.immediate_context();
         #[cfg(feature = "dx11-test-fixture")]
         let injected_status = self.inner.test_next_resize.swap(0, Ordering::AcqRel);
@@ -482,6 +546,22 @@ mod tests {
         assert!(classify_present_status(HRESULT(0)).unwrap());
         assert!(!classify_present_status(HRESULT(0x087a0001)).unwrap());
         assert!(classify_present_status(E_FAIL).is_err());
+    }
+
+    #[test]
+    fn pending_present_state_survives_timeout_and_completes_on_resume() {
+        let mut state = State {
+            pending_present: true,
+            ..State::default()
+        };
+
+        assert!(!record_pending_present_completion(&mut state, false));
+        assert!(state.pending_present);
+        assert!(!state.latency_ready_consumed);
+
+        assert!(record_pending_present_completion(&mut state, true));
+        assert!(!state.pending_present);
+        assert!(state.latency_ready_consumed);
     }
 
     #[test]

@@ -1552,6 +1552,11 @@ impl Device {
                 if let Some(invocation) = invocation {
                     user_closures.device_lost_invocations.push(invocation);
                 }
+                if let Some(queue) = self.get_queue() {
+                    let (mappings, invocations) = queue.fail_pending_mappings(&snatch_guard);
+                    user_closures.mappings.extend(mappings);
+                    user_closures.device_lost_invocations.extend(invocations);
+                }
                 let hal_error: WaitIdleError = device_error.into();
                 return (user_closures, Err(hal_error));
             }
@@ -1566,6 +1571,11 @@ impl Device {
                 let (device_error, invocation) = self.defer_hal_error(e);
                 if let Some(invocation) = invocation {
                     user_closures.device_lost_invocations.push(invocation);
+                }
+                if let Some(queue) = self.get_queue() {
+                    let (mappings, invocations) = queue.fail_pending_mappings(&snatch_guard);
+                    user_closures.mappings.extend(mappings);
+                    user_closures.device_lost_invocations.extend(invocations);
                 }
                 let hal_error: WaitIdleError = device_error.into();
                 return (user_closures, Err(hal_error));
@@ -7541,15 +7551,49 @@ impl Device {
                         break 'error E::PreviousOutputExists;
                     }
                 }
-                if previous_device.is_some() {
-                    presentation.take();
-                }
-                drop(presentation);
+                let previous_presentation = if previous_device.is_some() {
+                    presentation.take()
+                } else {
+                    None
+                };
 
                 if let Some(previous_device) = previous_device.as_ref() {
                     let surface_raw = surface.raw(previous_device.backend()).unwrap();
-                    unsafe { surface_raw.unconfigure(previous_device.raw()) };
+                    if let Err(error) =
+                        unsafe { surface_raw.unconfigure_with_result(previous_device.raw()) }
+                    {
+                        if matches!(&error, hal::SurfaceError::Device(hal::DeviceError::Lost)) {
+                            drop(previous_presentation);
+                            let (_, invocation) =
+                                previous_device.defer_hal_error(hal::DeviceError::Lost);
+                            if let Some(invocation) = invocation {
+                                user_callbacks.device_lost_invocations.push(invocation);
+                            }
+                        } else {
+                            *presentation = previous_presentation;
+                            drop(presentation);
+                            break 'error match error {
+                                hal::SurfaceError::Outdated
+                                | hal::SurfaceError::Lost
+                                | hal::SurfaceError::Occluded => E::InvalidSurface,
+                                hal::SurfaceError::Timeout => E::GpuWaitTimeout,
+                                hal::SurfaceError::Device(error) => {
+                                    let (device_error, invocation) =
+                                        previous_device.defer_hal_error(error);
+                                    if let Some(invocation) = invocation {
+                                        user_callbacks.device_lost_invocations.push(invocation);
+                                    }
+                                    E::Device(device_error)
+                                }
+                                hal::SurfaceError::Other(message) => {
+                                    log::error!("surface unconfiguration failed: {message}");
+                                    E::InvalidSurface
+                                }
+                            };
+                        }
+                    }
                 }
+                drop(presentation);
 
                 match unsafe { surface_raw.configure(self.raw(), &hal_config) } {
                     Ok(()) => (),
@@ -7557,10 +7601,14 @@ impl Device {
                         break 'error match error {
                             hal::SurfaceError::Outdated
                             | hal::SurfaceError::Lost
-                            | hal::SurfaceError::Occluded
-                            | hal::SurfaceError::Timeout => E::InvalidSurface,
+                            | hal::SurfaceError::Occluded => E::InvalidSurface,
+                            hal::SurfaceError::Timeout => E::GpuWaitTimeout,
                             hal::SurfaceError::Device(error) => {
-                                E::Device(self.handle_hal_error(error))
+                                let (device_error, invocation) = self.defer_hal_error(error);
+                                if let Some(invocation) = invocation {
+                                    user_callbacks.device_lost_invocations.push(invocation);
+                                }
+                                E::Device(device_error)
                             }
                             hal::SurfaceError::Other(message) => {
                                 log::error!("surface configuration failed: {message}");

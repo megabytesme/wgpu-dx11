@@ -1,3 +1,29 @@
+## Core queue-idle error retention — 2026-11-12
+
+Queue destruction now tries a bounded idle wait before releasing resources.
+D3D11 timeouts retain the queue without declaring device loss; `device.poll`
+and `poll_all` retry retirement, including after the public Device has been
+removed. A 10 ms reaper budget can delay a poll when an orphan exists. HAL
+errors still invalidate the device, preserve the queue, and report device loss;
+unresolved queues are intentionally leaked during Hub shutdown rather than
+releasing possibly in-flight resources. Strict FL9_1 fixtures cover timeout,
+later polling, device removal, OOM and callback-once behavior. The timeout
+bounds polling and waitable-handle waits, but synchronous D3D calls and Windows
+scheduling can exceed the nominal duration.
+
+## Query-gated RGB565 multisample resolve — 2026-11-12
+
+RGB565 color multisampling now shares the query gate used by RGBA8/BGRA8 for
+texture creation, views, pipeline validation and resolve replay. The
+multisampled texture initialization clear also accepts RGB565. Synthetic tests
+require all format-support bits and positive per-count queries. Strict
+forced-FL9_1 execution on the RTX 3090 Ti passed a HAL resolve/fence/readback
+test and public 2x/4x/8x render/resolve/sample tests; all 64 pixels matched at
+each count. A strict public render/resolve/readback test also verifies
+RGB565 alpha blending at 2x, 4x and 8x; all 64 pixels fall within the
+per-channel RGB565 quantization range. The device reports no 16x quality
+levels. Alpha-to-coverage remains unverified.
+
 ## Separate-group samplers for 3D/cube query sampling — 2026-11-12
 
 The narrow selected-entry 3D/cube `textureDimensions` and `textureNumLevels`
@@ -18,19 +44,20 @@ skipped or failed. The equal/not-equal cases logged Core's invariant-position
 warning. The broader mixed-format depth selector still has unrelated
 unsupported-usage failures; see `FL9_1_CTS.md`.
 
-## Fragment explicit LOD zero helper coordinates — 2026-11-12
+## Fragment computed LOD in a sampling helper — 2026-11-12
 
-The restricted single-mip `textureSampleLevel` subset now permits one
-straight-line fragment helper to compute its `vec2f` coordinate from its sole
-`vec2f` argument using whitelisted literal-based arithmetic, composition,
-splat or swizzle operations. Nested calls, control flow, extra resources,
-additional samples, unsupported coordinate operations, changed LOD, and
+The restricted single-mip `textureSampleLevel` subset permits one
+straight-line fragment helper to return one sample with a whitelisted LOD
+expression. With literal-zero LOD, its `vec2f` coordinate may use the existing
+whitelisted arithmetic, composition, splat or swizzle operations. A computed
+LOD helper may use the same bounded coordinate expressions. Unsupported math,
+nested calls, control flow, extra resources, additional samples, and
 incompatible views or samplers remain rejected. A single-mip bound view,
-matching min/mag filters and anisotropy 1 remain required. Core now applies the
-same live-view check when finishing render bundles. Strict forced-FL9_1 GPU
-readback verified the helper's shifted coordinate on the RTX 3090 Ti; a
-Core fixture rejected multi-mip bundle bindings and accepted one-mip bindings.
-General explicit-LOD sampling across mipmapped views remains unavailable.
+matching min/mag filters and anisotropy 1 remain required. Core and HAL use
+matching selected-entry proofs and lower only the proven sample. FXC compiled
+the helper at `ps_4_0_level_9_1`; strict forced-FL9_1 public readback matched
+all 64 transformed-coordinate pixels on the RTX 3090 Ti. General explicit-LOD
+sampling across mipmapped views remains unavailable.
 
 ## Nonzero-group `textureSampleBaseClampToEdge` — 2026-11-12
 
@@ -406,9 +433,12 @@ The opt-in `dx11` backend now enumerates physical adapters that can create an
 explicit FL9_1 device and exposes the selected-device capability projection
 for offscreen rendering and constrained Win32 HWND or WinRT CoreWindow surfaces
 through the public wgpu API. Both surface paths report BGRA8 sRGB FIFO, opaque
-composition, render-attachment usage and one frame of latency; CoreWindow
-creation verifies dispatcher access, and surface operations are restricted to
-the creating thread. CoreWindow runtime behavior remains unverified. The
+composition, render-attachment usage and one frame of latency. `COPY_SRC` is
+added only when the selected BGRA8 format projection supports texture readback;
+a strict HWND test renders, copies the acquired frame to a padded buffer,
+validates the pixels and presents it. CoreWindow creation verifies dispatcher
+access, and surface operations are restricted to the creating thread.
+CoreWindow runtime behavior remains unverified. The
 backend exposes the native-only `TEXTURE_FORMAT_16BIT_NORM` feature only when
 a selected-device query reports
 the required 2D format support. The native-only `TEXTURE_FORMAT_16BIT_PACKED`
@@ -717,27 +747,30 @@ General `textureSampleLevel` remains restricted. A separate narrow
 `texture_sample_level_zero_2d_float_fragment` limit allows direct,
 unconditional fragment `textureSampleLevel(texture_2d<f32>, sampler, uv, lod)`
 with a finite literal or a side-effect-free scalar expression formed from
-fragment inputs and whitelisted arithmetic. It also allows literal-zero
-sampling returned through one straight-line helper that forwards its `vec2f`
-argument unchanged. Naga validates and lowers the proven direct operation to
+fragment inputs and whitelisted arithmetic. It also allows one straight-line
+helper with a literal-zero LOD and validated coordinate arithmetic, or a
+whitelisted computed LOD with the same bounded coordinate-expression subset.
+Naga validates and lowers the proven operation to
 implicit sampling; because the bound view contains one mip, minification and
 magnification filters match, and anisotropy is one, the explicit LOD cannot
 change the selected mip or spatial filter. Core checks the currently bound
-view and sampler at draw time. Helper LOD remains literal zero; nested helpers,
-helper computation, control flow, unsupported expression forms, other
-resource shapes and incompatible bindings remain rejected. The generic
+view and sampler at draw time, including render-bundle draws. Nested helpers,
+control flow, unsupported expression forms, other resource shapes and
+incompatible bindings remain rejected. The generic
 `texture_sample_level` limit stays false. FXC's X4532 diagnostic remains for
 unlowered explicit LOD. Strict public readback checked 64/64 pixels for both
-direct literal-zero, direct computed-LOD and helper forms at requested/actual
-FL9_1; invalid helper shapes and incompatible bindings are rejected before
-HAL.
+direct literal-zero, direct computed-LOD, literal-zero helper and computed-LOD
+helper forms at requested/actual FL9_1; invalid helper shapes and incompatible
+bindings are rejected before HAL.
 
 WGSL's general `texture_gather` limit remains false at FL9_1. A separate
-`texture_gather_2d_float_fragment` limit enables only one direct fragment
-gather from a single-mip `Rgba8Unorm` or query-supported `Rgba8UnormSrgb` 2D float view using a regular sampler
-whose U and V modes are both clamp-to-edge. The shader must use a location-0 `vec2f`
-coordinate and return the gather result directly at location 0; helper calls,
-other image operations, and unsupported shader shapes remain rejected.
+`texture_gather_2d_float_fragment` limit enables one fragment gather from a
+single-mip `Rgba8Unorm` or query-supported `Rgba8UnormSrgb` 2D float view using
+a regular sampler whose U and V modes are both clamp-to-edge. The selected
+entry may gather directly with bounded side-effect-free `vec2f` arithmetic or
+forward its location-0 coordinate unchanged to one straight-line helper that
+returns one gather. Nested/repeated helpers, transformed helper arguments,
+other image operations and unsupported shader shapes remain rejected.
 Because FXC's level-9_1 profile rejects HLSL Gather, Naga lowers the proven
 operation to four point samples at texel centers and assembles the selected
 WGSL channel in the specified component order. The emulation uses reserved
@@ -747,8 +780,9 @@ view and sampler before direct draws and render-bundle draws. The strict public
 test on the physical RTX 3090 Ti at requested/actual FL9_1 verified all 64
 linear-view pixels as `[151, 166, 106, 91]` within one UNORM step and all 64
 sRGB-view pixels as `[79, 97, 37, 27]` within two UNORM steps. Core rejected
-an R8 view and a multi-mip view before HAL submission. Core tracks the actual
-bound texture-view format because this narrow format restriction cannot be
+an R8 view and a multi-mip view before HAL submission. The direct and helper
+forms each matched all 64 linear-view readback pixels; the sRGB direct form
+matched all 64 decoded pixels. Core tracks the actual bound texture-view format because this narrow format restriction cannot be
 represented by the downlevel limit itself. This is a
 backend-emulated subset, not native gather support or historical-driver
 evidence.
@@ -1275,17 +1309,25 @@ all out-of-target rectangles. Other backends keep the default true capability.
   whose in-target fractional viewport would later fail during submission.
   Core rejects out-of-target rectangles, but fractional rectangles within the
   target remain valid and require the adjusted shader.
-- Up to eight groups with thirteen static or dynamic uniform slots, eight sampled
-  textures and sixteen samplers in total. The internal wgpu capability
-  projection exposes six uniforms per shader stage, ensuring disjoint vertex
-  and fragment bindings fit the shared thirteen-slot allocator. The public
-  combined buffers-per-stage limit is 22 (six vertex uniforms plus sixteen
-  vertex input buffers); it is a Core pipeline limit rather than a native
-  D3D11 register limit. The standard Core WebGPU default of 28 is not met.
-  dynamic uniform limit is twelve per pipeline layout, the maximum disjoint
-  six-vertex/six-fragment split. Strict FL9_1 public readback exercises all
-  twelve sparse ranges from one source buffer and switches their selected
-  offsets between draws; core rejects thirteen before HAL. A controlled core draw
+- Up to eight groups with twenty-six static uniform bindings total across the
+  vertex and fragment stages, eight sampled textures and sixteen samplers in
+  total. D3D11 has independent constant-buffer registers for vertex and pixel
+  shaders; the allocator supports thirteen uniforms per stage in `b0`–`b12`
+  and reserves `b13` per stage for internal emulation. One bind group may hold
+  13+13 uniforms when stage visibility is disjoint. Core's separate dynamic
+  uniform pipeline-layout limit remains thirteen. The public combined
+  buffers-per-stage limit is 29
+  (thirteen uniforms plus sixteen vertex input buffers); it is a Core pipeline
+  limit rather than a native D3D11 register limit. The standard Core WebGPU
+  default of 28 is met for this combined count, but that does not imply other
+  default limits or general shader support. Strict FL9_1 public readback
+  exercises thirteen sparse fragment-visible dynamic ranges from one source
+  buffer and switches their selected offsets between draws; Core rejects
+  fourteen dynamic bindings before HAL. Strict FL9_1 rendering also binds
+  thirteen sparse vertex and thirteen fragment uniforms in different groups;
+  each stage uses `b0`–`b12`, and both sets contribute to all 64 readback pixels.
+  Core and HAL accept 13+13 layouts across two groups and in one group when
+  visibility is disjoint. A controlled core draw
   also places a fragment uniform in group 0 and sampled resources in group 1;
   this verifies one supported two-group combination, not the entire eight-group
   aggregate limit.
@@ -1497,9 +1539,13 @@ representative application or a complete contract audit.
   desktop presentation. Lumia/UWP CoreWindow presentation has not been run.
 - `wgpu/examples/dx11_fl91_windowed.rs` is a visible public-API example. It
   pumps Win32 messages, handles resize, and presents an animated indexed,
-  textured, depth-tested cube. A 60-frame run passed on the RTX 3090 Ti at
-  forced FL9_1. A live client-area capture was visually inspected; strict
-  offscreen tests provide deterministic readback.
+  textured, depth-tested cube. It uses a transform uniform in group 0, an
+  independent material tint uniform in group 2, and texture/sampler bindings
+  in group 7. Its surface validation accepts additional reported usages when
+  render-attachment usage is present. A 60-frame run and a five-frame
+  two-uniform run passed on the RTX 3090 Ti at forced FL9_1. A live client-area
+  capture was visually inspected; strict offscreen tests provide deterministic
+  readback.
 - The public surface error fixture injects device removal from `Present`,
   checks one public device-lost callback, and reacquires/discards the same HAL
   swapchain to verify the failed frame released its acquisition reservation.
@@ -2147,3 +2193,39 @@ at requested/actual FL9_1 verified both group configurations. Full regressions
 passed Naga 171, Core DX11 136, Core DX12 135, private HAL 517 and public
 D3D11 153 tests. The separate-alpha blend portability warning and historical
 FL9_1 driver gap are unchanged.
+
+## Cross-device surface reconfiguration after a pending-present timeout
+
+The HAL surface interface now has an additive fallible unconfigure operation;
+other backends retain the old infallible behavior by default. D3D11 reports a
+timeout or teardown error without releasing the configured swapchain. Core keeps
+the previous Presentation association on that error, so a later configure can
+retry unconfiguration with the original device. A strict public regression
+performs an actual hidden-HWND present, injects a one-shot pending-present
+completion timeout during cross-device reconfiguration, verifies that the
+previous configuration remains selected, completes the present, and then
+successfully configures a second FL9_1 device. The injected timeout is
+synthetic; physical presentation timeout behavior is not claimed.
+
+## Device loss during cross-device surface reconfiguration — 2026-11-12
+
+If D3D11 reports `Device(Lost)` while unconfiguring, it retires the lost
+swapchain and reports the loss instead of claiming success. Core removes the
+old presentation, attributes the loss to the old device, and defers its
+callback until the surface and queue locks are released before configuring the
+replacement device. Device loss during the replacement configure path is also
+deferred until queue submission locks are released. Strict public fixtures
+inject both HRESULT failures and reenter `Device::poll` from each callback.
+These tests establish error routing and lock ordering, not physical GPU
+removal or TDR recovery.
+
+## Vertex-indexed local matrix column writes
+
+A straight-line vertex entry point can now assign a direct local
+`matCx2<f32>` column using `@builtin(vertex_index)`. Naga emits a signed
+conditional split-matrix setter accepted by FL9_1 FXC. Core and HAL use matching
+shape proofs; dynamic row writes, nested or array matrices, and helper-mediated
+stores remain blocked. Strict public GPU readback on the RTX 3090 Ti at
+requested and actual FL9_1 matched all 64 pixels within two LSB per color
+channel. This does not enable general runtime integer operations or the
+downlevel matrix aggregate-store flag.

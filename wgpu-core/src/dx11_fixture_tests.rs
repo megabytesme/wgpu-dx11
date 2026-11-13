@@ -572,7 +572,7 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         capabilities
             .limits
             .max_dynamic_uniform_buffers_per_pipeline_layout,
-        12
+        13
     );
     assert_eq!(
         capabilities.limits.max_buffer_size,
@@ -629,7 +629,7 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     let (device, queue) = global
         .adapter_request_device(adapter_id, &descriptor, None, None)
         .expect("request device with unmodified selected-device projection");
-    let over_limit_uniforms: Vec<_> = (0..7)
+    let over_limit_uniforms: Vec<_> = (0..14)
         .map(|binding| wgt::BindGroupLayoutEntry {
             binding,
             visibility: wgt::ShaderStages::FRAGMENT,
@@ -654,17 +654,17 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         Some(binding_model::CreateBindGroupLayoutError::TooManyBindings(
             binding_model::BindingTypeMaxCountError {
                 kind: binding_model::BindingTypeMaxCountErrorKind::UniformBuffers,
-                limit: 6,
-                count: 7,
+                limit: 13,
+                count: 14,
                 ..
             }
         ))
     ));
     std::println!(
-        "PASS: core rejected seven fragment uniform bindings against the projected limit of six"
+        "PASS: core rejected fourteen fragment uniform bindings against the projected limit of thirteen"
     );
     global.bind_group_layout_drop(over_limit_layout);
-    let over_limit_dynamic: Vec<_> = (0..13)
+    let over_limit_dynamic: Vec<_> = (0..14)
         .map(|binding| wgt::BindGroupLayoutEntry {
             binding,
             visibility: wgt::ShaderStages::FRAGMENT,
@@ -690,13 +690,13 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
             binding_model::BindingTypeMaxCountError {
                 kind: binding_model::BindingTypeMaxCountErrorKind::DynamicUniformBuffers,
                 zone: binding_model::BindingZone::Pipeline,
-                limit: 12,
-                count: 13,
+                limit: 13,
+                count: 14,
             }
         ))
     ));
     std::println!(
-        "PASS: core rejected thirteen dynamic uniforms against the projected limit of twelve"
+        "PASS: core rejected fourteen dynamic uniforms against the projected limit of thirteen"
     );
     global.bind_group_layout_drop(dynamic_layout);
     let oversized_buffer = crate::resource::BufferDescriptor {
@@ -1320,6 +1320,174 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
 }
 
 #[test]
+fn fl91_core_pipeline_layout_supports_stage_disjoint_uniform_limits() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
+    let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        assert!(!required, "strict mode requires a physical D3D11 adapter");
+        std::println!("SKIP: no physical D3D11 adapter");
+        return;
+    };
+    let identity = adapter.identity();
+    let native = Arc::new(
+        adapter
+            .open_device(&[hal::dx11::FeatureLevel::L9_1])
+            .expect("forced FL9_1 device"),
+    );
+    assert_eq!(native.feature_level(), hal::dx11::FeatureLevel::L9_1);
+    std::println!(
+        "Hardware: {identity:?}; requested and actual FL9_1; uniform-count validation is synthetic"
+    );
+
+    let global = unsafe {
+        Global::from_hal_instance::<hal::dx11::Api>(
+            "dx11 stage-disjoint uniform limit fixture",
+            hal::dx11::Instance,
+        )
+    };
+    let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
+    let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let (features, capabilities) = fixture
+        .test_fixture_wgpu_capabilities()
+        .expect("selected FL9_1 device capability projection");
+    assert_eq!(capabilities.limits.max_uniform_buffers_per_shader_stage, 13);
+    let open = unsafe { fixture.open_test_fixture() };
+    let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+    info.name = identity.name.clone();
+    info.vendor = identity.vendor_id;
+    info.device = identity.device_id;
+    let adapter_id = unsafe {
+        global.create_adapter_from_hal(
+            hal::ExposedAdapter::<hal::dx11::Api> {
+                adapter: fixture,
+                info,
+                features,
+                capabilities: capabilities.clone(),
+            }
+            .into(),
+            None,
+        )
+    };
+    let descriptor = crate::device::DeviceDescriptor {
+        required_features: features,
+        required_limits: capabilities.limits.clone(),
+        ..Default::default()
+    };
+    let (device, queue) = global
+        .adapter_request_device(adapter_id, &descriptor, None, None)
+        .expect("request device with selected FL9_1 projection");
+
+    let make_uniforms = |visibility, first_binding| {
+        (0..13u32)
+            .map(|local_binding| wgt::BindGroupLayoutEntry {
+                binding: first_binding + local_binding,
+                visibility,
+                ty: wgt::BindingType::Buffer {
+                    ty: wgt::BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(16),
+                },
+                count: None,
+            })
+            .collect::<Vec<_>>()
+    };
+    let vertex_uniforms = make_uniforms(wgt::ShaderStages::VERTEX, 0);
+    let fragment_uniforms = make_uniforms(wgt::ShaderStages::FRAGMENT, 0);
+    let (vertex_layout, error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Borrowed(&vertex_uniforms),
+        },
+        None,
+    );
+    assert!(error.is_none(), "13 vertex uniforms must fit: {error:?}");
+    let (fragment_layout, error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Borrowed(&fragment_uniforms),
+        },
+        None,
+    );
+    assert!(error.is_none(), "13 fragment uniforms must fit: {error:?}");
+
+    let mut core_counts = binding_model::BindingTypeMaxCountValidator::default();
+    for entry in vertex_uniforms.iter().chain(&fragment_uniforms) {
+        core_counts.add_binding(entry);
+    }
+    core_counts
+        .validate(&capabilities.limits, wgt::InstanceFlags::empty())
+        .expect("Core per-stage limits accept 13 vertex plus 13 fragment uniforms");
+
+    let bind_group_layouts = [Some(vertex_layout), Some(fragment_layout)];
+    let (pipeline_layout, error) = global.device_create_pipeline_layout(
+        device,
+        &binding_model::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: Cow::Borrowed(&bind_group_layouts),
+            immediate_size: 0,
+        },
+        None,
+    );
+    assert!(
+        error.is_none(),
+        "Core and HAL must accept 13 vertex-only plus 13 fragment-only uniforms: {error:?}"
+    );
+
+    global.pipeline_layout_drop(pipeline_layout);
+    global.bind_group_layout_drop(vertex_layout);
+    global.bind_group_layout_drop(fragment_layout);
+
+    let combined_uniforms = make_uniforms(wgt::ShaderStages::VERTEX, 0)
+        .into_iter()
+        .chain(make_uniforms(wgt::ShaderStages::FRAGMENT, 13))
+        .collect::<Vec<_>>();
+    let mut combined_counts = binding_model::BindingTypeMaxCountValidator::default();
+    for entry in &combined_uniforms {
+        combined_counts.add_binding(entry);
+    }
+    combined_counts
+        .validate(&capabilities.limits, wgt::InstanceFlags::empty())
+        .expect("Core per-stage limits accept the combined 13+13 uniform group");
+    let (combined_layout, error) = global.device_create_bind_group_layout(
+        device,
+        &binding_model::BindGroupLayoutDescriptor {
+            label: None,
+            entries: Cow::Borrowed(&combined_uniforms),
+        },
+        None,
+    );
+    assert!(
+        error.is_none(),
+        "Core and HAL must accept one group with 13 vertex-only plus 13 fragment-only uniforms: {error:?}"
+    );
+    let combined_bind_group_layouts = [Some(combined_layout)];
+    let (combined_pipeline_layout, error) = global.device_create_pipeline_layout(
+        device,
+        &binding_model::PipelineLayoutDescriptor {
+            label: None,
+            bind_group_layouts: Cow::Borrowed(&combined_bind_group_layouts),
+            immediate_size: 0,
+        },
+        None,
+    );
+    assert!(
+        error.is_none(),
+        "Core and HAL must create one-group 13+13 stage-disjoint uniforms: {error:?}"
+    );
+
+    global.pipeline_layout_drop(combined_pipeline_layout);
+    global.bind_group_layout_drop(combined_layout);
+    global.queue_drop(queue);
+    global.device_drop(device);
+    global.adapter_drop(adapter_id);
+    std::println!(
+        "PASS: Core and HAL created two-group and one-group layouts with 13 vertex-only plus 13 fragment-only uniform bindings"
+    );
+}
+
+#[test]
 fn fl91_core_submission_device_loss_is_propagated_once() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
@@ -1620,9 +1788,44 @@ fn fl91_core_fence_wait_device_loss_is_propagated_once() {
         unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
             .expect("controlled FL9_1 core device");
 
+    let (buffer, error) = global.device_create_buffer(
+        device,
+        &wgt::BufferDescriptor {
+            label: None,
+            size: 64,
+            usage: wgt::BufferUsages::MAP_READ | wgt::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        },
+        None,
+    );
+    assert!(error.is_none(), "map buffer: {error:?}");
+    let (encoder, error) = global.device_create_command_encoder(
+        device,
+        &wgt::CommandEncoderDescriptor::default(),
+        None,
+    );
+    assert!(error.is_none(), "command encoder: {error:?}");
     global
-        .queue_submit(queue, &[])
-        .expect("submit a fence-backed empty queue operation");
+        .command_encoder_clear_buffer(encoder, buffer, 0, Some(64))
+        .expect("record buffer use");
+    let (command, error) =
+        global.command_encoder_finish(encoder, &wgt::CommandBufferDescriptor::default(), None);
+    assert!(error.is_none(), "command buffer: {error:?}");
+    global
+        .queue_submit(queue, &[command])
+        .expect("submit buffer use behind an event fence");
+    let (map_sender, map_receiver) = std::sync::mpsc::channel();
+    global
+        .buffer_map_async(
+            buffer,
+            0,
+            Some(64),
+            BufferMapOperation {
+                host: HostMap::Read,
+                callback: Some(Box::new(move |result| map_sender.send(result).unwrap())),
+            },
+        )
+        .expect("schedule map behind the in-flight submission");
     unsafe {
         global
             .device_fence_as_hal::<hal::dx11::Api>(device)
@@ -1655,6 +1858,14 @@ fn fl91_core_fence_wait_device_loss_is_propagated_once() {
         .recv_timeout(Duration::from_secs(10))
         .expect("fence-wait failure and reentrant poll callback must not deadlock"));
     poll_thread.join().expect("device poll thread");
+    assert!(matches!(
+        map_receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("device loss must complete the pending map callback"),
+        Err(crate::resource::BufferAccessError::Device(
+            crate::device::DeviceError::Lost
+        ))
+    ));
     let (reason, message, callback_poll_result) = lost_receiver
         .recv_timeout(Duration::from_secs(10))
         .expect("device-lost callback after fence-wait error");
@@ -1667,9 +1878,16 @@ fn fl91_core_fence_wait_device_loss_is_propagated_once() {
     ));
 
     global.queue_drop(queue);
+    global.command_buffer_drop(command);
+    global.command_encoder_drop(encoder);
+    global.buffer_drop(buffer);
     global.device_drop(device);
     global.adapter_drop(adapter_id);
-    std::println!("PASS: synthetic fence-wait device removal propagated through core polling and fired the callback once");
+    assert!(matches!(
+        map_receiver.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Disconnected)
+    ));
+    std::println!("PASS: synthetic fence-wait device removal completed the pending map and device-lost callbacks once");
 }
 
 #[test]
@@ -1765,6 +1983,329 @@ fn fl91_core_queue_drop_wait_device_loss_is_reported_without_panicking() {
     global.adapter_drop(adapter_id);
     std::println!(
         "PASS: synthetic wait-for-idle device removal was reported once during queue destruction without panic"
+    );
+}
+
+#[test]
+fn fl91_core_queue_drop_wait_out_of_memory_retains_queue_until_device_drop() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
+    let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        assert!(!required, "strict mode requires a physical D3D11 adapter");
+        std::println!("SKIP: no physical D3D11 adapter");
+        return;
+    };
+    let identity = adapter.identity();
+    let native = Arc::new(
+        adapter
+            .open_device(&[hal::dx11::FeatureLevel::L9_1])
+            .expect("forced FL9_1 device"),
+    );
+    assert_eq!(native.feature_level(), hal::dx11::FeatureLevel::L9_1);
+    std::println!(
+        "Hardware: {identity:?}; requested and actual FL9_1; queue-drop OOM injection is synthetic"
+    );
+
+    let global = Arc::new(unsafe {
+        Global::from_hal_instance::<hal::dx11::Api>(
+            "dx11 queue-drop OOM fixture",
+            hal::dx11::Instance,
+        )
+    });
+    let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
+    let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let (features, capabilities) = fixture
+        .test_fixture_wgpu_capabilities()
+        .expect("selected FL9_1 device capability projection");
+    let limits = capabilities.limits.clone();
+    let open = unsafe { fixture.open_test_fixture() };
+    let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+    info.name = identity.name.clone();
+    info.vendor = identity.vendor_id;
+    info.device = identity.device_id;
+    let adapter_id = unsafe {
+        global.create_adapter_from_hal(
+            hal::ExposedAdapter::<hal::dx11::Api> {
+                adapter: fixture,
+                info,
+                features,
+                capabilities,
+            }
+            .into(),
+            None,
+        )
+    };
+    let descriptor = crate::device::DeviceDescriptor {
+        required_limits: limits,
+        ..Default::default()
+    };
+    let (device, queue) =
+        unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
+            .expect("controlled FL9_1 core device");
+
+    global
+        .queue_submit(queue, &[])
+        .expect("submit a fence-backed empty queue operation");
+    let (work_sender, work_receiver) = std::sync::mpsc::channel();
+    global.queue_on_submitted_work_done(queue, Box::new(move || work_sender.send(()).unwrap()));
+    unsafe {
+        global
+            .queue_as_hal::<hal::dx11::Api>(queue)
+            .expect("D3D11 queue")
+            .test_fixture_fail_next_wait_for_idle_with_oom();
+    }
+    let (lost_sender, lost_receiver) = std::sync::mpsc::channel();
+    let callback_global = global.clone();
+    global.device_set_device_lost_closure(
+        device,
+        Box::new(move |reason, message| {
+            let poll_result = callback_global.device_poll(device, wgt::PollType::Poll);
+            lost_sender.send((reason, message, poll_result)).unwrap();
+        }),
+    );
+
+    global.queue_drop(queue);
+
+    let (reason, message, callback_poll_result) = lost_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("device-lost callback during queue destruction");
+    assert_eq!(reason, wgt::DeviceLostReason::Unknown);
+    assert!(!message.is_empty());
+    assert!(callback_poll_result.is_ok());
+    assert!(matches!(
+        lost_receiver.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Disconnected)
+    ));
+
+    global
+        .device_poll(device, wgt::PollType::wait_indefinitely())
+        .expect("poll retained orphan queue to completion");
+    work_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("submission callback from retained queue");
+    assert!(matches!(
+        work_receiver.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Disconnected)
+    ));
+
+    global.device_drop(device);
+    global.adapter_drop(adapter_id);
+    std::println!(
+        "PASS: synthetic queue idle-wait OOM invalidated the device without panic, retained queue callbacks, and retired the queue when the device was dropped"
+    );
+}
+
+#[test]
+fn fl91_core_queue_drop_timeout_retains_then_reaps_queue() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
+    let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        assert!(!required, "strict mode requires a physical D3D11 adapter");
+        std::println!("SKIP: no physical D3D11 adapter");
+        return;
+    };
+    let identity = adapter.identity();
+    let native = Arc::new(
+        adapter
+            .open_device(&[hal::dx11::FeatureLevel::L9_1])
+            .expect("forced FL9_1 device"),
+    );
+    assert_eq!(native.feature_level(), hal::dx11::FeatureLevel::L9_1);
+    std::println!(
+        "Hardware: {identity:?}; requested and actual FL9_1; bounded idle timeout injection is synthetic"
+    );
+
+    let global = Arc::new(unsafe {
+        Global::from_hal_instance::<hal::dx11::Api>(
+            "dx11 synthetic queue-drop timeout fixture",
+            hal::dx11::Instance,
+        )
+    });
+    let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
+    let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let (features, capabilities) = fixture
+        .test_fixture_wgpu_capabilities()
+        .expect("selected FL9_1 device capability projection");
+    let limits = capabilities.limits.clone();
+    let open = unsafe { fixture.open_test_fixture() };
+    let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+    info.name = identity.name.clone();
+    info.vendor = identity.vendor_id;
+    info.device = identity.device_id;
+    let adapter_id = unsafe {
+        global.create_adapter_from_hal(
+            hal::ExposedAdapter::<hal::dx11::Api> {
+                adapter: fixture,
+                info,
+                features,
+                capabilities,
+            }
+            .into(),
+            None,
+        )
+    };
+    let descriptor = crate::device::DeviceDescriptor {
+        required_limits: limits,
+        ..Default::default()
+    };
+    let (device, queue) =
+        unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
+            .expect("controlled FL9_1 Core device");
+
+    global
+        .queue_submit(queue, &[])
+        .expect("submit fence-backed queue operation");
+    global
+        .device_poll(device, wgt::PollType::wait_indefinitely())
+        .expect("complete submitted work before exercising orphan reaping");
+    let (work_sender, work_receiver) = std::sync::mpsc::channel();
+    global.queue_on_submitted_work_done(queue, Box::new(move || work_sender.send(()).unwrap()));
+    unsafe {
+        global
+            .queue_as_hal::<hal::dx11::Api>(queue)
+            .expect("D3D11 queue")
+            .test_fixture_force_idle_query_pending_polls(2);
+    }
+
+    let started = std::time::Instant::now();
+    global.queue_drop(queue);
+    assert!(started.elapsed() < Duration::from_secs(2));
+    assert_eq!(global.hub.test_fixture_orphaned_queue_count(), 1);
+    assert!(matches!(
+        work_receiver.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Empty)
+    ));
+
+    let mut callback_fired = false;
+    for _ in 0..160 {
+        global
+            .device_poll(device, wgt::PollType::Poll)
+            .expect("poll device and retained queue");
+        if !callback_fired {
+            callback_fired = work_receiver.try_recv().is_ok();
+        }
+        if global.hub.test_fixture_orphaned_queue_count() == 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(16));
+    }
+    assert!(callback_fired, "retained queue must deliver its callback");
+    assert_eq!(global.hub.test_fixture_orphaned_queue_count(), 0);
+    assert!(matches!(
+        work_receiver.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Disconnected)
+    ));
+
+    global.device_drop(device);
+    global.adapter_drop(adapter_id);
+    std::println!(
+        "PASS: bounded queue drop returned promptly, retained the timed-out queue, then polling reaped it and delivered the callback once"
+    );
+}
+
+#[test]
+fn fl91_core_poll_all_reaps_orphaned_queue_after_device_drop() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let adapters = hal::dx11::enumerate_native_adapters().expect("DXGI enumeration");
+    let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+        assert!(!required, "strict mode requires a physical D3D11 adapter");
+        std::println!("SKIP: no physical D3D11 adapter");
+        return;
+    };
+    let identity = adapter.identity();
+    let native = Arc::new(
+        adapter
+            .open_device(&[hal::dx11::FeatureLevel::L9_1])
+            .expect("forced FL9_1 device"),
+    );
+    assert_eq!(native.feature_level(), hal::dx11::FeatureLevel::L9_1);
+    std::println!(
+        "Hardware: {identity:?}; requested and actual FL9_1; device-drop timeout injection is synthetic"
+    );
+
+    let global = Arc::new(unsafe {
+        Global::from_hal_instance::<hal::dx11::Api>(
+            "dx11 synthetic orphan reaper fixture",
+            hal::dx11::Instance,
+        )
+    });
+    let instance = unsafe { global.instance_as_hal::<hal::dx11::Api>() }.unwrap();
+    let fixture = unsafe { hal::dx11::Adapter::new_test_fixture(instance, native) }.unwrap();
+    let (features, capabilities) = fixture
+        .test_fixture_wgpu_capabilities()
+        .expect("selected FL9_1 device capability projection");
+    let limits = capabilities.limits.clone();
+    let open = unsafe { fixture.open_test_fixture() };
+    let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+    info.name = identity.name.clone();
+    info.vendor = identity.vendor_id;
+    info.device = identity.device_id;
+    let adapter_id = unsafe {
+        global.create_adapter_from_hal(
+            hal::ExposedAdapter::<hal::dx11::Api> {
+                adapter: fixture,
+                info,
+                features,
+                capabilities,
+            }
+            .into(),
+            None,
+        )
+    };
+    let descriptor = crate::device::DeviceDescriptor {
+        required_limits: limits,
+        ..Default::default()
+    };
+    let (device, queue) =
+        unsafe { global.create_device_from_hal(adapter_id, open.into(), &descriptor, None, None) }
+            .expect("controlled FL9_1 Core device");
+
+    global
+        .queue_submit(queue, &[])
+        .expect("submit fence-backed queue operation");
+    global
+        .device_poll(device, wgt::PollType::wait_indefinitely())
+        .expect("complete submitted work before exercising orphan reaping");
+    let (work_sender, work_receiver) = std::sync::mpsc::channel();
+    global.queue_on_submitted_work_done(queue, Box::new(move || work_sender.send(()).unwrap()));
+    unsafe {
+        global
+            .queue_as_hal::<hal::dx11::Api>(queue)
+            .expect("D3D11 queue")
+            .test_fixture_force_idle_query_pending_polls(4);
+    }
+
+    global.queue_drop(queue);
+    assert_eq!(global.hub.test_fixture_orphaned_queue_count(), 1);
+    global.device_drop(device);
+    assert_eq!(global.hub.test_fixture_orphaned_queue_count(), 1);
+
+    let mut callback_fired = false;
+    for _ in 0..160 {
+        let all_queues_empty = global
+            .poll_all_devices(false)
+            .expect("poll and reap orphan queue");
+        if global.hub.test_fixture_orphaned_queue_count() != 0 {
+            assert!(!all_queues_empty, "a retained orphan queue is not idle yet");
+        }
+        if !callback_fired {
+            callback_fired = work_receiver.try_recv().is_ok();
+        }
+        if global.hub.test_fixture_orphaned_queue_count() == 0 {
+            break;
+        }
+        std::thread::sleep(Duration::from_millis(16));
+    }
+    assert!(callback_fired, "queue drop must deliver its callback");
+    assert_eq!(global.hub.test_fixture_orphaned_queue_count(), 0);
+    assert!(matches!(
+        work_receiver.try_recv(),
+        Err(std::sync::mpsc::TryRecvError::Disconnected)
+    ));
+
+    global.adapter_drop(adapter_id);
+    std::println!(
+        "PASS: poll_all_devices reaped a timed-out queue after its device left the registry and delivered the callback once"
     );
 }
 
@@ -1920,7 +2461,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         projected_capabilities
             .limits
             .max_dynamic_uniform_buffers_per_pipeline_layout,
-        12
+        13
     );
     assert_eq!(
         projected_capabilities
@@ -2337,6 +2878,44 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                 hal_caps.contains(hal::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND);
             let single_mip_only =
                 hal_caps.contains(hal::TextureFormatCapabilities::SINGLE_MIP_ONLY);
+            let multisample_caps = hal::TextureFormatCapabilities::MULTISAMPLE_X2
+                | hal::TextureFormatCapabilities::MULTISAMPLE_X4
+                | hal::TextureFormatCapabilities::MULTISAMPLE_X8
+                | hal::TextureFormatCapabilities::MULTISAMPLE_X16
+                | hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE;
+            let multisample_flags = [
+                (
+                    hal::TextureFormatCapabilities::MULTISAMPLE_X2,
+                    wgt::TextureFormatFeatureFlags::MULTISAMPLE_X2,
+                ),
+                (
+                    hal::TextureFormatCapabilities::MULTISAMPLE_X4,
+                    wgt::TextureFormatFeatureFlags::MULTISAMPLE_X4,
+                ),
+                (
+                    hal::TextureFormatCapabilities::MULTISAMPLE_X8,
+                    wgt::TextureFormatFeatureFlags::MULTISAMPLE_X8,
+                ),
+                (
+                    hal::TextureFormatCapabilities::MULTISAMPLE_X16,
+                    wgt::TextureFormatFeatureFlags::MULTISAMPLE_X16,
+                ),
+                (
+                    hal::TextureFormatCapabilities::MULTISAMPLE_RESOLVE,
+                    wgt::TextureFormatFeatureFlags::MULTISAMPLE_RESOLVE,
+                ),
+            ]
+            .into_iter()
+            .fold(
+                wgt::TextureFormatFeatureFlags::empty(),
+                |flags, (hal, wgt)| {
+                    if hal_caps.contains(hal) {
+                        flags | wgt
+                    } else {
+                        flags
+                    }
+                },
+            );
             assert_eq!(
                 hal_caps,
                 hal::TextureFormatCapabilities::SAMPLED
@@ -2366,6 +2945,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                     } else {
                         hal::TextureFormatCapabilities::empty()
                     }
+                    | (hal_caps & multisample_caps)
             );
             assert_eq!(
                 core_caps.allowed_usages,
@@ -2397,7 +2977,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
                     wgt::TextureFormatFeatureFlags::BLENDABLE
                 } else {
                     wgt::TextureFormatFeatureFlags::empty()
-                }
+                } | multisample_flags
             );
         }
     }

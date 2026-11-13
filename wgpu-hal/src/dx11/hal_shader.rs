@@ -1092,6 +1092,122 @@ mod tests {
         );
         assert!(matches!(proof.kind, Fl9TextureEmulationKind::Gather));
         assert!(proof.has_implicit_sample);
+        assert!(!proof.has_helper);
+    }
+
+    #[test]
+    fn fl9_texture_gather_computed_coordinate_is_proven_and_bounded() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv * 0.5 + vec2f(0.125, 0.25));
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let proof =
+            fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "main")
+                .unwrap()
+                .expect("bounded vec2 arithmetic retains the FL9 gather proof");
+        assert!(matches!(proof.kind, Fl9TextureEmulationKind::Gather));
+        assert!(!proof.has_helper);
+
+        let unsupported = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, vec2f(sin(uv.x), uv.y));
+            }
+            "#,
+        )
+        .unwrap();
+        let unsupported_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&unsupported)
+        .unwrap();
+        assert!(fl9_texture_emulation_binding(
+            &unsupported,
+            &unsupported_info,
+            naga::ShaderStage::Fragment,
+            "main",
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn fl9_texture_gather_helper_proof_is_exact_and_entry_specific() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(1) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            fn gather_image(uv: vec2f) -> vec4f {
+                return textureGather(2, image, smp, uv);
+            }
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return gather_image(uv);
+            }
+            @fragment fn ordinary() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let proof =
+            fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "main")
+                .unwrap()
+                .expect("one coordinate-forwarding helper has an FL9 gather proof");
+        assert_eq!(
+            proof.binding,
+            naga::ResourceBinding {
+                group: 1,
+                binding: 7,
+            }
+        );
+        assert_eq!(
+            proof.gather_sampler_binding,
+            Some(naga::ResourceBinding {
+                group: 2,
+                binding: 42,
+            })
+        );
+        assert!(proof.has_helper);
+
+        let rejected_sources = [
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(2, image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv + vec2f(0.25)); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(2, image, smp, uv); } fn nested(uv: vec2f) -> vec4f { return gather_image(uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return nested(uv); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(2, image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv) + gather_image(uv); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(2, image, smp, uv) * 0.5; } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(2, image, smp, uv) + textureGather(2, image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv); }"#,
+        ];
+        for source in rejected_sources {
+            let module = naga::front::wgsl::parse_str(source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            assert!(
+                fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "main",)
+                    .is_err(),
+                "accepted unsupported helper gather source: {source}"
+            );
+        }
     }
 
     #[test]
@@ -1863,13 +1979,15 @@ mod tests {
             )
             .validate(&invalid_module)
             .unwrap();
-            assert!(fl9_texture_emulation_binding(
-                &invalid_module,
-                &invalid_info,
-                naga::ShaderStage::Fragment,
-                "dimensions",
-            )
-            .is_err());
+            assert!(
+                fl9_texture_emulation_binding(
+                    &invalid_module,
+                    &invalid_info,
+                    naga::ShaderStage::Fragment,
+                    "dimensions",
+                )
+                .is_err()
+            );
         }
 
         let sampled_module = naga::front::wgsl::parse_str(
@@ -2171,12 +2289,8 @@ mod tests {
             )
             .validate(&module)
             .unwrap_or_else(|error| panic!("{name} should validate: {error}"));
-            let proof = fl9_texture_emulation_binding(
-                &module,
-                &info,
-                naga::ShaderStage::Fragment,
-                "fs",
-            );
+            let proof =
+                fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "fs");
             match expected {
                 Some(level) => assert_eq!(proof.unwrap().unwrap().mip_level, level, "{name}"),
                 None => assert!(proof.is_err(), "{name} must be rejected"),
@@ -2361,13 +2475,11 @@ mod tests {
             )
             .validate(&module)
             .unwrap();
-            assert!(fl9_texture_emulation_binding(
-                &module,
-                &info,
-                naga::ShaderStage::Fragment,
-                "fs",
-            )
-            .is_err(), "{source}");
+            assert!(
+                fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "fs",)
+                    .is_err(),
+                "{source}"
+            );
         }
     }
 
@@ -3683,12 +3795,7 @@ mod tests {
                 &rejected_info,
                 &rejected_module.entry_points[0].function,
                 rejected_info.get_entry_point(0),
-                DynamicAccessMode::new(
-                    naga::ShaderStage::Vertex,
-                    input_options,
-                    true,
-                    false,
-                ),
+                DynamicAccessMode::new(naga::ShaderStage::Vertex, input_options, true, false,),
             ));
         }
     }
@@ -4370,6 +4477,8 @@ mod tests {
         let module = naga::front::wgsl::parse_str(
             r#"
             struct State { m: mat2x2f }
+            struct MatrixAndSibling { transform: mat3x2f, gain: f32 }
+            struct NestedState { inner: State }
             struct Nested { m: array<mat2x2f, 2> }
             struct Outer { inner: State }
             struct Deep { outer: Outer }
@@ -4402,6 +4511,12 @@ mod tests {
                 var s: State;
                 s.m = mat2x2f(vec2f(1.0, 0.0), vec2f(0.0, 1.0));
                 return vec4f(s.m[0], 0.0, 1.0);
+            }
+            @vertex fn whole_matrix_and_sibling_store(@location(0) position: vec3f) -> @builtin(position) vec4f {
+                var s: MatrixAndSibling;
+                s.transform = mat3x2f(vec2f(1.0, 0.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0));
+                s.gain = 1.0;
+                return vec4f((s.transform * position) * s.gain, 0.0, 1.0);
             }
             @vertex fn helper_matrix_store() -> @builtin(position) vec4f {
                 var s: State;
@@ -4481,7 +4596,7 @@ mod tests {
                 s.m[1][1] = 1.0;
                 return vec4f(s.m[0], s.m[1]);
             }
-            @vertex fn dynamic_column_store(@location(0) index: u32) -> @builtin(position) vec4f {
+            @vertex fn dynamic_column_store(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
                 var s: State;
                 s.m[index] = vec2f(0.5);
                 return vec4f(s.m[0], 0.0, 1.0);
@@ -4490,6 +4605,11 @@ mod tests {
                 var s: State;
                 s.m[0][index] = 0.5;
                 return vec4f(s.m[0], 0.0, 1.0);
+            }
+            @vertex fn nested_dynamic_column_store(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                var s: NestedState;
+                s.inner.m[index] = vec2f(0.5);
+                return vec4f(s.inner.m[0], 0.0, 1.0);
             }
             "#,
         )
@@ -4510,8 +4630,8 @@ mod tests {
             "dynamic_with_uniform",
             "dynamic_without_uniform",
             "helper_component_store",
-            "dynamic_column_store",
             "dynamic_row_store",
+            "nested_dynamic_column_store",
         ] {
             let (index, entry) = module
                 .entry_points
@@ -4535,7 +4655,6 @@ mod tests {
     fn matrix_struct_stores_require_correct_lowering_even_unchecked() {
         let (module, info) = matrix_store_module();
         for name in [
-            "static_matrix_store",
             "helper_matrix_store",
             "helper_static_component_store",
             "nested_matrix_store",
@@ -4544,8 +4663,8 @@ mod tests {
             "direct_matrix_pointer",
             "standalone_matrix_array_store",
             "special_first_call_sites",
-            "dynamic_column_store",
             "dynamic_row_store",
+            "nested_dynamic_column_store",
         ] {
             let (index, entry) = module
                 .entry_points
@@ -4566,9 +4685,12 @@ mod tests {
         for name in [
             "safe_vector_store",
             "safe_matrix_read",
+            "static_matrix_store",
             "standalone_matrix_store",
             "standalone_matrix_pointer",
             "static_component_store",
+            "dynamic_column_store",
+            "whole_matrix_and_sibling_store",
         ] {
             let (index, entry) = module
                 .entry_points
@@ -4586,6 +4708,56 @@ mod tests {
                 "{name} must remain valid",
             );
         }
+    }
+
+    #[test]
+    fn dynamic_matrix_column_store_is_safe_for_vertex_index_switch_lowering() {
+        let (module, info) = matrix_store_module();
+        let (entry_index, entry) = module
+            .entry_points
+            .iter()
+            .enumerate()
+            .find(|(_, entry)| entry.name == "dynamic_column_store")
+            .unwrap();
+        let options = Fl9ShaderInputOptions {
+            vertex_index_input: true,
+            ..Default::default()
+        };
+        let store_pointer = entry.function.body.iter().find_map(|statement| {
+            let naga::Statement::Store { pointer, .. } = statement else {
+                return None;
+            };
+            matches!(
+                entry.function.expressions[*pointer],
+                naga::Expression::Access { .. }
+            )
+            .then_some(*pointer)
+        });
+        let pointer = store_pointer.expect("dynamic matrix column store pointer");
+        let naga::Expression::Access {
+            index: matrix_index,
+            ..
+        } = entry.function.expressions[pointer]
+        else {
+            unreachable!();
+        };
+        assert!(is_direct_local_matrix_column_store(
+            &module,
+            &entry.function,
+            pointer,
+            matrix_index,
+        ));
+        assert!(
+            !has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+                &module,
+                &info,
+                &entry.function,
+                info.get_entry_point(entry_index),
+                ShaderProfile::VertexLevel9_1,
+                options,
+                &[],
+            )
+        );
     }
 
     #[test]
@@ -5126,7 +5298,6 @@ mod tests {
                 checks,
             );
             for entry in [
-                "static_matrix_store",
                 "helper_matrix_store",
                 "helper_static_component_store",
                 "pointer_call_sites",
@@ -5140,9 +5311,9 @@ mod tests {
                             && message == "D3D11 matrix aggregate stores are not implemented safely"
                 ));
             }
-            for entry in ["dynamic_column_store", "dynamic_row_store"] {
-                assert!(shader.compile(naga::ShaderStage::Vertex, entry).is_err());
-            }
+            assert!(shader
+                .compile(naga::ShaderStage::Vertex, "dynamic_row_store")
+                .is_err());
             for entry in ["standalone_matrix_store", "standalone_matrix_pointer"] {
                 assert!(
                     shader.compile(naga::ShaderStage::Vertex, entry).is_ok(),
@@ -5163,7 +5334,66 @@ mod tests {
             assert!(shader
                 .compile_with_bindings(naga::ShaderStage::Vertex, "safe_matrix_read", &bindings)
                 .is_ok());
+            assert!(shader
+                .compile(naga::ShaderStage::Vertex, "whole_matrix_and_sibling_store")
+                .is_ok());
+            assert!(shader
+                .compile(naga::ShaderStage::Vertex, "static_matrix_store")
+                .is_ok());
         }
+        let dynamic_column_module = naga::front::wgsl::parse_str(
+            r#"
+            struct State { transform: mat3x2f }
+            struct VertexOutput {
+                @builtin(position) position: vec4f,
+                @location(0) color: vec3f,
+            }
+            @vertex fn vs(
+                @location(0) position: vec2f,
+                @builtin(vertex_index) vertex_index: u32,
+            ) -> VertexOutput {
+                var state: State;
+                state.transform = mat3x2f(vec2f(0.0), vec2f(0.0), vec2f(0.0));
+                state.transform[vertex_index] = vec2f(1.0, 0.0);
+                var output: VertexOutput;
+                output.position = vec4f(position, 0.0, 1.0);
+                output.color = vec3f(
+                    state.transform[0][0],
+                    state.transform[1][0],
+                    state.transform[2][0],
+                );
+                return output;
+            }
+            "#,
+        )
+        .unwrap();
+        let dynamic_column_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&dynamic_column_module)
+        .unwrap();
+        let dynamic_column_shader = ShaderModule::new(
+            native.clone(),
+            crate::NagaShader {
+                module: Cow::Owned(dynamic_column_module),
+                info: dynamic_column_info,
+                debug_source: None,
+            },
+            wgt::ShaderRuntimeChecks::unchecked(),
+        );
+        let dynamic_column = dynamic_column_shader.compile_with_fl9_options_and_constants(
+            naga::ShaderStage::Vertex,
+            "vs",
+            &[],
+            false,
+            Fl9ShaderInputOptions {
+                vertex_index_input: true,
+                ..Default::default()
+            },
+            &naga::back::PipelineConstants::default(),
+        );
+        assert!(dynamic_column.is_ok(), "{dynamic_column:?}");
         let storage = naga::front::wgsl::parse_str("@group(0) @binding(0) var<storage, read> data: array<vec4f>; @fragment fn fs() -> @location(0) vec4f { return data[0]; }").unwrap();
         let storage_info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
@@ -5660,6 +5890,99 @@ mod tests {
     }
 
     #[test]
+    fn fl91_explicit_lod_zero_proof_lowers_computed_lod_and_coordinates_in_helper() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn sample_dynamic(uv: vec2f) -> vec4f {
+                let coordinates = uv + vec2f(0.25, 0.0);
+                return textureSampleLevel(image, smp, coordinates, uv.x * 2.0 + 0.5);
+            }
+            @fragment fn helper_dynamic(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return sample_dynamic(uv);
+            }
+            "#,
+        )
+        .expect("parse helper computed-LOD shader");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate helper computed-LOD shader");
+        let proof = fl9_texture_sample_level_zero_proof(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "helper_dynamic",
+        )
+        .expect("analyze helper entry")
+        .expect("prove the bounded helper LOD");
+        assert_eq!(proof.expressions.len(), 1);
+        let helper_function = proof.expressions[0]
+            .function
+            .expect("sample expression belongs to the helper");
+
+        let mut lowered = module.clone();
+        let helper_index = lowered
+            .entry_points
+            .iter()
+            .position(|entry| {
+                entry.stage == naga::ShaderStage::Fragment && entry.name == "helper_dynamic"
+            })
+            .unwrap();
+        lower_fl9_texture_sample_level_zero(&mut lowered, helper_index, &proof)
+            .expect("lower the proven helper sample");
+        assert!(matches!(
+            lowered.functions[helper_function].expressions[proof.expressions[0].expression],
+            naga::Expression::ImageSample {
+                level: naga::SampleLevel::Auto,
+                ..
+            }
+        ));
+
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 7,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 42,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        let (hlsl, generated_entry) =
+            super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+                &lowered,
+                &info,
+                naga::ShaderStage::Fragment,
+                "helper_dynamic",
+                ShaderProfile::PixelLevel9_1,
+                &bindings,
+                Fl9ShaderInputOptions::default(),
+            )
+            .expect("translate helper computed-LOD shader");
+        assert!(hlsl.contains(".Sample("), "{hlsl}");
+        assert!(!hlsl.contains("SampleLevel"), "{hlsl}");
+        let bytecode = super::super::shader::compile_hlsl(
+            &hlsl,
+            &generated_entry,
+            ShaderProfile::PixelLevel9_1,
+        )
+        .expect("FXC accepts helper computed-LOD shader at FL9_1");
+        assert!(!bytecode.is_empty());
+    }
+
+    #[test]
     fn fl91_explicit_lod_zero_proof_rejects_unsafe_shapes() {
         let sources = [
             r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { var level = uv.x; level += 2.0; return textureSampleLevel(image, smp, uv, level); }"#,
@@ -5669,6 +5992,7 @@ mod tests {
             r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return select(vec4f(0.0), textureSampleLevel(image, smp, uv, 0.0), uv.x > 0.0); }"#,
             r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; fn helper(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, uv, 0.0); } fn wrapper(uv: vec2f) -> vec4f { return helper(uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return wrapper(uv); }"#,
             r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; fn helper(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, vec2f(sin(uv.x), uv.y), 0.0); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return helper(uv); }"#,
+            r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; fn helper(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, uv, sin(uv.x)); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return helper(uv); }"#,
             r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; fn helper(uv: vec2f) -> vec4f { if uv.x > 0.5 { return textureSampleLevel(image, smp, uv, 0.0); } return textureSampleLevel(image, smp, uv, 0.0); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return helper(uv); }"#,
             r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; @group(0) @binding(2) var<uniform> offset: vec2f; fn helper(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, uv + offset, 0.0); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return helper(uv); }"#,
             r#"@group(0) @binding(0) var image: texture_2d<f32>; @group(0) @binding(1) var smp: sampler; fn helper(uv: vec2f) -> vec4f { return textureSampleLevel(image, smp, uv, 0.0); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return helper(uv) + helper(uv); }"#,
@@ -5880,7 +6204,7 @@ fn fl9_texture_sample_level_zero_proof(
     let invalid = || {
         crate::PipelineError::Linkage(
             stage_flags,
-            "D3D11 FL9_1 only supports direct unconditional textureSampleLevel on a single-mip 2D float view with a regular sampler, using a side-effect-free direct LOD expression; the helper subset remains limited to literal zero".into(),
+            "D3D11 FL9_1 only supports direct or single-helper unconditional textureSampleLevel on a single-mip 2D float view with a regular sampler and a supported LOD expression".into(),
         )
     };
     if stage != naga::ShaderStage::Fragment {
@@ -6091,6 +6415,7 @@ fn fl9_texture_sample_level_zero_helper(
                     | naga::Expression::GlobalVariable(_)
                     | naga::Expression::Literal(_)
                     | naga::Expression::ImageSample { .. }
+                    | naga::Expression::AccessIndex { .. }
                     | naga::Expression::Binary { .. }
                     | naga::Expression::Unary { .. }
                     | naga::Expression::Compose { .. }
@@ -6119,16 +6444,14 @@ fn fl9_texture_sample_level_zero_helper(
     let naga::Expression::ImageSample {
         image,
         sampler,
+        coordinate: _,
         level: naga::SampleLevel::Exact(level),
         ..
     } = helper_function.expressions[sample]
     else {
         return None;
     };
-    if !matches!(
-        helper_function.expressions[level],
-        naga::Expression::Literal(naga::Literal::F32(value)) if value.to_bits() == 0
-    ) {
+    if !fl9_sample_level_expression_supported(module, helper_function, level, 0) {
         return None;
     }
     let naga::Expression::GlobalVariable(texture) = helper_function.expressions[image] else {
@@ -6324,6 +6647,174 @@ fn fl9_reachable_functions(
         fl9_collect_called_functions(&module.functions[handle].body, &mut pending);
     }
     reachable
+}
+
+fn fl9_texture_gather_helper_supported(
+    module: &naga::Module,
+    entry: &naga::Function,
+    reachable: &[naga::Handle<naga::Function>],
+) -> bool {
+    if reachable.len() != 1
+        || entry.arguments.len() != 1
+        || !matches!(
+            entry.arguments[0].binding.as_ref(),
+            Some(naga::Binding::Location { location: 0, .. })
+        )
+        || !fl9_is_float_vector(module, entry.arguments[0].ty, naga::VectorSize::Bi)
+        || !entry
+            .result
+            .as_ref()
+            .is_some_and(|result| fl9_is_float_vector(module, result.ty, naga::VectorSize::Quad))
+        || !entry.result.as_ref().is_some_and(|result| {
+            matches!(
+                result.binding.as_ref(),
+                Some(naga::Binding::Location { location: 0, .. })
+            )
+        })
+    {
+        return false;
+    }
+
+    let helper_handle = reachable[0];
+    let mut call = None;
+    let mut returned = None;
+    for statement in entry.body.iter() {
+        match statement {
+            naga::Statement::Emit(_) => {}
+            naga::Statement::Call {
+                function,
+                arguments,
+                result: Some(result),
+            } if call.is_none() => call = Some((*function, arguments, *result)),
+            naga::Statement::Return { value: Some(value) } if returned.is_none() => {
+                returned = Some(*value)
+            }
+            _ => return false,
+        }
+    }
+    let Some((called, arguments, call_result)) = call else {
+        return false;
+    };
+    if called != helper_handle
+        || arguments.len() != 1
+        || !matches!(
+            entry.expressions[arguments[0]],
+            naga::Expression::FunctionArgument(0)
+        )
+        || returned != Some(call_result)
+        || !matches!(
+            entry.expressions[call_result],
+            naga::Expression::CallResult(function) if function == helper_handle
+        )
+        || !entry.body.iter().last().is_some_and(
+            |statement| matches!(statement, naga::Statement::Return { value: Some(value) } if *value == call_result),
+        )
+    {
+        return false;
+    }
+    let mut call_result_count = 0;
+    for (_, expression) in entry.expressions.iter() {
+        match expression {
+            naga::Expression::FunctionArgument(0) => {}
+            naga::Expression::CallResult(function) if *function == helper_handle => {
+                call_result_count += 1;
+            }
+            _ => return false,
+        }
+    }
+    if call_result_count != 1 {
+        return false;
+    }
+
+    let helper = &module.functions[helper_handle];
+    if helper.arguments.len() != 1
+        || helper.arguments[0].binding.is_some()
+        || !fl9_is_float_vector(module, helper.arguments[0].ty, naga::VectorSize::Bi)
+        || !helper.result.as_ref().is_some_and(|result| {
+            result.binding.is_none()
+                && fl9_is_float_vector(module, result.ty, naga::VectorSize::Quad)
+        })
+    {
+        return false;
+    }
+
+    let mut gather = None;
+    for statement in helper.body.iter() {
+        match statement {
+            naga::Statement::Emit(_) => {}
+            naga::Statement::Return { value: Some(value) } if gather.is_none() => {
+                gather = Some(*value)
+            }
+            _ => return false,
+        }
+    }
+    let Some(gather) = gather else {
+        return false;
+    };
+    if !helper.body.iter().last().is_some_and(
+        |statement| matches!(statement, naga::Statement::Return { value: Some(value) } if *value == gather),
+    ) {
+        return false;
+    }
+    let naga::Expression::ImageSample {
+        image,
+        sampler,
+        coordinate,
+        array_index: None,
+        offset: None,
+        level: naga::SampleLevel::Zero,
+        depth_ref: None,
+        gather: Some(_),
+        clamp_to_edge: false,
+    } = helper.expressions[gather]
+    else {
+        return false;
+    };
+    let (naga::Expression::GlobalVariable(image), naga::Expression::GlobalVariable(sampler)) =
+        (&helper.expressions[image], &helper.expressions[sampler])
+    else {
+        return false;
+    };
+    let (image, sampler) = (*image, *sampler);
+    if image == sampler
+        || !matches!(
+            helper.expressions[coordinate],
+            naga::Expression::FunctionArgument(0)
+        )
+        || helper
+            .expressions
+            .iter()
+            .any(|(handle, expression)| !match expression {
+                naga::Expression::FunctionArgument(0) => true,
+                naga::Expression::GlobalVariable(global) => *global == image || *global == sampler,
+                naga::Expression::ImageSample { .. } => handle == gather,
+                _ => false,
+            })
+    {
+        return false;
+    }
+
+    let image_global = &module.global_variables[image];
+    let sampler_global = &module.global_variables[sampler];
+    image_global.space == naga::AddressSpace::Handle
+        && image_global.binding.is_some()
+        && matches!(
+            module.types[image_global.ty].inner,
+            naga::TypeInner::Image {
+                dim: naga::ImageDimension::D2,
+                arrayed: false,
+                class: naga::ImageClass::Sampled {
+                    kind: naga::ScalarKind::Float,
+                    multi: false,
+                },
+            }
+        )
+        && sampler_global.space == naga::AddressSpace::Handle
+        && sampler_global.binding.is_some()
+        && matches!(
+            module.types[sampler_global.ty].inner,
+            naga::TypeInner::Sampler { comparison: false }
+        )
 }
 
 fn fl9_has_resource_handle_type(module: &naga::Module, ty: naga::Handle<naga::Type>) -> bool {
@@ -7648,14 +8139,22 @@ fn fl9_texture_emulation_binding(
     } else {
         Vec::new()
     };
-    let unsupported_function_shape =
-        match kind {
-            Fl9TextureEmulationKind::SampleBiasOffset
-            | Fl9TextureEmulationKind::SampleCompareOffset => true,
-            Fl9TextureEmulationKind::BaseClamp => {
-                !fl9_base_clamp_helpers_are_supported(module, function, &reachable_functions)
-            }
-            Fl9TextureEmulationKind::Load => {
+    let unsupported_function_shape = match kind {
+        Fl9TextureEmulationKind::SampleBiasOffset
+        | Fl9TextureEmulationKind::SampleCompareOffset => true,
+        Fl9TextureEmulationKind::BaseClamp => {
+            !fl9_base_clamp_helpers_are_supported(module, function, &reachable_functions)
+        }
+        Fl9TextureEmulationKind::Load => {
+            function.body.iter().any(|statement| {
+                !matches!(
+                    statement,
+                    naga::Statement::Emit(_)
+                        | naga::Statement::Return { .. }
+                        | naga::Statement::Call { .. }
+                )
+            }) || reachable_functions.iter().any(|handle| {
+                let function = &module.functions[*handle];
                 function.body.iter().any(|statement| {
                     !matches!(
                         statement,
@@ -7663,131 +8162,120 @@ fn fl9_texture_emulation_binding(
                             | naga::Statement::Return { .. }
                             | naga::Statement::Call { .. }
                     )
-                }) || reachable_functions.iter().any(|handle| {
-                    let function = &module.functions[*handle];
-                    function.body.iter().any(|statement| {
-                        !matches!(
-                            statement,
-                            naga::Statement::Emit(_)
-                                | naga::Statement::Return { .. }
-                                | naga::Statement::Call { .. }
-                        )
-                    }) || function
-                        .arguments
-                        .iter()
-                        .any(|argument| fl9_has_resource_handle_type(module, argument.ty))
-                        || function
-                            .result
-                            .as_ref()
-                            .is_some_and(|result| fl9_has_resource_handle_type(module, result.ty))
                 }) || function
+                    .arguments
+                    .iter()
+                    .any(|argument| fl9_has_resource_handle_type(module, argument.ty))
+                    || function
+                        .result
+                        .as_ref()
+                        .is_some_and(|result| fl9_has_resource_handle_type(module, result.ty))
+            }) || function
+                .expressions
+                .iter()
+                .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
+        }
+        Fl9TextureEmulationKind::LoadDimensions => {
+            !reachable_functions.is_empty()
+                || function.body.iter().any(|statement| {
+                    !matches!(
+                        statement,
+                        naga::Statement::Emit(_) | naga::Statement::Return { .. }
+                    )
+                })
+                || function
                     .expressions
                     .iter()
                     .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
-            }
-            Fl9TextureEmulationKind::LoadDimensions => {
-                !reachable_functions.is_empty()
-                    || function.body.iter().any(|statement| {
-                        !matches!(
-                            statement,
-                            naga::Statement::Emit(_) | naga::Statement::Return { .. }
-                        )
-                    })
-                    || function.expressions.iter().any(|(_, expression)| {
-                        matches!(expression, naga::Expression::Select { .. })
-                    })
-            }
-            Fl9TextureEmulationKind::Gather => {
-                !reachable_functions.is_empty()
-                    || function.arguments.len() != 1
+        }
+        Fl9TextureEmulationKind::Gather => {
+            if reachable_functions.is_empty() {
+                function.arguments.len() != 1
                     || !function.arguments[0]
                         .binding
                         .as_ref()
                         .is_some_and(|binding| {
                             matches!(binding, naga::Binding::Location { location: 0, .. })
                         })
-                    || !matches!(
-                        module.types[function.arguments[0].ty].inner,
-                        naga::TypeInner::Vector {
-                            size: naga::VectorSize::Bi,
-                            scalar: naga::Scalar {
-                                kind: naga::ScalarKind::Float,
-                                width: 4,
-                            },
-                        }
-                    )
+                    || !fl9_is_float_vector(module, function.arguments[0].ty, naga::VectorSize::Bi)
                     || function.body.iter().any(|statement| {
                         !matches!(
                             statement,
                             naga::Statement::Emit(_) | naga::Statement::Return { .. }
                         )
                     })
+            } else {
+                !fl9_texture_gather_helper_supported(module, function, &reachable_functions)
             }
-            Fl9TextureEmulationKind::Dimensions => {
-                if reachable_functions.is_empty() {
-                    function.body.iter().any(|statement| {
-                        !matches!(
-                            statement,
-                            naga::Statement::Emit(_) | naga::Statement::Return { .. }
-                        )
-                    }) || function.expressions.iter().any(|(_, expression)| {
-                        matches!(expression, naga::Expression::Select { .. })
-                    })
-                } else {
-                    fl9_texture_dimensions_helper(
-                        module,
-                        info,
-                        &module.entry_points[entry_index],
-                        function_info,
-                        &reachable_functions,
+        }
+        Fl9TextureEmulationKind::Dimensions => {
+            if reachable_functions.is_empty() {
+                function.body.iter().any(|statement| {
+                    !matches!(
+                        statement,
+                        naga::Statement::Emit(_) | naga::Statement::Return { .. }
                     )
-                    .is_none()
-                }
+                }) || function
+                    .expressions
+                    .iter()
+                    .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
+            } else {
+                fl9_texture_dimensions_helper(
+                    module,
+                    info,
+                    &module.entry_points[entry_index],
+                    function_info,
+                    &reachable_functions,
+                )
+                .is_none()
             }
-            Fl9TextureEmulationKind::Dimensions3D => {
-                if reachable_functions.is_empty() {
-                    function.body.iter().any(|statement| {
-                        !matches!(
-                            statement,
-                            naga::Statement::Emit(_) | naga::Statement::Return { .. }
-                        )
-                    }) || function.expressions.iter().any(|(_, expression)| {
-                        matches!(expression, naga::Expression::Select { .. })
-                    })
-                } else {
-                    fl9_texture_dimensions_helper(
-                        module,
-                        info,
-                        &module.entry_points[entry_index],
-                        function_info,
-                        &reachable_functions,
+        }
+        Fl9TextureEmulationKind::Dimensions3D => {
+            if reachable_functions.is_empty() {
+                function.body.iter().any(|statement| {
+                    !matches!(
+                        statement,
+                        naga::Statement::Emit(_) | naga::Statement::Return { .. }
                     )
-                    .is_none()
-                }
+                }) || function
+                    .expressions
+                    .iter()
+                    .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
+            } else {
+                fl9_texture_dimensions_helper(
+                    module,
+                    info,
+                    &module.entry_points[entry_index],
+                    function_info,
+                    &reachable_functions,
+                )
+                .is_none()
             }
-            Fl9TextureEmulationKind::NumLevels => {
-                if reachable_functions.is_empty() {
-                    function.body.iter().any(|statement| {
-                        !matches!(
-                            statement,
-                            naga::Statement::Emit(_) | naga::Statement::Return { .. }
-                        )
-                    }) || function.expressions.iter().any(|(_, expression)| {
-                        matches!(expression, naga::Expression::Select { .. })
-                    })
-                } else {
-                    fl9_texture_num_levels_helper(
-                        module,
-                        info,
-                        &module.entry_points[entry_index],
-                        function_info,
-                        &reachable_functions,
+        }
+        Fl9TextureEmulationKind::NumLevels => {
+            if reachable_functions.is_empty() {
+                function.body.iter().any(|statement| {
+                    !matches!(
+                        statement,
+                        naga::Statement::Emit(_) | naga::Statement::Return { .. }
                     )
-                    .is_none()
-                }
+                }) || function
+                    .expressions
+                    .iter()
+                    .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
+            } else {
+                fl9_texture_num_levels_helper(
+                    module,
+                    info,
+                    &module.entry_points[entry_index],
+                    function_info,
+                    &reachable_functions,
+                )
+                .is_none()
             }
-            _ => !module.functions.is_empty(),
-        };
+        }
+        _ => !module.functions.is_empty(),
+    };
     if unsupported_function_shape {
         return Err(crate::PipelineError::Linkage(
             stages,
@@ -8042,10 +8530,15 @@ fn fl9_texture_emulation_binding(
                 depth_ref: None,
                 clamp_to_edge: false,
             } if matches!(kind, Fl9TextureEmulationKind::Gather) => {
+                let mut coordinate_budget = 32;
                 if gather_count != 0
-                    || !matches!(
-                        function.expressions[*coordinate],
-                        naga::Expression::FunctionArgument(0)
+                    || !fl9_texture_load_coordinate_expression_supported(
+                        module,
+                        function,
+                        function_info,
+                        *coordinate,
+                        &mut coordinate_budget,
+                        0,
                     )
                     || !matches!(
                         function_info[*coordinate].ty.inner_with(&module.types),
@@ -8060,7 +8553,7 @@ fn fl9_texture_emulation_binding(
                 {
                     return Err(crate::PipelineError::Linkage(
                         stages,
-                        "D3D11 FL9 textureGather requires one direct fragment 2D gather with a location-0 vec2 coordinate".into(),
+                        "D3D11 FL9 textureGather requires one fragment 2D gather with a supported location-0 vec2 coordinate".into(),
                     ));
                 }
                 let naga::Expression::GlobalVariable(sampler) = function.expressions[*sampler]
@@ -8683,6 +9176,7 @@ fn fl9_texture_emulation_binding(
                         | Fl9TextureEmulationKind::Dimensions3D
                         | Fl9TextureEmulationKind::DimensionsCube
                         | Fl9TextureEmulationKind::NumLevels
+                        | Fl9TextureEmulationKind::Gather
                 ) && !reachable_functions.is_empty(),
             }))
         }
@@ -9971,6 +10465,12 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                                 && allowed_vector_indexing
                                 && dynamic_access_base_is_float_vector(module, function_info, base)
                                 && is_vertex_index_expression(module, function, index))
+                            && !(function_handle.is_none()
+                                && matches!(profile, ShaderProfile::VertexLevel9_1)
+                                && input_options.vertex_index_input
+                                && is_direct_local_matrix_column_store(
+                                    module, function, handle, index,
+                                ))
                             && !kinds.is_const(index)
                             && dynamic_access_base_is_unsupported_composite(
                                 module,
@@ -10003,6 +10503,72 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
             })
         },
     )
+}
+
+fn is_direct_local_matrix_column_store(
+    module: &naga::Module,
+    function: &naga::Function,
+    access: naga::Handle<naga::Expression>,
+    index: naga::Handle<naga::Expression>,
+) -> bool {
+    fn block_stores_pointer(block: &naga::Block, pointer: naga::Handle<naga::Expression>) -> bool {
+        block.iter().any(|statement| match statement {
+            naga::Statement::Store {
+                pointer: store_pointer,
+                ..
+            } => *store_pointer == pointer,
+            naga::Statement::Block(block) => block_stores_pointer(block, pointer),
+            naga::Statement::If { accept, reject, .. } => {
+                block_stores_pointer(accept, pointer) || block_stores_pointer(reject, pointer)
+            }
+            naga::Statement::Switch { cases, .. } => cases
+                .iter()
+                .any(|case| block_stores_pointer(&case.body, pointer)),
+            naga::Statement::Loop {
+                body, continuing, ..
+            } => block_stores_pointer(body, pointer) || block_stores_pointer(continuing, pointer),
+            _ => false,
+        })
+    }
+
+    if !is_vertex_index_expression(module, function, index)
+        || !block_stores_pointer(&function.body, access)
+    {
+        return false;
+    }
+    let naga::Expression::AccessIndex {
+        base: local_expression,
+        index: member_index,
+    } = function.expressions[match function.expressions[access] {
+        naga::Expression::Access { base, .. } => base,
+        _ => return false,
+    }]
+    else {
+        return false;
+    };
+    let naga::Expression::LocalVariable(local) = function.expressions[local_expression] else {
+        return false;
+    };
+    let naga::TypeInner::Struct { ref members, .. } =
+        module.types[function.local_variables[local].ty].inner
+    else {
+        return false;
+    };
+    let Some(member) = members.get(member_index as usize) else {
+        return false;
+    };
+    member.binding.is_none()
+        && matches!(
+            module.types[member.ty].inner,
+            naga::TypeInner::Matrix {
+                rows: naga::VectorSize::Bi,
+                scalar: naga::Scalar {
+                    kind: naga::ScalarKind::Float,
+                    width: 4,
+                },
+                ..
+            }
+        )
 }
 
 fn is_supported_integer_vertex_argument(
@@ -12137,7 +12703,7 @@ fn has_unsafe_matrix_store_with_budget(
         Provenance::Unknown
     }
 
-    fn is_safe_static_local_matrix_component_store(
+    fn is_safe_local_matrix_member_store(
         module: &naga::Module,
         function: &naga::Function,
         pointer: naga::Handle<naga::Expression>,
@@ -12185,10 +12751,67 @@ fn has_unsafe_matrix_store_with_budget(
                 .then_some((member.ty, columns as u32))
         }
 
+        if *budget < 3 {
+            *budget = 0;
+            return false;
+        }
+        *budget -= 3;
+        if let naga::Expression::AccessIndex {
+            base,
+            index: member_index,
+        } = function.expressions[pointer]
+        {
+            if let naga::Expression::LocalVariable(local) = function.expressions[base] {
+                if let naga::TypeInner::Struct { ref members, .. } =
+                    module.types[function.local_variables[local].ty].inner
+                {
+                    if let Some(member) = members.get(member_index as usize) {
+                        let contains_direct_matrix = members.iter().any(|member| {
+                            matches!(
+                                module.types[member.ty].inner,
+                                naga::TypeInner::Matrix {
+                                    rows: naga::VectorSize::Bi,
+                                    scalar: naga::Scalar {
+                                        kind: naga::ScalarKind::Float,
+                                        width: 4,
+                                    },
+                                    ..
+                                }
+                            )
+                        });
+                        if contains_direct_matrix && member.binding.is_none() {
+                            let safe_target = matches!(
+                                module.types[member.ty].inner,
+                                naga::TypeInner::Matrix {
+                                    rows: naga::VectorSize::Bi,
+                                    scalar: naga::Scalar {
+                                        kind: naga::ScalarKind::Float,
+                                        width: 4,
+                                    },
+                                    ..
+                                } | naga::TypeInner::Scalar(naga::Scalar {
+                                    kind: naga::ScalarKind::Float,
+                                    width: 4,
+                                })
+                            );
+                            if safe_target {
+                                return true;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         if *budget == 0 {
             return false;
         }
         *budget -= 1;
+        if let naga::Expression::Access { base, .. } = function.expressions[pointer] {
+            if direct_matrix_member(module, function, base, budget).is_some() {
+                return true;
+            }
+        }
         let (column_access, component_index) = match function.expressions[pointer] {
             naga::Expression::AccessIndex { base, index } => (base, index),
             _ => return false,
@@ -12241,7 +12864,7 @@ fn has_unsafe_matrix_store_with_budget(
             *budget -= 1;
             match statement {
                 naga::Statement::Store { pointer, .. } => {
-                    !is_safe_static_local_matrix_component_store(module, function, *pointer, budget)
+                    !is_safe_local_matrix_member_store(module, function, *pointer, budget)
                         && !matches!(
                             provenance(module, function, *pointer, arguments, cache, budget),
                             Provenance::Ordinary

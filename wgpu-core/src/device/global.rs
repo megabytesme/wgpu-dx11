@@ -1,5 +1,5 @@
 use alloc::{borrow::Cow, boxed::Box, sync::Arc, vec::Vec};
-use core::{ptr::NonNull, sync::atomic::Ordering};
+use core::{ptr::NonNull, sync::atomic::Ordering, time::Duration};
 
 #[cfg(feature = "trace")]
 use crate::device::trace::{self, IntoTrace};
@@ -30,6 +30,53 @@ use crate::{
 };
 
 use wgt::{BufferAddress, TextureFormat};
+
+const QUEUE_DROP_IDLE_TIMEOUT: Duration = Duration::from_millis(10);
+const ORPHAN_REAPER_IDLE_TIMEOUT: Duration = Duration::from_millis(10);
+
+fn wait_for_queue_idle(
+    queue: &crate::device::queue::Queue,
+    timeout: Duration,
+    fallback_to_blocking: bool,
+) -> Result<Option<hal::QueueIdleStatus>, hal::DeviceError> {
+    let _submission_guard = queue.lock_submission();
+    match queue.wait_for_idle_timeout(timeout)? {
+        Some(status) => Ok(Some(status)),
+        None if fallback_to_blocking => {
+            queue.wait_for_idle()?;
+            Ok(Some(hal::QueueIdleStatus::Idle))
+        }
+        None => Ok(None),
+    }
+}
+
+fn reap_orphaned_queues(
+    hub: &crate::hub::Hub,
+    queues: Vec<Arc<crate::device::queue::Queue>>,
+) -> bool {
+    let mut all_idle = true;
+
+    for queue in queues {
+        match wait_for_queue_idle(&queue, ORPHAN_REAPER_IDLE_TIMEOUT, false) {
+            Ok(Some(hal::QueueIdleStatus::Idle)) => drop(queue),
+            Err(hal::DeviceError::Lost) => {
+                queue.device.handle_hal_error(hal::DeviceError::Lost);
+                drop(queue);
+            }
+            Ok(Some(hal::QueueIdleStatus::TimedOut)) | Ok(None) => {
+                hub.retain_orphaned_queue(queue);
+                all_idle = false;
+            }
+            Err(error) => {
+                queue.device.handle_hal_error(error);
+                hub.retain_orphaned_queue(queue);
+                all_idle = false;
+            }
+        }
+    }
+
+    all_idle
+}
 
 use super::{surface_config, UserClosures};
 
@@ -1815,6 +1862,7 @@ impl Global {
         let (closures, result) = device.poll_and_return_closures(poll_type);
 
         closures.fire();
+        let _ = reap_orphaned_queues(&self.hub, self.hub.take_orphaned_queues_for(&device));
 
         result
     }
@@ -1871,7 +1919,10 @@ impl Global {
 
         closures.fire();
 
-        Ok(all_queue_empty)
+        let orphaned_queues = self.hub.take_orphaned_queues_for_reaping();
+        let orphaned_queues_idle = reap_orphaned_queues(&self.hub, orphaned_queues);
+
+        Ok(all_queue_empty && orphaned_queues_idle && !self.hub.has_orphaned_queues())
     }
 
     /// # Safety
@@ -1935,7 +1986,26 @@ impl Global {
         profiling::scope!("Device::drop");
         api_log!("Device::drop {device_id:?}");
 
-        self.hub.devices.remove(device_id);
+        let device = self.hub.devices.remove(device_id);
+        for queue in self.hub.take_orphaned_queues_for(&device) {
+            match wait_for_queue_idle(&queue, QUEUE_DROP_IDLE_TIMEOUT, true) {
+                Ok(Some(hal::QueueIdleStatus::Idle)) => drop(queue),
+                Err(hal::DeviceError::Lost) => {
+                    queue.device.handle_hal_error(hal::DeviceError::Lost);
+                    drop(queue);
+                }
+                Ok(Some(hal::QueueIdleStatus::TimedOut)) => {
+                    self.hub.retain_orphaned_queue(queue);
+                }
+                Ok(None) => {
+                    unreachable!("blocking fallback must resolve unsupported timeout waits")
+                }
+                Err(error) => {
+                    queue.device.handle_hal_error(error);
+                    self.hub.retain_orphaned_queue(queue);
+                }
+            }
+        }
     }
 
     /// `device_lost_closure` might never be called.
@@ -2005,7 +2075,25 @@ impl Global {
         profiling::scope!("Queue::drop");
         api_log!("Queue::drop {queue_id:?}");
 
-        self.hub.queues.remove(queue_id);
+        let queue = self.hub.queues.remove(queue_id);
+        if Arc::strong_count(&queue) > 1 {
+            self.hub.retain_orphaned_queue(queue);
+            return;
+        }
+
+        match wait_for_queue_idle(&queue, QUEUE_DROP_IDLE_TIMEOUT, true) {
+            Ok(Some(hal::QueueIdleStatus::Idle)) => drop(queue),
+            Err(hal::DeviceError::Lost) => {
+                queue.device.handle_hal_error(hal::DeviceError::Lost);
+                drop(queue);
+            }
+            Ok(Some(hal::QueueIdleStatus::TimedOut)) => self.hub.retain_orphaned_queue(queue),
+            Ok(None) => unreachable!("blocking fallback must resolve unsupported timeout waits"),
+            Err(error) => {
+                queue.device.handle_hal_error(error);
+                self.hub.retain_orphaned_queue(queue);
+            }
+        }
     }
 
     /// `op.callback` is always called, even in case of errors.

@@ -175,17 +175,26 @@ impl NativeDevice {
     /// This is an internal copy-queue primitive, not a complete HAL queue.
     #[allow(dead_code)]
     pub(crate) fn wait_for_copy_idle(&self) -> Result<()> {
-        let fence = self.create_native_fence();
-        self.submit_copy_batches_signaled(&[], &fence, 1)?;
+        let mut idle_query = self.idle_query.lock();
+        let Some(query) = idle_query.as_ref().cloned() else {
+            return Err(Error::from_hresult(E_FAIL));
+        };
+        let context = self.immediate_context();
+        unsafe {
+            context.End(&query);
+            context.Flush();
+        }
+        drop(context);
         #[cfg(any(test, feature = "dx11-test-fixture"))]
         if let Some(status) = self.take_test_fixture_wait_for_idle_status() {
+            *idle_query = None;
             return Err(Error::from_hresult(status));
         }
-        if self.wait_native_fence(&fence, 1, None)? {
-            Ok(())
-        } else {
-            Err(Error::from_hresult(E_FAIL))
+        if let Err(error) = self.wait_for_event(&query) {
+            *idle_query = None;
+            return Err(error);
         }
+        Ok(())
     }
 
     /// Poll completed query events in submission order without flushing.

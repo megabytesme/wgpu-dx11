@@ -834,6 +834,59 @@ mod tests {
     }
 
     #[test]
+    fn fl91_local_two_row_matrix_struct_assignment_fxc_probe() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct State {
+                transform: mat3x2f,
+                gain: f32,
+            }
+
+            @vertex fn main(@location(0) position: vec3f) -> @builtin(position) vec4f {
+                var state: State;
+                state.transform = mat3x2f(
+                    vec2f(0.5, 0.0),
+                    vec2f(0.0, 0.5),
+                    vec2f(0.125, -0.125),
+                );
+                state.gain = 2.0;
+                let transformed = state.transform * position;
+                return vec4f(transformed * state.gain, 0.0, 1.0);
+            }
+            "#,
+        )
+        .expect("parse local matrix-struct shader");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate local matrix-struct shader");
+        let (hlsl, entry) = translate_naga_with_viewport_and_fl9_inputs(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "main",
+            ShaderProfile::VertexLevel9_1,
+            &[],
+            Fl9ShaderInputOptions::default(),
+        )
+        .expect("translate local matrix-struct shader");
+        println!("Generated HLSL for local matrix-struct probe:\n{hlsl}");
+        assert!(
+            hlsl.contains("void SetMattransformOnState(inout State obj, float3x2 mat)"),
+            "whole-matrix setter must mutate the local struct:\n{hlsl}"
+        );
+        assert!(hlsl.contains("obj.transform_0 = mat[0];"), "{hlsl}");
+        assert!(hlsl.contains("state.gain = 2.0;"), "{hlsl}");
+        let bytecode =
+            compile_hlsl(&hlsl, &entry, ShaderProfile::VertexLevel9_1).unwrap_or_else(|error| {
+                panic!("FXC rejected local matrix-struct shader: {error:?}\n{hlsl}")
+            });
+        assert!(bytecode.starts_with(b"DXBC"));
+    }
+
+    #[test]
     fn fl91_static_loops_compile_and_dynamic_loops_are_rejected_by_fxc() {
         let module = naga::front::wgsl::parse_str(
             r#"
@@ -1160,8 +1213,9 @@ mod tests {
                 .unwrap()
                 .unwrap();
             assert!(hlsl.contains("NAGA_VERTEX_INDEX"), "{hlsl}");
-            compile_hlsl(&hlsl, &entry, ShaderProfile::VertexLevel9_1)
-                .unwrap_or_else(|error| panic!("generated HLSL did not compile: {error:?}\n{hlsl}"));
+            compile_hlsl(&hlsl, &entry, ShaderProfile::VertexLevel9_1).unwrap_or_else(|error| {
+                panic!("generated HLSL did not compile: {error:?}\n{hlsl}")
+            });
         }
     }
 
@@ -1201,8 +1255,9 @@ mod tests {
             assert!(hlsl.contains("register(b13)"), "{hlsl}");
             assert!(hlsl.contains("naga_fl9_instance_index"), "{hlsl}");
             assert!(!hlsl.contains("NAGA_INSTANCE_INDEX"), "{hlsl}");
-            compile_hlsl(&hlsl, &entry, ShaderProfile::VertexLevel9_1)
-                .unwrap_or_else(|error| panic!("generated HLSL did not compile: {error:?}\n{hlsl}"));
+            compile_hlsl(&hlsl, &entry, ShaderProfile::VertexLevel9_1).unwrap_or_else(|error| {
+                panic!("generated HLSL did not compile: {error:?}\n{hlsl}")
+            });
         }
     }
 
@@ -1468,8 +1523,12 @@ mod tests {
             for i in 0..count {
                 body.push_str(&alloc::format!(" + c[{i}]"));
             }
-            let base = alloc::format!("cbuffer C : register(b0) {{ float4 c[{count}]; }}; float4 main(float4 p : POSITION) : SV_POSITION {{ return {body}; }}");
-            let mapped = alloc::format!("cbuffer C : register(b0) {{ float4 c[{count}]; }}; cbuffer V : register(b13) {{ float4 v; }}; precise float4 main(float4 p : POSITION) : SV_POSITION {{ float4 q = {body}; return float4(q.xy * v.xy + q.ww * v.zw, q.zw); }}");
+            let base = alloc::format!(
+                "cbuffer C : register(b0) {{ float4 c[{count}]; }}; float4 main(float4 p : POSITION) : SV_POSITION {{ return {body}; }}"
+            );
+            let mapped = alloc::format!(
+                "cbuffer C : register(b0) {{ float4 c[{count}]; }}; cbuffer V : register(b13) {{ float4 v; }}; precise float4 main(float4 p : POSITION) : SV_POSITION {{ float4 q = {body}; return float4(q.xy * v.xy + q.ww * v.zw, q.zw); }}"
+            );
             let a = compile_hlsl(&base, "main", ShaderProfile::VertexLevel9_1);
             let b = compile_hlsl(&mapped, "main", ShaderProfile::VertexLevel9_1);
             std::println!(
@@ -1482,7 +1541,9 @@ mod tests {
 
     #[test]
     fn fl91_naga_viewport_transform_preserves_base_shader_budget() {
-        let mut source = String::from("@group(0) @binding(0) var<uniform> c: array<vec4f, 254>; @vertex fn main(@location(0) p: vec4f) -> @builtin(position) vec4f { var v = p;");
+        let mut source = String::from(
+            "@group(0) @binding(0) var<uniform> c: array<vec4f, 254>; @vertex fn main(@location(0) p: vec4f) -> @builtin(position) vec4f { var v = p;",
+        );
         for i in 0..254 {
             source.push_str(&alloc::format!(" v += c[{i}];"));
         }
@@ -1879,7 +1940,9 @@ mod tests {
             )
             .unwrap_err();
             let NagaCompileError::Compilation(error) = error else {
-                panic!("expected the level-9 profile compiler to reject {label} explicit LOD: {error:?}");
+                panic!(
+                    "expected the level-9 profile compiler to reject {label} explicit LOD: {error:?}"
+                );
             };
             std::println!(
                 "FL9_1 explicit {label} LOD FXC diagnostic: {}",
@@ -2257,6 +2320,37 @@ mod tests {
         )
         .expect("FXC accepts the lowered four-tap point-sampling implementation");
         assert!(bytecode.starts_with(b"DXBC"));
+
+        let helper_module = naga::front::wgsl::parse_str(
+            r#"
+            @group(1) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            fn gather_image(uv: vec2f) -> vec4f {
+                return textureGather(2, image, smp, uv);
+            }
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return gather_image(uv);
+            }
+            "#,
+        )
+        .expect("parse FL9 gather helper shader");
+        let helper_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&helper_module)
+        .expect("validate FL9 gather helper shader");
+        let helper_bytecode = compile_naga_with_viewport_and_fl9_inputs(
+            &helper_module,
+            &helper_info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            input_options,
+        )
+        .expect("FXC accepts the lowered helper gather implementation");
+        assert!(helper_bytecode.starts_with(b"DXBC"));
 
         let colliding_sampler = [
             bindings[0],

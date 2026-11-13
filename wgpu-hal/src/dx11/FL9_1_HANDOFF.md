@@ -1,5 +1,42 @@
 # FL9_1 handoff
 
+## Coordinator status — surface loss routing and current support — 2026-11-12
+
+The cross-device surface lifecycle now reports pending-present timeouts and
+device loss through an additive fallible HAL unconfigure operation. Core keeps
+the prior Presentation on timeout or recoverable error, retires it only after
+the HAL says the lost swapchain was discarded, attributes loss to the old
+device, and defers device-lost callbacks until surface and queue locks are
+released. The replacement-device configure error path also defers callbacks.
+Strict RTX 3090 Ti tests exercised synthetic unconfigure and configure loss;
+the callback reentered `Device::poll` successfully. Actual device removal is
+still unverified.
+
+Current reruns passed the public surface error fixture 5/5, Core DX11 fixtures
+150/150, private D3D11 HAL 525/525, public D3D11 157/157 and Core DX12 135/135.
+The GPU-backed suites required the physical RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`) and explicitly requested/asserted FL9_1. Device-loss
+errors were injected; the other graphics cases performed real GPU work. HAL
+Clippy completed with existing warnings; Core and public fixture Clippy also
+completed without errors. Exact commands are recorded in `FL9_1_PROGRESS.md`.
+
+Support remains a constrained public graphics subset, not near-complete wgpu
+compatibility. FL9_1/profile limitations or withheld paths include compute and
+storage, geometry shaders, MRT, ordinary 1D/array resources, indirect draws,
+occlusion queries, vertex texture sampling and selected shader operations.
+Implementation work remains in broader shader lowering and query-gated
+format/usage combinations. Validation coverage is not an exhaustive Core to
+HAL proof; curated CTS selectors and matrix coverage remain. Platform evidence
+still lacks historical FL9_1 hardware, Windows 10 Mobile/CoreWindow runtime,
+and physical device-removal/TDR recovery. The desktop HWND path has real
+presentation coverage. Core teardown and surface unconfigure use bounded
+waits, but the legacy blocking private-HAL `wait_for_idle` can still wait on a
+pending present without a deadline. Read-only agents are effective for category
+audits and CTS triage; keep each cross-layer feature slice coordinated by one
+owner.
+
+## Earlier coordinator checkpoint — queue errors and API audits — 2026-11-12
+
 ## Adapter exposure clarification — 2026-11-12
 
 Explicit `Backends::DX11` selection exposes only physical adapters that
@@ -3785,9 +3822,10 @@ helper still accepts only literal positive zero; mutable-local loads, helper
 calls with dynamic LOD, branches, selects and other shapes stay rejected. The
 physical RTX 3090 Ti at requested/actual FL9_1 rendered both literal and
 computed LOD forms and matched 64/64 readback pixels. Full Core DX11/Core DX12,
-private HAL and strict public tests passed 136, 135, 518 and 153 tests. Strict
-public adapter isolation remained disabled. Full details and exact commands
-are recorded in `FL9_1_PROGRESS.md`.
+private HAL and strict public tests passed 136, 135, 518 and 153 tests. The
+public test explicitly selected the experimental `Backends::DX11` path;
+ordinary default backend selection still excludes D3D11. Full details and
+exact commands are recorded in `FL9_1_PROGRESS.md`.
 
 The strict format-blending CTS probe separately found four supported linear
 normalized cases passing and six boundary failures: FL9_1 sRGB blend semantics
@@ -3795,3 +3833,122 @@ are rejected, while four optional formats fail the CTS's generic preflight; devi
 adapter-specific format projection boundary. No Core-valid unsupported draw
 reaching HAL was demonstrated. Continue contract auditing from concrete
 reproductions; do not advertise those formats or widen sRGB blend semantics.
+
+## Current coordinator checkpoint — queue errors and API audits — 2026-11-12
+
+Core now completes pending map callbacks with `DeviceLost` if queue wait or
+fence-value retrieval fails after device invalidation. The fixture submits a
+real D3D11 buffer clear, schedules a map, injects device removal at wait, and
+asserts a single callback. D3D11 queue-idle waits reuse one event query created
+at device open; the query lifecycle is serialized across queue wrappers and
+the query is poisoned after a failure. Strict hardware tests passed sequential
+and concurrent reuse. The debug-layer indexed render reported zero errors and
+only the device/context live after the test released the cached query.
+
+Current regressions passed Naga 172, Core DX11 147, Core DX12 135, private HAL
+523 and strict public DX11 156 tests. The public run explicitly required
+hardware and selected the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`)
+at requested/actual FL9_1. Core and HAL Clippy and pinned workspace formatting
+passed; existing warnings remain. Exact commands are in `FL9_1_PROGRESS.md`.
+
+Three independent audits at that checkpoint found no confirmed Core-valid request
+reaching an unsupported HAL operation in their reviewed shader, texture/view,
+copy/render-pass, capability and queue-lifetime paths. One generic robustness
+gap remained then: Core queue-drop error retention and bounded pending-present
+waits were implemented in subsequent entries below. The injected device-loss
+tests do not reproduce physical device removal.
+
+This remains an opt-in constrained FL9_1 subset. No historical FL9_1 adapter,
+Windows 10 Mobile CoreWindow runtime or physical device-removal recovery has
+been verified. Use agents for independent read-only audits and probes; keep
+each Core/Naga/HAL feature implementation with one coordinator and require
+current-tree GPU evidence before expanding shader/resource behavior.
+
+## Earlier interruption status — superseded — 2026-11-12
+
+**Outcome: PARTIALLY COMPLETE.** The backend is publicly usable by explicitly
+selecting `Backends::DX11` on a physical FL9_1 adapter. The default backend set
+still excludes D3D11. Public verification covers a textured depth-tested cube,
+offscreen readback, a visible desktop HWND example, supported resource groups
+and dynamic uniforms, transfers, render-pass state, selected depth/stencil,
+and query-gated multisample/format paths. This is a constrained graphics
+subset, not general WebGPU or full FL9_1 API support.
+
+The latest current-tree test counts are Naga 172/172, Core DX11 147/147, Core
+DX12 135/135, private D3D11 HAL 523/523, strict public D3D11 156/156, and the
+separate strict HWND surface-copy target 1/1. The public and HAL tests
+explicitly selected the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+requested FL9_1 and asserted actual FL9_1 with `software=false`. Debug-layer
+indexed rendering reported zero messages/errors and only device/context live
+after test cleanup. The standalone visible window sample was previously run
+for 60 frames and inspected. It now uses a separate material uniform in group 2
+alongside the transform uniform in group 0 and texture/sampler group 7; a
+strict current-tree run presented five frames successfully. ARM32 HAL and public
+`wgpu` cross-checks compile,
+but the Lumia Device Portal timed out; no Lumia/CoreWindow runtime was run.
+
+Unmet work at that checkpoint included broader Core/CTS contract closure;
+real historical FL9_1 driver coverage;
+Lumia/CoreWindow execution; and physical device-removal/recovery. Derivatives,
+compute/UAV, geometry shaders, MRT, vertex texture sampling, ordinary 1D and
+array textures, indirect draws, and FL9_1 occlusion queries are unavailable or
+hardware/profile-limited. Other shader, format, view and transfer behavior is
+intentionally gated to the tested subset. Microsoft's FL9_1 feature table
+lists one simultaneous render target, no occlusion query or separate-alpha
+blend, no ordinary 1D/array texture resources, and no indirect drawing.
+
+Independent shader, public exposure/resource, and runtime audits found no new
+Core-valid request reaching an unsupported HAL operation in the paths they
+reviewed. The runtime audit confirmed the queue-drop error path above. These
+were scoped reviews, not a complete formal API proof. The broad render-pass
+CTS probe produced 3 passes, 41 skips and 139 failures, triaged largely to
+unsupported descriptor and usage families; it is boundary evidence, not a
+passing conformance suite.
+
+The Git snapshot and test counts in that earlier checkpoint have been
+superseded by the coordinator status above and later progress entries below.
+
+## Queue idle-wait error retention — 2026-11-12
+
+The queue-drop panic described above has been addressed. Global queue removal
+now checks for idle while serialized. On an unexpected non-device-loss wait
+error, Core marks the device lost and retains the queue in the Hub, preserving
+the lifetime tracker so device polling can still complete submitted-work
+callbacks. Dropping the Device retries orphan retirement when no other Core
+references remain. If the retry still cannot prove idle, Hub shutdown leaks the
+orphan for process lifetime rather than releasing potentially in-flight
+resources. Queue's final destructor path also avoids panicking or dropping its
+HAL queue, pending writes, lifetime tracker or Device after an unconfirmed idle
+wait. D3D11 pending-present waits use bounded timeout-aware waits; this entry
+records queue teardown behavior before the later surface-unconfigure recovery
+work. The legacy blocking `wait_for_idle` API remains unbounded when called
+directly, but Core's current queue-reaper path invokes it only after a bounded
+wait has confirmed idle, so a pending present does not reach that path.
+
+A strict synthetic OOM injection test on the physical RTX 3090 Ti at requested
+and actual FL9_1 passed: the device-lost callback re-entered polling, the
+submitted-work callback fired exactly once, and device destruction retried and
+retired the queue. Full Core DX11 (148/148), Core DX12 (135/135) and private
+D3D11 HAL (523/523) suites passed. This does not simulate a real driver OOM or
+resolve the pending-present timeout contract.
+
+## Bounded queue idle completion — 2026-11-12
+
+The pending-present wait is now covered by an additive timeout-aware HAL
+operation. D3D11 preserves an in-progress event query and pending CoreWindow
+present handles across timeout, while Core retains queues and their resources
+until a later idle confirmation. Queue/Device drop uses a 10 ms attempt; live
+Device polling and `poll_all` retry orphan retirement. `poll_all` reports work
+remaining while an orphan is retained, including after Device registry
+removal. A backend that does not provide bounded waits returns `None` and
+keeps the prior blocking drop semantics. Unresolved queues are intentionally
+leaked when Hub shuts down.
+
+On the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at
+requested/actual FL9_1, strict tests passed for query resumption and both Core
+reaper paths. Synthetic error injection retained timeout, OOM, and device-loss
+coverage. The full strict suites now pass: private HAL 525/525, Core DX11
+150/150 with one explicit RG8 mip capability skip, public API 157/157 with no
+skips, and Core DX12 135/135. The public suite includes query-gated RGB565
+multisample blending at 2x/4x/8x. Previous nearby handoff counts predate these
+tests. See `FL9_1_PROGRESS.md` for commands and details.

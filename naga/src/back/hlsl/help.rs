@@ -1098,7 +1098,10 @@ impl<W: Write> super::Writer<'_, W> {
         // Write function parameters
         write!(self.out, "(")?;
         let struct_name = &self.names[&NameKey::Type(access.ty)];
-        write!(self.out, "{struct_name} {STRUCT_ARGUMENT_VARIABLE_NAME}, ")?;
+        write!(
+            self.out,
+            "inout {struct_name} {STRUCT_ARGUMENT_VARIABLE_NAME}, "
+        )?;
         let member = match module.types[access.ty].inner {
             crate::TypeInner::Struct { ref members, .. } => &members[access.index as usize],
             _ => unreachable!(),
@@ -1159,7 +1162,10 @@ impl<W: Write> super::Writer<'_, W> {
         // Write function parameters
         write!(self.out, "(")?;
         let struct_name = &self.names[&NameKey::Type(access.ty)];
-        write!(self.out, "{struct_name} {STRUCT_ARGUMENT_VARIABLE_NAME}, ")?;
+        write!(
+            self.out,
+            "inout {struct_name} {STRUCT_ARGUMENT_VARIABLE_NAME}, "
+        )?;
         let member = match module.types[access.ty].inner {
             crate::TypeInner::Struct { ref members, .. } => &members[access.index as usize],
             _ => unreachable!(),
@@ -1173,16 +1179,11 @@ impl<W: Write> super::Writer<'_, W> {
         self.write_value_type(module, &vec_ty)?;
         write!(
             self.out,
-            " {VECTOR_ARGUMENT_VARIABLE_NAME}, uint {MATRIX_INDEX_ARGUMENT_VARIABLE_NAME}"
+            " {VECTOR_ARGUMENT_VARIABLE_NAME}, int {MATRIX_INDEX_ARGUMENT_VARIABLE_NAME}"
         )?;
 
         // Write function body
         writeln!(self.out, ") {{")?;
-
-        writeln!(
-            self.out,
-            "{INDENT}switch({MATRIX_INDEX_ARGUMENT_VARIABLE_NAME}) {{"
-        )?;
 
         let field_name = &self.names[&NameKey::StructMember(access.ty, access.index)];
 
@@ -1191,14 +1192,13 @@ impl<W: Write> super::Writer<'_, W> {
                 for i in 0..columns as u8 {
                     writeln!(
                         self.out,
-                        "{INDENT}case {i}: {{ {STRUCT_ARGUMENT_VARIABLE_NAME}.{field_name}_{i} = {VECTOR_ARGUMENT_VARIABLE_NAME}; break; }}"
+                        "{INDENT}{}{MATRIX_INDEX_ARGUMENT_VARIABLE_NAME} == {i}) {{ {STRUCT_ARGUMENT_VARIABLE_NAME}.{field_name}_{i} = {VECTOR_ARGUMENT_VARIABLE_NAME}; }}",
+                        if i == 0 { "if (" } else { "else if (" },
                     )?;
                 }
             }
             _ => unreachable!(),
         }
-
-        writeln!(self.out, "{INDENT}}}")?;
 
         // End of function body
         writeln!(self.out, "}}")?;
@@ -1238,7 +1238,10 @@ impl<W: Write> super::Writer<'_, W> {
         // Write function parameters
         write!(self.out, "(")?;
         let struct_name = &self.names[&NameKey::Type(access.ty)];
-        write!(self.out, "{struct_name} {STRUCT_ARGUMENT_VARIABLE_NAME}, ")?;
+        write!(
+            self.out,
+            "inout {struct_name} {STRUCT_ARGUMENT_VARIABLE_NAME}, "
+        )?;
         let member = match module.types[access.ty].inner {
             crate::TypeInner::Struct { ref members, .. } => &members[access.index as usize],
             _ => unreachable!(),
@@ -1250,16 +1253,11 @@ impl<W: Write> super::Writer<'_, W> {
         self.write_value_type(module, &scalar_ty)?;
         write!(
             self.out,
-            " {SCALAR_ARGUMENT_VARIABLE_NAME}, uint {MATRIX_INDEX_ARGUMENT_VARIABLE_NAME}, uint {VECTOR_INDEX_ARGUMENT_VARIABLE_NAME}"
+            " {SCALAR_ARGUMENT_VARIABLE_NAME}, int {MATRIX_INDEX_ARGUMENT_VARIABLE_NAME}, int {VECTOR_INDEX_ARGUMENT_VARIABLE_NAME}"
         )?;
 
         // Write function body
         writeln!(self.out, ") {{")?;
-
-        writeln!(
-            self.out,
-            "{INDENT}switch({MATRIX_INDEX_ARGUMENT_VARIABLE_NAME}) {{"
-        )?;
 
         let field_name = &self.names[&NameKey::StructMember(access.ty, access.index)];
 
@@ -1268,14 +1266,13 @@ impl<W: Write> super::Writer<'_, W> {
                 for i in 0..columns as u8 {
                     writeln!(
                         self.out,
-                        "{INDENT}case {i}: {{ {STRUCT_ARGUMENT_VARIABLE_NAME}.{field_name}_{i}[{VECTOR_INDEX_ARGUMENT_VARIABLE_NAME}] = {SCALAR_ARGUMENT_VARIABLE_NAME}; break; }}"
+                        "{INDENT}{}{MATRIX_INDEX_ARGUMENT_VARIABLE_NAME} == {i}) {{ {STRUCT_ARGUMENT_VARIABLE_NAME}.{field_name}_{i}[{VECTOR_INDEX_ARGUMENT_VARIABLE_NAME}] = {SCALAR_ARGUMENT_VARIABLE_NAME}; }}",
+                        if i == 0 { "if (" } else { "else if (" },
                     )?;
                 }
             }
             _ => unreachable!(),
         }
-
-        writeln!(self.out, "{INDENT}}}")?;
 
         // End of function body
         writeln!(self.out, "}}")?;
@@ -2246,7 +2243,7 @@ impl<W: Write> super::Writer<'_, W> {
         // __set_col_of_mat
         writeln!(
             self.out,
-            "void __set_col_of_mat{}x2_f{bit_width}(__mat{}x2_f{bit_width} mat, uint idx, {type_name}2 value) {{",
+            "void __set_col_of_mat{}x2_f{bit_width}(inout __mat{}x2_f{bit_width} mat, uint idx, {type_name}2 value) {{",
             columns as u8, columns as u8
         )?;
         writeln!(self.out, "{INDENT}switch(idx) {{")?;
@@ -2259,7 +2256,7 @@ impl<W: Write> super::Writer<'_, W> {
         // __set_el_of_mat
         writeln!(
             self.out,
-            "void __set_el_of_mat{}x2_f{bit_width}(__mat{}x2_f{bit_width} mat, uint idx, uint vec_idx, {type_name} value) {{",
+            "void __set_el_of_mat{}x2_f{bit_width}(inout __mat{}x2_f{bit_width} mat, uint idx, uint vec_idx, {type_name} value) {{",
             columns as u8, columns as u8
         )?;
         writeln!(self.out, "{INDENT}switch(idx) {{")?;

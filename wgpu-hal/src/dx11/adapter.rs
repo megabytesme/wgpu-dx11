@@ -213,6 +213,8 @@ impl crate::Adapter for Adapter {
         if !surface.supports_public_presentation() {
             return None;
         }
+        let copy_src = unsafe { self.texture_format_capabilities(wgt::TextureFormat::Bgra8Unorm) }
+            .contains(crate::TextureFormatCapabilities::COPY_SRC);
         Some(crate::SurfaceCapabilities {
             formats: vec![wgt::SurfaceFormatCapabilities {
                 format: wgt::TextureFormat::Bgra8Unorm,
@@ -220,7 +222,12 @@ impl crate::Adapter for Adapter {
             }],
             maximum_frame_latency: 1..=1,
             current_extent: None,
-            usage: wgt::TextureUses::COLOR_TARGET,
+            usage: wgt::TextureUses::COLOR_TARGET
+                | if copy_src {
+                    wgt::TextureUses::COPY_SRC
+                } else {
+                    wgt::TextureUses::empty()
+                },
             present_modes: vec![wgt::PresentMode::Fifo],
             composite_alpha_modes: vec![wgt::CompositeAlphaMode::Opaque],
         })

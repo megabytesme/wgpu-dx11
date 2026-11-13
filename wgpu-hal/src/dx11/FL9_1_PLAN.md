@@ -1,5 +1,44 @@
 # FL9_1 completion plan
 
+## Coordinator status and specialist review — 2026-11-12
+
+The backend is now a substantial opt-in public wgpu graphics subset, not a
+private-HAL prototype and not a complete FL9_1 implementation. Explicit
+`Backends::DX11` selection can enumerate a physical adapter with a conservative
+FL9_1 projection; default backend selection still excludes DX11. The public
+path has tested multi-group resources, dynamic uniform ranges, textured
+depth-tested rendering, selected texture formats and transfers, and desktop
+HWND presentation on the RTX 3090 Ti forced to FL9_1.
+
+Three read-only specialist reviews found no additional confirmed
+Core-valid-to-unimplemented-HAL mismatch in their scoped audits. They agree
+that the broad contract audit remains incomplete. Major work divides into:
+ordinary graphics and shader subsets still implemented only narrowly;
+device-query-gated format/usage/view combinations; incomplete curated CTS and
+Core queue teardown now uses a bounded HAL idle-wait attempt. A timeout roots
+the queue and its resources in the Hub without treating ordinary in-flight
+work as device loss. `device.poll` and `poll_all` retry orphan retirement;
+`poll_all` continues to report outstanding orphan queues, including after the
+Device leaves the public registry. Device drop also has a bounded retry. If a
+HAL error prevents idle confirmation, Core reports the error and retains the
+queue; unresolved queues are intentionally leaked at Hub shutdown rather than
+releasing possibly in-flight resources. Synthetic timeout, device-removal and
+OOM fixtures cover the lifecycle. Polling an orphan may spend up to the
+configured 10 ms reaper budget, with normal Windows scheduling granularity
+applying. Synchronous D3D calls themselves are outside that deadline.
+Historical FL9_1 hardware, physical device-removal recovery, and Lumia/ARM32
+CoreWindow execution remain unverified.
+
+Keep genuine FL9_1/profile boundaries rejected, including compute/UAV/storage
+execution, geometry shaders, multiple color targets, indirect draws, occlusion
+queries, ordinary 1D/array textures, and fragment derivatives/`SampleGrad`.
+Do not assign broad feature-family implementations to concurrent agents:
+hardware research, shader/compiler analysis, and Core/HAL review are useful
+independent roles, while cross-layer implementation and integration remain
+coordinator-owned. The timeout-aware queue and pending-present path is now in
+place. Next priorities are a systematic advertised-capability-to-Core/HAL test
+matrix, curated CTS coverage, and evidence-led graphics/shader feature slices.
+
 ## Adapter exposure clarification — 2026-11-12
 
 The D3D11 backend is available through explicit public `Backends::DX11`
@@ -10,6 +49,66 @@ projection. DX11 remains absent from the default instance backend set; the
 isolation, not zero adapters after explicit DX11 selection. Older journal
 entries saying public enumeration is disabled describe the earlier state and
 must not be read as current behavior.
+
+## Current verified boundary — 2026-11-12
+
+The worktree now verifies thirteen compact user constant-buffer slots per
+shader stage, selected BGRA8 surface `COPY_SRC`, and a narrow helper-computed
+LOD path for single-mip fragment sampling, plus a single straight-line helper
+around the emulated fragment `textureGather`. Strict tests verify all thirteen
+fragment registers, a surface copy/readback followed by reconfiguration to
+render-only, the helper LOD output and matching direct/helper gather output on
+the physical RTX 3090 Ti at requested and actual FL9_1. Computed LOD still
+requires unchanged coordinates, one selected mip, equal min/mag filtering and
+anisotropy one.
+
+Independent audits found no confirmed Core-valid command reaching an
+unsupported HAL path in the reviewed resource, map, copy, draw and dispatch
+areas; this is not a complete Core/HAL validation proof. Surface reconfiguration
+now has targeted coverage. Public timestamps remain disabled because D3D11
+timestamp validity/frequency cannot currently be propagated across the
+cross-submission behavior Core permits. Historical FL9_1 drivers, physical
+device-removal recovery, and Lumia/CoreWindow runtime remain unverified.
+
+The Core fence-error path drains pending `map_async` notifications with a
+`DeviceLost` result. A strict forced-FL9_1 fixture submitted a real buffer
+clear, scheduled a map, injected device removal during fence wait and observed
+the map and device-lost callbacks exactly once. This exercises injected
+failure handling, not physical device removal. Queue teardown now also retains
+in-flight queue resources after unexpected idle-wait errors. Its remaining
+presentation wait is still blocking and can hang if the frame-latency signal
+never arrives; a resumable timeout-aware HAL wait is the next lifecycle task.
+
+Next candidates should be tested individually rather than assigned as broad
+feature families. The RTX query probe now confirms RGB565 multisample
+render/resolve at 2x/4x/8x, and the path executes end to end. Fragment
+`mat4x4` inverse was probed through FXC and exceeds the FL9_1 pixel instruction
+budget; keep fragment inverse rejected. A separate FXC probe confirms native
+`ddx`, `ddy`, `fwidth` and `SampleGrad` are unavailable under `ps_4_0_level_9_1`;
+the selected-entry Core rejection remains correct. Compute/UAV, geometry
+shaders, multiple color targets, indirect drawing, ordinary arrays and 1D
+textures remain hardware or intentionally gated boundaries, not parallel
+agent coding tasks.
+
+## Current coordinator increment — fragment gather helper — 2026-11-12
+
+The narrow `texture_gather_2d_float_fragment` subset now permits one selected
+fragment entry point to forward its location-0 `vec2f` unchanged to one
+straight-line helper that directly returns one gather. Naga's existing
+four-point-sample emulation remains in use; this does not enable native HLSL
+Gather or the general gather limit. Core, HAL and Naga reject nested or
+repeated helper calls, transformed coordinates, extra gathers or image
+operations, and unrelated resource use. The HAL compiles the helper output
+through FXC at `ps_4_0_level_9_1`.
+
+Strict execution on the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, physical adapter) explicitly requested and confirmed FL9_1.
+Direct and helper draws each matched all 64 linear-view output pixels against
+`[151, 166, 106, 91]`; direct sRGB gather matched all 64 decoded pixels.
+Regression suites passed Naga 172/172, Core DX11 147/147, Core DX12 135/135,
+private HAL 520/520 and strict public DX11 155/155. The public suite had no
+Rust test failures or skips. The MSVC wrapper's existing `vError: Unknown
+error` banner and four HAL `unused_qualifications` warnings remain.
 
 ## ARM32 UWP cross-check — 2026-11-12
 
@@ -2200,12 +2299,15 @@ entry-point selection are covered by a strict public test.
    both vertex and fragment stages.
    Strict readback also covers nested structures, an asymmetric matrix,
    stride-sensitive arrays and padding. Runtime integer indexing remains
-   unavailable. The selected-device core projection permits twelve dynamic
-   uniform buffers per pipeline layout, the largest disjoint six-vertex plus
-   six-fragment split within the native allocator. Strict public readback
-   exercises all twelve sparse bindings and switches subranges between draws;
-   core rejects thirteen before HAL. Continue checking shader instruction pressure and other
-   untested layout shapes with checked translation. The selected FL9_1
+   unavailable. At this checkpoint the selected-device core projection
+   permitted twelve dynamic uniform buffers per pipeline layout, the largest
+   disjoint six-vertex plus six-fragment split within the then-current native
+   allocator. Strict public readback exercised all twelve sparse bindings and
+   core rejected thirteen before HAL. The later stage-specific allocator
+   raises the current pipeline-layout limit to thirteen dynamic uniforms;
+   fourteen are rejected, while thirteen static uniforms per shader stage are
+   supported. Continue checking shader instruction pressure and other untested
+   layout shapes with checked translation. The selected FL9_1
    projection now reports 255 vertex and 32 fragment uniform float4 vectors;
    core conservatively counts complete statically used uniform layouts per
    selected entry point. Strict public readback used all 32 fragment vectors
@@ -2541,8 +2643,10 @@ production adapter now uses that same selected-device projection for public
 offscreen rendering and a constrained HWND surface. Continue auditing the
 public HAL/core capability boundary and every core-legal operation; do not
 widen the current projection until those operations are implemented or
-rejected. Keep CoreWindow surface capabilities unavailable pending UWP runtime
-coverage. Latest code checkpoints `983eea619` and
+rejected. This checkpoint predates the later CoreWindow capability exposure:
+current code reports capabilities for successfully constructed CoreWindow
+surfaces, but UWP/Lumia runtime coverage remains open. Latest code checkpoints
+`983eea619` and
 `834cd9856` add core validation and cross-backend reporting for multi-mip
 depth/stencil attachments. The earlier `6f7f12978` added native FL9_1
 slope-scaled triangle depth bias; checkpoint
@@ -2571,7 +2675,9 @@ that case before HAL pipeline creation, while unused depth-writing entries do
 not trigger it. The per-format RGBA8/BGRA8 mip projection honors missing driver
 MIP support and disabled backend mip paths; the strict RTX fixture reports MIP
 support for both formats at FL9_1. The public adapter uses this projection
-for offscreen and constrained HWND access; CoreWindow remains withheld.
+for offscreen and constrained HWND access; at this checkpoint CoreWindow was
+still withheld. Later code exposes capabilities for constructed CoreWindow
+surfaces, with UWP/Lumia execution still unverified.
 
 The selected-entry depth-bias mismatch is now represented in core's
 `DownlevelLimits` and covered by the controlled fixture. Next audit remaining
@@ -2587,7 +2693,9 @@ represents these with selected-entry `DownlevelLimits` gates, so safe sibling
 entries remain usable. Continue auditing shader and render-state combinations
 against the currently exposed projection; do not widen it until every permitted
 operation is implemented or safely rejected. Public surface capabilities are
-limited to the tested HWND contract; CoreWindow capabilities remain withheld.
+limited to the tested HWND contract at this checkpoint; later code exposes
+CoreWindow capabilities for successfully constructed surfaces, but runtime
+execution remains unverified.
 
 The selected-entry audit now also covers vertex system-value inputs. The
 controlled FL9_1 profile reports `vertex_index_input` and `instance_index_input`
@@ -3242,3 +3350,138 @@ readback verified both group-0 and group-1 layouts with six uniforms as
 `[64, 96, 32, 223]` for every pixel. Full regressions passed: Naga 171, Core
 DX11 136, Core DX12 135, private HAL 516 and strict public D3D11 152. This is
 still one explicit emulation proof, not a general limit on all shader uniforms.
+
+## Coordinator update — constant-buffer slots and surface readback — 2026-11-12
+
+The public projection had split thirteen user constant-buffer slots in half and
+exposed six per shader stage/twelve dynamic bindings. D3D11 vertex and pixel
+constant-buffer registers are independent, while the backend reserves `b13`
+and maps thirteen logical uniforms to `b0`–`b12`. The selected projection now
+exposes thirteen uniforms per stage and thirteen dynamic uniforms per pipeline
+layout, still bounded by the shared thirteen-binding allocator. A strict public
+forced-FL9_1 draw used all thirteen fragment registers and matched all 64
+readback pixels; Core rejects fourteen static or dynamic bindings before HAL.
+FXC's independent 255 vertex and 32 pixel float4 constant budgets remain.
+Special texture-load proofs retain their own narrower uniform limits.
+
+The selected BGRA8 format projection now also controls HWND/CoreWindow surface
+`COPY_SRC`. A strict RTX 3090 Ti HWND test rendered an acquired FL9_1 frame,
+copied it before present with a nonzero destination offset and padded rows,
+verified all 91 pixels and untouched sentinels, then presented the same frame.
+CoreWindow/UWP behavior remains unverified.
+
+## RGB565 multisample resolve — 2026-11-12
+
+Added a query-gated RGB565 FL9_1 multisample render/resolve path. Initial HAL
+execution found two implementation gates beyond capability projection: the
+multisample initialization clear accepted only RGBA8/BGRA8, and pipeline
+validation hard-coded RGBA8. Both now use the restricted packed-format support
+and selected-device resolve query. On the RTX 3090 Ti, forced FL9_1 reports
+RGB565 quality levels for 2x/4x/8x but not 16x. The strict HAL clear/resolve/
+fence/readback test passed 64/64 packed red pixels. The public draw/resolve/
+sample/readback test passed all 64 pixels at 2x, 4x and 8x. Multisampled RGB565
+blending, alpha-to-coverage and direct multisampled sampling remain unverified.
+
+## Surface unconfigure timeout recovery — 2026-11-12
+
+A public/Core-to-HAL audit found a real cross-device surface transition gap:
+Core removed the old presentation before D3D11 had completed a pending-present
+wait, and the HAL contract could not return an unconfigure timeout. The HAL now
+provides an additive fallible unconfigure hook; D3D11 reports failures, and
+Core preserves the previous presentation association until unconfigure
+succeeds. The strict HWND regression injects a one-shot timeout after an actual
+present, confirms the previous configuration remains, then completes the present
+and reconfigures onto a second FL9_1 device. The timeout is synthetic. Exact
+command and adapter details are recorded in `FL9_1_PROGRESS.md`.
+# Coordinator update — surface lifecycle and remaining work — 2026-11-12
+
+The surface-unconfigure path now propagates `Device(Lost)` after retiring the
+lost swapchain. Core defers callbacks for both unconfigure and replacement
+configure errors until queue/surface locks are released. Strict synthetic
+device-loss tests reentered `Device::poll` without deadlock; real HWND surface
+present/resize behavior remains covered separately. The full current-tree
+surface, Core DX11 fixture, HAL, public DX11 and Core DX12 suites passed 5/5,
+150/150, 525/525, 157/157 and 135/135 respectively. See
+`FL9_1_PROGRESS.md` for exact commands and the explicit GPU/software split.
+
+Use specialist agents for read-only feature-contract audits, FXC probes and
+CTS triage, with one coordinator owning a cross-layer Core/Naga/HAL change.
+The next software priority is the feature-to-validation-to-HAL-to-test matrix
+for the advertised subset, followed by curated CTS selectors for those exact
+capabilities. Do not treat the broad renderer as complete wgpu support.
+Profile/hardware limits still exclude compute/storage, geometry shaders,
+multiple color targets, ordinary 1D/array resources, indirect drawing and
+occlusion queries. Historical FL9_1 devices, Lumia/CoreWindow runtime and
+physical device-removal recovery remain external verification work. Core queue
+teardown and surface reconfiguration use bounded waits. The legacy private-HAL
+`wait_for_idle` remains blocking for direct callers, but Core invokes queue
+destruction only after a bounded wait confirms idle; no current Core route was
+found that reaches the blocking call with a pending present. Changing the
+direct-call semantics remains a separate contract decision.
+
+## Coordinator follow-up — agent triage — 2026-11-12
+
+Read-only shader, texture, and render/API follow-ups found no confirmed
+Core-to-HAL mismatch in their reviewed areas. The concrete candidates are a
+compiler-probed local matrix-struct store subset, costly CPU-shadow
+materialization for non-suffix 3D mip views, and cube/3D plus curated CTS
+coverage. Do not assign each as a broad parallel coding task: profile-level
+exclusions are not software tasks, and any shader expansion spans Naga, Core,
+HAL, and public tests. The next coordinator action is an isolated HLSL/FXC
+probe for the local matrix-struct candidate; accept it only with strict public
+FL9_1 readback and preserved negative boundaries. The read-only audits did not
+run tests or change implementation.
+
+# Coordinator update — matrix-store fix verified — 2026-11-12
+
+The HLSL/FXC probe found and confirmed that generated split-matrix setters
+passed a local struct by value. Naga now uses `inout` for those setters and the
+generic split-matrix helpers. A narrow direct local-store proof is enabled in
+Core and HAL for a direct `matCx2<f32>` member and a sibling `f32`; nested,
+array, dynamic and helper-pointer stores stay rejected. Strict FL9_1 hardware
+readback verified the public path. See the progress journal for exact
+commands and outcomes. The next software step is capability-projection/CTS
+matrix closure, with cube/3D verification ahead of any costly non-suffix 3D
+view emulation. Historical hardware and excluded FL9_1 operations remain
+outside that software matrix.
+
+## Coordinator update — vertex-indexed matrix columns — 2026-11-13
+
+The direct local matrix-store exception now includes one validated runtime
+case: a straight-line vertex entry point may write a direct `matCx2<f32>` field
+column selected by `@builtin(vertex_index)`. Naga uses signed conditional
+helpers because FXC rejects the unsigned switch on the FL9_1 profile. Core and
+HAL have matching shape checks, and strict public readback verifies all 64
+pixels. Dynamic row, nested/array matrix, and helper-pointer stores remain
+blocked; `matrix_aggregate_stores` remains false. The next priority remains a
+systematic advertised-capability/Core/HAL/CTS evidence matrix. A good use of
+agents is independent, read-only category audits and selector triage; keep
+cross-layer changes owned and integrated by one coordinator.
+
+## Coordinator update — computed LOD with transformed coordinates — 2026-11-13
+
+The single-helper fragment `textureSampleLevel` proof now accepts both a
+bounded computed LOD and the same validated coordinate-expression subset in
+one helper. Core and HAL retain matching fail-closed checks; the HAL FXC test
+compiles the lowered shader for `ps_4_0_level_9_1`. A strict public draw on the
+physical RTX 3090 Ti requested and confirmed FL9_1 and matched all 64
+readback pixels against the equivalent one-mip transformed sample. This does
+not enable general explicit LOD, multiple mips, nested helpers or arbitrary
+shader expressions. The next priority remains the advertised-capability to
+Core/HAL/test evidence matrix, with one coordinator integrating any
+cross-layer changes.
+
+## Coordinator update — stage-specific uniform registers — 2026-11-13
+
+A Core/HAL contract audit found that Core's thirteen-uniform-per-stage
+projection was wider than the HAL's thirteen-register aggregate allocator.
+The HAL now allocates constant-buffer slots independently for vertex and
+fragment stages, permits up to twenty-six total static uniforms when each
+stage uses at most thirteen, and maps stage-visible bindings through the same
+plan used by Naga/FXC and command replay. A logical uniform visible to both
+stages can use different native slots when the other stage has preceding
+stage-only bindings. Core's thirteen dynamic-uniform-per-pipeline limit remains
+separate. Strict RTX 3090 Ti FL9_1 rendering used thirteen distinct uniforms
+in each stage and all sixty-four pixels included both results. No other
+contract mismatch was confirmed by the scoped audit; the broader evidence
+matrix remains incomplete.

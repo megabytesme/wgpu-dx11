@@ -28,6 +28,11 @@ pub trait DynSurface: DynResource {
 
     unsafe fn unconfigure(&self, device: &dyn DynDevice);
 
+    unsafe fn unconfigure_with_result(&self, device: &dyn DynDevice) -> Result<(), SurfaceError> {
+        unsafe { self.unconfigure(device) };
+        Ok(())
+    }
+
     unsafe fn acquire_texture(
         &self,
         timeout: Option<Duration>,
@@ -54,6 +59,11 @@ impl<S: Surface + DynResource> DynSurface for S {
     unsafe fn unconfigure(&self, device: &dyn DynDevice) {
         let device = device.expect_downcast_ref();
         unsafe { S::unconfigure(self, device) }
+    }
+
+    unsafe fn unconfigure_with_result(&self, device: &dyn DynDevice) -> Result<(), SurfaceError> {
+        let device = device.expect_downcast_ref();
+        unsafe { S::unconfigure_with_result(self, device) }
     }
 
     unsafe fn acquire_texture(

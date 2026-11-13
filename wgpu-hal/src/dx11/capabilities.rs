@@ -236,6 +236,7 @@ pub(super) struct DriverCapabilities {
     pub depth16_unorm_samples: SampleCountQueries,
     pub rgba8_samples: SampleCountQueries,
     pub bgra8_samples: SampleCountQueries,
+    pub rgb565_samples: SampleCountQueries,
     pub wireframe_rasterizer: Query<bool>,
     pub full_npot: Query<bool>,
     pub comparison_shadow: Query<bool>,
@@ -354,6 +355,7 @@ pub(super) struct BackendCapabilities {
     pub cube_texture_mipmaps: bool,
     pub rgba8_multisample_resolve: bool,
     pub bgra8_multisample_resolve: bool,
+    pub rgb565_multisample_resolve: bool,
     pub texture_3d_sampling: bool,
     pub texture_3d_upload: bool,
     pub texture_3d_texture_copies: bool,
@@ -382,6 +384,8 @@ pub(super) struct BackendCapabilities {
     pub samplers_total: u32,
     pub uniform_bindings_per_group: u32,
     pub uniform_bindings_total: u32,
+    pub uniform_bindings_per_stage: u32,
+    pub dynamic_uniform_bindings_total: u32,
     pub max_vertex_shader_uniform_vectors: u32,
     pub max_fragment_shader_uniform_vectors: u32,
     pub uniform_bind_groups: u32,
@@ -512,6 +516,7 @@ impl BackendCapabilities {
         cube_texture_mipmaps: true,
         rgba8_multisample_resolve: true,
         bgra8_multisample_resolve: true,
+        rgb565_multisample_resolve: true,
         texture_3d_sampling: true,
         texture_3d_upload: true,
         texture_3d_texture_copies: true,
@@ -538,8 +543,10 @@ impl BackendCapabilities {
         sampled_texture_sampler_pairs_per_shader_stage: 16,
         sampled_textures_total: super::hal_bind_group::MAX_TEXTURES as u32,
         samplers_total: super::hal_bind_group::MAX_SAMPLERS as u32,
-        uniform_bindings_per_group: super::hal_bind_group::MAX_UNIFORMS as u32,
-        uniform_bindings_total: super::hal_bind_group::MAX_UNIFORMS as u32,
+        uniform_bindings_per_group: super::hal_bind_group::MAX_UNIFORM_BINDINGS as u32,
+        uniform_bindings_total: super::hal_bind_group::MAX_UNIFORM_BINDINGS as u32,
+        uniform_bindings_per_stage: super::hal_bind_group::MAX_UNIFORMS as u32,
+        dynamic_uniform_bindings_total: super::hal_bind_group::MAX_UNIFORMS as u32,
         max_vertex_shader_uniform_vectors: 255,
         max_fragment_shader_uniform_vectors: 32,
         uniform_bind_groups: crate::MAX_BIND_GROUPS as u32,
@@ -826,8 +833,9 @@ impl Capabilities {
         limits.max_bind_groups = crate::MAX_BIND_GROUPS as u32;
         limits.max_bind_groups_plus_vertex_buffers =
             crate::MAX_BIND_GROUPS as u32 + self.backend.vertex_buffers;
-        let uniform_buffers_per_stage = self.backend.uniform_bindings_total / 2;
-        limits.max_dynamic_uniform_buffers_per_pipeline_layout = uniform_buffers_per_stage * 2;
+        let uniform_buffers_per_stage = self.backend.uniform_bindings_per_stage;
+        limits.max_dynamic_uniform_buffers_per_pipeline_layout =
+            self.backend.dynamic_uniform_bindings_total;
         limits.max_sampled_textures_per_shader_stage = self.backend.sampled_textures_per_group;
         limits.max_samplers_per_shader_stage = self.backend.samplers_per_group;
         limits.max_uniform_buffers_per_shader_stage = uniform_buffers_per_stage;
@@ -1238,6 +1246,11 @@ impl Capabilities {
                 self.driver.bgra8_samples,
                 self.driver.bgra8,
             ),
+            wgt::TextureFormat::Rgb5g6b5Unorm => (
+                self.backend.rgb565_multisample_resolve,
+                self.driver.rgb565_samples,
+                self.driver.rgb565_unorm,
+            ),
             _ => return false,
         };
         let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
@@ -1316,6 +1329,7 @@ impl Capabilities {
                 depth16_unorm_samples: sample_counts(DXGI_FORMAT_D16_UNORM),
                 rgba8_samples: sample_counts(DXGI_FORMAT_R8G8B8A8_UNORM),
                 bgra8_samples: sample_counts(DXGI_FORMAT_B8G8R8A8_UNORM),
+                rgb565_samples: sample_counts(DXGI_FORMAT_B5G6R5_UNORM),
                 wireframe_rasterizer,
                 full_npot: query_full_npot(device),
                 comparison_shadow: Query::from_result(comparison_shadow),
@@ -1521,7 +1535,10 @@ impl Capabilities {
                         | wgt::TextureFormat::Rgb5a1Unorm
                         | wgt::TextureFormat::Rgba4Unorm
                 ) && !self.backend.packed_16bit_sampled_upload)
-                || (!sampled_upload_usage && !sampled_color_attachment && !sampled_copy_source))
+                || (!sampled_upload_usage
+                    && !sampled_color_attachment
+                    && !sampled_copy_source
+                    && !transient_msaa_target))
         {
             return Err(if mips != 1 {
                 UnsupportedShape
@@ -1942,6 +1959,26 @@ impl Capabilities {
                 {
                     result |= Caps::COLOR_ATTACHMENT_BLEND;
                 }
+                if format == wgt::TextureFormat::Rgb5g6b5Unorm
+                    && result.contains(Caps::COLOR_ATTACHMENT)
+                {
+                    for sample_count in SampleCountQueries::COUNTS {
+                        if self
+                            .check_private_texture_2d(
+                                format,
+                                wgt::TextureUses::COLOR_TARGET,
+                                [8, 8],
+                                1,
+                                1,
+                                sample_count,
+                            )
+                            .is_ok()
+                        {
+                            result |= multisample_format_flag(sample_count).unwrap()
+                                | Caps::MULTISAMPLE_RESOLVE;
+                        }
+                    }
+                }
                 result
             } else {
                 Caps::empty()
@@ -2149,6 +2186,12 @@ mod tests {
                     Query::Value(0),
                 ]),
                 bgra8_samples: SampleCountQueries([
+                    Query::Value(1),
+                    Query::Value(1),
+                    Query::Value(1),
+                    Query::Value(0),
+                ]),
+                rgb565_samples: SampleCountQueries([
                     Query::Value(1),
                     Query::Value(1),
                     Query::Value(1),
@@ -2976,6 +3019,110 @@ mod tests {
     }
 
     #[test]
+    fn rgb565_multisample_resolve_requires_all_optional_evidence() {
+        let format = wgt::TextureFormat::Rgb5g6b5Unorm;
+        let usage = wgt::TextureUses::COLOR_TARGET;
+        let supported = model(FeatureLevel::L9_1);
+        for sample_count in [2, 4, 8] {
+            let flag = multisample_format_flag(sample_count).unwrap();
+            assert!(supported
+                .check_private_texture_2d(format, usage, [8, 8], 1, 1, sample_count)
+                .is_ok());
+            assert!(supported
+                .check_private_texture_2d(
+                    format,
+                    usage | wgt::TextureUses::TRANSIENT,
+                    [8, 8],
+                    1,
+                    1,
+                    sample_count,
+                )
+                .is_ok());
+            assert!(supported
+                .texture_format_capabilities(format)
+                .contains(flag | FormatCaps::MULTISAMPLE_RESOLVE));
+        }
+        assert!(supported
+            .check_private_texture_2d(format, usage, [8, 8], 1, 1, 16)
+            .is_err());
+        assert!(!supported
+            .texture_format_capabilities(format)
+            .contains(FormatCaps::MULTISAMPLE_X16));
+
+        for query in [Query::Unavailable(-1), Query::Value(0)] {
+            let mut unavailable = supported;
+            unavailable.driver.rgb565_samples.0[1] = query;
+            assert!(unavailable
+                .check_private_texture_2d(format, usage, [8, 8], 1, 1, 4)
+                .is_err());
+            assert!(!unavailable
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::MULTISAMPLE_X4 | FormatCaps::MULTISAMPLE_RESOLVE));
+        }
+
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+            | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0
+            | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0) as u32;
+        for missing in [
+            D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32,
+            D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32,
+            D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0 as u32,
+            D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0 as u32,
+        ] {
+            let mut missing_bit = supported;
+            missing_bit.driver.rgb565_unorm = Query::Value(required & !missing);
+            assert!(missing_bit
+                .check_private_texture_2d(format, usage, [8, 8], 1, 1, 4)
+                .is_err());
+            assert!(!missing_bit
+                .texture_format_capabilities(format)
+                .contains(FormatCaps::MULTISAMPLE_X4 | FormatCaps::MULTISAMPLE_RESOLVE));
+        }
+
+        let mut unavailable_format = supported;
+        unavailable_format.driver.rgb565_unorm = Query::Unavailable(-1);
+        assert!(unavailable_format
+            .check_private_texture_2d(format, usage, [8, 8], 1, 1, 4)
+            .is_err());
+
+        let mut backend_disabled = supported;
+        backend_disabled.backend.rgb565_multisample_resolve = false;
+        assert!(backend_disabled
+            .check_private_texture_2d(format, usage, [8, 8], 1, 1, 4)
+            .is_err());
+        assert!(!backend_disabled
+            .texture_format_capabilities(format)
+            .contains(FormatCaps::MULTISAMPLE_X4 | FormatCaps::MULTISAMPLE_RESOLVE));
+
+        for invalid in [
+            (
+                wgt::TextureUses::RESOURCE | wgt::TextureUses::COLOR_TARGET,
+                1,
+            ),
+            (usage, 2),
+            (
+                wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT,
+                2,
+            ),
+        ] {
+            assert!(supported
+                .check_private_texture_2d(format, invalid.0, [8, 8], 1, invalid.1, 4)
+                .is_err());
+        }
+        assert!(supported
+            .check_private_texture_2d(
+                format,
+                wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC,
+                [8, 8],
+                1,
+                1,
+                4,
+            )
+            .is_err());
+    }
+
+    #[test]
     fn rgba8_multisample_counts_are_individually_query_gated() {
         let caps = model(FeatureLevel::L9_1);
         for sample_count in [2, 4, 8] {
@@ -3038,7 +3185,7 @@ mod tests {
         assert_eq!(exposed.limits.max_bindings_per_bind_group, 1000);
         assert_eq!(exposed.limits.max_sampled_textures_per_shader_stage, 8);
         assert_eq!(exposed.limits.max_samplers_per_shader_stage, 16);
-        assert_eq!(exposed.limits.max_uniform_buffers_per_shader_stage, 6);
+        assert_eq!(exposed.limits.max_uniform_buffers_per_shader_stage, 13);
         assert_eq!(exposed.limits.max_storage_buffers_per_shader_stage, 0);
         assert_eq!(exposed.limits.max_storage_textures_per_shader_stage, 0);
         assert_eq!(
@@ -3058,13 +3205,13 @@ mod tests {
             exposed
                 .limits
                 .max_buffers_and_acceleration_structures_per_shader_stage,
-            22
+            29
         );
         assert_eq!(
             exposed
                 .limits
                 .max_dynamic_uniform_buffers_per_pipeline_layout,
-            12
+            13
         );
         assert_eq!(exposed.limits.max_uniform_buffer_binding_size, 4080);
         assert_eq!(exposed.limits.max_color_attachments, 1);
@@ -4238,13 +4385,31 @@ mod tests {
         std::println!(
             "FL9_1 limits: texture2d={} cube_dimension={} cube_format_mask={:#x} sampled_textures={} samplers={} uniforms_per_stage={} color_attachments={} max_sampler_anisotropy={}; downlevel_flags={:?}; unrestricted_npot={:?}; RG8_UNORM={:?}; RG16_SNORM={:?}; BC1={:?}; BC2={:?}; BC3={:?}; D16_UNORM={:?} projected={:?}",
             projection.capabilities.limits.max_texture_dimension_2d,
-            projection.capabilities.downlevel.limits.max_texture_cube_dimension,
-            projection.capabilities.downlevel.limits.texture_cube_format_mask,
-            projection.capabilities.limits.max_sampled_textures_per_shader_stage,
+            projection
+                .capabilities
+                .downlevel
+                .limits
+                .max_texture_cube_dimension,
+            projection
+                .capabilities
+                .downlevel
+                .limits
+                .texture_cube_format_mask,
+            projection
+                .capabilities
+                .limits
+                .max_sampled_textures_per_shader_stage,
             projection.capabilities.limits.max_samplers_per_shader_stage,
-            projection.capabilities.limits.max_uniform_buffers_per_shader_stage,
+            projection
+                .capabilities
+                .limits
+                .max_uniform_buffers_per_shader_stage,
             projection.capabilities.limits.max_color_attachments,
-            projection.capabilities.downlevel.limits.max_sampler_anisotropy,
+            projection
+                .capabilities
+                .downlevel
+                .limits
+                .max_sampler_anisotropy,
             projection.capabilities.downlevel.flags,
             caps.driver.full_npot,
             caps.driver.rg8_unorm,
@@ -4300,6 +4465,96 @@ mod tests {
         std::println!(
             "FL9_1 vertex input format mask={:#x}; selected formats={selected_vertex_formats:?}",
             projection.capabilities.downlevel.limits.vertex_format_mask
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn fl91_optional_narrow_color_attachment_multisample_queries() -> windows::core::Result<()> {
+        use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM;
+
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+        let adapters = match super::super::enumerate_native_adapters() {
+            Ok(adapters) => adapters,
+            Err(error) => {
+                assert!(
+                    !required,
+                    "strict hardware mode requires DXGI enumeration to succeed: {error}"
+                );
+                std::println!(
+                    "SKIP: DXGI enumeration unavailable for narrow-format MSAA probe: {error}"
+                );
+                return Ok(());
+            }
+        };
+        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            assert!(
+                !required,
+                "strict hardware mode requires a physical D3D11 adapter"
+            );
+            std::println!("SKIP: no physical D3D11 hardware adapter for narrow-format MSAA probe");
+            return Ok(());
+        };
+        let identity = adapter.identity();
+        let native = match adapter.open_device(&[FeatureLevel::L9_1]) {
+            Ok(native) => native,
+            Err(error) => {
+                assert!(
+                    !required,
+                    "strict hardware mode failed to create the requested FL9_1 device: {error}"
+                );
+                std::println!(
+                    "SKIP: FL9_1 device unavailable for narrow-format MSAA probe: {error}"
+                );
+                return Ok(());
+            }
+        };
+        assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+        std::println!(
+            "Hardware: name={:?} vendor={:#06x} device={:#06x} software={} requested=FL9_1 actual={:?}; diagnostic-only narrow-format MSAA queries",
+            identity.name,
+            identity.vendor_id,
+            identity.device_id,
+            identity.software,
+            native.feature_level()
+        );
+
+        let formats = [
+            ("R8_UNORM", DXGI_FORMAT_R8_UNORM),
+            ("R8G8_UNORM", DXGI_FORMAT_R8G8_UNORM),
+            ("B5G6R5_UNORM", DXGI_FORMAT_B5G6R5_UNORM),
+        ];
+        let required_format_support = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+            | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0
+            | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0)
+            as u32;
+        for (name, format) in formats {
+            let format_support = unsafe { native.raw_device().CheckFormatSupport(format) };
+            let format_support_bits = format_support.as_ref().ok().copied();
+            std::println!(
+                "FL9_1 diagnostic {name}: CheckFormatSupport={format_support:?}; required_bits={required_format_support:#010x}; required_bits_present={:?}",
+                format_support_bits
+                    .map(|bits| bits & required_format_support == required_format_support)
+            );
+            for sample_count in [2, 4, 8] {
+                let quality_levels = unsafe {
+                    native
+                        .raw_device()
+                        .CheckMultisampleQualityLevels(format, sample_count)
+                };
+                let quality_count = quality_levels.as_ref().ok().copied();
+                let query_candidate = format_support_bits
+                    .is_some_and(|bits| bits & required_format_support == required_format_support)
+                    && quality_count.is_some_and(|count| count > 0);
+                std::println!(
+                    "FL9_1 diagnostic {name} {sample_count}x: CheckMultisampleQualityLevels={quality_levels:?}; query_candidate={query_candidate}"
+                );
+            }
+        }
+        std::println!(
+            "PASS: diagnostic-only FL9_1 narrow-format MSAA query probe completed; production capability projection was not changed"
         );
         Ok(())
     }
@@ -4567,7 +4822,9 @@ mod tests {
             fl9.backend.uniform_bind_groups,
             crate::MAX_BIND_GROUPS as u32
         );
-        assert_eq!(fl9.backend.uniform_bindings_total, 13);
+        assert_eq!(fl9.backend.uniform_bindings_total, 26);
+        assert_eq!(fl9.backend.uniform_bindings_per_stage, 13);
+        assert_eq!(fl9.backend.dynamic_uniform_bindings_total, 13);
         assert_eq!(
             fl9.backend.sampled_texture_sampler_pairs_per_shader_stage,
             16
@@ -5991,7 +6248,10 @@ mod tests {
             }
             let rejection = restricted.check_private_texture_2d(format, usage, [8, 8], 1, 4, 1);
             assert!(
-                matches!(rejection, Err(DriverQueryUnavailable | DriverFormatUnsupported)),
+                matches!(
+                    rejection,
+                    Err(DriverQueryUnavailable | DriverFormatUnsupported)
+                ),
                 "query {query:?} rejected as {rejection:?}; texture2d={:#x}, shader_sample={:#x}, mip={:#x}",
                 D3D11_FORMAT_SUPPORT_TEXTURE2D.0,
                 D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0,

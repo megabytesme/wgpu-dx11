@@ -748,6 +748,15 @@ The HWND swap chain is created with
 waitable handle; queue idle and surface unconfigure wait for a pending present
 to complete. The strict private tests cover acquire/present, resize and
 reconfigure, repeated acquisition, and teardown while a present is pending.
+The existing blocking HAL `Queue::wait_for_idle` retains its blocking
+contract. An additive `wait_for_idle_timeout` operation allows Core to poll the GPU
+event query and frame-latency handles without consuming pending state on
+timeout. Surface resize/reconfiguration and unconfigure wait at most one second
+for a pending present: configuration returns `SurfaceError::Timeout` without
+changing the prior extent or usage, while unconfigure leaves the current
+swapchain owned by the surface so the caller can retry. The frame-latency
+handle is a readiness signal rather than a per-present fence; minimized or
+occluded windows may therefore require retrying configuration or unconfigure.
 It also acquires a frame on the owner thread, attempts presentation from a
 worker, checks the reported validation error, then confirms the owner thread
 can acquire and present another frame. A duplicate acquisition returns a
@@ -779,6 +788,19 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_hwnd_surface_presents_on_its_window_thread -- --nocapture --test-threads=1
 ```
 
+The selected-device BGRA8 `COPY_SRC` surface path is covered separately. Its
+strict HWND test renders a clear color, copies the acquired frame to a mapped
+buffer using a nonzero offset and padded rows, checks all pixels and untouched
+sentinels, then presents that same frame:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_surface_copy -- --nocapture --test-threads=1
+```
+
+This exercises a single-sample BGRA8 HWND on the development GPU. CoreWindow
+runtime behavior and historical FL9_1 surface drivers remain unverified.
+
 The fixture-only public surface test injects `DXGI_ERROR_DEVICE_REMOVED` at
 the native Present boundary. It verifies that the public device-lost callback
 runs once and that polling re-entered from the callback returns the
@@ -799,6 +821,14 @@ it does not force DXGI to deliver a synchronous window callback.
 
 ```powershell
 cargo +1.93 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib unconfigure_ -- --nocapture --test-threads=1
+```
+
+The bounded queue-idle test synthetically holds the event query pending for
+one zero-duration poll, then resumes the same query and verifies completion:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib bounded_idle_wait_resumes_the_same_event_query_after_timeout -- --nocapture --test-threads=1
 ```
 
 ### Visible public HWND example
@@ -1021,22 +1051,21 @@ unlowered literal and dynamic explicit LOD with
 `ps_4_0_level_9_1` and `ps_4_0_level_9_3`. A separate downlevel limit permits
 an unconditional direct fragment sample of `texture_2d<f32>` when its LOD is a
 finite literal or a side-effect-free scalar expression over direct fragment
-inputs and whitelisted arithmetic. The existing one-straight-line-helper form
-still requires literal positive `0.0`; its `vec2f` coordinate may use the
-validated arithmetic, composition, splat or swizzle subset. Naga is validated
-first and HAL lowers only proven samples to implicit sampling. The currently
-selected view must expose one mip, and the bound regular sampler must have
-equal min/mag filters and effective anisotropy 1, making the explicit LOD
-unobservable for the supported sample. Calls, local loads, control flow,
-`select`, offsets, other texture shapes, comparison samplers and incompatible
-draw bindings remain rejected. Core checks the currently bound view and
-sampler before each draw and while finishing a render bundle. Strict public
-readback on the RTX 3090 Ti verifies all 64 pixels for direct literal-zero,
-direct computed-LOD, forwarding-helper and arithmetic-helper forms at
-requested/actual FL9_1; CPU-only Core and HAL tests cover proof shape,
-entry-point selection and Naga lowering. This does not enable the general
-`texture_sample_level` capability, which remains unavailable in the generic
-downlevel model.
+inputs and whitelisted arithmetic. It also permits one straight-line helper:
+literal-zero LOD may use the validated coordinate arithmetic, composition,
+splat or swizzle subset; computed LOD may use the same validated coordinate-expression subset. Naga is validated first and HAL lowers only proven samples to
+implicit sampling. The currently selected view must expose one mip, and the
+bound regular sampler must have equal min/mag filters and effective anisotropy
+1, making the explicit LOD unobservable for the supported sample. Nested calls,
+local loads, control flow, `select`, unsupported LOD expressions, offsets,
+other texture shapes, comparison samplers and incompatible draw bindings
+remain rejected. Core checks the currently bound view and sampler before each
+draw and while finishing a render bundle. Strict public readback on the RTX
+3090 Ti verifies all 64 pixels for direct literal-zero, direct computed-LOD,
+literal-zero helper and computed-LOD helper forms at requested/actual FL9_1;
+CPU-only Core and HAL tests cover proof shape, entry-point selection and Naga
+lowering. This does not enable the general `texture_sample_level` capability,
+which remains unavailable in the generic downlevel model.
 
 FXC also rejects `GetDimensions`-based HLSL emitted for `textureDimensions`,
 level-specific dimensions and `textureNumLevels` with X3548 under both
@@ -1099,16 +1128,18 @@ It reported the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
 ### Narrow FL9_1 fragment `textureGather` emulation
 
 The general `DownlevelLimits::texture_gather` stays false. The additional
-`texture_gather_2d_float_fragment` limit proves one direct fragment gather on
-a single-mip `Rgba8Unorm` or query-supported `Rgba8UnormSrgb` 2D view with a regular clamp-to-edge sampler. Core checks the live format, mip count and
+`texture_gather_2d_float_fragment` limit proves one fragment gather on a
+single-mip `Rgba8Unorm` or query-supported `Rgba8UnormSrgb` 2D view with a
+regular clamp-to-edge sampler. Core checks the live format, mip count and
 sampler at each direct and bundle draw; unsupported formats are rejected
-before HAL. FXC
-rejects native Gather at `ps_4_0_level_9_1`, so the Naga writer emits four
-point samples at texel centers and orders the selected channel according to
-WGSL. Core verifies the selected entry and the currently bound view/sampler;
-helper-reached gather, multi-mip views and unsupported operations remain
-rejected. The hidden sampler and dimensions use reserved `s15` and `b13`, with
-the source texture at `t0`.
+before HAL. FXC rejects native Gather at `ps_4_0_level_9_1`, so the Naga writer
+emits four point samples at texel centers and orders the selected channel
+according to WGSL. The selected entry may gather directly with bounded,
+side-effect-free `vec2f` coordinate arithmetic or forward its location-0
+coordinate unchanged to one straight-line helper that returns one gather.
+Nested/repeated helpers, transformed helper arguments, multi-mip views and
+unsupported operations remain rejected. The hidden sampler and dimensions use
+reserved `s15` and `b13`, with the source texture at `t0`.
 
 ```powershell
 cargo +1.93 test --offline -j32 -p wgpu-types --lib texture_gather_is_a_downlevel_capability
@@ -1119,17 +1150,32 @@ cargo +1.93 test --offline -j32 -p wgpu --no-default-features --features dx11,wg
 ```
 
 The Naga unit tests verify logical binding selection, channel selection, WGSL
-component order and rejection of unproven gather forms. The HAL FXC test
-compiles the restricted output for `ps_4_0_level_9_1` and verifies that a
+component order, bounded computed-coordinate output and rejection of
+unsupported direct/helper forms. The HAL tests cover the same coordinate proof
+and compile the lowered output for `ps_4_0_level_9_1`. The FXC test also verifies that a
 conflicting user resource cannot occupy reserved `s15`. The strict public
 test selected the physical RTX 3090 Ti (`0x10de:0x2203`, driver
 `32.0.16.2101`) at requested/actual FL9_1 with `software=false`; all 64
-linear-view pixels matched `[151, 166, 106, 91]` within one UNORM step, and
-the query-supported sRGB view matched the decoded linear result
+linear-view pixels from both direct and helper entries matched
+`[151, 166, 106, 91]` within one UNORM step, and the query-supported sRGB view
+matched the decoded linear result
 `[79, 97, 37, 27]` for all 64 pixels within two steps. The same run verified
-Core rejects an unsupported R8 view and a multi-mip view before HAL. It also
-verifies helper-reached gather rejection. This does not establish behavior on
-historical FL9_1 drivers.
+Core rejects an unsupported R8 view and a multi-mip view before HAL. The
+direct entry also uses a bounded computed coordinate (`uv * 0.5`); all 64
+pixels matched `[76, 91, 31, 16]` within one UNORM step. A direct coordinate
+using `sin` and a helper call with a transformed argument remain rejected by
+Core, HAL and Naga validation. This does not establish behavior on historical
+FL9_1 drivers.
+
+The computed-coordinate proof and execution can be reproduced with:
+
+```powershell
+cargo +1.93.1 test --offline -j4 -p naga --lib --no-default-features --features hlsl-out,wgsl-in fl9_texture_gather_proof_rejects_unproven_operations -- --nocapture
+cargo +1.93.1 test --offline -j4 -p wgpu-core --lib --no-default-features --features dx11,std,wgsl restricted_fl9_texture_gather_preserves_the_selected_binding_pair -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 fl9_texture_gather_computed_coordinate_is_proven_and_bounded -- --nocapture
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_gather_emulation_at_fl91 -- --nocapture --test-threads=1
+```
 
 A tenth strict public test uploads both `Rg8Snorm` and `Rgba8Snorm`, samples
 them with one non-filtering sampler, converts signed values to visible
@@ -2103,13 +2149,13 @@ against the selected-device FL9_1 projection. Run
 -- --nocapture --test-threads=1` with `WGPU_DX11_REQUIRE_HARDWARE=1`. Logical
 binding 17 is vertex-visible and uses base/dynamic offsets 256/256; binding 23
 is fragment-visible and uses 256/512. Both alter checked readback pixels. The
-unmodified-projection test separately verifies that core rejects thirteen
-dynamic uniform entries against the reported limit of twelve. The public test
+controlled FL9_1 fixture verifies that Core rejects fourteen dynamic uniform
+entries against the current pipeline-layout limit of thirteen. The public test
 `public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91` executes the
 full six-vertex/six-fragment split using sparse binding numbers and distinct
 dynamic offsets. Two scissored draws select different ranges and validate the
-complete 8×8 readback; it also checks that thirteen dynamic entries fail core
-validation.
+complete 8×8 readback; the public contract test separately verifies that
+fourteen dynamic entries fail validation.
 
 The same strict core fixture includes a two-group case: a fragment uniform at
 group 0/binding 17 tints a sampled RGBA8 texture and filtering sampler at
@@ -3272,7 +3318,20 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 The allocation, Naga and FXC checks above are CPU/compiler tests. The strict
 public aggregate-budget case reads all 32 fragment vectors from two sparse
 uniform bindings and verifies 64 pixels; core validation rejects a 33-vector
-pipeline before HAL. The profile-boundary hardware diagnostic asks FXC to
+pipeline before HAL. The stage-disjoint register regression verifies that
+thirteen vertex-visible and thirteen fragment-visible uniforms are accepted
+across two groups and within one group, and that each stage maps to `b0`–`b12`.
+The strict public test renders using both sets and validates all 64 pixels.
+Run the focused cases with:
+
+```powershell
+cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 pipeline_binding_plan_allocates_across_groups_and_enforces_limits -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j4 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_pipeline_layout_supports_stage_disjoint_uniform_limits -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_uses_thirteen_uniform_registers_per_stage_at_fl91 -- --nocapture --test-threads=1
+```
+
+The profile-boundary hardware diagnostic asks FXC to
 compile a vertex shader with a dynamically indexed 255-element
 constant array, then creates that shader on the explicitly forced-FL9_1 device.
 Its companion compiler test confirms 256 and 257 elements fail at register
@@ -3755,9 +3814,8 @@ and [WebGPU multisample validation](https://www.w3.org/TR/webgpu/#validating-gpu
 
 ### Query-gated RGBA8 and BGRA8 multisample render and resolve
 
-The FL9_1 feature level does not guarantee multisampling. For each supported
-count (2, 4, 8 or 16), the selected device must report a positive
-For RGBA8 and BGRA8 independently, the selected device must return a positive
+The FL9_1 feature level does not guarantee multisampling. For RGBA8 and BGRA8
+independently, each supported count (2, 4, 8 or 16) requires a positive
 `CheckMultisampleQualityLevels(format, count)` result and
 `CheckFormatSupport` must include `TEXTURE2D`, `RENDER_TARGET`,
 `MULTISAMPLE_RENDERTARGET` and `MULTISAMPLE_RESOLVE`. A failed or zero query
@@ -3767,8 +3825,8 @@ attachments and same-sized, same-format single-sample resolve destinations.
 D16_UNORM and
 D24_UNORM_S8_UINT depth attachments are enabled independently for each
 positively queried count; depth must match the color target and pipeline sample
-count. Depth resolve, multisampled sampling, other formats and alpha-to-coverage
-remain unsupported.
+count. Depth resolve, multisampled sampling and alpha-to-coverage remain
+unsupported. RGB565 has a separate query-gated render/resolve path below.
 
 On the RTX 3090 Ti forced to FL9_1, RGBA8 and BGRA8 quality-level queries for
 2x, 4x, 8x and 16x each returned 1, 1, 1 and 0; D16 and D24S8 are queried
@@ -5124,3 +5182,112 @@ uniform with the single-image 3D load emulation; all 64 pixels matched
 `[127, 0, 64, 255]`. Core/HAL/Naga tests accept the bounded 3D combination and
 reject seven uniforms; Core rejects it when the 3D load limit is off. Combined
 load/dimensions with uniforms and other bound resource classes remain rejected.
+
+### Query-gated RGB565 multisample resolve
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl9_1_hardware_rgb565_multisample_resolve -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_resolves_query_supported_rgb565_samples_at_fl91 -- --nocapture --test-threads=1
+```
+
+The selected RTX 3090 Ti at requested/actual FL9_1 reports all required
+RGB565 multisample format bits (`0x0026F3A0`) and positive quality levels for
+2x, 4x and 8x, but not 16x. The HAL test clears, resolves, waits on the queue
+fence and reads all 64 packed RGB565 pixels (`0xF800`). The public test renders
+to RGB565, resolves, samples the result into RGBA8, then checks all 64 pixels
+for each query-supported count. This verifies only the selected device and
+does not make RGB565 multisampling a feature-level guarantee.
+
+### Query-gated RGB565 multisample blending
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_blends_query_supported_rgb565_multisample_targets_at_fl91 -- --nocapture --test-threads=1
+```
+
+The RTX 3090 Ti reports RGB565 blendability and 2x/4x/8x multisample resolve
+support at a forced FL9_1 device. The public test renders two alpha-blended
+draws into RGB565, resolves, samples the result to RGBA8 and validates every
+channel of all 64 pixels for each count. The accepted readback intervals model
+the two intermediate RGB565 quantization steps, including tie rounding; they
+are narrow enough to reject a missing draw or disabled blend. This is selected
+device evidence, not a FL9_1 guarantee or alpha-to-coverage test.
+
+### Bounded queue teardown and orphan reaping
+
+The HAL's additive `Queue::wait_for_idle_timeout` reports idle, timeout, or
+unsupported (`None`) without changing the legacy blocking wait. Core uses a
+10 ms bounded attempt on queue/device drop; backends that return `None` retain
+their prior blocking behavior. A timed-out D3D11 queue remains rooted with its
+resources. `device.poll` and `poll_all` retry orphan retirement; `poll_all`
+returns nonempty while an orphan remains, including when its Device has been
+removed. The orphan reaper uses a 10 ms budget per queue. A successful timeout
+wait precedes the existing destructor wait and lifetime-tracker drain. HAL
+errors remain distinct from normal timeouts and preserve the queue on failure.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib bounded_idle_wait_resumes_the_same_event_query_after_timeout -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std,dx11-test-fixture --lib fl91_core_queue_drop_timeout_retains_then_reaps_queue -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std,dx11-test-fixture --lib fl91_core_poll_all_reaps_orphaned_queue_after_device_drop -- --nocapture --test-threads=1
+```
+
+The HAL test synthetically reports one pending event-query result, then proves
+that the same event query completes on the physical adapter at forced FL9_1.
+The Core tests synthetically keep the query pending across queue and Device
+drop, check that drop returns promptly and callbacks are retained, then let
+polling reap the queue and deliver the callback exactly once. One test polls a
+live Device; the other removes the Device and reaps through `poll_all`.
+Synchronous D3D calls and operating-system scheduling are not preemptible by
+the timeout, so the budget is a bounded wait policy rather than a strict
+real-time guarantee.
+
+## Cross-device surface reconfiguration timeout
+
+`public_dx11_reconfigure_timeout_preserves_previous_device_association`
+performs a real present on a hidden HWND, injects a timeout from the next
+pending-present wait, and attempts to move the surface to a second FL9_1 device.
+It verifies that Core preserves the original public configuration, then waits
+for the real present and retries successfully on the replacement device.
+The wait timeout is fixture-injected; the test does not simulate a driver hang.
+Run with the strict physical adapter requirement:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11-test-fixture,glsl,std --test dx11_surface_error_fixture public_dx11_reconfigure_timeout_preserves_previous_device_association -- --nocapture --test-threads=1
+```
+
+`public_dx11_unconfigure_device_loss_retires_old_surface_and_notifies_old_device`
+injects `DXGI_ERROR_DEVICE_REMOVED` at old-device unconfigure, then at the
+replacement-device configure boundary. Each device-lost callback reenters
+`Device::poll`; the test verifies callbacks are delivered after Core releases
+surface and queue locks, and that loss is attributed to the correct device.
+Both errors are synthetic; no physical device removal is claimed. Run the
+complete fixture under strict hardware mode:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11-test-fixture,glsl,std --test dx11_surface_error_fixture -- --nocapture --test-threads=1
+```
+
+The current fixture passed 5/5 on the physical RTX 3090 Ti, explicitly
+requested and asserted at FL9_1. Its two injected device-loss paths passed,
+along with the real HWND present/reconfigure, synthetic pending-present timeout,
+resize, and frame-lifetime cases.
+
+## Vertex-indexed local matrix column store
+
+The strict public test
+`public_dx11_local_matrix_struct_store_renders_at_fl91` checks the narrowly
+supported direct local `matCx2<f32>` column store indexed by
+`@builtin(vertex_index)`, and retains static fragment matrix component stores.
+Each triangle vertex writes a distinct matrix column; the vertex shader exports
+the resulting one-hot value and the fragment shader applies the existing
+static matrix values. All 64 pixels are validated against the interpolated
+expected channels. Dynamic rows and nested matrix stores remain negative cases.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cmd.exe /d /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_matrix_component_store -- --nocapture --test-threads=1'
+```

@@ -5,6 +5,7 @@ use core::{
     num::NonZeroU64,
     ptr::NonNull,
     sync::atomic::Ordering,
+    time::Duration,
 };
 use parking_lot::{ReentrantMutex, ReentrantMutexGuard};
 use smallvec::SmallVec;
@@ -70,12 +71,12 @@ fn fire_device_lost_invocation(invocation: Option<DeviceLostInvocation>) {
 }
 
 pub struct Queue {
-    raw: Box<dyn hal::DynQueue>,
+    raw: ManuallyDrop<Box<dyn hal::DynQueue>>,
     submission_gate: QueueSubmissionGate,
-    pub(crate) pending_writes: Mutex<PendingWrites>,
-    life_tracker: Mutex<LifetimeTracker>,
+    pub(crate) pending_writes: ManuallyDrop<Mutex<PendingWrites>>,
+    life_tracker: ManuallyDrop<Mutex<LifetimeTracker>>,
     // The device needs to be dropped last (`Device.zero_buffer` might be referenced by the encoder in pending writes).
-    pub(crate) device: Arc<Device>,
+    pub(crate) device: ManuallyDrop<Arc<Device>>,
 }
 
 #[derive(Default)]
@@ -152,16 +153,33 @@ impl Queue {
         }
 
         Ok(Queue {
-            raw,
-            device,
+            raw: ManuallyDrop::new(raw),
+            device: ManuallyDrop::new(device),
             submission_gate: QueueSubmissionGate::default(),
-            pending_writes: Mutex::new(rank::QUEUE_PENDING_WRITES, pending_writes),
-            life_tracker: Mutex::new(rank::QUEUE_LIFE_TRACKER, LifetimeTracker::new()),
+            pending_writes: ManuallyDrop::new(Mutex::new(
+                rank::QUEUE_PENDING_WRITES,
+                pending_writes,
+            )),
+            life_tracker: ManuallyDrop::new(Mutex::new(
+                rank::QUEUE_LIFE_TRACKER,
+                LifetimeTracker::new(),
+            )),
         })
     }
 
     pub(crate) fn raw(&self) -> &dyn hal::DynQueue {
         self.raw.as_ref()
+    }
+
+    pub(crate) fn wait_for_idle(&self) -> Result<(), hal::DeviceError> {
+        unsafe { self.raw.wait_for_idle() }
+    }
+
+    pub(crate) fn wait_for_idle_timeout(
+        &self,
+        timeout: Duration,
+    ) -> Result<Option<hal::QueueIdleStatus>, hal::DeviceError> {
+        unsafe { self.raw.wait_for_idle_timeout(timeout) }
     }
 
     pub(crate) fn lock_submission(&self) -> ReentrantMutexGuard<'_, ()> {
@@ -323,6 +341,16 @@ impl Queue {
             queue_empty,
         }
     }
+
+    pub(crate) fn fail_pending_mappings(
+        &self,
+        snatch_guard: &SnatchGuard,
+    ) -> (
+        Vec<super::BufferMapPendingClosure>,
+        SmallVec<[DeviceLostInvocation; 1]>,
+    ) {
+        self.lock_life().fail_pending_mappings(snatch_guard)
+    }
 }
 
 crate::impl_resource_type!(Queue);
@@ -339,17 +367,21 @@ impl Drop for Queue {
     fn drop(&mut self) {
         resource_log!("Drop {}", self.error_ident());
 
-        let _submission_guard = self.lock_submission();
+        let submission_guard = self.lock_submission();
 
         // On Vulkan, pending presents are not tracked by fences.
         // wait_for_idle covers both fence-tracked submissions and pending presents.
-        match unsafe { self.raw.wait_for_idle() } {
+        match self.wait_for_idle() {
             Ok(()) => {}
             Err(hal::DeviceError::Lost) => {
                 self.device.handle_hal_error(hal::DeviceError::Lost);
             }
             Err(e) => {
-                panic!("Unexpected error while waiting for queue idle on drop: {e:?}");
+                self.device.handle_hal_error(e);
+                log::error!(
+                    "Unable to confirm queue idle during drop; retaining in-flight resources"
+                );
+                return;
             }
         }
 
@@ -362,8 +394,6 @@ impl Drop for Queue {
         let maintain_result = self.maintain(last_successful_submission_index, &snatch_guard);
         drop(snatch_guard);
 
-        assert!(maintain_result.queue_empty);
-
         let closures = UserClosures {
             mappings: maintain_result.mappings,
             blas_compact_ready: maintain_result.blas_compact_ready,
@@ -371,7 +401,22 @@ impl Drop for Queue {
             device_lost_invocations: maintain_result.device_lost_invocations,
         };
 
+        if !maintain_result.queue_empty {
+            self.device.handle_hal_error(hal::DeviceError::Unexpected);
+            log::error!("Queue remained nonempty after idle wait; retaining in-flight resources");
+            closures.fire();
+            return;
+        }
+
         closures.fire();
+        drop(submission_guard);
+
+        unsafe {
+            ManuallyDrop::drop(&mut self.raw);
+            ManuallyDrop::drop(&mut self.pending_writes);
+            ManuallyDrop::drop(&mut self.life_tracker);
+            ManuallyDrop::drop(&mut self.device);
+        }
     }
 }
 

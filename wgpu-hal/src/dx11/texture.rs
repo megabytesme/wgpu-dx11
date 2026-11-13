@@ -544,6 +544,7 @@ impl NativeTexture {
     pub(super) fn from_core_window_backbuffer(
         device: &NativeDevice,
         raw: ID3D11Texture2D,
+        usage: wgt::TextureUses,
     ) -> Result<Self> {
         let owner = unsafe { raw.GetDevice()? };
         let mut desc = D3D11_TEXTURE2D_DESC::default();
@@ -556,6 +557,8 @@ impl NativeTexture {
             || desc.ArraySize != 1
             || desc.SampleDesc.Count != 1
             || desc.BindFlags & D3D11_BIND_RENDER_TARGET.0 as u32 == 0
+            || !usage.contains(wgt::TextureUses::COLOR_TARGET)
+            || !(wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC).contains(usage)
         {
             return Err(invalid());
         }
@@ -571,7 +574,7 @@ impl NativeTexture {
             format: desc.Format,
             logical_format: None,
             sample_count: 1,
-            usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::PRESENT,
+            usage: usage | wgt::TextureUses::PRESENT,
             cpu_shadow: None,
             copy_shadow: None,
         })
@@ -824,6 +827,33 @@ pub(super) fn subresource_layout(
 }
 
 impl NativeDevice {
+    pub(super) fn color_multisample_resolve_supported(
+        &self,
+        format: DXGI_FORMAT,
+        sample_count: u32,
+    ) -> bool {
+        if !matches!(
+            format,
+            DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM | DXGI_FORMAT_B5G6R5_UNORM
+        ) || !matches!(sample_count, 2 | 4 | 8 | 16)
+        {
+            return false;
+        }
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+            | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0
+            | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0) as u32;
+        unsafe {
+            self.raw_device()
+                .CheckMultisampleQualityLevels(format, sample_count)
+                .is_ok_and(|levels| levels > 0)
+                && self
+                    .raw_device()
+                    .CheckFormatSupport(format)
+                    .is_ok_and(|bits| bits & required == required)
+        }
+    }
+
     pub(super) fn create_rgba_texture_3d_inner(
         &self,
         width: u32,
@@ -1358,11 +1388,15 @@ impl NativeDevice {
             || (desc.SampleDesc.Count > 1
                 && (!matches!(
                     format,
-                    wgt::TextureFormat::Rgba8Unorm | wgt::TextureFormat::Bgra8Unorm
+                    wgt::TextureFormat::Rgba8Unorm
+                        | wgt::TextureFormat::Bgra8Unorm
+                        | wgt::TextureFormat::Rgb5g6b5Unorm
                 ) || (view.usage != wgt::TextureUses::COLOR_TARGET
                     && view.usage
                         != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
-                    || desc.MipLevels != 1))
+                    || desc.MipLevels != 1
+                    || !self
+                        .color_multisample_resolve_supported(desc.Format, desc.SampleDesc.Count)))
         {
             return Err(invalid());
         }
@@ -1583,27 +1617,7 @@ impl NativeDevice {
                     && mip_levels == 1
                     && layers == 1
                     && render_target
-                    && matches!(
-                        format,
-                        DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
-                    )
-                    && unsafe {
-                        self.raw_device()
-                            .CheckMultisampleQualityLevels(format, sample_count)
-                            .is_ok_and(|levels| levels > 0)
-                    }
-                    && unsafe {
-                        self.raw_device()
-                            .CheckFormatSupport(format)
-                            .is_ok_and(|bits| {
-                                let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
-                                    | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
-                                    | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET.0
-                                    | D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE.0)
-                                    as u32;
-                                bits & required == required
-                            })
-                    }))
+                    && self.color_multisample_resolve_supported(format, sample_count)))
         {
             return Err(invalid());
         }
@@ -1695,7 +1709,7 @@ impl NativeDevice {
         unsafe { texture.raw.as_2d()?.GetDesc(&mut desc) };
         if !matches!(
             desc.Format,
-            DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM
+            DXGI_FORMAT_R8G8B8A8_UNORM | DXGI_FORMAT_B8G8R8A8_UNORM | DXGI_FORMAT_B5G6R5_UNORM
         ) || desc.SampleDesc.Count == 1
             || desc.MipLevels != 1
             || desc.ArraySize != 1
@@ -2424,13 +2438,27 @@ mod tests {
                 .CreateTexture2D(&desc, None, Some(&mut raw))?
         };
         let raw = raw.ok_or_else(|| Error::from_hresult(E_FAIL))?;
-        assert!(NativeTexture::from_core_window_backbuffer(&other, raw.clone()).is_err());
-        let wrapped = NativeTexture::from_core_window_backbuffer(&device, raw)?;
-        assert_eq!((wrapped.width, wrapped.height), (4, 4));
-        let rgba = device.create_rgba_texture(4, 4, 1, 1)?;
+        let target_usage = wgt::TextureUses::COLOR_TARGET;
+        let copy_usage = target_usage | wgt::TextureUses::COPY_SRC;
         assert!(
-            NativeTexture::from_core_window_backbuffer(&device, rgba.raw.as_2d()?.clone()).is_err()
+            NativeTexture::from_core_window_backbuffer(&other, raw.clone(), target_usage).is_err()
         );
+        assert!(NativeTexture::from_core_window_backbuffer(
+            &device,
+            raw.clone(),
+            wgt::TextureUses::COPY_SRC
+        )
+        .is_err());
+        let wrapped = NativeTexture::from_core_window_backbuffer(&device, raw, copy_usage)?;
+        assert_eq!((wrapped.width, wrapped.height), (4, 4));
+        assert!(wrapped.supports_usage(wgt::TextureUses::COPY_SRC));
+        let rgba = device.create_rgba_texture(4, 4, 1, 1)?;
+        assert!(NativeTexture::from_core_window_backbuffer(
+            &device,
+            rgba.raw.as_2d()?.clone(),
+            target_usage,
+        )
+        .is_err());
         Ok(())
     }
 

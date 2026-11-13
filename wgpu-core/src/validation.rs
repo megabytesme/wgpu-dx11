@@ -520,6 +520,7 @@ fn function_uses_unsupported_runtime_integer_indexing(
     function: &naga::Function,
     function_info: &naga::valid::FunctionInfo,
     allowed_local_access: Option<naga::Handle<naga::Expression>>,
+    allowed_matrix_column_store: Option<naga::Handle<naga::Expression>>,
     allowed_vector_indexing: bool,
     budget: &mut usize,
 ) -> bool {
@@ -533,6 +534,7 @@ fn function_uses_unsupported_runtime_integer_indexing(
             return false;
         };
         Some(handle) != allowed_local_access
+            && Some(handle) != allowed_matrix_column_store
             && function_info[handle].ref_count != 0
             && !kinds.is_const(index)
             && !(allowed_vector_indexing
@@ -763,6 +765,84 @@ fn supported_vertex_index_vector_indexing(
     found
 }
 
+fn supported_vertex_index_local_matrix_column_store(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+    function_info: &naga::valid::FunctionInfo,
+) -> Option<naga::Handle<naga::Expression>> {
+    if entry_point.stage != naga::ShaderStage::Vertex
+        || entry_point.function.body.iter().any(|statement| {
+            !matches!(
+                statement,
+                naga::Statement::Emit(_)
+                    | naga::Statement::Store { .. }
+                    | naga::Statement::Return { .. }
+            )
+        })
+    {
+        return None;
+    }
+
+    let function = &entry_point.function;
+    let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+    let mut candidate = None;
+    for (handle, expression) in function.expressions.iter() {
+        let naga::Expression::Access { base, index } = *expression else {
+            continue;
+        };
+        if function_info[handle].ref_count == 0 || kinds.is_const(index) {
+            continue;
+        }
+        let naga::Expression::AccessIndex {
+            base: local_expression,
+            index: member_index,
+        } = function.expressions[base]
+        else {
+            continue;
+        };
+        let naga::Expression::LocalVariable(local) = function.expressions[local_expression] else {
+            continue;
+        };
+        let naga::TypeInner::Struct { ref members, .. } =
+            module.types[function.local_variables[local].ty].inner
+        else {
+            continue;
+        };
+        let Some(member) = members.get(member_index as usize) else {
+            continue;
+        };
+        if member.binding.is_some()
+            || !matches!(
+                module.types[member.ty].inner,
+                naga::TypeInner::Matrix {
+                    rows: naga::VectorSize::Bi,
+                    scalar: naga::Scalar {
+                        kind: naga::ScalarKind::Float,
+                        width: 4,
+                    },
+                    ..
+                }
+            )
+        {
+            continue;
+        }
+        if candidate.is_some()
+            || !expression_is_supported_vertex_index_argument(module, function, index)
+            || !block_uses_dynamic_access_as_pointer(
+                module,
+                function,
+                function_info,
+                &function.body,
+                handle,
+            )
+        {
+            return None;
+        }
+        candidate = Some(handle);
+    }
+    candidate
+}
+
 fn dynamic_access_has_uniform_origin_bounded(
     module: &naga::Module,
     function: &naga::Function,
@@ -839,12 +919,15 @@ fn entry_point_uses_unsupported_runtime_integer_indexing(
         supported_vertex_index_local_array_access(module, entry_point, entry_point_info);
     let allowed_vector_indexing =
         supported_vertex_index_vector_indexing(module, entry_point, entry_point_info);
+    let allowed_matrix_column_store =
+        supported_vertex_index_local_matrix_column_store(module, entry_point, entry_point_info);
     let mut budget = 65_536;
     if function_uses_unsupported_runtime_integer_indexing(
         module,
         &entry_point.function,
         entry_point_info,
         allowed_local_access,
+        allowed_matrix_column_store,
         allowed_vector_indexing,
         &mut budget,
     ) {
@@ -867,6 +950,7 @@ fn entry_point_uses_unsupported_runtime_integer_indexing(
             module,
             function,
             &module_info[handle],
+            None,
             None,
             false,
             &mut budget,
@@ -3239,7 +3323,7 @@ fn matrix_store_provenance(
     MatrixStoreProvenance::Unknown
 }
 
-fn is_safe_static_local_matrix_component_store(
+fn is_safe_local_matrix_member_store(
     module: &naga::Module,
     function: &naga::Function,
     pointer: naga::Handle<naga::Expression>,
@@ -3286,10 +3370,67 @@ fn is_safe_static_local_matrix_component_store(
         (scalar.kind == naga::ScalarKind::Float && scalar.width == 4).then_some(columns as u32)
     }
 
+    if *budget < 3 {
+        *budget = 0;
+        return false;
+    }
+    *budget -= 3;
+    if let naga::Expression::AccessIndex {
+        base,
+        index: member_index,
+    } = function.expressions[pointer]
+    {
+        if let naga::Expression::LocalVariable(local) = function.expressions[base] {
+            if let naga::TypeInner::Struct { ref members, .. } =
+                module.types[function.local_variables[local].ty].inner
+            {
+                if let Some(member) = members.get(member_index as usize) {
+                    let contains_direct_matrix = members.iter().any(|member| {
+                        matches!(
+                            module.types[member.ty].inner,
+                            naga::TypeInner::Matrix {
+                                rows: naga::VectorSize::Bi,
+                                scalar: naga::Scalar {
+                                    kind: naga::ScalarKind::Float,
+                                    width: 4,
+                                },
+                                ..
+                            }
+                        )
+                    });
+                    if contains_direct_matrix && member.binding.is_none() {
+                        let safe_target = matches!(
+                            module.types[member.ty].inner,
+                            naga::TypeInner::Matrix {
+                                rows: naga::VectorSize::Bi,
+                                scalar: naga::Scalar {
+                                    kind: naga::ScalarKind::Float,
+                                    width: 4,
+                                },
+                                ..
+                            } | naga::TypeInner::Scalar(naga::Scalar {
+                                kind: naga::ScalarKind::Float,
+                                width: 4,
+                            })
+                        );
+                        if safe_target {
+                            return true;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     if *budget == 0 {
         return false;
     }
     *budget -= 1;
+    if let naga::Expression::Access { base, .. } = function.expressions[pointer] {
+        if direct_matrix_member(module, function, base, budget).is_some() {
+            return true;
+        }
+    }
     let (column_access, component_index) = match function.expressions[pointer] {
         naga::Expression::AccessIndex { base, index } => (base, index),
         _ => return false,
@@ -3333,7 +3474,7 @@ fn scan_matrix_store_block(
     *budget -= block.len();
     block.iter().any(|statement| match statement {
         naga::Statement::Store { pointer, .. } => {
-            !is_safe_static_local_matrix_component_store(module, function, *pointer, budget)
+            !is_safe_local_matrix_member_store(module, function, *pointer, budget)
                 && !matches!(
                     matrix_store_provenance(module, function, *pointer, arguments, budget),
                     MatrixStoreProvenance::Ordinary
@@ -3865,8 +4006,12 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
             }
         }
         let sample_result = sample_result?;
-        let naga::Expression::ImageSample { image, sampler, .. } =
-            helper_function.expressions[sample_result]
+        let naga::Expression::ImageSample {
+            image,
+            sampler,
+            level: naga::SampleLevel::Exact(level),
+            ..
+        } = helper_function.expressions[sample_result]
         else {
             return None;
         };
@@ -3886,6 +4031,7 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
                         | naga::Expression::GlobalVariable(_)
                         | naga::Expression::Literal(_)
                         | naga::Expression::ImageSample { .. }
+                        | naga::Expression::AccessIndex { .. }
                         | naga::Expression::Binary { .. }
                         | naga::Expression::Unary { .. }
                         | naga::Expression::Compose { .. }
@@ -3902,9 +4048,8 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
             module,
             &helper_function.expressions,
             sample_result,
-            None,
-            false,
-            None,
+            Some(helper_function),
+            true,
         )?;
         return Some(alloc::vec![pair]);
     }
@@ -3940,7 +4085,6 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
             handle,
             Some(&entry_point.function),
             true,
-            None,
         )?);
     }
     if pairs.is_empty() {
@@ -3969,12 +4113,11 @@ fn fl9_texture_sample_level_zero_pair(
     sample: naga::Handle<naga::Expression>,
     function: Option<&naga::Function>,
     allow_dynamic_level: bool,
-    coordinate_argument: Option<u32>,
 ) -> Option<SamplingPair> {
     let naga::Expression::ImageSample {
         image,
         sampler,
-        coordinate,
+        coordinate: _,
         array_index: None,
         offset: None,
         level: naga::SampleLevel::Exact(level),
@@ -3993,9 +4136,7 @@ fn fl9_texture_sample_level_zero_pair(
             naga::Expression::Literal(naga::Literal::F32(value)) if value.to_bits() == 0
         )
     };
-    if !supported_level || coordinate_argument.is_some_and(|index| {
-        !matches!(expressions[coordinate], naga::Expression::FunctionArgument(arg) if arg == index)
-    }) {
+    if !supported_level {
         return None;
     }
     let naga::Expression::GlobalVariable(image) = expressions[image] else {
@@ -4132,6 +4273,7 @@ fn entry_point_uses_texture_gather(module: &naga::Module, entry_point: &naga::En
 fn entry_point_fl9_texture_gather_pair(
     module: &naga::Module,
     entry_point: &naga::EntryPoint,
+    entry_point_info: &naga::valid::FunctionInfo,
 ) -> Option<SamplingPair> {
     if entry_point.stage != naga::ShaderStage::Fragment
         || entry_point.function.arguments.len() != 1
@@ -4156,13 +4298,25 @@ fn entry_point_fl9_texture_gather_pair(
             .binding
             .as_ref()
             .is_some_and(|binding| matches!(binding, naga::Binding::Location { location: 0, .. }))
-        || entry_point.function.body.iter().any(|statement| {
-            !matches!(
-                statement,
-                naga::Statement::Emit(_) | naga::Statement::Return { .. }
-            )
-        })
     {
+        return None;
+    }
+
+    if entry_point
+        .function
+        .body
+        .iter()
+        .any(|statement| matches!(statement, naga::Statement::Call { .. }))
+    {
+        return entry_point_fl9_texture_gather_helper_pair(module, entry_point);
+    }
+
+    if entry_point.function.body.iter().any(|statement| {
+        !matches!(
+            statement,
+            naga::Statement::Emit(_) | naga::Statement::Return { .. }
+        )
+    }) {
         return None;
     }
 
@@ -4182,10 +4336,15 @@ fn entry_point_fl9_texture_gather_pair(
                 gather: Some(_),
                 clamp_to_edge: false,
             } => {
+                let mut coordinate_budget = 32;
                 if gather_pair.is_some()
-                    || !matches!(
-                        entry_point.function.expressions[coordinate],
-                        naga::Expression::FunctionArgument(0)
+                    || !fl9_texture_load_coordinate_expression_supported(
+                        module,
+                        &entry_point.function,
+                        entry_point_info,
+                        coordinate,
+                        &mut coordinate_budget,
+                        0,
                     )
                 {
                     return None;
@@ -4224,6 +4383,148 @@ fn entry_point_fl9_texture_gather_pair(
                 return None;
             }
         }
+    }
+
+    let image_global = &module.global_variables[image];
+    let sampler_global = &module.global_variables[sampler];
+    if image_global.space != naga::AddressSpace::Handle
+        || sampler_global.space != naga::AddressSpace::Handle
+        || !matches!(
+            module.types[image_global.ty].inner,
+            naga::TypeInner::Image {
+                dim: naga::ImageDimension::D2,
+                arrayed: false,
+                class: naga::ImageClass::Sampled {
+                    kind: naga::ScalarKind::Float,
+                    multi: false,
+                },
+            }
+        )
+        || !matches!(
+            module.types[sampler_global.ty].inner,
+            naga::TypeInner::Sampler { comparison: false }
+        )
+    {
+        return None;
+    }
+
+    let image_binding = image_global.binding.as_ref()?;
+    let sampler_binding = sampler_global.binding.as_ref()?;
+    Some(SamplingPair {
+        texture_group: image_binding.group,
+        texture_binding: image_binding.binding,
+        sampler_group: sampler_binding.group,
+        sampler_binding: sampler_binding.binding,
+    })
+}
+
+fn entry_point_fl9_texture_gather_helper_pair(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+) -> Option<SamplingPair> {
+    let mut call = None;
+    let mut returned = None;
+    for statement in entry_point.function.body.iter() {
+        match statement {
+            naga::Statement::Emit(_) => {}
+            naga::Statement::Call {
+                function,
+                arguments,
+                result: Some(result),
+            } if call.is_none() => call = Some((*function, arguments, *result)),
+            naga::Statement::Return { value: Some(value) } if returned.is_none() => {
+                returned = Some(*value)
+            }
+            _ => return None,
+        }
+    }
+    let (helper_handle, arguments, call_result) = call?;
+    if arguments.len() != 1
+        || !matches!(
+            entry_point.function.expressions[arguments[0]],
+            naga::Expression::FunctionArgument(0)
+        )
+        || returned != Some(call_result)
+        || !matches!(
+            entry_point.function.expressions[call_result],
+            naga::Expression::CallResult(function) if function == helper_handle
+        )
+        || entry_point
+            .function
+            .expressions
+            .iter()
+            .any(|(_, expression)| match expression {
+                naga::Expression::FunctionArgument(0) => false,
+                naga::Expression::CallResult(function) => *function != helper_handle,
+                _ => true,
+            })
+    {
+        return None;
+    }
+
+    let helper = &module.functions[helper_handle];
+    if helper.arguments.len() != 1
+        || !fl9_is_float_vector(module, helper.arguments[0].ty, naga::VectorSize::Bi)
+        || !fl9_is_float_vector(module, helper.result.as_ref()?.ty, naga::VectorSize::Quad)
+    {
+        return None;
+    }
+
+    let mut helper_return = None;
+    for statement in helper.body.iter() {
+        match statement {
+            naga::Statement::Emit(_) => {}
+            naga::Statement::Return { value: Some(value) } if helper_return.is_none() => {
+                helper_return = Some(*value)
+            }
+            _ => return None,
+        }
+    }
+    let sample = helper_return?;
+    let naga::Expression::ImageSample {
+        image,
+        sampler,
+        coordinate,
+        array_index: None,
+        offset: None,
+        level: naga::SampleLevel::Zero,
+        depth_ref: None,
+        gather: Some(_),
+        clamp_to_edge: false,
+    } = helper.expressions[sample]
+    else {
+        return None;
+    };
+    if !matches!(
+        helper.expressions[coordinate],
+        naga::Expression::FunctionArgument(0)
+    ) {
+        return None;
+    }
+
+    let naga::Expression::GlobalVariable(image) = helper.expressions[image] else {
+        return None;
+    };
+    let naga::Expression::GlobalVariable(sampler) = helper.expressions[sampler] else {
+        return None;
+    };
+    if helper.expressions.iter().any(|(handle, expression)| {
+        if handle == sample {
+            return false;
+        }
+        match *expression {
+            naga::Expression::FunctionArgument(0)
+            | naga::Expression::Literal(_)
+            | naga::Expression::Constant(_) => false,
+            naga::Expression::GlobalVariable(global) => global != image && global != sampler,
+            naga::Expression::ImageSample { .. }
+            | naga::Expression::ImageLoad { .. }
+            | naga::Expression::ImageQuery { .. }
+            | naga::Expression::CallResult(_) => true,
+            _ => false,
+        }
+    }) {
+        return None;
     }
 
     let image_global = &module.global_variables[image];
@@ -8454,7 +8755,11 @@ impl Interface {
                 fl9_texture_sample_level_zero_pairs:
                     entry_point_fl9_texture_sample_level_zero_pairs(module, entry_point),
                 texture_gather_used: entry_point_uses_texture_gather(module, entry_point),
-                fl9_texture_gather_pair: entry_point_fl9_texture_gather_pair(module, entry_point),
+                fl9_texture_gather_pair: entry_point_fl9_texture_gather_pair(
+                    module,
+                    entry_point,
+                    info,
+                ),
                 ..Default::default()
             };
             for arg in entry_point.function.arguments.iter() {
@@ -11832,8 +12137,14 @@ mod tests {
             fn exact_helper(uv: vec2f) -> vec4f {
                 return textureSampleLevel(image, smp, uv, 0.0);
             }
-            fn dynamic_helper(uv: vec2f, level: f32) -> vec4f {
-                return textureSampleLevel(image, smp, uv, level);
+            fn dynamic_helper(uv: vec2f) -> vec4f {
+                return textureSampleLevel(image, smp, uv, uv.x * 2.0 + 0.5);
+            }
+            fn math_level_helper(uv: vec2f) -> vec4f {
+                return textureSampleLevel(image, smp, uv, sin(uv.x));
+            }
+            fn dynamic_transformed_helper(uv: vec2f) -> vec4f {
+                return textureSampleLevel(image, smp, uv + vec2f(0.25, 0.0), uv.x * 2.0 + 0.5);
             }
             fn nested_helper(uv: vec2f) -> vec4f {
                 return exact_helper(uv);
@@ -11878,7 +12189,13 @@ mod tests {
                 return exact_helper(uv);
             }
             @fragment fn helper_dynamic(@location(0) uv: vec2f) -> @location(0) vec4f {
-                return dynamic_helper(uv, 0.0);
+                return dynamic_helper(uv);
+            }
+            @fragment fn helper_level_math(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return math_level_helper(uv);
+            }
+            @fragment fn helper_dynamic_transformed(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return dynamic_transformed_helper(uv);
             }
             @fragment fn helper_nested(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return nested_helper(uv);
@@ -11929,6 +12246,8 @@ mod tests {
             "level_nonzero",
             "level_dynamic",
             "level_dynamic_math",
+            "helper_dynamic",
+            "helper_dynamic_transformed",
         ] {
             assert!(
                 !interface
@@ -11960,8 +12279,8 @@ mod tests {
         for entry in [
             "level_zero_with_offset",
             "level_mutable_local",
-            "helper_dynamic",
             "helper_nested",
+            "helper_level_math",
             "helper_math",
             "helper_control_flow",
             "helper_twice",
@@ -12153,14 +12472,64 @@ mod tests {
             r#"
             @group(1) @binding(7) var image: texture_2d<f32>;
             @group(2) @binding(42) var smp: sampler;
+            @group(3) @binding(9) var other_image: texture_2d<f32>;
+            @group(4) @binding(17) var other_smp: sampler;
             fn helper(uv: vec2f) -> vec4f {
+                return textureGather(2, image, smp, uv);
+            }
+            fn nested_helper(uv: vec2f) -> vec4f {
+                return helper(uv);
+            }
+            fn transformed_helper(uv: vec2f) -> vec4f {
+                return helper(uv + vec2f(0.1, 0.0));
+            }
+            fn extra_sample_helper(uv: vec2f) -> vec4f {
+                let gathered = textureGather(2, image, smp, uv);
+                return gathered + textureSample(other_image, other_smp, uv);
+            }
+            fn extra_gather_helper(uv: vec2f) -> vec4f {
+                let gathered = textureGather(2, image, smp, uv);
+                let ignored = textureGather(2, image, smp, uv.yx);
+                return gathered;
+            }
+            fn extra_query_helper(uv: vec2f) -> vec4f {
+                let ignored = textureDimensions(image);
                 return textureGather(2, image, smp, uv);
             }
             @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureGather(2, image, smp, uv) * 0.5;
             }
+            @fragment fn transformed_direct(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv * 0.5 + vec2f(0.125, 0.25));
+            }
+            @fragment fn unsupported_direct(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, vec2f(sin(uv.x), uv.y));
+            }
             @fragment fn indirect(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return helper(uv);
+            }
+            @fragment fn nested(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return nested_helper(uv);
+            }
+            @fragment fn transformed(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return transformed_helper(uv);
+            }
+            @fragment fn repeated(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let first = helper(uv);
+                let second = helper(uv);
+                return first + second;
+            }
+            @fragment fn extra_sample(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return extra_sample_helper(uv);
+            }
+            @fragment fn extra_gather(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return extra_gather_helper(uv);
+            }
+            @fragment fn extra_query(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return extra_query_helper(uv);
+            }
+            @fragment fn sibling(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(0, other_image, other_smp, uv);
             }
             @fragment fn offset(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureGather(2, image, smp, uv, vec2i(1, 0));
@@ -12202,8 +12571,70 @@ mod tests {
                 sampler_binding: 42,
             })
         );
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_gather(
+                naga::ShaderStage::Fragment,
+                "transformed_direct",
+                &restricted,
+            )
+            .unwrap());
+        assert_eq!(
+            interface
+                .entry_point_fl9_texture_gather_pair(
+                    naga::ShaderStage::Fragment,
+                    "transformed_direct",
+                )
+                .unwrap(),
+            Some(SamplingPair {
+                texture_group: 1,
+                texture_binding: 7,
+                sampler_group: 2,
+                sampler_binding: 42,
+            })
+        );
 
-        for entry in ["indirect", "offset"] {
+        for entry in ["indirect", "sibling"] {
+            assert!(!interface
+                .entry_point_uses_unsupported_texture_gather(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &restricted,
+                )
+                .unwrap());
+        }
+        assert_eq!(
+            interface
+                .entry_point_fl9_texture_gather_pair(naga::ShaderStage::Fragment, "indirect")
+                .unwrap(),
+            Some(SamplingPair {
+                texture_group: 1,
+                texture_binding: 7,
+                sampler_group: 2,
+                sampler_binding: 42,
+            })
+        );
+        assert_eq!(
+            interface
+                .entry_point_fl9_texture_gather_pair(naga::ShaderStage::Fragment, "sibling")
+                .unwrap(),
+            Some(SamplingPair {
+                texture_group: 3,
+                texture_binding: 9,
+                sampler_group: 4,
+                sampler_binding: 17,
+            })
+        );
+
+        for entry in [
+            "nested",
+            "transformed",
+            "repeated",
+            "extra_sample",
+            "extra_gather",
+            "extra_query",
+            "offset",
+            "unsupported_direct",
+        ] {
             assert!(interface
                 .entry_point_uses_unsupported_texture_gather(
                     naga::ShaderStage::Fragment,
@@ -16728,14 +17159,20 @@ mod tests {
         let module = naga::front::wgsl::parse_str(
             r#"
             struct Aggregate { transform: mat3x2<f32>, value: f32 }
+            struct NestedAggregate { inner: Aggregate }
             fn write_scalar(value: ptr<function, Aggregate>) { (*value).value = 1.0; }
             fn write_matrix_component(value: ptr<function, Aggregate>) {
                 (*value).transform[0] = vec2f(0.25, 0.5);
             }
-            @vertex fn bad_direct() -> @builtin(position) vec4f {
+            @vertex fn safe_direct_sibling() -> @builtin(position) vec4f {
                 var value: Aggregate;
                 value.value = 1.0;
                 return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+            @vertex fn bad_nested_matrix_store() -> @builtin(position) vec4f {
+                var value: NestedAggregate;
+                value.inner.transform = mat3x2f(vec2f(1.0, 0.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0));
+                return vec4f(value.inner.transform[0], 0.0, 1.0);
             }
             @vertex fn bad_helper() -> @builtin(position) vec4f {
                 var value: Aggregate;
@@ -16747,9 +17184,14 @@ mod tests {
                 write_matrix_component(&value);
                 return vec4f(0.0, 0.0, 0.0, 1.0);
             }
-            @vertex fn bad_dynamic_column(@location(0) index: u32) -> @builtin(position) vec4f {
+            @vertex fn safe_dynamic_column(@location(0) index: u32) -> @builtin(position) vec4f {
                 var value: Aggregate;
                 value.transform[index] = vec2f(0.5);
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+            @vertex fn bad_nested_dynamic_column(@location(0) index: u32) -> @builtin(position) vec4f {
+                var value: NestedAggregate;
+                value.inner.transform[index] = vec2f(0.5);
                 return vec4f(0.0, 0.0, 0.0, 1.0);
             }
             @vertex fn bad_dynamic_row(@location(0) index: u32) -> @builtin(position) vec4f {
@@ -16762,6 +17204,12 @@ mod tests {
                 value.transform[0] = vec2f(0.25, 0.5);
                 value.transform[2][1] = 0.75;
                 return vec4f(value.transform[0], 0.0, 1.0);
+            }
+            @vertex fn safe_whole_matrix_and_sibling_store(@location(0) position: vec3f) -> @builtin(position) vec4f {
+                var value: Aggregate;
+                value.transform = mat3x2f(vec2f(1.0, 0.0), vec2f(0.0, 1.0), vec2f(0.0, 0.0));
+                value.value = 1.0;
+                return vec4f((value.transform * position) * value.value, 0.0, 1.0);
             }
             @vertex fn safe_read() -> @builtin(position) vec4f {
                 let value = Aggregate(mat3x2<f32>(), 1.0);
@@ -16786,10 +17234,10 @@ mod tests {
         };
 
         for entry in [
-            "bad_direct",
+            "bad_nested_matrix_store",
             "bad_helper",
             "bad_helper_component",
-            "bad_dynamic_column",
+            "bad_nested_dynamic_column",
             "bad_dynamic_row",
         ] {
             assert!(interface
@@ -16800,7 +17248,14 @@ mod tests {
                 )
                 .unwrap());
         }
-        for entry in ["safe_static_components", "safe_read", "safe_sibling"] {
+        for entry in [
+            "safe_static_components",
+            "safe_dynamic_column",
+            "safe_whole_matrix_and_sibling_store",
+            "safe_direct_sibling",
+            "safe_read",
+            "safe_sibling",
+        ] {
             assert!(!interface
                 .entry_point_uses_unsupported_matrix_aggregate_store(
                     naga::ShaderStage::Vertex,
@@ -16812,7 +17267,7 @@ mod tests {
         assert!(!interface
             .entry_point_uses_unsupported_matrix_aggregate_store(
                 naga::ShaderStage::Vertex,
-                "bad_direct",
+                "safe_direct_sibling",
                 &wgt::DownlevelLimits::default(),
             )
             .unwrap());
@@ -16823,5 +17278,63 @@ mod tests {
                 &fl91,
             )
             .is_err());
+    }
+
+    #[test]
+    fn fl91_runtime_integer_gate_allows_only_direct_vertex_indexed_matrix_columns() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct State { transform: mat3x2f }
+            struct NestedState { inner: State }
+            @vertex fn dynamic_column(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                var value: State;
+                value.transform = mat3x2f(vec2f(0.0), vec2f(0.0), vec2f(0.0));
+                value.transform[index] = vec2f(1.0, 0.0);
+                return vec4f(value.transform[0], 0.0, 1.0);
+            }
+            @vertex fn dynamic_row(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                var value: State;
+                value.transform[0][index] = 1.0;
+                return vec4f(value.transform[0], 0.0, 1.0);
+            }
+            @vertex fn nested_dynamic_column(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+                var value: NestedState;
+                value.inner.transform[index] = vec2f(1.0, 0.0);
+                return vec4f(value.inner.transform[0], 0.0, 1.0);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let fl91 = wgt::DownlevelLimits {
+            runtime_integer_shader_operations: false,
+            ..Default::default()
+        };
+
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Vertex,
+                "dynamic_column",
+                &fl91,
+            )
+            .unwrap());
+        for entry in ["dynamic_row", "nested_dynamic_column"] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_runtime_integer_semantics(
+                        naga::ShaderStage::Vertex,
+                        entry,
+                        &fl91,
+                    )
+                    .unwrap(),
+                "{entry} must remain unavailable at FL9_1"
+            );
+        }
     }
 }

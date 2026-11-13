@@ -1,3 +1,139 @@
+## Core map callbacks after fence loss — 2026-11-12
+
+Core previously returned from `Device::maintain` on a HAL wait/fence error
+before draining `map_async` requests attached to in-flight submissions. The
+queue lifetime tracker now moves pending mappings from active submissions to
+the normal mapping handler after Core invalidates the device, so their
+callbacks receive `DeviceLost` without attempting a native map. A strict
+forced-FL9_1 fixture submitted a real buffer clear, scheduled a map, injected a
+device-removed HRESULT during fence wait, and verified the map and device-lost
+callbacks each fired once. Targeted fixture passed 1/1; full Core DX11 fixture
+suite passed 147/147 and Core DX12 regression passed 135/135. The RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) was used at requested/actual FL9_1;
+removal was simulated by injected HRESULT, not physical device removal. At
+this checkpoint queue drop still panicked on other non-Lost idle-wait errors;
+the later queue-retention section below records the follow-up fix.
+
+## FL9_1 profile probe: fragment inverse and gradients — 2026-11-12
+
+The fragment `mat4x4` inverse FXC probe generated 5,426 bytes of HLSL and was
+rejected by `ps_4_0_level_9_1` at 108 arithmetic slots (limit 64) and 108 total
+slots (limit 96); keep the existing vertex-only inverse exposure. A separate
+FXC 10.0.26100.0 probe rejected `ddx`, `ddy` and `fwidth` with X4532 and
+`SampleGrad` with X5190 under the FL9_1 pixel profile. Control builds accepted
+implicit `Sample` at FL9_1 and gradients at `ps_4_0` and
+`ps_4_0_level_9_3`. No backend changes were needed: Core already rejects
+selected-entry derivatives and explicit gradients before HAL. These are local
+compiler observations, not historical-driver tests.
+
+## Fragment `textureGather` helper — 2026-11-12
+
+The restricted `texture_gather_2d_float_fragment` path now accepts one
+selected fragment entry that forwards its location-0 `vec2f` unchanged to a
+single straight-line helper that returns one direct gather. Naga reuses the
+existing four point-sample emulation; this does not enable native HLSL Gather
+or the general gather limit. Core, HAL and Naga proofs reject transformed
+coordinates, nested/repeated calls, additional gathers or image operations,
+unsupported resources and unrelated sibling-entry usage. The HAL FXC test
+compiles both direct and helper lowering at `ps_4_0_level_9_1`.
+
+Strict execution selected the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, `software=false`) and explicitly
+requested and confirmed FL9_1. Direct and helper linear-view draws each
+matched all 64 pixels against `[151, 166, 106, 91]` within one UNORM step.
+The direct sRGB view matched all 64 decoded pixels against `[79, 97, 37, 27]`
+within two steps. Core rejected an R8 view and a multi-mip view before HAL.
+
+Regression commands passed Naga 172/172, Core DX11 147/147, Core DX12
+135/135, private HAL 520/520 and strict public DX11 155/155, with no public
+test failures or skips. Focused proof runs passed Naga 3/3, Core 4/4 and HAL
+3/3. Existing diagnostics were four `unused_qualifications` warnings in
+`wgpu-hal/src/dx11/hal_queue.rs` plus the Visual Studio wrapper's
+`vError: Unknown error` banner; neither was introduced by this change.
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p naga --no-default-features --features hlsl-out,wgsl-in --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std,dx11-test-fixture --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+## Uniform limits, surface readback, float select and RGB565 MSAA — 2026-11-12
+
+Continued with an optional query-supported RGB565 multisample resolve. The
+initial HAL execution exposed two stale RGBA8-only gates: initialization clear
+and multisample pipeline validation. After extending those gates, a strict HAL
+test cleared/resolved the target, waited on its queue fence and read 64/64
+packed red pixels (`0xF800`). A strict public test rendered, resolved, sampled
+the result to RGBA8 and verified all 64 pixels for each of 2x, 4x and 8x.
+The physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) was explicitly
+restricted to FL9_1; its RGB565 query mask was `0x0026F3A0`, with positive
+quality counts for 2x/4x/8x and zero for 16x. This is optional per-device
+support, not an FL9_1 guarantee.
+
+The capability evidence test passed 1/1. The strict HAL hardware test passed
+1/1, and the strict public GPU test passed 1/1 while executing three sample
+counts (2x/4x/8x), each with 64 checked pixels. Full strict private HAL passed
+523/523, and the full strict public DX11 target passed 156/156 with no ignored
+tests. The focused public test was rerun after adding 16x to its query
+enumeration and again executed 2x/4x/8x successfully. Core DX11 passed 147/147
+after its fixture was updated to compare multisample format flags; Core DX12
+passed 135/135.
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib rgb565_multisample_resolve_requires_all_optional_evidence -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib fl9_1_hardware_rgb565_multisample_resolve -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public public_dx11_resolves_query_supported_rgb565_samples_at_fl91 -- --nocapture --test-threads=1
+```
+
+The current public projection exposes thirteen compact user constant-buffer
+slots per shader stage and thirteen dynamic uniforms per pipeline layout. A
+strict forced-FL9_1 public test used all thirteen fragment slots and matched
+64/64 pixels; Core fixture tests reject fourteen. The adapter's BGRA8-format-
+gated surface COPY_SRC path also passed a strict HWND test that rendered,
+copied to a nonzero readback offset with padded rows, validated 91 pixels and
+padding sentinels, then presented. Reconfiguring that same surface to
+render-only now has coverage proving COPY_SRC copies are rejected on the new
+frame and presentation still succeeds.
+
+A new test exercises WGSL float `select` in a fragment shader. FXC accepted
+the generated `ps_4_0_level_9_1` form; the physical NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, `software=false`) was explicitly
+requested at FL9_1 and produced 32 red and 32 green pixels (64/64 matched).
+This confirms an existing safe shader path and adds execution coverage without
+changing capability gates. Fragment `position` and `front_facing` remain
+rejected because existing FXC profile tests prove they fail compilation.
+
+The complete strict public DX11 target passed 155/155 tests, including the
+float-select test and default-backend isolation. The strict surface-copy test
+passed 1/1 after adding the render-only reconfiguration case. HAL and Core
+fixture suites had passed 518/518 and 147/147 earlier in this same worktree;
+the targeted Core DX12 regression passed 135/135. Clippy for the two public
+DX11 test targets, `cargo +1.93.1 fmt --all -- --check` and `git diff --check`
+passed. Clippy reported seven existing HAL warnings in index, pipeline,
+transfer and texture code; the Visual Studio wrapper prints its existing
+`vError: Unknown error` banner before successful Cargo results.
+
+The strict public test re-verified the physical adapter identity and forced
+feature level. Device-removal recovery on actual hardware, historical FL9_1
+drivers and Lumia/CoreWindow runtime remain unverified. The public backend is
+still an experimental opt-in subset, not a complete WebGPU or general wgpu
+backend.
+
+Commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_surface_copy -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public --test dx11_surface_copy
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
 ## Computed helper coordinates for fragment 2D `textureLoad` — 2026-11-12
 
 The selected-entry fragment 2D float `textureLoad` subset now accepts one
@@ -1375,6 +1511,38 @@ wgpu suite remains the evidence for actual rendering. The next work remains a
 Core/HAL operation audit and targeted shader/resource additions only where the
 FL9_1 contract allows them. Historical hardware and Lumia runtime remain
 external verification gaps.
+
+## Coordinator follow-up — matrix-store proof and verification — 2026-11-12
+
+The matrix-struct candidate was confirmed as a real shader translation defect:
+Naga emitted setters that accepted a local struct by value, so writes to a
+split `matCx2<f32>` member could be lost. The HLSL writer now emits `inout`
+for the struct and generic split-matrix setter destinations. Core and the
+private HAL accept only direct writes to a direct local two-row-float-matrix
+member or a sibling `f32` member when the type contains that matrix. Nested,
+array, dynamic and helper-pointer cases remain rejected. The regular
+downlevel-limit projection is unchanged.
+
+Evidence: Naga's focused writer test passed; the FXC probe accepted the shader
+as `vs_4_0_level_9_1`; the Core proof test passed; the strict private HAL
+shader test passed on RTX 3090 Ti hardware explicitly requested and verified
+at FL9_1; and public wgpu readback passed all 64 pixels. The ordinary public
+API integration test also passed and retained rejection of helper-mediated
+stores. `cargo fmt --all -- --check` and `git diff --check` pass. Core's
+focused DX12 regression passed 135/135. The full current-tree suites recorded
+above remain green. Naga snapshot conversion is still blocked by the missing
+external `spirv-cross` executable; the affected HLSL snapshots were updated
+for the signature change, but the complete snapshot-conversion suite has not
+been verified in this environment.
+
+This closes one narrow shader gap, not broad WGSL support. The next software
+work should audit and test the advertised public projection against curated
+CTS selectors and close concrete Core-valid/HAL gaps as they are found. The
+3D non-suffix mip-view clone remains a workload-dependent candidate: its
+likely CPU-shadow/re-upload cost needs justification before implementation.
+Profile/API exclusions and historical-device verification remain separate
+from software feature work. Use agents for independent audits and review;
+keep cross-layer Core/Naga/HAL changes under one coordinator.
 
 An initial Deno Clippy attempt at `-j12` exhausted the Windows paging file
 (OS error 1455) while rebuilding proc-macro dependencies; rerunning at `-j2`
@@ -18195,6 +18363,50 @@ $env:WGPU_DX11_REQUIRE_HARDWARE='1'
 & 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
 ```
 
+## Coordinator update — constant-buffer slots and surface readback — 2026-11-12
+
+The capability projection previously divided the shared thirteen uniform slots
+between vertex and fragment shaders. D3D11 has separate stage register
+namespaces, and the HAL maps thirteen user bindings to `b0`–`b12`, reserving
+`b13` for internal emulation. The projection now allows thirteen uniform
+buffers per stage and thirteen dynamic uniform bindings per pipeline layout;
+the HAL still caps the aggregate logical bindings at thirteen. A strict public
+test used thirteen sparse fragment-visible dynamic ranges and FXC compiled the
+shader for forced FL9_1. All 64 pixels matched `[112, 72, 84, 96]`. Core
+rejected fourteen static and fourteen dynamic uniforms before HAL. The special
+fragment `textureLoad` proof remains capped at six uniforms, separately from
+the general binding limit and the FL9_1 255-vertex/32-pixel float4 constant
+budgets.
+
+Surface `COPY_SRC` is now projected only when the selected BGRA8 format reports
+readback support. The strict public HWND test rendered a clear color, copied
+the acquired frame before present into a buffer at offset 16 with 256-byte row
+pitch, verified all 91 pixels and untouched prefix/row padding, then presented
+that frame. The CoreWindow implementation shares the code but remains
+unverified on Lumia/UWP hardware.
+
+The final focused and regression results on the current tree were:
+
+- Private D3D11 HAL: 518/518 passed. Four existing `unused_qualifications`
+  warnings remain in `hal_queue.rs`.
+- Core with `dx11-test-fixture`: 147/147 passed, including the selected-device
+  projection and fourteen-binding rejection checks.
+- Core DX12 regression: 135/135 passed.
+- Strict public D3D11 target: 154/154 passed on the physical RTX 3090 Ti
+  (`0x10de:0x2203`, driver `32.0.16.2101`), requested and actual FL9_1,
+  `software=false`. This includes the default-backend isolation test.
+- Strict HWND surface readback target: 1/1 passed on the same adapter.
+- Targeted HAL projection test and Core projection fixture: 1/1 each passed.
+- HAL and public test Clippy completed with existing warnings; no warning was
+  introduced by the surface or uniform-capacity changes. Workspace formatting
+  and `git diff --check` passed.
+
+The first public regression pass exposed an exact-usage assertion that expected
+render attachment alone; it was updated to assert render-attachment support
+and compare `COPY_SRC` against the selected BGRA8 format projection. The final
+strict public rerun passed. The Core fixture initially retained old limit
+expectations; those were updated to thirteen and the full fixture suite passed.
+
 Checkpoint commit: `56197ccfeb0efccd24ccb7806b8f8d1ffdcc4965`
 (`dx11: expand verified FL9_1 shader and query paths`). The commit contains
 only the reviewed 24-file FL9_1 shader/query, validation, testing and
@@ -18766,3 +18978,597 @@ The HAL test build reports four existing `unused_qualifications` warnings in
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 & 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
 ```
+## Computed explicit LOD through a fragment helper — 2026-11-12
+
+The restricted single-mip fragment `textureSampleLevel` proof now supports a
+computed LOD in one unconditional straight-line helper. The helper must return
+one sample, use the existing whitelisted side-effect-free scalar expression
+forms, and forward its `vec2f` coordinate argument unchanged when LOD is
+computed. Literal-zero helpers retain the prior bounded coordinate arithmetic
+subset. Core and HAL proofs match; HAL changes only the proven image-sample LOD
+in the helper's own Naga expression arena. Texture and sampler identities stay
+unchanged and continue using the shared selected-entry sampling relationship
+and native binding map. Nested, repeated or conditional calls, unsupported LOD
+math, and computed LOD combined with transformed coordinates remain rejected.
+
+The rewrite is limited to a selected single-mip view, equal min/mag filters
+and anisotropy one, so explicit LOD cannot select a different mip or spatial
+filter. It does not enable general explicit-LOD sampling or mipmapped LOD
+selection. FXC accepted the lowered helper with `ps_4_0_level_9_1`; the strict
+RTX 3090 Ti test requested and confirmed FL9_1 and matched the expected
+two-color pattern for all 64 readback pixels.
+
+Focused Core selected-entry proof, HAL proof plus FXC compilation, and public
+GPU draw/readback each passed 1/1. Full strict private HAL passed 519/519, Core
+DX11 fixture passed 147/147, Core DX12 regression passed 135/135, and strict
+public DX11 passed 155/155 with no failures or ignored tests. The public suite
+also verified the thirteen-uniform projection, float-select shader, and
+default-backend isolation. The strict surface-copy test passed 1/1 after
+checking COPY_SRC-to-render-only reconfiguration, invalid-copy rejection and
+second-frame presentation. Clippy passed for Core, HAL and the two affected
+public test targets; HAL retained existing unrelated warnings. Formatting and
+`git diff --check` passed after the final documentation update.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std,dx11-test-fixture --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_surface_copy -- --nocapture --test-threads=1
+```
+
+## Uniform limits, surface readback, and float select — 2026-11-12
+
+## Queue wait and pending-map error handling — 2026-11-12
+
+The D3D11 device now creates one reusable event query during device open for
+queue-idle waits. `End`, `Flush` and `GetData` are serialized across queue
+wrappers; a failed wait poisons that query so it cannot be reused in an unknown
+state. This removes the per-wait query-allocation failure from Core's queue
+destruction path. It does not resolve Core's generic panic on other unexpected
+non-device-lost idle-wait errors.
+
+Core now fails pending `map_async` callbacks when a queue wait or fence-value
+query reports device loss. A strict FL9_1 fixture test submitted a real buffer
+clear, scheduled a map callback, injected a removed-device error at the fence
+wait, and observed one `DeviceLost` callback instead of a hang. On the RTX
+3090 Ti at requested/actual FL9_1, serialized sequential and concurrent idle
+waits passed. The debug-layer indexed render test reported zero messages or
+errors and only the live device/context after the persistent query was dropped
+for the leak report.
+
+Current-tree regressions passed: Naga 172/172, Core DX11 147/147, Core DX12
+135/135, private D3D11 HAL 523/523, and strict public D3D11 156/156. Strict
+hardware tests identify the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, software=false) and request/confirm
+FL9_1. Core and HAL Clippy completed successfully with existing warnings in
+fixture, transfer, pipeline, queue and texture code. The Visual Studio Cargo
+wrapper continues to print its existing `vError: Unknown error` startup
+banner. No historical FL9_1 or physical device-removal test was performed.
+The separate strict `dx11_surface_copy` target also passed 1/1 on the same
+physical adapter, checking 91 pixels, padded-row sentinels, copy rejection,
+reconfiguration and a second present.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p naga --no-default-features --features hlsl-out,wgsl-in --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std,dx11-test-fixture --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --nocapture --test-threads=1
+$env:WGPU_DX11_DEBUG_LAYER = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib fl9_1_hardware_indexed_triangle -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j32 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std,dx11-test-fixture --tests
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j32 -p wgpu-hal --no-default-features --features dx11 --tests
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
+## Public HWND example with independent material uniform — 2026-11-12
+
+The public windowed example now uses separate transform and material uniform
+buffers at sparse bindings in groups 0 and 2, alongside the sampled texture
+and sampler in group 7. The fragment tint is read from the independent
+material binding. The example's surface check now requires its render-attachment
+usage without rejecting the additionally supported `COPY_SRC` usage. The
+first run exposed that stale exact-usage assumption; after correcting it, the
+public example ran five textured, indexed, depth-tested frames on the physical
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested
+and confirmed at FL9_1 with `software=false`.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --example dx11_fl91_windowed -- --frames=5
+```
+
+## Coordinator follow-up — FL9_1 readiness and scoped CTS — 2026-11-12
+
+Three read-only agent audits reviewed the remaining capability matrix, Core
+queue/presentation lifetime risks, and CTS coverage. They found no new
+confirmed Core-valid operation reaching an unsupported HAL path in the scopes
+reviewed. They confirmed that the backend remains a useful explicit-DX11
+graphics subset, not complete FL9_1 WebGPU support; the Core-to-HAL audit and
+curated CTS coverage are still incomplete. The broad render-pass CTS result
+remains a boundary probe because its cases request unsupported arrays, mip
+chains, formats/usages or multiple color targets.
+
+The strict hardware CTS clear/copy/readback sanity selector was rerun on the
+physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), with hardware
+required and FL9_1 explicitly verified. It passed 1/1 with no skips or
+failures. A CTS `--list` probe confirmed the current selector hierarchy; two
+guessed narrower selectors matched no cases and were not test executions.
+
+Remaining engineering issues include the generic Core queue-drop panic on
+unexpected non-device-loss idle-wait errors and D3D11's potentially infinite
+pending-present wait. A safe generic queue-drop fix must retain in-flight
+resources until completion or confirmed device loss; merely suppressing the
+panic is unsafe. Historical FL9_1 adapters, Lumia/CoreWindow execution and
+physical device-removal recovery remain external verification requirements.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,basic:clear:*'
+```
+
+## Coordinator support inventory and specialist triage — 2026-11-12
+
+Three read-only reviews covered FL9_1 hardware/compatibility limits,
+WGSL-to-FXC shader support, and public Core-to-HAL/lifetime paths. No files
+were changed by the reviewers, and they found no additional confirmed
+Core-valid request that reaches an unsupported HAL operation in their scoped
+audits. The audit is still not exhaustive.
+
+The public backend already supports explicit DX11 adapter selection and a
+tested, constrained graphics subset: multiple bind groups, dynamic uniform
+ranges, selected sampled formats and copy paths, depth-tested rendering,
+offscreen readback, and desktop HWND presentation. The default backend set
+still excludes DX11. This is practical for a bounded application workload, but
+not broad wgpu compatibility. Important remaining implementation work includes
+the full advertised-capability/Core/HAL audit, query-specific resource and
+format coverage, constrained graphics/shader functionality, and more curated
+public tests. FL9_1/profile boundaries such as compute/storage execution,
+geometry shaders, multiple render targets, indirect draws, occlusion queries,
+ordinary 1D/array textures, and fragment derivatives/`SampleGrad` should
+remain rejected.
+
+The highest-priority confirmed robustness issues were queue teardown panicking
+on unexpected non-device-loss `wait_for_idle` errors and D3D11 pending-present
+waits that may be infinite. Hardware, shader, and validation specialists are
+useful for independent audits and scoped research; cross-layer implementation
+stays coordinator-owned to avoid conflicting Core, Naga, capability and HAL
+edits.
+
+## Queue teardown retention after wait errors — 2026-11-12
+
+Core now removes a user-dropped queue from the public registry, checks whether
+the queue is otherwise referenced, and serializes its idle wait. If the wait
+returns a non-device-loss error, Core invalidates the device, reports device
+loss, and retains the queue in the Hub. Device polling can still reach that
+queue through the device's weak queue reference and complete tracked work
+callbacks. When the device is dropped, Core retries idle completion for an
+orphan with no in-flight Core references. If it still cannot prove idle, Hub
+shutdown intentionally leaks the orphan and its resources. Queue destruction
+also has a final fail-safe that retains its HAL queue, pending writes, lifetime
+tracker and Device rather than panicking or releasing resources after an
+unconfirmed idle wait. The pending-present HAL wait remains potentially
+unbounded.
+
+A strict test injected `E_OUTOFMEMORY` from the first `wait_for_idle` call on
+the physical RTX 3090 Ti at requested/actual FL9_1. It observed the device-lost
+callback, polled the retained queue until its submitted-work callback ran once,
+then verified queue retirement when the device was dropped. This is synthetic
+error injection, not a real driver OOM. The existing injected device-removal
+queue-drop test also passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std,dx11-test-fixture --lib fl91_core_queue_drop_wait_out_of_memory_retains_queue_until_device_drop -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std,dx11-test-fixture --lib -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+```
+
+Results: the focused test passed 1/1; the complete Core DX11 fixture suite
+passed 148/148, Core DX12 passed 135/135, and the strict private D3D11 HAL
+suite passed 523/523. The new OOM fixture selected the physical NVIDIA RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, software=false) and requested
+and asserted FL9_1. The OOM itself was injected synthetically. The HAL suite
+reported four existing `unused_qualifications` warnings in `hal_queue.rs`.
+
+## Bounded queue waits and orphan reaping — 2026-11-12
+
+Added an optional HAL queue idle timeout with explicit `Idle` and `TimedOut`
+results; backends that do not implement it return `None`, so Core preserves
+their existing blocking teardown behavior. The D3D11 queue retains its event
+query across timeouts, invalidates it if a newer submission was recorded, and
+uses one elapsed-time budget for GPU completion and pending presentations.
+Pending CoreWindow presents remain rooted after timeout. Surface reconfigure
+and unconfigure return a timeout without replacing or destroying prior
+swapchain state.
+
+Core now uses bounded idle attempts when a queue or Device is dropped. A
+timed-out queue and its resources remain rooted in Hub without treating normal
+in-flight work as device loss. `device.poll` and `poll_all` retry orphan
+retirement after callbacks run; `poll_all` reports nonempty while an orphan
+remains, including when its Device has left the registry. Device-lost and OOM
+paths still report errors and retain possibly in-flight resources. If Hub is
+destroyed before idle can be confirmed, it intentionally leaks the orphan
+rather than releasing native resources early. The orphan reaper waits for at
+most 10 ms per queue, subject to Windows scheduling. Synchronous D3D calls
+cannot be preempted by that budget.
+
+Strict forced-FL9_1 tests on the NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) passed the HAL query-resume test, Core queue-drop timeout and
+reap, and `poll_all` reaping after Device drop. Timeout injection is synthetic.
+The full D3D11 private HAL suite passed 525/525, Core DX11 fixtures passed
+150/150 (one RG8 mip capability subcase was explicitly skipped), the strict
+public D3D11 suite passed 157/157, and Core DX12 passed 135/135. A public
+RGB565 multisample blend test passed at 2x, 4x and 8x with all 64 pixels
+inside the tightly bounded packed-channel quantization intervals.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std,dx11-test-fixture --lib -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+```
+
+Rust 1.93.1 formatting checks, `git diff --check`, and Clippy for Core, HAL,
+and the public DX11 test target passed. HAL Clippy reports eight existing
+warnings (`too_many_arguments`, `std` versus `core`, and a checked `unwrap`);
+there were no lint errors.
+
+## Fallible HAL unconfigure and Core association retention — 2026-11-12
+
+A surface-lifecycle audit found that D3D11 could time out waiting for an
+outstanding present during cross-device reconfiguration. HAL's old `unconfigure`
+contract was infallible, so Core discarded its old Presentation association
+before HAL had actually released the swapchain; the new device then could not
+configure that still-old-device swapchain. Added an additive fallible HAL
+unconfigure hook with a default implementation preserving existing backend
+behavior. D3D11 reports the timeout, and Core restores/retains the prior
+Presentation association on any unconfigure error. A strict public regression
+uses an actual hidden-HWND present on the NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, requested/actual FL9_1), injects a
+one-shot wait timeout, verifies the previous configuration remains available,
+waits for the presentation, and confirms cross-device reconfiguration succeeds.
+The present is real; timeout injection is synthetic.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11-test-fixture,glsl,std --test dx11_surface_error_fixture public_dx11_reconfigure_timeout_preserves_previous_device_association -- --nocapture --test-threads=1
+```
+
+Result: 1 passed, 0 failed, 3 filtered out. The first test run exposed a
+fixture setup error (the replacement device's queue was dropped before surface
+configuration); the fixture now retains both queues. This did not require a
+backend behavior change.
+
+## Surface device-loss routing and callback lock safety — 2026-11-12
+
+Independent surface review found that D3D11 previously treated device loss
+during unconfigure as successful cleanup, hiding the loss from Core. The HAL
+now retires its lost configuration and returns `Device(Lost)`; Core drops the
+old Presentation, invalidates the old device and queues its callback for
+delivery after surface and queue locks are released. The same review found
+that a loss from replacement-device `configure` synchronously invoked its
+callback while queue submission locks were held. Core now defers that callback
+as well. A test-only D3D11 configure failure seam exercises that path.
+
+The strict public surface fixture passed 5/5 on the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, requested/actual FL9_1,
+`software=false`). The test injected device removal at old-device unconfigure
+and replacement-device configure. Both callbacks reentered `Device::poll`
+successfully; the replacement could configure/acquire after old-device loss.
+The HRESULT injections are synthetic and do not establish physical removal or
+TDR recovery. The real HWND present, resize and frame-lifetime tests also
+passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11-test-fixture,glsl,std --test dx11_surface_error_fixture -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std,dx11-test-fixture --lib -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11,dx11-test-fixture --lib -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,glsl,std --test dx11_public -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11,dx11-test-fixture --lib --tests
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std,dx11-test-fixture --lib --tests
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --no-default-features --features dx11-test-fixture,glsl,std --test dx11_surface_error_fixture
+```
+
+Results: Core DX11 150/150, private HAL 525/525, public D3D11 157/157,
+surface fixture 5/5 and Core DX12 135/135. HAL Clippy passed with 8 library
+and 25 test warnings from existing code; Core Clippy passed with 3 existing
+fixture-test warnings; public surface fixture Clippy passed. The callback fix
+introduced no reported lint warning. The pinned formatter and `git diff
+--check` are rerun for this update.
+
+The current remaining backlog is not sampler/buffer plumbing: it is the
+constrained WGSL-to-Level9 shader subset, the full advertised Core-to-HAL and
+CTS matrix, and external hardware evidence. Compute/storage, geometry,
+multiple render targets, ordinary 1D/array textures, indirect drawing and
+occlusion queries remain unavailable or withheld. Historical FL9_1 drivers,
+Windows 10 Mobile/CoreWindow execution and physical device-removal recovery
+remain unverified. Use agents for independent category audits and CTS triage;
+keep a Core/Naga/HAL implementation slice under one coordinator.
+
+## Coordinator triage — remaining support and specialist review — 2026-11-12
+
+Three independent read-only follow-ups reviewed shader, texture and render/API
+work. None found a confirmed Core-valid request reaching an unsupported HAL
+operation in its scoped area. They identified these distinct kinds of work:
+
+- Hard FL9_1/profile limits remain compute/storage, geometry shaders, more
+  than one color target, ordinary 1D/array textures, indirect execution and
+  occlusion queries; these are not agent implementation tasks.
+- A candidate software shader expansion is whole-matrix assignment plus
+  sibling-field updates in a function-local struct containing a two-row
+  matrix. Core and HAL currently reject it because Naga's split-matrix HLSL
+  lowering has unsafe neighboring shapes. It needs a minimal generated-HLSL
+  and FXC probe before any validation exception; if safe, one owner must change
+  Naga/Core/HAL together and verify a strict public readback.
+- Non-suffix mip views for supported 3D textures are consistently withheld in
+  Core and HAL. FL9_1's lowest-LOD SRV rule prevents direct views; a clone path
+  likely requires retained CPU shadowing and re-upload, with a material memory
+  cost. Treat this as a lower-priority, workload-dependent feature.
+- The current 2D format/usage matrix is stronger than cube/3D operation
+  coverage. Add query-driven tests for the exact cube/volume masks before
+  widening those paths. A precise color-only `store`/`discard` CTS selector is
+  also missing from the curated inventory; that is verification work, not a
+  known renderer defect.
+
+Use agents for independent compiler probes, contract audits, selector triage
+and review. Do not split a Core/Naga/HAL implementation across concurrent
+agents. The coordinator owns one vertical slice, integration, and the single
+heavyweight test/build sequence. No feature implementation or test was run by
+these read-only follow-ups. Next, probe the matrix-containing local-struct
+assignment through Naga HLSL and FL9_1 FXC; only proceed if generated code
+preserves every member and FXC accepts it. Keep actual FL9_1 hardware,
+CoreWindow/Lumia execution, and physical device-removal recovery as separate
+external verification gaps.
+## Coordinator update — verified matrix-store correction — 2026-11-12
+
+This update supersedes the earlier note that treated local matrix-struct assignment as a pending candidate. The FXC probe confirmed a real Naga HLSL issue: setters for split `matCx2<f32>` members passed the containing local struct by value, so member updates could be lost. Naga now emits `inout` for these generated setters and the generic split-matrix helper destinations.
+
+Core and the private HAL allow only direct writes to a direct local two-row float matrix member or a sibling `f32` member when the structure contains that matrix. Nested structures, arrays, dynamic pointer paths, and helper-mediated pointer stores remain rejected. General downlevel-limit projection is unchanged.
+
+Verified:
+- Naga focused writer test: 1/1.
+- Core matrix-store proof test: 1/1.
+- D3D11 HAL FXC compile probe: 1/1, accepted as `vs_4_0_level_9_1`.
+- Strict private HAL shader test: 1/1 on RTX 3090 Ti, requested and actual FL9_1.
+- Strict public wgpu readback: 1/1; all 64 pixels matched within tolerance.
+- Public/Core integration test: 1/1; direct assignment accepted and helper-mediated assignment remained rejected.
+- Core DX12 regression: 135/135.
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+
+Naga's full library suite passed 173/173. The snapshot-conversion test could not run because `spirv-cross` is not installed; affected HLSL snapshots were updated, but the full conversion suite remains unverified. Existing full current-tree suite counts are recorded above.
+
+The next software priority is closing the advertised-capability/Core-validation/HAL/CTS evidence matrix and fixing concrete mismatches found there. Non-suffix 3D mip views remain an optional, workload-dependent feature because FL9_1 cloning likely needs CPU shadowing and re-upload. Hard profile limits and historical-device verification are separate from software feature work.
+
+## Coordinator follow-up — render-pass CTS selection boundary — 2026-11-12
+
+A strict attempt to isolate the RGBA8 color-only store/discard CTS cases confirms that mip and array-layer combinations are nested subcases, not filterable query parameters. The RGBA8 mip-0/layer-0 store subcase ran and matched, but the enclosing CTS case fails on unsupported array-layer/mip sibling subcases and the final TEXTURE_2D_ARRAYS validation exception. Discard reaches all four nested subcases without a reported texel mismatch, then fails the same final validation expectation. Both test-level selectors are 0/1 and remain excluded from the passing CTS inventory. Existing public tests cover store/discard initialization for the supported one-mip path. This is a CTS query-granularity gap; enabling arrays to satisfy it would violate the current FL9_1 contract. Exact command forms and outcomes are recorded in FL9_1_CTS.md.
+
+An independent reviewer found no unsound acceptance in the local matrix-store proof. Core and HAL check the selected entries and retain rejection of nested, dynamic, array and helper-pointer writes. Nested-array Naga helper output has source-level coverage only; it remains outside the accepted Core/HAL contract.
+
+## Coordinator regression rerun — current worktree — 2026-11-13
+
+After the matrix-store change and render-pass CTS selector investigation, the strict private D3D11 HAL suite passed 526/526. The Core DX11 fixture/library suite passed 150/150 at `-j4`; an initial `-j16` compile hit Windows OS error 1455 while mapping Naga metadata, so the lower-parallelism retry was used. The strict public D3D11 test target passed 153/153 at `-j4`, including `experimental_dx11_is_not_enabled_by_default`. Core's focused DX12 suite passed 135/135. `cargo fmt --all -- --check`, targeted Clippy for Naga/Core/HAL/public test targets, and `git diff --check` passed; existing warnings remain in older HAL/core fixture code and Naga's GLSL test.
+
+Strict hardware selection for GPU suites was the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`, physical adapter, requested and actual FL9_1. No full public API-suite skips or failures occurred. The two intentionally scoped RGBA8 CTS cases remain 0/1 due to unsupported nested array/mip subcases as described above; those are not counted as green CTS tests.
+
+## Coordinator update — vertex-indexed local matrix columns — 2026-11-13
+
+Added a narrow FL9_1 shader subset for a straight-line vertex entry point
+writing a direct local `matCx2<f32>` member column indexed by
+`@builtin(vertex_index)`. FXC rejected the unsigned switch form with X3548, so
+Naga now emits a signed conditional setter and casts the index at the call
+site. Core's runtime-integer gate and the HAL shader proof permit only this
+matching direct-store shape; dynamic rows and nested matrix columns remain
+rejected. The general `matrix_aggregate_stores` downlevel limit remains false.
+
+Focused Naga writer, Core matrix-store, Core runtime-integer, and HAL matrix
+proof tests each passed 1/1. A strict public wgpu render passed on the physical
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual
+FL9_1; all 64 pixels matched the expected per-vertex barycentric channels
+within 2 LSB. A strict HAL probe compiled the generated dynamic-column vertex
+shader with FXC. The HLSL snapshot converter remains blocked by the missing
+`spirv-cross` executable; the affected HLSL snapshots were regenerated with
+the Naga CLI or updated from its matching emitted code.
+
+Regression results for this increment:
+
+- Naga library: 173/173.
+- Private D3D11 HAL with `WGPU_DX11_REQUIRE_HARDWARE=1`: 527/527.
+- Core DX11 fixture/library: 148/148.
+- Public D3D11 API target with strict hardware mode: 153/153, including the
+  default-backend isolation test.
+- Core DX12 library under `dx12,std,wgsl`: 133/133.
+- HAL DX12 library: 4/4.
+- `cargo fmt --all -- --check` and `git diff --check`: passed.
+- Clippy passed for Naga, Core with the DX11 fixture, HAL with DX11, and the
+  public matrix-store test target. HAL emitted eight warnings in existing
+  DX11 code outside this matrix-store change.
+
+The exact commands and hardware details are in the coordinator session
+output. The full Naga snapshot converter remains unverified because
+`spirv-cross` is not installed. No test was changed to skip or mask that tool
+dependency. This slice is regression-clean on the tested configurations. The
+next software priority remains closing the advertised-capability/Core/HAL/CTS
+evidence matrix, rather than generalizing matrix aggregate-store support.
+
+## Verification environment note — 2026-11-13
+
+The full current-tree regressions passed: Naga 173/173; strict private D3D11
+HAL 527/527; Core DX11 fixture/library 148/148; strict public D3D11 API target
+153/153; Core DX12 133/133 under `dx12,std,wgsl`; and HAL DX12 4/4. The
+separate strict public dynamic-column readback passed 1/1 on the physical RTX
+3090 Ti at requested and actual FL9_1. `cargo fmt --all -- --check`,
+`git diff --check`, and Clippy for Naga, Core, HAL and the public matrix test
+target passed. HAL Clippy reported eight warnings in existing DX11 code
+outside this change. The first Core test and Naga Clippy invocations outside
+the Visual Studio environment could not find `link.exe`; rerunning them
+inside the MSVC developer environment passed. Visual Studio setup still
+prints its existing `vError: Unknown error` banner although setup and the
+commands succeed.
+
+## CTS follow-up — topology and vertex-state fixture — 2026-11-13
+
+Read-only CTS triage proposed filtered vertex-offset and primitive-topology
+selectors. The direct basic cases for point-list, line-list, line-strip,
+triangle-list and triangle-strip passed 5/5 on the RTX 3090 Ti at requested
+and actual FL9_1, with no skips or failures. The direct incomplete-list cases
+passed 3/3: line-list drawCount 5 and triangle-list drawCounts 4 and 5. These
+exclude indirect drawing and strip primitive restart.
+
+The filtered
+`setVertexBuffer_offset_and_attribute_offset:format="float32x2"` case failed
+0/1 because the CTS helper hard-codes an `r32sint` render target, which the
+selected projection rejects; zero-filled readback then fails generated
+checks. It provides no evidence about the float vertex-offset path. The full
+strict public D3D11 test target has passing vertex offset/stride GPU tests.
+Exact selectors and the fixture limitation are recorded in `FL9_1_CTS.md`.
+
+## Shader follow-up — computed LOD and transformed helper coordinates — 2026-11-13
+
+Core and HAL now accept one straight-line fragment helper that computes a
+whitelisted LOD expression and uses the existing bounded coordinate-expression
+subset for its single 2D float sample. Core's selected-entry relationship
+proof and HAL's shader proof remain aligned; the HAL test compiles the lowered
+shader with FXC at `ps_4_0_level_9_1`. On the physical NVIDIA GeForce RTX 3090
+Ti (`0x10de:0x2203`, driver `32.0.16.2101`), the strict public test requested
+and confirmed FL9_1 and verified all 64 readback pixels against the matching
+one-mip transformed-coordinate output. This is one GPU-executed test function;
+the Core proof and HAL/FXC checks are CPU/compiler tests. Focused commands:
+
+- Core: `cargo +1.93.1 test --offline -j4 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl9_level_zero_sampling_requires_a_proven_direct_fragment_shape -- --nocapture --test-threads=1` — 1/1 passed.
+- HAL/FXC: `cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 fl91_explicit_lod_zero_proof_lowers_computed_lod_and_coordinates_in_helper -- --nocapture --test-threads=1` — 1/1 passed.
+- Strict hardware: `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1` — 1/1 passed; the test's other FL9_1 operations also completed.
+
+General explicit-LOD sampling, multiple-mip semantics, nested helpers and
+expressions outside the existing proof remain unavailable.
+
+## Uniform-register contract fix — 2026-11-13
+
+A read-only Core/HAL audit found a real mismatch: Core allowed thirteen
+uniform bindings per shader stage, while HAL allocated thirteen total across
+vertex and fragment. HAL now builds independent deterministic `b0`–`b12`
+maps per stage, stores per-stage required uniform sizes, and binds a shared
+logical uniform at separate stage slots when necessary. Layouts can contain up
+to twenty-six static uniforms when visibility keeps each stage at thirteen or
+fewer. The existing Core limit of thirteen dynamic uniforms across a pipeline
+layout remains unchanged. Capability projection now distinguishes the
+per-stage count, total static count, and dynamic total.
+
+Verification on the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`) requested and confirmed FL9_1. The strict public GPU test
+used thirteen sparse vertex uniforms and thirteen sparse fragment uniforms in
+two groups; both stages occupied `b0`–`b12`, and all 64 readback pixels matched
+`[139, 90, 105, 120]`. The first expected red byte was one higher; the observed
+UNORM result established the correct rounded value, which is now asserted.
+The forced-FL9_1 Core fixture accepted 13+13 stage-disjoint pipeline layouts
+both across two groups and in one group. The HAL allocation unit test verified
+per-stage slot reuse and a shared uniform assigned different vertex/pixel
+registers. Focused commands:
+
+- HAL allocator: `cargo +1.93.1 test --offline -j4 -p wgpu-hal --lib --no-default-features --features dx11 pipeline_binding_plan_allocates_across_groups_and_enforces_limits -- --nocapture --test-threads=1` — 1/1 passed.
+- Core/HAL layout fixture: `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j4 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std,wgsl fl91_core_pipeline_layout_supports_stage_disjoint_uniform_limits -- --nocapture --test-threads=1` — 1/1 passed; hardware setup was physical FL9_1, while the layout count itself was synthetic.
+- Strict hardware: `WGPU_DX11_REQUIRE_HARDWARE=1 cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_uses_thirteen_uniform_registers_per_stage_at_fl91 -- --nocapture --test-threads=1` — 1/1 passed; 64/64 GPU pixels validated.
+
+The full affected test suites and DX12 regression remain to be rerun after this
+change.
+
+## Coordinator update — regression closure and remaining work — 2026-11-13
+
+After the stage-specific uniform fix, the complete strict private HAL suite
+passed 527/527, the Core FL9_1 fixture/library suite passed 149/149, and the
+strict public D3D11 test target passed 153/153. The public suite's hardware
+paths required physical FL9_1 execution; the test-function count includes CPU
+validation and selected-device-gated cases, so it is not a count of distinct
+GPU executions. Core DX12 passed 133/133 and HAL DX12 passed 4/4. Formatting
+and `git diff --check` passed. The Core DX12 test build emitted one existing
+unused-variable warning in `validation.rs`; Visual Studio setup continues to
+print its `vError: Unknown error` banner while the commands run successfully.
+
+Strict CTS additions on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, requested/actual FL9_1) passed the
+color-mask selector 2/2 and RGBA8 blend-clamping selector 8/8 with no skips
+or warnings. A tightly filtered texture-zero-initialization query matched no
+cases because the needed mip/layer/aspect parameters are nested CTS
+subcases; the broader selector would include unsupported shapes, so it was not
+run as evidence. The existing E: target had about 0.5 GB free; the CTS checks
+used a new C: system-temp target without deleting existing artifacts. Clippy
+passed for the HAL library, Core test target and public D3D11 test target; it
+reported eight existing HAL warnings and three style warnings in Core fixture
+tests. No warning was promoted to an error.
+
+The same C: target ran three more strict CTS selectors: R8Unorm render-pass
+store and discard each passed 1/1, and partial `queue.writeBuffer` passed 1/1
+with all three offset subcases. Each ran on the physical RTX 3090 Ti at
+requested/actual FL9_1 with no skips or failures. The buffer case verifies
+zero-initialized neighboring bytes after a partial update and GPU copy; the
+render-pass cases verify actual pixel readback. Exact selectors and the runner
+invocations are in `FL9_1_CTS.md`.
+
+The remaining software priority is closing the advertised-capability to
+Core-validation to HAL-operation to public-test/CTS evidence matrix. Current
+scoped audits found no additional confirmed Core-valid request reaching an
+unsupported HAL path, but this is not an exhaustive proof. A bounded computed-
+coordinate `textureGather` slice is a reasonable later shader expansion, after
+the matrix identifies any concrete contract gaps. Hard FL9_1/profile
+boundaries still include compute/UAV/storage, geometry shaders, multiple color
+targets, indirect drawing, occlusion queries and unrestricted shader forms.
+Historical FL9_1 drivers, Lumia ARM32/CoreWindow execution and physical
+device-removal recovery remain external verification requirements. Explicit
+DX11 selection is opt-in; default backend selection remains unchanged.
+
+Three bounded specialist assignments were used: a CTS selector run, a
+read-only adapter/CoreWindow contract check, and a read-only shader-feature
+triage. No agent made repository edits. The confirmed stale CoreWindow wording
+in older plan checkpoints is now marked as historical; current docs and code
+agree that capabilities are exposed for constructed CoreWindow surfaces but
+Lumia/UWP execution is unverified.
+
+Follow-up scoped audits of buffer/map/queue/uniform paths and render-pass/
+pipeline/surface paths found no confirmed Core-valid request that the HAL
+cannot execute, misexecutes or panics on. They traced validation, queue-write
+ordering, mapped-range synchronization, recorded-resource retention, pending-
+present timeouts and transactional surface reconfiguration. The audits do not
+prove all contract rows, maximum-size allocations or historical-driver
+behavior. They confirmed that strict HWND rendering/presentation/readback is
+real GPU evidence, while injected timeout/device-loss recovery is synthetic;
+CoreWindow/Lumia and physical removal/recovery remain external gaps. The docs
+now distinguish the legacy direct blocking wait from Core's bounded queue
+reaper path, which reaches destruction only after an idle confirmation. The
+old twelve-dynamic-uniform projection text is also marked historical/currently
+corrected to thirteen, with fourteen rejected.
+
+## Bounded computed-coordinate fragment `textureGather` — 2026-11-13
+
+The existing narrow gather proof now accepts a bounded, side-effect-free
+`vec2f` coordinate expression directly in the selected fragment entry point.
+Core and HAL use the same existing coordinate-expression grammar and budget;
+Naga independently proves the validated expression before lowering it to four
+point samples. The selected binding pair, one-gather shape, format/sampler
+checks, and FL9_1 shader restrictions remain unchanged. Transformed helper
+arguments, `sin`, and other unproven expressions remain rejected.
+
+Production unit tests cover accepted arithmetic and rejected operations in
+Core, HAL and Naga. The strict public test selected the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, `software=false`) at explicitly
+requested and confirmed FL9_1. Direct and helper gather output matched all 64
+pixels against `[151, 166, 106, 91]`; the computed `uv * 0.5` entry matched
+`[76, 91, 31, 16]`; the query-supported sRGB view matched all 64 decoded
+pixels against `[79, 97, 37, 27]`. R8 and multi-mip views were still rejected.
+
+Focused Core, HAL/FXC and Naga tests passed 1/1 each; the strict public GPU
+test passed 1/1. Full Naga passed 173/173, Core FL9_1 fixtures passed 149/149,
+private HAL passed 528/528, strict public DX11 passed 153/153, Core DX12 passed
+133/133, HAL DX12 passed 4/4, and the strict surface-copy test passed 1/1.
+Clippy passed on Naga, HAL, Core tests and the public D3D11 test target, with
+existing HAL/Core style warnings. Formatting and final diff checks are being
+closed after this entry. This remains a bounded emulation subset, not general
+`textureGather` or historical-driver evidence.

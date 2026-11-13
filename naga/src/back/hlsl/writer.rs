@@ -262,6 +262,335 @@ fn fl9_texture_sample_bias_offset_helper(
     Some(helper)
 }
 
+fn fl9_texture_gather_helper(
+    module: &Module,
+    entry: &crate::EntryPoint,
+) -> Option<Handle<crate::Function>> {
+    let is_vec2f = |ty| {
+        matches!(
+            module.types[ty].inner,
+            TypeInner::Vector {
+                size: crate::VectorSize::Bi,
+                scalar: Scalar {
+                    kind: ScalarKind::Float,
+                    width: 4,
+                },
+            }
+        )
+    };
+    let is_vec4f = |ty| {
+        matches!(
+            module.types[ty].inner,
+            TypeInner::Vector {
+                size: crate::VectorSize::Quad,
+                scalar: Scalar {
+                    kind: ScalarKind::Float,
+                    width: 4,
+                },
+            }
+        )
+    };
+    if entry.stage != ShaderStage::Fragment
+        || !matches!(
+            entry.function.arguments.as_slice(),
+            [argument]
+                if argument.binding.as_ref().is_some_and(
+                    |binding| matches!(binding, crate::Binding::Location { location: 0, .. })
+                ) && is_vec2f(argument.ty)
+        )
+        || !entry.function.result.as_ref().is_some_and(|result| {
+            is_vec4f(result.ty)
+                && result.binding.as_ref().is_some_and(|binding| {
+                    matches!(binding, crate::Binding::Location { location: 0, .. })
+                })
+        })
+        || entry.function.body.iter().any(|statement| {
+            !matches!(
+                statement,
+                crate::Statement::Emit(_)
+                    | crate::Statement::Call { .. }
+                    | crate::Statement::Return { .. }
+            )
+        })
+    {
+        return None;
+    }
+    let calls = entry
+        .function
+        .body
+        .iter()
+        .filter_map(|statement| match statement {
+            &crate::Statement::Call {
+                function,
+                ref arguments,
+                result,
+            } => Some((function, arguments, result)),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let &[(helper, arguments, Some(call_result))] = calls.as_slice() else {
+        return None;
+    };
+    if arguments.len() != 1
+        || !matches!(
+            entry.function.expressions[arguments[0]],
+            crate::Expression::FunctionArgument(0)
+        )
+        || !matches!(
+            entry.function.expressions[call_result],
+            crate::Expression::CallResult(function) if function == helper
+        )
+        || entry
+            .function
+            .expressions
+            .iter()
+            .any(|(handle, expression)| {
+                (handle == call_result
+                    && !matches!(
+                        expression,
+                        crate::Expression::CallResult(function) if *function == helper
+                    ))
+                    || (handle != call_result
+                        && !matches!(expression, crate::Expression::FunctionArgument(0)))
+            })
+        || entry
+            .function
+            .body
+            .iter()
+            .filter_map(|statement| match statement {
+                &crate::Statement::Return { value } => Some(value),
+                _ => None,
+            })
+            .collect::<Vec<_>>()
+            != [Some(call_result)]
+        || reachable_regular_functions(module, &entry.function).as_slice() != [helper]
+    {
+        return None;
+    }
+
+    let helper_function = &module.functions[helper];
+    if !matches!(
+        helper_function.arguments.as_slice(),
+        [argument] if argument.binding.is_none() && is_vec2f(argument.ty)
+    ) || !helper_function
+        .result
+        .as_ref()
+        .is_some_and(|result| is_vec4f(result.ty))
+        || helper_function.body.iter().any(|statement| {
+            !matches!(
+                statement,
+                crate::Statement::Emit(_) | crate::Statement::Return { .. }
+            )
+        })
+    {
+        return None;
+    }
+    let returns = helper_function
+        .body
+        .iter()
+        .filter_map(|statement| match statement {
+            &crate::Statement::Return { value } => Some(value),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    let &[Some(sample)] = returns.as_slice() else {
+        return None;
+    };
+    let crate::Expression::ImageSample {
+        image,
+        sampler,
+        coordinate,
+        array_index: None,
+        offset: None,
+        level: crate::SampleLevel::Zero,
+        depth_ref: None,
+        gather: Some(_),
+        clamp_to_edge: false,
+    } = helper_function.expressions[sample]
+    else {
+        return None;
+    };
+    if !matches!(
+        helper_function.expressions[coordinate],
+        crate::Expression::FunctionArgument(0)
+    ) {
+        return None;
+    }
+    let crate::Expression::GlobalVariable(image_global) = helper_function.expressions[image] else {
+        return None;
+    };
+    let crate::Expression::GlobalVariable(sampler_global) = helper_function.expressions[sampler]
+    else {
+        return None;
+    };
+    if !matches!(
+        module.types[module.global_variables[image_global].ty].inner,
+        TypeInner::Image {
+            dim: crate::ImageDimension::D2,
+            arrayed: false,
+            class: crate::ImageClass::Sampled {
+                kind: ScalarKind::Float,
+                multi: false,
+            },
+        }
+    ) || !matches!(
+        module.types[module.global_variables[sampler_global].ty].inner,
+        TypeInner::Sampler { comparison: false }
+    ) || helper_function
+        .expressions
+        .iter()
+        .any(|(handle, expression)| match *expression {
+            crate::Expression::FunctionArgument(0) => handle != coordinate,
+            crate::Expression::GlobalVariable(global) => {
+                global != image_global && global != sampler_global
+            }
+            crate::Expression::ImageSample { .. } => handle != sample,
+            crate::Expression::ImageLoad { .. } | crate::Expression::ImageQuery { .. } => true,
+            _ => true,
+        })
+    {
+        return None;
+    }
+    Some(helper)
+}
+
+fn fl9_texture_gather_coordinate_supported(
+    module: &Module,
+    expressions: &crate::Arena<crate::Expression>,
+    function_info: &valid::FunctionInfo,
+    expression: Handle<crate::Expression>,
+    budget: &mut usize,
+    depth: usize,
+) -> bool {
+    if depth >= 32 || *budget == 0 {
+        return false;
+    }
+    *budget -= 1;
+    let is_float = |ty: &TypeInner| {
+        matches!(
+            ty,
+            TypeInner::Scalar(Scalar {
+                kind: ScalarKind::Float,
+                width: 4,
+            })
+        )
+    };
+    let is_float2 = |ty: &TypeInner| {
+        matches!(
+            ty,
+            TypeInner::Vector {
+                size: crate::VectorSize::Bi,
+                scalar: Scalar {
+                    kind: ScalarKind::Float,
+                    width: 4,
+                },
+            }
+        )
+    };
+    let result_type = function_info[expression].ty.inner_with(&module.types);
+    match expressions[expression].clone() {
+        crate::Expression::FunctionArgument(0) => is_float2(result_type),
+        crate::Expression::Literal(crate::Literal::F32(_)) => is_float(result_type),
+        crate::Expression::Compose { components, .. } => {
+            is_float2(result_type)
+                && components.len() == 2
+                && components.iter().all(|component| {
+                    is_float(function_info[*component].ty.inner_with(&module.types))
+                        && fl9_texture_gather_coordinate_supported(
+                            module,
+                            expressions,
+                            function_info,
+                            *component,
+                            budget,
+                            depth + 1,
+                        )
+                })
+        }
+        crate::Expression::Splat {
+            size: crate::VectorSize::Bi,
+            value,
+        } => {
+            is_float2(result_type)
+                && is_float(function_info[value].ty.inner_with(&module.types))
+                && fl9_texture_gather_coordinate_supported(
+                    module,
+                    expressions,
+                    function_info,
+                    value,
+                    budget,
+                    depth + 1,
+                )
+        }
+        crate::Expression::AccessIndex { base, index } => {
+            is_float(result_type)
+                && index < 2
+                && is_float2(function_info[base].ty.inner_with(&module.types))
+                && fl9_texture_gather_coordinate_supported(
+                    module,
+                    expressions,
+                    function_info,
+                    base,
+                    budget,
+                    depth + 1,
+                )
+        }
+        crate::Expression::Swizzle { vector, size, .. } => {
+            (is_float(result_type) || size == crate::VectorSize::Bi && is_float2(result_type))
+                && is_float2(function_info[vector].ty.inner_with(&module.types))
+                && fl9_texture_gather_coordinate_supported(
+                    module,
+                    expressions,
+                    function_info,
+                    vector,
+                    budget,
+                    depth + 1,
+                )
+        }
+        crate::Expression::Binary {
+            op:
+                crate::BinaryOperator::Add
+                | crate::BinaryOperator::Subtract
+                | crate::BinaryOperator::Multiply
+                | crate::BinaryOperator::Divide,
+            left,
+            right,
+        } => {
+            (is_float(result_type) || is_float2(result_type))
+                && fl9_texture_gather_coordinate_supported(
+                    module,
+                    expressions,
+                    function_info,
+                    left,
+                    budget,
+                    depth + 1,
+                )
+                && fl9_texture_gather_coordinate_supported(
+                    module,
+                    expressions,
+                    function_info,
+                    right,
+                    budget,
+                    depth + 1,
+                )
+        }
+        crate::Expression::Unary {
+            op: crate::UnaryOperator::Negate,
+            expr,
+        } => {
+            (is_float(result_type) || is_float2(result_type))
+                && fl9_texture_gather_coordinate_supported(
+                    module,
+                    expressions,
+                    function_info,
+                    expr,
+                    budget,
+                    depth + 1,
+                )
+        }
+        _ => false,
+    }
+}
+
 fn fl9_has_resource_handle_type(module: &Module, ty: Handle<crate::Type>) -> bool {
     matches!(
         module.types[ty].inner,
@@ -1990,6 +2319,18 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             };
             let entry = &module.entry_points[entry_index];
             let entry_info = module_info.get_entry_point(entry_index);
+            let texture_gather_helper = if self.options.fl9_texture_gather_proof.is_some()
+                && !reachable_regular_functions(module, &entry.function).is_empty()
+            {
+                Some(fl9_texture_gather_helper(module, entry).ok_or_else(|| {
+                    Error::Custom(
+                        "FL9 texture-gather proof permits only one coordinate-forwarding helper"
+                            .into(),
+                    )
+                })?)
+            } else {
+                None
+            };
             let has_direct_sample_bias_offset =
                 entry
                     .function
@@ -2141,7 +2482,9 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                                 reachable
                                     .iter()
                                     .any(|function| !module_info[*function][handle].is_empty())
-                            }))
+                            })
+                        || texture_gather_helper
+                            .is_some_and(|function| !module_info[function][handle].is_empty()))
             });
             let sample_sampler = if sampler_allowed {
                 match bound_resources.next() {
@@ -2207,6 +2550,13 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             let mut texel_load_count = 0;
             let mut functions_to_check = vec![(&entry.function, entry_info, None)];
             if let Some(helper) = sample_bias_offset_helper {
+                functions_to_check.push((
+                    &module.functions[helper],
+                    &module_info[helper],
+                    Some(helper),
+                ));
+            }
+            if let Some(helper) = texture_gather_helper {
                 functions_to_check.push((
                     &module.functions[helper],
                     &module_info[helper],
@@ -2406,18 +2756,29 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                             }
                     } if *size == sample_coordinate_size
                     );
-                    let bias_offset_coordinate_matches =
-                        self.options.fl9_texture_sample_bias_offset_proof.is_none()
-                            && self.options.fl9_texture_gather_proof.is_none()
-                            && !compare_offset_proof
-                            || matches!(
-                                function.expressions[coordinate],
-                                crate::Expression::FunctionArgument(0)
-                            );
+                    let coordinate_expression_matches =
+                        if self.options.fl9_texture_gather_proof.is_some() {
+                            let mut coordinate_budget = 32;
+                            fl9_texture_gather_coordinate_supported(
+                                module,
+                                &function.expressions,
+                                function_info,
+                                coordinate,
+                                &mut coordinate_budget,
+                                0,
+                            )
+                        } else {
+                            (self.options.fl9_texture_sample_bias_offset_proof.is_none()
+                                && !compare_offset_proof)
+                                || matches!(
+                                    function.expressions[coordinate],
+                                    crate::Expression::FunctionArgument(0)
+                                )
+                        };
                     if !image_matches
                         || !sampler_matches
                         || !coordinate_matches
-                        || !bias_offset_coordinate_matches
+                        || !coordinate_expression_matches
                     {
                         return Err(Error::Custom(
                             "FL9 texture proof requires a direct sample of its texture and sampler"
@@ -2732,6 +3093,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 && self.options.fl9_texture_dimensions_proof.is_none()
                 && self.options.fl9_texture_dimensions_3d_proof.is_none()
                 && self.options.fl9_texture_num_levels_proof.is_none()
+                && self.options.fl9_texture_gather_proof.is_none()
                 && self.options.fl9_texture_sample_bias_offset_proof.is_none()
                 && self
                     .options
@@ -5146,11 +5508,19 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
 
                                 if let Some(Index::Expression(vec_index)) = vector {
                                     write!(self.out, ", ")?;
+                                    write!(self.out, "int(")?;
                                     self.write_expr(module, vec_index, func_ctx)?;
+                                    write!(self.out, ")")?;
 
                                     if let Some(scalar_index) = scalar {
                                         write!(self.out, ", ")?;
-                                        self.write_index(module, scalar_index, func_ctx)?;
+                                        if matches!(scalar_index, Index::Expression(_)) {
+                                            write!(self.out, "int(")?;
+                                            self.write_index(module, scalar_index, func_ctx)?;
+                                            write!(self.out, ")")?;
+                                        } else {
+                                            self.write_index(module, scalar_index, func_ctx)?;
+                                        }
                                     }
                                 }
                                 writeln!(self.out, ");")?;
@@ -7228,15 +7598,20 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                             TypeInner::Sampler { comparison: false }
                         )
                 );
+                let mut coordinate_budget = 32;
                 if !image_matches
                     || !sampler_is_global
-                    || !matches!(
-                        func_ctx.expressions[coordinate],
-                        Expression::FunctionArgument(0)
+                    || !fl9_texture_gather_coordinate_supported(
+                        module,
+                        func_ctx.expressions,
+                        func_ctx.info,
+                        coordinate,
+                        &mut coordinate_budget,
+                        0,
                     )
                 {
                     return Err(Error::Custom(
-                        "FL9 texture-gather proof requires direct texture, sampler and coordinate bindings".into(),
+                        "FL9 texture-gather proof requires direct texture and sampler bindings and a supported coordinate expression".into(),
                     ));
                 }
                 let channel = match component {
@@ -8391,6 +8766,93 @@ mod fl9_viewport_tests {
         }
     }
 
+    #[test]
+    fn fl9_mat_cx2_struct_store_helpers_mutate_their_destination() {
+        let source = r#"
+            struct State {
+                transform: mat3x2<f32>,
+                nested: array<mat3x2<f32>, 1>,
+            }
+
+            @vertex
+            fn main(@builtin(vertex_index) vertex_index: u32) -> @builtin(position) vec4f {
+                var state = State(
+                    mat3x2<f32>(vec2f(0.0), vec2f(0.0), vec2f(0.0)),
+                    array<mat3x2<f32>, 1>(mat3x2<f32>(vec2f(0.0), vec2f(0.0), vec2f(0.0))),
+                );
+                state.transform = mat3x2<f32>(vec2f(1.0), vec2f(2.0), vec2f(3.0));
+
+                let column = vertex_index % 3u;
+                state.transform[column] = vec2f(4.0);
+                state.transform[column][vertex_index % 2u] = 5.0;
+                state.nested[0][column] = vec2f(6.0);
+                state.nested[0][column][vertex_index % 2u] = 7.0;
+
+                return vec4f(state.transform[0] + state.nested[0][0], 0.0, 1.0);
+            }
+        "#;
+
+        let output = translate(source, &Options::default(), ShaderStage::Vertex).unwrap();
+
+        for signature in [
+            "void SetMattransformOnState(inout State obj, float3x2 mat)",
+            "void SetMatVectransformOnState(inout State obj, float2 vec, int mat_idx)",
+            "void SetMatScalartransformOnState(inout State obj, float scalar, int mat_idx, int vec_idx)",
+            "void __set_col_of_mat3x2_f32(inout __mat3x2_f32 mat, uint idx, float2 value)",
+            "void __set_el_of_mat3x2_f32(inout __mat3x2_f32 mat, uint idx, uint vec_idx, float value)",
+        ] {
+            assert!(output.contains(signature), "missing `{signature}` in:\n{output}");
+        }
+        for statement in [
+            "if (mat_idx == 0) { obj.transform_0 = vec; }",
+            "else if (mat_idx == 1) { obj.transform_1 = vec; }",
+            "else if (mat_idx == 2) { obj.transform_2 = vec; }",
+            "obj.transform_0 = mat[0];",
+            "obj.transform_1 = mat[1];",
+            "obj.transform_2 = mat[2];",
+            "obj.transform_0 = vec;",
+            "obj.transform_1 = vec;",
+            "obj.transform_2 = vec;",
+            "obj.transform_0[vec_idx] = scalar;",
+            "obj.transform_1[vec_idx] = scalar;",
+            "obj.transform_2[vec_idx] = scalar;",
+            "mat._0 = value;",
+            "mat._1 = value;",
+            "mat._2 = value;",
+            "mat._0[vec_idx] = value;",
+            "mat._1[vec_idx] = value;",
+            "mat._2[vec_idx] = value;",
+        ] {
+            assert!(
+                output.contains(statement),
+                "missing `{statement}` in:\n{output}"
+            );
+        }
+        assert!(output.contains("SetMattransformOnState(state,"), "{output}");
+        assert!(
+            output.contains("SetMatVectransformOnState(state, (4.0).xx, int(column))"),
+            "{output}"
+        );
+        assert!(
+            output.contains("SetMatScalartransformOnState(state,"),
+            "{output}"
+        );
+        assert!(
+            output.contains(
+                "SetMatScalartransformOnState(state, 5.0, int(column), int(naga_mod(vertex_index, 2u)))"
+            ),
+            "{output}"
+        );
+        assert!(
+            output.contains("__set_col_of_mat3x2_f32(state.nested[0],"),
+            "{output}"
+        );
+        assert!(
+            output.contains("__set_el_of_mat3x2_f32(state.nested[0],"),
+            "{output}"
+        );
+    }
+
     #[cfg(feature = "glsl-in")]
     #[test]
     fn outer_product_emits_column_major_values_for_square_and_rectangular_matrices() {
@@ -8719,6 +9181,68 @@ mod fl9_viewport_tests {
     }
 
     #[test]
+    fn fl9_texture_gather_accepts_one_coordinate_forwarding_helper() {
+        let texture_binding = crate::ResourceBinding {
+            group: 1,
+            binding: 17,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 2,
+            binding: 42,
+        };
+        let source = r#"
+            @group(1) @binding(17) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            fn gather_image(uv: vec2f) -> vec4f {
+                return textureGather(2, image, smp, uv);
+            }
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return gather_image(uv);
+            }
+            @fragment fn sibling(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(1, image, smp, uv);
+            }
+        "#;
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_gather_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        options.binding_map.insert(
+            texture_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        options.binding_map.insert(
+            sampler_binding,
+            super::super::BindTarget {
+                register: 3,
+                ..Default::default()
+            },
+        );
+
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(
+            output.contains("Texture2D<float4> image : register(t0)"),
+            "{output}"
+        );
+        assert!(
+            output.contains("SamplerState smp : register(s3)"),
+            "{output}"
+        );
+        assert!(output.contains("gather_image"), "{output}");
+        assert_eq!(
+            output.matches(".Sample(naga_fl9_load_sampler").count(),
+            4,
+            "{output}"
+        );
+        assert!(!output.contains(".Gather"), "{output}");
+        assert!(!output.contains("sibling"), "{output}");
+    }
+
+    #[test]
     fn fl9_texture_gather_proof_rejects_unproven_operations() {
         let texture_binding = crate::ResourceBinding {
             group: 0,
@@ -8780,9 +9304,24 @@ mod fl9_viewport_tests {
         assert!(translate(wrong_binding, &wrong_binding_options, ShaderStage::Fragment).is_err());
 
         let transformed_coordinate = r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(0, image, smp, uv * 0.5); }"#;
-        assert!(translate(transformed_coordinate, &options(3), ShaderStage::Fragment).is_err());
-        let helper = r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(0, image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv); }"#;
-        assert!(translate(helper, &options(3), ShaderStage::Fragment).is_err());
+        let transformed = translate(transformed_coordinate, &options(3), ShaderStage::Fragment)
+            .expect("bounded coordinate arithmetic is lowered through four level-9 samples");
+        assert!(
+            transformed.contains(".Sample(naga_fl9_load_sampler"),
+            "{transformed}"
+        );
+        assert!(transformed.contains("0.5"), "{transformed}");
+        assert!(!transformed.contains(".Gather"), "{transformed}");
+        let unsupported_coordinate = r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(0, image, smp, vec2f(sin(uv.x), uv.y)); }"#;
+        assert!(translate(unsupported_coordinate, &options(3), ShaderStage::Fragment).is_err());
+        let transformed_helper_call = r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(0, image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv * 0.5); }"#;
+        assert!(translate(transformed_helper_call, &options(3), ShaderStage::Fragment).is_err());
+        let nested_helper = r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn inner(uv: vec2f) -> vec4f { return textureGather(0, image, smp, uv); } fn outer(uv: vec2f) -> vec4f { return inner(uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return outer(uv); }"#;
+        assert!(translate(nested_helper, &options(3), ShaderStage::Fragment).is_err());
+        let multiple_helper_calls = r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(0, image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv) + gather_image(uv); }"#;
+        assert!(translate(multiple_helper_calls, &options(3), ShaderStage::Fragment).is_err());
+        let multiple_gathers = r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(0, image, smp, uv) + textureGather(0, image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv); }"#;
+        assert!(translate(multiple_gathers, &options(3), ShaderStage::Fragment).is_err());
         let direct_gather = r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(0, image, smp, uv); }"#;
         assert!(translate(direct_gather, &options(15), ShaderStage::Fragment).is_err());
     }

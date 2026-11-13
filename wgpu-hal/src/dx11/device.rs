@@ -8,8 +8,9 @@ use windows::{
         Graphics::{
             Direct3D::{D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL},
             Direct3D11::{
-                D3D11CreateDevice, ID3D11Device, ID3D11DeviceContext, ID3D11InfoQueue,
-                D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_DEBUG, D3D11_SDK_VERSION,
+                D3D11CreateDevice, ID3D11Asynchronous, ID3D11Device, ID3D11DeviceContext,
+                ID3D11InfoQueue, D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_DEBUG,
+                D3D11_QUERY_DESC, D3D11_QUERY_EVENT, D3D11_SDK_VERSION,
             },
             Dxgi::{
                 CreateDXGIFactory2, IDXGIAdapter, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1,
@@ -163,6 +164,17 @@ impl NativeAdapter {
             .ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let raw = device.ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let immediate = context.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        let idle_query = {
+            let desc = D3D11_QUERY_DESC {
+                Query: D3D11_QUERY_EVENT,
+                MiscFlags: 0,
+            };
+            let mut query = None;
+            unsafe { raw.CreateQuery(&desc, Some(&mut query))? };
+            query
+                .ok_or_else(|| Error::from_hresult(E_FAIL))?
+                .cast::<ID3D11Asynchronous>()?
+        };
         let timestamp_frequency = super::query::probe_timestamp_frequency(&raw, &immediate);
         let debug_info_queue = if debug_layer {
             Some(raw.cast::<ID3D11InfoQueue>()?)
@@ -172,6 +184,7 @@ impl NativeAdapter {
         Ok(NativeDevice {
             raw,
             immediate: Mutex::new(immediate),
+            idle_query: Mutex::new(Some(idle_query)),
             level,
             timestamp_frequency,
             debug_info_queue,
@@ -190,6 +203,7 @@ impl NativeAdapter {
 pub struct NativeDevice {
     raw: ID3D11Device,
     immediate: Mutex<ID3D11DeviceContext>,
+    pub(super) idle_query: Mutex<Option<ID3D11Asynchronous>>,
     level: FeatureLevel,
     timestamp_frequency: Option<u64>,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -213,6 +227,7 @@ impl NativeDevice {
     #[cfg(test)]
     pub(super) fn report_live_objects(&self) -> Result<()> {
         let debug: ID3D11Debug = self.raw.cast()?;
+        self.idle_query.lock().take();
         {
             let context = self.immediate.lock();
             unsafe {
@@ -288,6 +303,12 @@ impl NativeDevice {
     pub fn test_fixture_remove_device_on_next_wait_for_idle(&self) {
         *self.injected_wait_for_idle_status.lock() =
             Some(windows::Win32::Graphics::Dxgi::DXGI_ERROR_DEVICE_REMOVED);
+    }
+
+    #[cfg(any(test, feature = "dx11-test-fixture"))]
+    pub fn test_fixture_fail_next_wait_for_idle_with_oom(&self) {
+        *self.injected_wait_for_idle_status.lock() =
+            Some(windows::Win32::Foundation::E_OUTOFMEMORY);
     }
 
     #[cfg(any(test, feature = "dx11-test-fixture"))]

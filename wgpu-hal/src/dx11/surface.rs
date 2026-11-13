@@ -5,6 +5,8 @@ use super::{
     texture::NativeTexture,
 };
 use alloc::{format, sync::Arc};
+#[cfg(feature = "dx11-test-fixture")]
+use core::sync::atomic::{AtomicI32, Ordering};
 use core::{borrow::Borrow, ffi::c_void, num::NonZeroIsize, time::Duration};
 use parking_lot::{Condvar, Mutex};
 use std::thread::ThreadId;
@@ -13,10 +15,13 @@ use windows::{
     UI::Core::ICoreWindow,
 };
 
+const PRESENT_COMPLETION_TIMEOUT: Duration = Duration::from_secs(1);
+
 #[derive(Clone, Debug)]
 struct Configured {
     device: Arc<NativeDevice>,
     swapchain: CoreWindowSwapchain,
+    usage: wgt::TextureUses,
 }
 
 #[derive(Debug, Default)]
@@ -59,6 +64,10 @@ pub struct Surface {
     window: Window,
     configured: Mutex<SurfaceState>,
     operation_complete: Condvar,
+    #[cfg(feature = "dx11-test-fixture")]
+    test_next_configure_error: AtomicI32,
+    #[cfg(feature = "dx11-test-fixture")]
+    test_next_unconfigure_error: AtomicI32,
 }
 crate::impl_dyn_resource!(Surface);
 
@@ -117,6 +126,17 @@ fn surface_error(error: windows::core::Error) -> crate::SurfaceError {
 impl Surface {
     #[cfg(feature = "dx11-test-fixture")]
     #[doc(hidden)]
+    pub fn test_fixture_fail_next_configure(&self, error: windows::core::HRESULT) -> bool {
+        if super::hal_device::classify_device_error(error) != crate::DeviceError::Lost {
+            return false;
+        }
+        self.test_next_configure_error
+            .store(error.0, Ordering::Release);
+        true
+    }
+
+    #[cfg(feature = "dx11-test-fixture")]
+    #[doc(hidden)]
     pub fn test_fixture_fail_next_present(&self, error: windows::core::HRESULT) -> bool {
         self.configured
             .lock()
@@ -133,6 +153,33 @@ impl Surface {
             .current
             .as_ref()
             .is_some_and(|configured| configured.swapchain.test_fixture_fail_next_resize(error))
+    }
+
+    #[cfg(feature = "dx11-test-fixture")]
+    #[doc(hidden)]
+    pub fn test_fixture_timeout_next_unconfigure(&self) -> bool {
+        self.configured
+            .lock()
+            .current
+            .as_ref()
+            .is_some_and(|configured| {
+                configured
+                    .swapchain
+                    .test_fixture_timeout_next_present_wait()
+            })
+    }
+
+    #[cfg(feature = "dx11-test-fixture")]
+    #[doc(hidden)]
+    pub fn test_fixture_fail_next_unconfigure(&self, error: windows::core::HRESULT) -> bool {
+        if super::hal_device::classify_device_error(error) != crate::DeviceError::Lost
+            || self.configured.lock().current.is_none()
+        {
+            return false;
+        }
+        self.test_next_unconfigure_error
+            .store(error.0, Ordering::Release);
+        true
     }
 
     pub(super) unsafe fn from_core_window(raw: *mut c_void) -> Result<Self, crate::InstanceError> {
@@ -161,6 +208,10 @@ impl Surface {
             },
             configured: Mutex::new(SurfaceState::default()),
             operation_complete: Condvar::new(),
+            #[cfg(feature = "dx11-test-fixture")]
+            test_next_configure_error: AtomicI32::new(0),
+            #[cfg(feature = "dx11-test-fixture")]
+            test_next_unconfigure_error: AtomicI32::new(0),
         })
     }
     pub(super) fn from_hwnd(hwnd: NonZeroIsize) -> Self {
@@ -168,6 +219,10 @@ impl Surface {
             window: Window::Hwnd(hwnd),
             configured: Mutex::new(SurfaceState::default()),
             operation_complete: Condvar::new(),
+            #[cfg(feature = "dx11-test-fixture")]
+            test_next_configure_error: AtomicI32::new(0),
+            #[cfg(feature = "dx11-test-fixture")]
+            test_next_unconfigure_error: AtomicI32::new(0),
         }
     }
     pub(super) fn hwnd(&self) -> Option<windows::Win32::Foundation::HWND> {
@@ -842,6 +897,7 @@ impl Surface {
 }
 
 fn supported_config(config: &crate::SurfaceConfiguration) -> bool {
+    let supported_usage = wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC;
     config.format == wgt::TextureFormat::Bgra8Unorm
         && config.color_space == wgt::SurfaceColorSpace::Srgb
         && config.present_mode == wgt::PresentMode::Fifo
@@ -849,7 +905,8 @@ fn supported_config(config: &crate::SurfaceConfiguration) -> bool {
         && config.extent.width > 0
         && config.extent.height > 0
         && config.extent.depth_or_array_layers == 1
-        && config.usage == wgt::TextureUses::COLOR_TARGET
+        && config.usage.contains(wgt::TextureUses::COLOR_TARGET)
+        && supported_usage.contains(config.usage)
         && config
             .view_formats
             .iter()
@@ -885,10 +942,30 @@ impl crate::Surface for Surface {
             if !configured.swapchain.belongs_to(device.native()) {
                 return Err(crate::SurfaceError::Other("surface device does not match"));
             }
-            return configured
+            if !configured
                 .swapchain
-                .resize(config.extent.width, config.extent.height)
-                .map_err(surface_error);
+                .resize_timeout(
+                    config.extent.width,
+                    config.extent.height,
+                    PRESENT_COMPLETION_TIMEOUT,
+                )
+                .map_err(surface_error)?
+            {
+                return Err(crate::SurfaceError::Timeout);
+            }
+            if let Some(current) = self.configured.lock().current.as_mut() {
+                current.usage = config.usage;
+            }
+            return Ok(());
+        }
+        #[cfg(feature = "dx11-test-fixture")]
+        {
+            let error = self.test_next_configure_error.swap(0, Ordering::AcqRel);
+            if error != 0 {
+                return Err(surface_error(windows::core::Error::from_hresult(
+                    windows::core::HRESULT(error),
+                )));
+            }
         }
         let native = device.native().clone();
         let swapchain = CoreWindowSwapchain::new(
@@ -901,35 +978,75 @@ impl crate::Surface for Surface {
         self.configured.lock().current = Some(Configured {
             device: native,
             swapchain,
+            usage: config.usage,
         });
         Ok(())
     }
     unsafe fn unconfigure(&self, device: &super::Device) {
+        if let Err(error) = unsafe { self.unconfigure_with_result(device) } {
+            log::error!("D3D11 surface could not be unconfigured: {error}");
+        }
+    }
+
+    unsafe fn unconfigure_with_result(
+        &self,
+        device: &super::Device,
+    ) -> Result<(), crate::SurfaceError> {
         let Some(_operation) = self.wait_for_operation() else {
-            log::error!("D3D11 surface unconfigure reentered an active surface operation");
-            return;
+            return Err(crate::SurfaceError::Other(
+                "D3D11 surface unconfigure reentered an active surface operation",
+            ));
         };
         let configured = self.configured.lock().current.clone();
-        if let Some(config) = configured {
-            if !config.swapchain.belongs_to(device.native()) {
-                log::error!("D3D11 surface cannot unconfigure with a mismatched device");
-                return;
-            }
-            if let Err(error) = config.swapchain.wait_for_pending_present() {
-                log::error!("D3D11 surface could not wait for pending presentation: {error}");
-                return;
-            }
-            if config.swapchain.release_bindings().is_ok() {
-                let old = self.configured.lock().current.take();
-                drop(old);
+        let Some(config) = configured else {
+            return Err(crate::SurfaceError::Other(
+                "D3D11 surface is not configured",
+            ));
+        };
+        if !config.swapchain.belongs_to(device.native()) {
+            return Err(crate::SurfaceError::Other(
+                "D3D11 surface cannot unconfigure with a mismatched device",
+            ));
+        }
+        #[cfg(feature = "dx11-test-fixture")]
+        {
+            let error = self.test_next_unconfigure_error.swap(0, Ordering::AcqRel);
+            if error != 0 {
+                drop(self.configured.lock().current.take());
                 drop(config);
-                unsafe { device.native().immediate_context().Flush() };
-                return;
+                return Err(surface_error(windows::core::Error::from_hresult(
+                    windows::core::HRESULT(error),
+                )));
             }
         }
-        log::error!(
-            "D3D11 surface cannot unconfigure with a mismatched device or outstanding frame"
-        );
+        match config
+            .swapchain
+            .wait_for_pending_present_timeout(PRESENT_COMPLETION_TIMEOUT)
+            .map_err(surface_error)
+        {
+            Ok(true) => {}
+            Ok(false) => return Err(crate::SurfaceError::Timeout),
+            Err(crate::SurfaceError::Device(crate::DeviceError::Lost)) => {
+                drop(self.configured.lock().current.take());
+                return Err(crate::SurfaceError::Device(crate::DeviceError::Lost));
+            }
+            Err(error) => return Err(error),
+        }
+        if let Err(error) = config.swapchain.release_bindings().map_err(surface_error) {
+            if matches!(
+                &error,
+                crate::SurfaceError::Device(crate::DeviceError::Lost)
+            ) {
+                drop(self.configured.lock().current.take());
+                return Err(error);
+            }
+            return Err(error);
+        }
+        let old = self.configured.lock().current.take();
+        drop(old);
+        drop(config);
+        unsafe { device.native().immediate_context().Flush() };
+        Ok(())
     }
     unsafe fn acquire_texture(
         &self,
@@ -963,8 +1080,9 @@ impl crate::Surface for Surface {
             .texture()
             .ok_or(crate::SurfaceError::Other("missing backbuffer"))?
             .clone();
-        let texture = NativeTexture::from_core_window_backbuffer(&configured.device, raw)
-            .map_err(surface_error)?;
+        let texture =
+            NativeTexture::from_core_window_backbuffer(&configured.device, raw, configured.usage)
+                .map_err(surface_error)?;
         Ok(crate::AcquiredSurfaceTexture {
             texture: SurfaceTexture {
                 texture: Some(texture),
@@ -1132,6 +1250,9 @@ mod tests {
         assert!(!supported_config(&bad));
         bad = valid.clone();
         bad.usage |= wgt::TextureUses::COPY_SRC;
+        assert!(supported_config(&bad));
+        bad = valid.clone();
+        bad.usage |= wgt::TextureUses::COPY_DST;
         assert!(!supported_config(&bad));
         bad = valid.clone();
         bad.extent.width = 0;

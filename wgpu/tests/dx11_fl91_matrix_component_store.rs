@@ -28,7 +28,7 @@ fn poll_ready<T>(future: impl Future<Output = T>) -> T {
 }
 
 #[test]
-fn public_dx11_static_matrix_component_store_renders_at_fl91() {
+fn public_dx11_local_matrix_struct_store_renders_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -48,7 +48,7 @@ fn public_dx11_static_matrix_component_store_renders_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=static local mat2x2f column and scalar stores",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=vertex-indexed local mat3x2f column stores and static fragment matrix component stores",
         info.name, info.vendor, info.device, info.driver_info
     );
     let limits = adapter.limits();
@@ -61,23 +61,34 @@ fn public_dx11_static_matrix_component_store_renders_at_fl91() {
     .expect("request physical FL9_1 device");
 
     let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 static matrix component store shader"),
+        label: Some("FL9_1 dynamic matrix column and component store shader"),
         source: ShaderSource::Wgsl(
             r#"
 struct State { m: mat2x2f }
+struct TransformState { transform: mat3x2f }
+struct VertexOutput {
+    @builtin(position) position: vec4f,
+    @location(0) color: vec3f,
+}
 
 @vertex
-fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f {
-    return vec4f(position, 0.0, 1.0);
+fn vs(@location(0) position: vec2f, @builtin(vertex_index) vertex_index: u32) -> VertexOutput {
+    var state: TransformState;
+    state.transform = mat3x2f(vec2f(0.0), vec2f(0.0), vec2f(0.0));
+    state.transform[vertex_index] = vec2f(1.0, 0.0);
+    var output: VertexOutput;
+    output.position = vec4f(position, 0.0, 1.0);
+    output.color = vec3f(state.transform[0][0], state.transform[1][0], state.transform[2][0]);
+    return output;
 }
 
 @fragment
-fn fs() -> @location(0) vec4f {
+fn fs(@location(0) color: vec3f) -> @location(0) vec4f {
     var state: State;
     state.m[0] = vec2f(0.25, 0.5);
     state.m[1][0] = 0.75;
     state.m[1][1] = 1.0;
-    return vec4f(state.m[0], state.m[1]);
+    return vec4f(state.m[0], state.m[1]) * vec4f(color, 1.0);
 }
 "#
             .into(),
@@ -99,7 +110,7 @@ fn fs() -> @location(0) vec4f {
         write_mask: ColorWrites::ALL,
     })];
     let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 static matrix component store pipeline"),
+        label: Some("FL9_1 dynamic matrix column and component store pipeline"),
         layout: None,
         vertex: VertexState {
             module: &shader,
@@ -220,23 +231,26 @@ fn fs() -> @location(0) vec4f {
         .slice(..)
         .get_mapped_range()
         .expect("mapped matrix component readback");
-    let expected = [64, 128, 191, 255];
+    let base = [0.25f32, 0.5, 0.75];
     for y in 0..8 {
         for x in 0..8 {
             let offset = y * 256 + x * 4;
-            for (channel, (observed, expected)) in
-                pixels[offset..offset + 4].iter().zip(expected).enumerate()
-            {
-                let tolerance = u8::from(channel != 3);
+            let u = (x as f32 + 0.5) / 8.0;
+            let v = (y as f32 + 0.5) / 8.0;
+            let weights = [(1.0 - u + v) * 0.5, u * 0.5, (1.0 - v) * 0.5];
+            for channel in 0..3 {
+                let expected = (base[channel] * weights[channel] * 255.0).round() as u8;
+                let observed = pixels[offset + channel];
                 assert!(
-                    observed.abs_diff(expected) <= tolerance,
-                    "pixel ({x}, {y}) channel {channel}: observed={observed} expected={expected} tolerance={tolerance}"
+                    observed.abs_diff(expected) <= 2,
+                    "pixel ({x}, {y}) channel {channel}: observed={observed} expected={expected}"
                 );
             }
+            assert_eq!(pixels[offset + 3], 255, "pixel ({x}, {y}) alpha");
         }
     }
     println!(
-        "PASS: all 64 FL9_1 pixels within [1, 1, 1, 0] LSB of {expected:?}; observed first pixel={:?}",
+        "PASS: all 64 FL9_1 pixels within [2, 2, 2, 0] LSB for per-vertex dynamic matrix columns; observed first pixel={:?}",
         &pixels[..4]
     );
     drop(pixels);

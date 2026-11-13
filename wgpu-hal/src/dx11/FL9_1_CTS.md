@@ -143,6 +143,23 @@ skips or failures:
 | `webgpu:api,operation,resource_init,buffer:copy_buffer_to_texture:*` | 1/1 |
 | `webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rgba8unorm";dstFormat="rgba8unorm";dimension="2d"` | 1/1 |
 
+The color-only store-operation cases cannot be narrowed to their supported
+one-mip, one-layer subcase with CTS query parameters: mip and layer are nested
+`beginSubcases()` inside each format/store-operation test case. These exact
+strict selectors were attempted on the RTX 3090 Ti at requested/actual FL9_1:
+
+| Selector suffix | Result |
+| --- | --- |
+| `colorFormat="rgba8unorm";storeOperation="store"` | 0/1 CTS cases passed. The mip-0/layer-0 subcase ran and matched. The same case then exercised array layer 1 and mip 1; unsupported array/mip validation produced mismatched readback and a final `TEXTURE_2D_ARRAYS` validation exception. |
+| `colorFormat="rgba8unorm";storeOperation="discard"` | 0/1 CTS cases passed. All four nested subcases ran without a reported texel mismatch, then the case failed at finalization on the unsupported `TEXTURE_2D_ARRAYS` validation error. |
+
+These are not passing CTS selectors and must not be added to `test.lst`.
+Existing strict public tests separately verify supported one-mip color
+store/discard initialization behavior. Closing this CTS gap cleanly requires
+upstream CTS support for selecting nested subcases or a test whose parameters
+expose mip and layer at query level; widening the DX11 texture-array contract
+to make the selector pass would be incorrect.
+
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,render_pass,*'
@@ -153,6 +170,64 @@ cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware '
 cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"rgba8unorm\";dstFormat=\"rgba8unorm\";dimension=\"2d\"'
 ```
 
+## Additional strict color-target selectors — 2026-11-13
+
+The following focused selectors passed on the physical RTX 3090 Ti at
+requested/actual FL9_1 with no skips, failures or warnings:
+
+| Selector | Result |
+| --- | ---: |
+| `webgpu:api,operation,rendering,color_target_state:color_write_mask,blending_disabled:*` | 2/2 |
+| `webgpu:api,operation,rendering,color_target_state:blending,clamping:format="rgba8unorm";*` | 8/8 |
+
+The first covers both values of the `blending_disabled` parameter. The second
+checks RGBA8 UNORM clamping; color and alpha use the same blend component, so
+it does not cover the known separate-alpha portability issue.
+
+An attempted narrowly filtered RGBA8 texture-zero-initialization selector
+matched no cases. Its requested aspect, mip, sample-count, layer and related
+parameters are nested subcases rather than query parameters; the coarser
+selector would also execute unsupported shapes. No GPU work was run for that
+attempt. This is a CTS selection limitation, not a passing test or an observed
+backend failure. The CTS runner was built in a separate system-temp target
+after the existing E: target ran low on free space; no existing artifacts or
+repository files were removed or changed.
+
+Exact selectors:
+
+```text
+webgpu:api,operation,rendering,color_target_state:color_write_mask,blending_disabled:*
+webgpu:api,operation,rendering,color_target_state:blending,clamping:format="rgba8unorm";*
+```
+
+Additional strict selectors in the same RTX 3090 Ti session passed with zero
+skips or failures:
+
+| Selector | Result |
+| --- | ---: |
+| `webgpu:api,operation,render_pass,storeop2:storeOp_controls_whether_1x1_drawn_quad_is_stored:storeOp="store"` | 1/1 |
+| `webgpu:api,operation,render_pass,storeop2:storeOp_controls_whether_1x1_drawn_quad_is_stored:storeOp="discard"` | 1/1 |
+| `webgpu:api,operation,resource_init,buffer:partial_write_buffer:*` | 1/1 (3 offset subcases) |
+
+The first two draw into a 1x1 R8Unorm render target and verify the stored or
+discarded result through copy and CPU readback. The buffer case writes twelve
+bytes into a 32-byte COPY_SRC|COPY_DST buffer at each of the three CTS offsets,
+then copies and checks the surrounding zero-initialized bytes. Invocation:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_BUILD_JOBS = '4'
+$env:CARGO_TARGET_DIR = 'C:\Users\ben\AppData\Local\Temp\wgpu-dx11-cts-probe-target'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,render_pass,storeop2:storeOp_controls_whether_1x1_drawn_quad_is_stored:storeOp="store"'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,render_pass,storeop2:storeOp_controls_whether_1x1_drawn_quad_is_stored:storeOp="discard"'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,resource_init,buffer:partial_write_buffer:*'
+```
+
+All three used the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at requested/actual FL9_1. The compiler emitted the current
+Core `validation.rs:4012` unused `level` warning and the test runner emitted
+its expected experimental-DX11 warning.
+
 The actual commands used the Visual Studio wrapper at
 `E:\Temp\wgpu_mission_cargo.bat`, which supplies the pinned Rust 1.93.1
 toolchain and external target directory. A direct PowerShell attempt outside
@@ -160,3 +235,42 @@ that developer environment tried to relink `cts_runner` and failed because
 `link.exe` was not on `PATH`; rerunning within the Visual Studio environment
 passed. The parameterized copy selector also required escaped JSON quotes in
 Windows PowerShell so the CTS query parser received the format strings.
+
+## Focused primitive topology and vertex-state fixture — 2026-11-13
+
+The direct-draw basic-topology selectors passed on the physical RTX 3090 Ti at
+requested/actual FL9_1 with no skips or failures (5/5):
+
+```text
+webgpu:api,operation,render_pipeline,primitive_topology:basic:topology="point-list";indirect=false;primitiveRestart=false
+webgpu:api,operation,render_pipeline,primitive_topology:basic:topology="line-list";indirect=false;primitiveRestart=false
+webgpu:api,operation,render_pipeline,primitive_topology:basic:topology="line-strip";indirect=false;primitiveRestart=false
+webgpu:api,operation,render_pipeline,primitive_topology:basic:topology="triangle-list";indirect=false;primitiveRestart=false
+webgpu:api,operation,render_pipeline,primitive_topology:basic:topology="triangle-strip";indirect=false;primitiveRestart=false
+```
+
+The incomplete-list direct-draw cases also passed with no skips or failures
+(3/3): line-list draw count 5 and triangle-list draw counts 4 and 5.
+
+```text
+webgpu:api,operation,render_pipeline,primitive_topology:unaligned_vertex_count:topology="line-list";indirect=false;*
+webgpu:api,operation,render_pipeline,primitive_topology:unaligned_vertex_count:topology="triangle-list";indirect=false;*
+```
+
+Strip primitive restart also passed for the direct line-strip and
+triangle-strip cases (2/2):
+
+```text
+webgpu:api,operation,render_pipeline,primitive_topology:basic:topology="line-strip";indirect=false;primitiveRestart=true
+webgpu:api,operation,render_pipeline,primitive_topology:basic:topology="triangle-strip";indirect=false;primitiveRestart=true
+```
+
+The `vertex_state,correctness:setVertexBuffer_offset_and_attribute_offset`
+selector was also probed with `format="float32x2"`, but is not usable as a
+DX11 vertex-input result: the CTS helper hard-codes an `r32sint` color target
+and readback texture. That format is not renderable in the selected adapter's
+projection, so the run failed at finalization with `Format R32Sint is not
+renderable` and the zero-filled output mismatched every generated check. This
+does not establish a vertex buffer offset failure or pass. The full strict
+public DX11 suite includes passing float vertex offset/stride GPU tests; use
+those until CTS exposes a render-target format parameter for this fixture.
