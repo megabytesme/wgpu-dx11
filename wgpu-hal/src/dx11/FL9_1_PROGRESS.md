@@ -19651,3 +19651,33 @@ rebinding. Exact selectors, commands, and warnings are recorded in
 `FL9_1_CTS.md`. The run adds evidence for existing buffer and command-state
 paths; it does not broaden the advertised API contract. The unused `level`
 warning and Visual Studio startup banner are pre-existing.
+
+## Public FL9_1 examples — offscreen and surface execution — 2026-11-13
+
+The public offscreen cube example ran with explicit `Backends::DX11` selection
+and strict physical-hardware checks. It selected the NVIDIA GeForce RTX 3090
+Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested/actual FL9_1,
+reported the projected wgpu features and limits, rendered indexed textured
+geometry, and validated all 1,024 output pixels: 112 red, 277 green and 635
+blue background pixels. The public native HWND example presented two indexed,
+textured, depth-tested frames on the same adapter.
+
+The safe `winit` surface example initially rejected a valid capability set
+because it required `usages == RENDER_ATTACHMENT`; DX11 also exposes optional
+`COPY_SRC`. Its check now requires the usage it actually consumes. Re-running
+it presented two indexed, textured, depth-tested frames through
+`Instance::create_surface(window)`. The commands were:
+
+```powershell
+cargo +1.93.1 check --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_offscreen
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_offscreen
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_windowed -- --frames=2
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_winit -- --frames=2
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_winit
+```
+
+Formatting,
+`git diff --check` and winit-example Clippy passed. Clippy reports the existing
+eight D3D11 HAL warnings. The Visual Studio wrapper prints its pre-existing
+`vError: Unknown error` banner before successful commands.

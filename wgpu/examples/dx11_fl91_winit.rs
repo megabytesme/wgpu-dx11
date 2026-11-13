@@ -86,7 +86,9 @@ impl State {
         let capabilities = surface.get_capabilities(&adapter);
         if capabilities.formats != [TextureFormat::Bgra8Unorm]
             || capabilities.present_modes != [PresentMode::Fifo]
-            || capabilities.usages != TextureUsages::RENDER_ATTACHMENT
+            || !capabilities
+                .usages
+                .contains(TextureUsages::RENDER_ATTACHMENT)
         {
             return Err(format!("unsupported FL9_1 surface contract: {capabilities:?}").into());
         }

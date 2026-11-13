@@ -3524,3 +3524,14 @@ with the advertised-capability/Core/HAL/evidence matrix. Use agents for
 independent audits, shader/profile probes and narrowly scoped CTS runs, while
 one coordinator owns changes spanning multiple crates and their integration
 tests.
+
+## Coordinator update — public examples on hardware — 2026-11-13
+
+The public offscreen cube example now has a fresh strict RTX 3090 Ti FL9_1 run
+with 1,024 checked pixels. The HWND and safe winit surface examples each
+presented two textured, indexed, depth-tested frames. The safe-surface example
+was corrected to accept optional surface usages when its required render
+usage is present. Public wgpu → Core → HAL → D3D11 offscreen rendering and
+presentation are therefore demonstrated on this driver; this does not close
+the broader capability/validation audit, historical-driver evidence or
+CoreWindow runtime requirement.
