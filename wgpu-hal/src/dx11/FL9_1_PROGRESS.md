@@ -19793,3 +19793,25 @@ root cause, so the two initial anomalies remain an open test-process
 stability concern. If they recur, add test-only enumeration diagnostics that
 preserve the per-adapter FL9_1 `D3D11CreateDevice` HRESULT before attempting a
 code fix.
+
+## Ordinary border-sampler diagnostic — 2026-11-13
+
+The strict private `sampler_state_native_border_diagnostic` opened the physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`) with requested and actual FL9_1,
+then tried an ordinary point-filter sampler with U border addressing and
+opaque black border color. Native `CreateSamplerState` returned
+`E_INVALIDARG` (`0x80070057`). The Rust test harness reported 1 passed because
+this diagnostic records rather than asserts the native result; that is not
+evidence of successful sampler creation or sampled output. Keep ordinary
+border samplers rejected.
+Microsoft documents border addressing as typically unavailable at FL9_1/9_2,
+with a specific comparison-filter shadow exception; the existing positive
+black/white comparison-border tests remain the supported case. See
+[`CAPABILITIES.md`](CAPABILITIES.md#feature-level-and-driver-facts) and
+[`TESTING.md`](TESTING.md#query-gated-fl9_1-comparison-border-test).
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_BUILD_JOBS = '8'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib sampler_state_native_border_diagnostic -- --nocapture --test-threads=1
+```

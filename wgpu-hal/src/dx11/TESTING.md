@@ -625,6 +625,12 @@ contract](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d
 explicitly permits border addressing for this comparison-sampler case at
 FL9_1; it does not make general border samplers available.
 
+The private `sampler_state_native_border_diagnostic` was run in strict mode
+on the RTX 3090 Ti at requested and actual FL9_1. Its ordinary point-filter
+border `CreateSamplerState` call returned `E_INVALIDARG` (`0x80070057`). The
+diagnostic test reports the native HRESULT and does not treat the successful
+test harness exit as successful sampler creation.
+
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_fl91_comparison_border_sampling -- --nocapture --test-threads=1

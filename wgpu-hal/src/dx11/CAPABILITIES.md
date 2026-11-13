@@ -390,7 +390,9 @@ permits border addressing on this comparison sampler even though
 ordinary border samplers are unavailable at FL9_1. The public projection
 therefore exposes `ADDRESS_MODE_CLAMP_TO_BORDER` together with a downlevel
 limit requiring comparison samplers whenever this query succeeds. This does
-not enable ordinary border samplers or the separate clamp-to-zero feature.
+not enable ordinary border samplers or the separate clamp-to-zero feature. A
+strict forced-FL9_1 native probe on the RTX 3090 Ti returned `E_INVALIDARG`
+for an ordinary point-filter border sampler, matching the conservative gate.
 A positive bit or quality count is a driver observation, not an implemented HAL
 feature or a guarantee of a valid combination of descriptors. The RGBA8 2D
 predicate intersects format bits with the implemented format, usage, shape and
