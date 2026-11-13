@@ -15,6 +15,7 @@ pub struct Sampler {
     wraps: bool,
     clamps_to_edge_u_v: bool,
     bias_compatible: bool,
+    lod_min_clamp_zero: bool,
     lod: super::sampling::SamplerLod,
 }
 crate::impl_dyn_resource!(Sampler);
@@ -208,6 +209,7 @@ impl Sampler {
             clamps_to_edge_u_v: desc.address_modes[0] == wgt::AddressMode::ClampToEdge
                 && desc.address_modes[1] == wgt::AddressMode::ClampToEdge,
             bias_compatible: bias_compatible(desc),
+            lod_min_clamp_zero: desc.lod_clamp.start == 0.0,
         })
     }
 
@@ -240,6 +242,10 @@ impl Sampler {
 
     pub(super) fn bias_compatible(&self) -> bool {
         self.bias_compatible
+    }
+
+    pub(super) fn lod_min_clamp_zero(&self) -> bool {
+        self.lod_min_clamp_zero
     }
 
     pub(super) fn lod(&self) -> super::sampling::SamplerLod {
@@ -596,6 +602,7 @@ mod tests {
             sampler_slot: 0,
             requires_bias_compatible: false,
             requires_single_mip: false,
+            requires_base_mip: false,
         };
         for size in [[3, 4, 1], [4, 3, 1]] {
             for mode in [wgt::AddressMode::Repeat, wgt::AddressMode::MirrorRepeat] {
@@ -606,7 +613,8 @@ mod tests {
                     let resources = SamplingResources {
                         textures: alloc::vec![TextureInfo {
                             size,
-                            mip_levels: 1
+                            mip_levels: 1,
+                            base_mip_view_available: false,
                         }],
                         samplers_wrap: alloc::vec![requires_power_of_two(&modes)],
                         samplers_clamp_to_edge_u_v: alloc::vec![
@@ -615,6 +623,7 @@ mod tests {
                         ],
                         samplers_lod: alloc::vec![SamplerLod::Unrestricted],
                         samplers_bias_compatible: alloc::vec![true],
+                        samplers_lod_min_clamp_zero: alloc::vec![true],
                     };
                     assert_eq!(
                         compatible(&[pair], &resources, FeatureLevel::L9_1, Query::Value(false)),

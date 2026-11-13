@@ -903,6 +903,7 @@ mod tests {
             sampler_slot: 0,
             requires_bias_compatible: false,
             requires_single_mip: false,
+            requires_base_mip: false,
         };
         for stage in [wgt::ShaderStages::VERTEX, wgt::ShaderStages::FRAGMENT] {
             assert!(matches!(
@@ -3081,10 +3082,11 @@ impl RenderPipeline {
                 fragment.entry_point,
                 &fragment_bindings,
             )?;
-            for level_zero_pair in fragment.module.texture_sample_level_zero_pairs(
+            let level_zero_pairs = fragment.module.texture_sample_level_zero_pairs(
                 naga::ShaderStage::Fragment,
                 fragment.entry_point,
-            )? {
+            )?;
+            for level_zero_pair in level_zero_pairs {
                 let Some(pair) = fragment_pairs.iter_mut().find(|pair| {
                     pair.texture == level_zero_pair.texture
                         && pair.sampler == level_zero_pair.sampler
@@ -3096,7 +3098,8 @@ impl RenderPipeline {
                     ));
                 };
                 pair.requires_bias_compatible = true;
-                pair.requires_single_mip = true;
+                pair.requires_base_mip = level_zero_pair.base_mip_view;
+                pair.requires_single_mip = !level_zero_pair.base_mip_view;
             }
             validate_sampling_pairs(
                 &desc.layout.bindings,

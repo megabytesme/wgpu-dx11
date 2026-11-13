@@ -647,6 +647,7 @@ impl BindGroup {
         let mut samplers_clamp_to_edge_u_v = alloc::vec::Vec::new();
         let mut samplers_lod = alloc::vec::Vec::new();
         let mut samplers_bias_compatible = alloc::vec::Vec::new();
+        let mut samplers_lod_min_clamp_zero = alloc::vec::Vec::new();
         for (slot, index) in sampler_indices.into_iter().enumerate() {
             let sampler = desc.samplers[index];
             let raw = sampler.raw_for(owner)?;
@@ -663,16 +664,23 @@ impl BindGroup {
             samplers_clamp_to_edge_u_v.push(sampler.clamps_to_edge_u_v());
             samplers_lod.push(sampler.lod());
             samplers_bias_compatible.push(sampler.bias_compatible());
+            samplers_lod_min_clamp_zero.push(sampler.lod_min_clamp_zero());
         }
         let sampling = super::sampling::SamplingResources {
             textures: dimensions
                 .into_iter()
-                .map(|(size, mip_levels)| super::sampling::TextureInfo { size, mip_levels })
+                .zip(&views)
+                .map(|((size, mip_levels), view)| super::sampling::TextureInfo {
+                    size,
+                    mip_levels,
+                    base_mip_view_available: view.base_mip_view.is_some(),
+                })
                 .collect(),
             samplers_wrap,
             samplers_clamp_to_edge_u_v,
             samplers_lod,
             samplers_bias_compatible,
+            samplers_lod_min_clamp_zero,
         };
         let resources = GroupResources {
             uniforms: native_uniforms,
@@ -822,6 +830,7 @@ mod tests {
             sampler_slot: 0,
             requires_bias_compatible: false,
             requires_single_mip: false,
+            requires_base_mip: false,
         };
         assert!(plan.sampling_pairs_compatible(&[pair]));
 
@@ -898,6 +907,7 @@ mod tests {
             sampler_slot: 1,
             requires_bias_compatible: false,
             requires_single_mip: false,
+            requires_base_mip: false,
         };
         assert!(plan.sampling_pairs_compatible(&[]));
         assert!(plan.sampling_pairs_compatible(&[pair]));

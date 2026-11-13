@@ -8884,7 +8884,7 @@ fn fl91_render_bundle_validates_explicit_level_zero_texture_views() {
         None,
     );
     assert!(error.is_none(), "regular filtering sampler: {error:?}");
-    let create_group = |view| {
+    let create_group = |view, sampler| {
         let entries = [
             binding_model::BindGroupEntry {
                 binding: 7,
@@ -8907,8 +8907,26 @@ fn fl91_render_bundle_validates_explicit_level_zero_texture_views() {
         assert!(error.is_none(), "sampled resource group: {error:?}");
         group
     };
-    let multi_mip_group = create_group(multi_mip_view);
-    let one_mip_group = create_group(one_mip_view);
+    let multi_mip_group = create_group(multi_mip_view, sampler);
+    let one_mip_group = create_group(one_mip_view, sampler);
+    let (nonzero_min_lod_sampler, error) = global.device_create_sampler(
+        device,
+        &crate::resource::SamplerDescriptor {
+            label: None,
+            address_modes: [wgt::AddressMode::ClampToEdge; 3],
+            mag_filter: wgt::FilterMode::Nearest,
+            min_filter: wgt::FilterMode::Nearest,
+            mipmap_filter: wgt::MipmapFilterMode::Nearest,
+            lod_min_clamp: 1.0,
+            lod_max_clamp: f32::MAX,
+            compare: None,
+            anisotropy_clamp: 1,
+            border_color: None,
+        },
+        None,
+    );
+    assert!(error.is_none(), "nonzero-MinLOD regular sampler: {error:?}");
+    let nonzero_min_lod_group = create_group(multi_mip_view, nonzero_min_lod_sampler);
 
     let bind_group_layouts = [Some(bind_group_layout)];
     let (pipeline_layout, error) = global.device_create_pipeline_layout(
@@ -8993,25 +9011,33 @@ fn fl91_render_bundle_validates_explicit_level_zero_texture_views() {
             .expect("record explicit-sample bundle draw");
         global.render_bundle_encoder_finish(&mut bundle_encoder, &bundle_descriptor, None)
     };
-    let (invalid_bundle, error) = finish_bundle(multi_mip_group);
-    global.render_bundle_drop(invalid_bundle);
-    let error = error.expect("Core must reject the multi-mip view while finishing a bundle");
+    let (valid_multi_mip_bundle, error) = finish_bundle(multi_mip_group);
     assert!(
-        std::format!("{error:?}").contains("IncompatibleTextureSampleLevelView"),
+        error.is_none(),
+        "Core must accept a validated literal-zero sample from a multi-mip view: {error:?}"
+    );
+    global.render_bundle_drop(valid_multi_mip_bundle);
+    let (invalid_bundle, error) = finish_bundle(nonzero_min_lod_group);
+    global.render_bundle_drop(invalid_bundle);
+    let error = error.expect("Core must reject nonzero MinLOD for explicit level zero");
+    assert!(
+        std::format!("{error:?}").contains("IncompatibleTextureSampleLevelSampler"),
         "unexpected render-bundle validation error: {error:?}"
     );
     let (valid_bundle, error) = finish_bundle(one_mip_group);
     assert!(error.is_none(), "valid one-mip render bundle: {error:?}");
     global.render_bundle_drop(valid_bundle);
-    std::println!("PASS: Core render-bundle finish rejected the bound multi-mip view and accepted the one-mip view");
+    std::println!("PASS: Core render-bundle finish accepted a valid multi-mip literal-zero view, rejected nonzero MinLOD, and accepted the one-mip view");
 
     global.render_pipeline_drop(pipeline);
     global.shader_module_drop(shader);
     global.pipeline_layout_drop(pipeline_layout);
     global.bind_group_drop(multi_mip_group);
     global.bind_group_drop(one_mip_group);
+    global.bind_group_drop(nonzero_min_lod_group);
     global.bind_group_layout_drop(bind_group_layout);
     global.sampler_drop(sampler);
+    global.sampler_drop(nonzero_min_lod_sampler);
     global.texture_view_drop(multi_mip_view);
     global.texture_view_drop(one_mip_view);
     global.texture_drop(texture);

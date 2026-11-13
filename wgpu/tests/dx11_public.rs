@@ -2594,6 +2594,16 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         ..Default::default()
     }))
     .expect("request a device within the reported FL9_1 capability projection");
+    let uncaptured_errors = Arc::new(std::sync::Mutex::new(Vec::new()));
+    let device_lost = Arc::new(std::sync::Mutex::new(None));
+    device.on_uncaptured_error({
+        let uncaptured_errors = Arc::clone(&uncaptured_errors);
+        Arc::new(move |error| uncaptured_errors.lock().unwrap().push(format!("{error:?}")))
+    });
+    device.set_device_lost_callback({
+        let device_lost = Arc::clone(&device_lost);
+        move |reason, message| *device_lost.lock().unwrap() = Some(format!("{reason:?}: {message}"))
+    });
 
     expect_validation_error(&device, "FL9_1 1D texture creation", || {
         drop(device.create_texture(&TextureDescriptor {
@@ -3070,13 +3080,15 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
              fn sample_computed_transformed(uv: vec2f) -> vec4f { let coordinates = uv + vec2f(0.5, 0.0); return textureSampleLevel(image, smp, coordinates, uv.x * 2.0 + 0.5); }\n\
              fn sample_transformed(uv: vec2f) -> vec4f { let coordinates = uv + vec2f(0.5, 0.0); return textureSampleLevel(image, smp, coordinates, 0.0); }\n\
              @fragment fn exact_direct(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, 0.0); }\n\
+             @fragment fn exact_and_implicit(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, 0.0) + textureSample(image, smp, uv); }\n\
              @fragment fn exact_dynamic(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, uv.x * 2.0 + 0.5); }\n\
              @fragment fn exact_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_exact(uv, uv.x); }\n\
              @fragment fn exact_helper_zero(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_zero(uv); }\n\
              @fragment fn exact_helper_computed(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_computed(uv); }\n\
              @fragment fn exact_helper_computed_transformed(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_computed_transformed(uv); }\n\
              @fragment fn exact_helper_transformed(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_transformed(uv); }\n\
-             @fragment fn implicit(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSample(image, smp, uv); }"
+             @fragment fn implicit(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSample(image, smp, uv); }\n\
+             @fragment fn implicit_minified(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSample(image, smp, uv * 2.0); }"
                 .into(),
         ),
     });
@@ -3126,6 +3138,8 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         })
     };
     let sample_level_pipeline = create_sample_level_pipeline("exact_direct");
+    let sample_level_mixed_pipeline = create_sample_level_pipeline("exact_and_implicit");
+    let sample_level_implicit_minified_pipeline = create_sample_level_pipeline("implicit_minified");
     let sample_level_dynamic_pipeline = create_sample_level_pipeline("exact_dynamic");
     let sample_level_helper_pipeline = create_sample_level_pipeline("exact_helper_zero");
     let sample_level_computed_helper_pipeline =
@@ -3140,7 +3154,6 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         "Explicit texture sample levels are not supported",
         || drop(create_sample_level_pipeline("exact_helper")),
     );
-    drop(create_sample_level_pipeline("implicit"));
 
     let level_zero_texture = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 explicit LOD zero one-mip source"),
@@ -3237,7 +3250,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         mapped_at_creation: false,
     });
     let render_sample_level_and_verify =
-        |pipeline: &RenderPipeline, label: &'static str, expected: [u8; 4]| {
+        |pipeline: &RenderPipeline, group: &BindGroup, label: &'static str, expected: [u8; 4]| {
             let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
             {
                 let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -3257,7 +3270,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
                     multiview_mask: None,
                 });
                 pass.set_pipeline(pipeline);
-                pass.set_bind_group(2, &level_zero_group, &[]);
+                pass.set_bind_group(2, group, &[]);
                 pass.set_vertex_buffer(0, sample_level_vertex.slice(..));
                 pass.draw(0..3, 0..1);
             }
@@ -3282,17 +3295,27 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
                     depth_or_array_layers: 1,
                 },
             );
+            let submission_scope = device.push_error_scope(ErrorFilter::Validation);
             let submission = queue.submit([encoder.finish()]);
+            if let Some(error) = poll_ready(submission_scope.pop()) {
+                panic!("{label} command submission failed validation: {error:?}");
+            }
             let (sender, receiver) = std::sync::mpsc::channel();
             sample_level_readback
                 .slice(..)
                 .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
             device
                 .poll(PollType::Wait {
-                    submission_index: Some(submission),
+                    submission_index: Some(submission.clone()),
                     timeout: Some(Duration::from_secs(10)),
                 })
-                .expect("wait for FL9_1 explicit-LOD helper execution");
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "wait for {label} submission {submission:?} failed: {error:?}; uncaptured={:?}; lost={:?}",
+                        *uncaptured_errors.lock().unwrap(),
+                        *device_lost.lock().unwrap()
+                    )
+                });
             receiver
                 .recv_timeout(Duration::from_secs(10))
                 .expect("explicit-LOD helper map callback")
@@ -3645,13 +3668,14 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
 
     render_sample_level_and_verify(
         &sample_level_computed_transformed_helper_pipeline,
+        &level_zero_group,
         "FL9_1 computed-LOD transformed-coordinate helper pass",
         expected_level_zero[1],
     );
     println!("PASS: one helper combined transformed coordinates with computed LOD and all 64 GPU-read pixels matched the transformed one-mip result");
 
     let expect_sample_level_draw_rejection =
-        |group: &BindGroup, label: &str, expected_error: &str| {
+        |pipeline: &RenderPipeline, group: &BindGroup, label: &str, expected_error: &str| {
             expect_validation_error_containing(&device, label, expected_error, || {
                 let mut encoder =
                     device.create_command_encoder(&CommandEncoderDescriptor::default());
@@ -3672,7 +3696,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
                         occlusion_query_set: None,
                         multiview_mask: None,
                     });
-                    pass.set_pipeline(&sample_level_pipeline);
+                    pass.set_pipeline(pipeline);
                     pass.set_bind_group(2, group, &[]);
                     pass.set_vertex_buffer(0, sample_level_vertex.slice(..));
                     pass.draw(0..3, 0..1);
@@ -3681,22 +3705,45 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             });
         };
     let multi_mip_source = device.create_texture(&TextureDescriptor {
-        label: Some("FL9_1 explicit LOD zero invalid multi-mip source"),
+        label: Some("FL9_1 explicit LOD zero multi-mip source"),
         size: Extent3d {
             width: 4,
             height: 4,
             depth_or_array_layers: 1,
         },
-        mip_level_count: 2,
+        mip_level_count: 3,
         sample_count: 1,
         dimension: TextureDimension::D2,
         format: TextureFormat::Rgba8Unorm,
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
     });
+    let mut mip_colors = [[200, 20, 30, 255], [10, 220, 40, 255], [20, 30, 230, 255]];
+    for (mip_level, (size, color)) in [4, 2, 1].into_iter().zip(mip_colors).enumerate() {
+        let data = color.repeat((size * size) as usize);
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &multi_mip_source,
+                mip_level: mip_level as u32,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &data,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(size * 4),
+                rows_per_image: Some(size),
+            },
+            Extent3d {
+                width: size,
+                height: size,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
     let multi_mip_view = multi_mip_source.create_view(&TextureViewDescriptor::default());
     let multi_mip_group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("FL9_1 explicit LOD zero invalid multi-mip binding"),
+        label: Some("FL9_1 explicit LOD zero multi-mip binding"),
         layout: &sample_level_layout,
         entries: &[
             BindGroupEntry {
@@ -3709,11 +3756,184 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             },
         ],
     });
-    expect_sample_level_draw_rejection(
+
+    render_sample_level_and_verify(
+        &sample_level_pipeline,
         &multi_mip_group,
-        "explicit LOD zero with a multi-mip view",
+        "FL9_1 explicit LOD zero full multi-mip view",
+        mip_colors[0],
+    );
+    let nonzero_base_mip_view = multi_mip_source.create_view(&TextureViewDescriptor {
+        base_mip_level: 1,
+        mip_level_count: Some(2),
+        ..Default::default()
+    });
+    let nonzero_base_mip_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 explicit LOD zero view-relative mip binding"),
+        layout: &sample_level_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&nonzero_base_mip_view),
+            },
+            BindGroupEntry {
+                binding: 23,
+                resource: BindingResource::Sampler(&level_zero_sampler),
+            },
+        ],
+    });
+    render_sample_level_and_verify(
+        &sample_level_pipeline,
+        &nonzero_base_mip_group,
+        "FL9_1 explicit LOD zero nonzero-base mip view",
+        mip_colors[1],
+    );
+    mip_colors[0] = [70, 100, 210, 255];
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &multi_mip_source,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &mip_colors[0].repeat(16),
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(16),
+            rows_per_image: Some(4),
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+    );
+    render_sample_level_and_verify(
+        &sample_level_pipeline,
+        &multi_mip_group,
+        "FL9_1 explicit LOD zero refreshed source mip",
+        mip_colors[0],
+    );
+
+    let mut transition_encoder =
+        device.create_command_encoder(&CommandEncoderDescriptor::default());
+    {
+        let mut pass = transition_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 explicit-to-implicit mip-view transition"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &sample_level_target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&sample_level_pipeline);
+        pass.set_bind_group(2, &multi_mip_group, &[]);
+        pass.set_vertex_buffer(0, sample_level_vertex.slice(..));
+        pass.set_viewport(0.0, 0.0, 4.0, 8.0, 0.0, 1.0);
+        pass.set_scissor_rect(0, 0, 4, 8);
+        pass.draw(0..3, 0..1);
+        pass.set_pipeline(&sample_level_implicit_minified_pipeline);
+        pass.set_bind_group(2, &multi_mip_group, &[]);
+        pass.set_viewport(4.0, 0.0, 4.0, 8.0, 0.0, 1.0);
+        pass.set_scissor_rect(4, 0, 4, 8);
+        pass.draw(0..3, 0..1);
+    }
+    transition_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &sample_level_target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &sample_level_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let transition_submission = queue.submit([transition_encoder.finish()]);
+    let (transition_sender, transition_receiver) = std::sync::mpsc::channel();
+    sample_level_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| {
+            transition_sender.send(result).unwrap()
+        });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(transition_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for explicit-to-implicit pipeline transition");
+    transition_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("mip-view transition map callback")
+        .expect("map mip-view transition output");
+    {
+        let pixels = sample_level_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped mip-view transition output");
+        for y in 0..8 {
+            for x in 0..8 {
+                let expected = if x < 4 { mip_colors[0] } else { mip_colors[1] };
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    expected,
+                    "explicit-to-implicit transition pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    sample_level_readback.unmap();
+
+    let implicit_min_lod_sampler = device.create_sampler(&SamplerDescriptor {
+        lod_min_clamp: 1.0,
+        ..Default::default()
+    });
+    let implicit_min_lod_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 explicit LOD zero nonzero minimum-LOD sampler"),
+        layout: &sample_level_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&multi_mip_view),
+            },
+            BindGroupEntry {
+                binding: 23,
+                resource: BindingResource::Sampler(&implicit_min_lod_sampler),
+            },
+        ],
+    });
+    expect_sample_level_draw_rejection(
+        &sample_level_pipeline,
+        &implicit_min_lod_group,
+        "explicit LOD zero with nonzero sampler minimum LOD",
+        "IncompatibleTextureSampleLevelSampler",
+    );
+    expect_sample_level_draw_rejection(
+        &sample_level_mixed_pipeline,
+        &multi_mip_group,
+        "mixed explicit and implicit sampling of one mipmapped texture",
         "IncompatibleTextureSampleLevelView",
     );
+    println!("PASS: forced FL9_1 sampled mip 0 from full and nonzero-base views; a minified implicit-sample pipeline transition selected mip 1 from the full view");
     let mismatched_sampler = device.create_sampler(&SamplerDescriptor {
         min_filter: FilterMode::Linear,
         mag_filter: FilterMode::Nearest,
@@ -3734,11 +3954,12 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         ],
     });
     expect_sample_level_draw_rejection(
+        &sample_level_pipeline,
         &mismatched_sampler_group,
         "explicit LOD zero with mismatched min/mag filters",
         "IncompatibleTextureSampleLevelSampler",
     );
-    println!("PASS: Core draw validation rejects multi-mip views and sampler filter mismatches before HAL draw execution");
+    println!("PASS: Core draw validation rejects mixed mip access, nonzero sampler minimum LOD and incompatible filters before HAL draw execution");
 
     let texture_gather_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 texture-gather selected-entry shader"),

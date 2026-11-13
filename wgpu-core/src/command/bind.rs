@@ -768,7 +768,27 @@ impl Binder {
                     binding: pair.sampler_binding,
                 })?;
 
-            if !sampler_mip_pair_compatible(texture_mip_levels, sampler_compatibility) {
+            let sample_level_zero_base_view = pipeline
+                .fl9_texture_sample_level_zero_pairs
+                .iter()
+                .any(|level_zero| {
+                    level_zero.texture_group == pair.texture_group
+                        && level_zero.texture_binding == pair.texture_binding
+                        && level_zero.sampler_group == pair.sampler_group
+                        && level_zero.sampler_binding == pair.sampler_binding
+                        && level_zero.base_mip_view
+                });
+            let sampler_lod_min_clamp_zero = sampler_group
+                .sampler_texture_sample_level_zero_compatible
+                .get(&pair.sampler_binding)
+                .is_some_and(|compatible| compatible.as_slice() == [true]);
+            let compatible_mips = if sample_level_zero_base_view && sampler_lod_min_clamp_zero {
+                sampler_mip_pair_compatible(&[1], sampler_compatibility)
+            } else {
+                sampler_mip_pair_compatible(texture_mip_levels, sampler_compatibility)
+            };
+
+            if !compatible_mips {
                 return Err(DrawError::IncompatibleSamplerMipRange {
                     texture_group: pair.texture_group,
                     texture_binding: pair.texture_binding,
@@ -811,7 +831,10 @@ impl Binder {
                     group: pair.texture_group,
                     binding: pair.texture_binding,
                 })?;
-            if mip_levels.len() != 1 || mip_levels[0] != 1 {
+            if mip_levels.len() != 1
+                || mip_levels[0] == 0
+                || (!pair.base_mip_view && mip_levels[0] != 1)
+            {
                 return Err(DrawError::IncompatibleTextureSampleLevelView {
                     group: pair.texture_group,
                     binding: pair.texture_binding,
@@ -830,6 +853,21 @@ impl Binder {
                     group: pair.sampler_group,
                     binding: pair.sampler_binding,
                 });
+            }
+            if pair.base_mip_view && mip_levels[0] > 1 {
+                let sampler_lod_min_clamp_zero = sampler_group
+                    .sampler_texture_sample_level_zero_compatible
+                    .get(&pair.sampler_binding)
+                    .ok_or(DrawError::MissingSamplingBindingMetadata {
+                        group: pair.sampler_group,
+                        binding: pair.sampler_binding,
+                    })?;
+                if sampler_lod_min_clamp_zero.as_slice() != [true] {
+                    return Err(DrawError::IncompatibleTextureSampleLevelSampler {
+                        group: pair.sampler_group,
+                        binding: pair.sampler_binding,
+                    });
+                }
             }
         }
 

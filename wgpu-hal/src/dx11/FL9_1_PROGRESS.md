@@ -19583,3 +19583,34 @@ coverage addition, not evidence for other attachment formats or counts. The
 exact command and runner output are recorded in `FL9_1_CTS.md`. A bounded
 three-agent review is underway: contract-gap audit, strict CTS selection and
 shader/profile candidate review; agents do not own cross-layer implementation.
+
+## Multi-mip literal-zero sampling views — 2026-11-13
+
+The narrow fragment `textureSampleLevel(..., 0.0)` path now accepts a multi-mip
+2D view while preserving view-relative level-zero semantics. A direct one-mip
+SRV over a multi-mip FL9_1 resource is invalid because 10Level9 requires an
+SRV to include the resource's smallest mip; the initial attempt device-lost on
+the RTX 3090 Ti. The HAL now creates a one-mip sampled texture for the selected
+view's first mip and refreshes it with an explicit-region default-resource copy
+before each affected draw. The strict public forced-FL9_1 test passed on the
+physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`): a 4x4 three-mip
+texture returned red from the full view's mip 0, green from a view starting at
+mip 1, reflected a later mip-0 upload, and selected green mip 1 after a
+pipeline transition to minified implicit sampling. Every checked pixel
+matched. Negative checks still reject nonzero sampler MinLOD, mixed exact and
+implicit use of the same multi-mip view, and incompatible filters. The feature
+adds one scratch allocation per multi-mip 2D view and an ordered copy before
+each matching draw; general explicit LOD remains unavailable.
+
+Regression closure for this checkpoint: strict private HAL passed 529/529,
+Core's FL9_1 fixture suite passed 149/149, and the strict public D3D11 test
+target passed 153/153 with no Rust test failures or skips. Core DX12 passed
+133/133. The strict public GPU test and private HAL suite ran with
+`WGPU_DX11_REQUIRE_HARDWARE=1`; hardware paths selected the physical RTX 3090
+Ti and requested/confirmed FL9_1. Formatting, targeted Clippy for HAL, Core and
+the public D3D11 test target, and `git diff --check` passed. Clippy reported
+existing HAL style warnings; Core DX12 retained its existing unused-variable
+warning. The Visual Studio setup wrapper still prints `vError: Unknown error`
+before successful Cargo execution. A failed direct base-only SRV experiment
+was replaced by the scratch-copy path described above; strict readback verifies
+the replacement, but historical FL9_1 drivers remain untested.

@@ -14,12 +14,14 @@ pub(super) struct SamplingPair {
     pub sampler_slot: usize,
     pub requires_bias_compatible: bool,
     pub requires_single_mip: bool,
+    pub requires_base_mip: bool,
 }
 
 #[derive(Clone, Copy, Debug)]
 pub(super) struct TextureInfo {
     pub size: [u32; 3],
     pub mip_levels: u32,
+    pub base_mip_view_available: bool,
 }
 
 pub(super) type SamplerLod = crate::SamplerMipCompatibility;
@@ -31,6 +33,7 @@ pub(super) struct SamplingResources {
     pub samplers_clamp_to_edge_u_v: Vec<bool>,
     pub samplers_lod: Vec<SamplerLod>,
     pub samplers_bias_compatible: Vec<bool>,
+    pub samplers_lod_min_clamp_zero: Vec<bool>,
 }
 
 impl SamplingResources {
@@ -42,6 +45,8 @@ impl SamplingResources {
         self.samplers_lod.extend_from_slice(&other.samplers_lod);
         self.samplers_bias_compatible
             .extend_from_slice(&other.samplers_bias_compatible);
+        self.samplers_lod_min_clamp_zero
+            .extend_from_slice(&other.samplers_lod_min_clamp_zero);
     }
 }
 
@@ -102,6 +107,7 @@ pub(super) fn relationships(
             sampler_slot: find(sampler, sampler_kind.ok_or(())?)?,
             requires_bias_compatible: false,
             requires_single_mip: false,
+            requires_base_mip: false,
         });
     }
     pairs.sort_unstable_by_key(|pair| {
@@ -122,25 +128,41 @@ pub(super) fn compatible(
     full_npot: Query<bool>,
 ) -> bool {
     pairs.iter().all(|pair| {
-        let (Some(texture), Some(&wraps), Some(_), Some(&lod), Some(&bias_compatible)) = (
+        let (
+            Some(texture),
+            Some(&wraps),
+            Some(_),
+            Some(&lod),
+            Some(&bias_compatible),
+            Some(&lod_min_clamp_zero),
+        ) = (
             resources.textures.get(pair.texture_slot),
             resources.samplers_wrap.get(pair.sampler_slot),
             resources.samplers_clamp_to_edge_u_v.get(pair.sampler_slot),
             resources.samplers_lod.get(pair.sampler_slot),
             resources.samplers_bias_compatible.get(pair.sampler_slot),
-        ) else {
+            resources.samplers_lod_min_clamp_zero.get(pair.sampler_slot),
+        )
+        else {
             return false;
         };
         texture.size.iter().all(|dimension| *dimension != 0)
             && (!pair.requires_bias_compatible || bias_compatible)
             && (!pair.requires_single_mip || texture.mip_levels == 1)
+            && (!pair.requires_base_mip
+                || (texture.base_mip_view_available
+                    && (texture.mip_levels == 1 || lod_min_clamp_zero)))
             && texture.mip_levels
                 <= texture.size[0]
                     .max(texture.size[1])
                     .max(texture.size[2])
                     .ilog2()
                     + 1
-            && lod.is_compatible_with_view_mips(texture.mip_levels)
+            && lod.is_compatible_with_view_mips(if pair.requires_base_mip {
+                1
+            } else {
+                texture.mip_levels
+            })
             && (texture.mip_levels == 1
                 || level.as_raw() >= FeatureLevel::L10_0.as_raw()
                 || matches!(full_npot, Query::Value(true))
@@ -248,11 +270,13 @@ mod tests {
             textures: alloc::vec![TextureInfo {
                 size: [4, 4, 3],
                 mip_levels: 1,
+                base_mip_view_available: false,
             }],
             samplers_wrap: alloc::vec![true],
             samplers_clamp_to_edge_u_v: alloc::vec![false],
             samplers_lod: alloc::vec![SamplerLod::Unrestricted],
             samplers_bias_compatible: alloc::vec![true],
+            samplers_lod_min_clamp_zero: alloc::vec![true],
         };
         assert!(!compatible(
             &pairs,
@@ -274,17 +298,20 @@ mod tests {
             textures: alloc::vec![
                 TextureInfo {
                     size: [4, 8, 1],
-                    mip_levels: 1
+                    mip_levels: 1,
+                    base_mip_view_available: false,
                 },
                 TextureInfo {
                     size: [3, 5, 1],
-                    mip_levels: 1
+                    mip_levels: 1,
+                    base_mip_view_available: false,
                 }
             ],
             samplers_wrap: alloc::vec![true, false],
             samplers_clamp_to_edge_u_v: alloc::vec![false, true],
             samplers_lod: alloc::vec![SamplerLod::Unrestricted; 2],
             samplers_bias_compatible: alloc::vec![true; 2],
+            samplers_lod_min_clamp_zero: alloc::vec![true; 2],
         }
     }
 
@@ -455,22 +482,26 @@ mod tests {
             SamplingResources {
                 textures: alloc::vec![TextureInfo {
                     size: [4, 8, 1],
-                    mip_levels: 1
+                    mip_levels: 1,
+                    base_mip_view_available: false,
                 }],
                 samplers_wrap: alloc::vec![],
                 samplers_clamp_to_edge_u_v: alloc::vec![],
                 samplers_lod: alloc::vec![],
                 samplers_bias_compatible: alloc::vec![],
+                samplers_lod_min_clamp_zero: alloc::vec![],
             },
             SamplingResources {
                 textures: alloc::vec![TextureInfo {
                     size: [3, 5, 1],
-                    mip_levels: 1
+                    mip_levels: 1,
+                    base_mip_view_available: false,
                 }],
                 samplers_wrap: alloc::vec![],
                 samplers_clamp_to_edge_u_v: alloc::vec![],
                 samplers_lod: alloc::vec![],
                 samplers_bias_compatible: alloc::vec![],
+                samplers_lod_min_clamp_zero: alloc::vec![],
             },
             SamplingResources {
                 textures: alloc::vec![],
@@ -478,6 +509,7 @@ mod tests {
                 samplers_clamp_to_edge_u_v: alloc::vec![false],
                 samplers_lod: alloc::vec![SamplerLod::Unrestricted],
                 samplers_bias_compatible: alloc::vec![true],
+                samplers_lod_min_clamp_zero: alloc::vec![true],
             },
             SamplingResources {
                 textures: alloc::vec![],
@@ -485,6 +517,7 @@ mod tests {
                 samplers_clamp_to_edge_u_v: alloc::vec![true],
                 samplers_lod: alloc::vec![SamplerLod::Unrestricted],
                 samplers_bias_compatible: alloc::vec![true],
+                samplers_lod_min_clamp_zero: alloc::vec![true],
             },
         ] {
             combined.append(&group);
@@ -819,6 +852,69 @@ mod tests {
     }
 
     #[test]
+    fn explicit_lod_zero_requires_a_base_mip_view_and_zero_minimum_lod() {
+        let pair = SamplingPair {
+            texture: naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            },
+            sampler: naga::ResourceBinding {
+                group: 0,
+                binding: 8,
+            },
+            texture_slot: 0,
+            sampler_slot: 0,
+            requires_bias_compatible: true,
+            requires_single_mip: false,
+            requires_base_mip: true,
+        };
+        let mut resources = SamplingResources {
+            textures: alloc::vec![TextureInfo {
+                size: [8, 8, 1],
+                mip_levels: 4,
+                base_mip_view_available: true,
+            }],
+            samplers_wrap: alloc::vec![false],
+            samplers_clamp_to_edge_u_v: alloc::vec![true],
+            samplers_lod: alloc::vec![SamplerLod::Unrestricted],
+            samplers_bias_compatible: alloc::vec![true],
+            samplers_lod_min_clamp_zero: alloc::vec![true],
+        };
+        assert!(compatible(
+            &[pair],
+            &resources,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+
+        resources.textures[0].base_mip_view_available = false;
+        assert!(!compatible(
+            &[pair],
+            &resources,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+        resources.textures[0].base_mip_view_available = true;
+        resources.samplers_lod_min_clamp_zero[0] = false;
+        assert!(!compatible(
+            &[pair],
+            &resources,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+
+        let mut single_mip_only = pair;
+        single_mip_only.requires_base_mip = false;
+        single_mip_only.requires_single_mip = true;
+        assert!(!compatible(
+            &[single_mip_only],
+            &resources,
+            FeatureLevel::L9_1,
+            Query::Value(false)
+        ));
+    }
+
+    #[test]
     fn explicit_lod_zero_pair_requires_one_mip_and_compatible_filtering() {
         let (module, info, bindings) = fixture();
         let mut pairs = relationships(
@@ -934,6 +1030,7 @@ mod tests {
             sampler_slot: 0,
             requires_bias_compatible: false,
             requires_single_mip: false,
+            requires_base_mip: false,
         };
         assert!(!compatible(
             &[pair],

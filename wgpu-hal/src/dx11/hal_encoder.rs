@@ -442,12 +442,30 @@ impl RenderState {
                 });
             }
             for (local, texture) in bound.resources.textures.iter().enumerate() {
-                if let Some(copy) = &texture.refresh {
+                let binding = bound.kind.textures.get(local).copied().flatten()?;
+                let requires_base_mip = self.sampling_pairs.iter().any(|pair| {
+                    pair.texture.group == index as u32
+                        && pair.texture.binding == binding
+                        && pair.requires_base_mip
+                });
+                let texture_refresh = if requires_base_mip {
+                    texture
+                        .base_mip_refresh
+                        .as_ref()
+                        .or(texture.refresh.as_ref())
+                } else {
+                    texture.refresh.as_ref()
+                };
+                if let Some(copy) = texture_refresh {
                     refresh.push(copy.clone());
                 }
                 commands.push(NativeCommand::SetTexture {
                     slot: slots.textures + local as u32,
-                    texture: texture.view.clone(),
+                    texture: if requires_base_mip {
+                        texture.base_mip_view.clone()?
+                    } else {
+                        texture.view.clone()
+                    },
                 });
             }
             for (local, sampler) in bound.resources.samplers.iter().enumerate() {

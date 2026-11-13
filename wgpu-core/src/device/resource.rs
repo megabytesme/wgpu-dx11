@@ -3267,6 +3267,7 @@ impl Device {
                 desc.mag_filter,
                 anisotropy_clamp,
             ),
+            texture_sample_level_zero_compatible: desc.lod_min_clamp == 0.0,
             mip_compatibility,
             address_modes: desc.address_modes,
         };
@@ -4375,6 +4376,7 @@ impl Device {
         let mut sampler_clamp_to_edge = FastHashMap::default();
         let mut sampler_mip_compatibility = FastHashMap::default();
         let mut sampler_texture_sample_bias_compatible = FastHashMap::default();
+        let mut sampler_texture_sample_level_zero_compatible = FastHashMap::default();
         // Map of binding -> shader reflected size
         //Note: we can't collect into a vector right away because
         // it needs to be in BGL iteration order, not BG entry order.
@@ -4440,6 +4442,8 @@ impl Device {
                     let clamp_to_edge = sampler_clamps_to_edge_u_v(&sampler.address_modes);
                     let bias_compatible = sampler.texture_sample_bias_compatible;
                     sampler_mip_compatibility.insert(binding, vec![sampler.mip_compatibility]);
+                    sampler_texture_sample_level_zero_compatible
+                        .insert(binding, vec![sampler.texture_sample_level_zero_compatible]);
                     let sampler = self.create_sampler_binding(&mut used, binding, decl, sampler)?;
                     sampler_uses_repeat.insert(binding, vec![uses_repeat]);
                     sampler_clamp_to_edge.insert(binding, vec![clamp_to_edge]);
@@ -4481,6 +4485,13 @@ impl Device {
                         samplers
                             .iter()
                             .map(|sampler| sampler.mip_compatibility)
+                            .collect(),
+                    );
+                    sampler_texture_sample_level_zero_compatible.insert(
+                        binding,
+                        samplers
+                            .iter()
+                            .map(|sampler| sampler.texture_sample_level_zero_compatible)
                             .collect(),
                     );
 
@@ -4692,6 +4703,7 @@ impl Device {
             sampler_clamp_to_edge,
             sampler_mip_compatibility,
             sampler_texture_sample_bias_compatible,
+            sampler_texture_sample_level_zero_compatible,
         };
 
         let bind_group = Arc::new(bind_group);

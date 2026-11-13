@@ -3485,3 +3485,31 @@ separate. Strict RTX 3090 Ti FL9_1 rendering used thirteen distinct uniforms
 in each stage and all sixty-four pixels included both results. No other
 contract mismatch was confirmed by the scoped audit; the broader evidence
 matrix remains incomplete.
+
+# Coordinator update — multi-mip literal-zero sample views — 2026-11-13
+
+The selected fragment `textureSampleLevel(..., 0.0)` proof now permits
+multi-mip D2 views by copying the selected view-relative mip zero into a
+one-mip sampled texture before each affected draw. The first direct base-only
+SRV design violated the 10Level9 requirement that an FL9_1 SRV include the
+resource's smallest mip and reproducibly lost the device; it was replaced with
+a default-resource copy using an explicit source box and zero destination
+offset. Strict RTX 3090 Ti FL9_1 readback now covers full and nonzero-base
+views, an upload after view creation, and pipeline transition to minified
+implicit sampling. General explicit LOD is still unavailable.
+
+The backend is usable only as an opt-in, constrained graphics subset. Software
+work remaining is primarily evidence closure: finish the advertised capability
+→ Core validation → HAL operation → test/CTS matrix, then add only confirmed,
+workload-backed gaps. Scoped audits have found no new confirmed public-valid
+request reaching an unsupported HAL path, but are not exhaustive. Profile and
+hardware exclusions remain compute/UAV/storage, geometry shaders, multiple
+color targets, ordinary 1D/array textures, indirect draws and FL9_1 occlusion
+queries. Historical 9_1 drivers, Lumia ARM32/CoreWindow execution and physical
+device removal/recovery remain external verification gaps.
+
+Use specialists for independent contract reviews, FXC probes, and strictly
+scoped CTS selectors. Do not assign one agent to each broad feature family:
+shader/API changes span Core, Naga, HAL and GPU tests and need one integration
+owner. The coordinator keeps the cross-layer implementation, merges evidence,
+runs the combined regression suite, and makes the checkpoint commit.

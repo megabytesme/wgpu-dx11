@@ -1367,6 +1367,7 @@ pub struct BindGroup {
     pub(crate) sampler_clamp_to_edge: FastHashMap<u32, Vec<bool>>,
     pub(crate) sampler_mip_compatibility: FastHashMap<u32, Vec<hal::SamplerMipCompatibility>>,
     pub(crate) sampler_texture_sample_bias_compatible: FastHashMap<u32, Vec<bool>>,
+    pub(crate) sampler_texture_sample_level_zero_compatible: FastHashMap<u32, Vec<bool>>,
 }
 
 #[derive(Clone, Copy, Debug)]

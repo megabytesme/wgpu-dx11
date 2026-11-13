@@ -338,7 +338,7 @@ struct EntryPoint {
     texture_sample_biases: Vec<TextureSampleBias>,
     fragment_derivatives_used: bool,
     texture_sample_level_used: bool,
-    fl9_texture_sample_level_zero_pairs: Option<Vec<SamplingPair>>,
+    fl9_texture_sample_level_zero_pairs: Option<Vec<TextureSampleLevelZeroPair>>,
     texture_gather_used: bool,
     fl9_texture_gather_pair: Option<SamplingPair>,
     workgroup_size: [u32; 3],
@@ -362,6 +362,15 @@ pub(crate) struct SamplingPair {
     pub texture_binding: u32,
     pub sampler_group: u32,
     pub sampler_binding: u32,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) struct TextureSampleLevelZeroPair {
+    pub texture_group: u32,
+    pub texture_binding: u32,
+    pub sampler_group: u32,
+    pub sampler_binding: u32,
+    pub base_mip_view: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -3906,7 +3915,7 @@ fn entry_point_uses_texture_sample_level(
 fn entry_point_fl9_texture_sample_level_zero_pairs(
     module: &naga::Module,
     entry_point: &naga::EntryPoint,
-) -> Option<Vec<SamplingPair>> {
+) -> Option<Vec<TextureSampleLevelZeroPair>> {
     if entry_point.stage != naga::ShaderStage::Fragment {
         return None;
     }
@@ -4044,13 +4053,20 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
         {
             return None;
         }
-        let pair = fl9_texture_sample_level_zero_pair(
+        let mut pair = fl9_texture_sample_level_zero_pair(
             module,
             &helper_function.expressions,
             sample_result,
             Some(helper_function),
             true,
         )?;
+        pair.base_mip_view = pair.base_mip_view
+            && fl9_texture_sample_level_zero_only_uses_base_mip(
+                module,
+                &helper_function.expressions,
+                pair.texture_group,
+                pair.texture_binding,
+            );
         return Some(alloc::vec![pair]);
     }
 
@@ -4079,13 +4095,21 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
         ) {
             continue;
         }
-        pairs.push(fl9_texture_sample_level_zero_pair(
+        let mut pair = fl9_texture_sample_level_zero_pair(
             module,
             &entry_point.function.expressions,
             handle,
             Some(&entry_point.function),
             true,
-        )?);
+        )?;
+        pair.base_mip_view = pair.base_mip_view
+            && fl9_texture_sample_level_zero_only_uses_base_mip(
+                module,
+                &entry_point.function.expressions,
+                pair.texture_group,
+                pair.texture_binding,
+            );
+        pairs.push(pair);
     }
     if pairs.is_empty() {
         return None;
@@ -4113,7 +4137,7 @@ fn fl9_texture_sample_level_zero_pair(
     sample: naga::Handle<naga::Expression>,
     function: Option<&naga::Function>,
     allow_dynamic_level: bool,
-) -> Option<SamplingPair> {
+) -> Option<TextureSampleLevelZeroPair> {
     let naga::Expression::ImageSample {
         image,
         sampler,
@@ -4169,11 +4193,51 @@ fn fl9_texture_sample_level_zero_pair(
     }
     let image = image_global.binding.as_ref()?;
     let sampler = sampler_global.binding.as_ref()?;
-    Some(SamplingPair {
+    Some(TextureSampleLevelZeroPair {
         texture_group: image.group,
         texture_binding: image.binding,
         sampler_group: sampler.group,
         sampler_binding: sampler.binding,
+        base_mip_view: matches!(
+            expressions[level],
+            naga::Expression::Literal(naga::Literal::F32(value)) if value == 0.0
+        ),
+    })
+}
+
+fn fl9_texture_sample_level_zero_only_uses_base_mip(
+    module: &naga::Module,
+    expressions: &naga::Arena<naga::Expression>,
+    texture_group: u32,
+    texture_binding: u32,
+) -> bool {
+    let is_texture = |handle| {
+        let naga::Expression::GlobalVariable(global) = expressions[handle] else {
+            return false;
+        };
+        module.global_variables[global]
+            .binding
+            .as_ref()
+            .is_some_and(|binding| {
+                binding.group == texture_group && binding.binding == texture_binding
+            })
+    };
+    expressions.iter().all(|(_, expression)| match *expression {
+        naga::Expression::ImageSample {
+            image,
+            level: naga::SampleLevel::Exact(level),
+            ..
+        } if is_texture(image) => matches!(
+            expressions[level],
+            naga::Expression::Literal(naga::Literal::F32(value)) if value == 0.0
+        ),
+        naga::Expression::ImageSample { image, .. } if is_texture(image) => false,
+        naga::Expression::ImageLoad { image, .. } | naga::Expression::ImageQuery { image, .. }
+            if is_texture(image) =>
+        {
+            false
+        }
+        _ => true,
     })
 }
 
@@ -9498,7 +9562,7 @@ impl Interface {
         &self,
         stage: naga::ShaderStage,
         entry_point_name: &str,
-    ) -> Result<Vec<SamplingPair>, StageError> {
+    ) -> Result<Vec<TextureSampleLevelZeroPair>, StageError> {
         let key = (stage, entry_point_name.to_string());
         let Some(entry_point) = self.entry_points.get(&key) else {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
@@ -10243,7 +10307,10 @@ impl ShaderStageForValidation {
 mod tests {
     use alloc::{format, string::ToString, vec::Vec};
 
-    use super::{BuiltIn, EntryPoint, Interface, InterfaceVar, SamplingPair, StageError, Varying};
+    use super::{
+        BuiltIn, EntryPoint, Interface, InterfaceVar, SamplingPair, StageError,
+        TextureSampleLevelZeroPair, Varying,
+    };
 
     #[test]
     fn fragment_location_error_formats_zero_limit() {
@@ -12164,6 +12231,9 @@ mod tests {
             @fragment fn level_zero(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleLevel(image, smp, uv, 0.0);
             }
+            @fragment fn level_zero_and_implicit(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleLevel(image, smp, uv, 0.0) + textureSample(image, smp, uv);
+            }
             @fragment fn level_zero_negative(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleLevel(image, smp, uv, -0.0);
             }
@@ -12242,6 +12312,7 @@ mod tests {
 
         for entry in [
             "level_zero",
+            "level_zero_and_implicit",
             "level_zero_negative",
             "level_nonzero",
             "level_dynamic",
@@ -12259,20 +12330,24 @@ mod tests {
                     .unwrap(),
                 "{entry} should sample the only level in a one-mip view"
             );
+            let pairs = interface
+                .entry_point_fl9_texture_sample_level_zero_pairs(naga::ShaderStage::Fragment, entry)
+                .unwrap();
+            assert_eq!(pairs.len(), 1, "{entry} should retain its sampling pair");
             assert_eq!(
-                interface
-                    .entry_point_fl9_texture_sample_level_zero_pairs(
-                        naga::ShaderStage::Fragment,
-                        entry,
-                    )
-                    .unwrap(),
-                alloc::vec![SamplingPair {
-                    texture_group: 2,
-                    texture_binding: 7,
-                    sampler_group: 2,
-                    sampler_binding: 42,
-                }],
+                (
+                    pairs[0].texture_group,
+                    pairs[0].texture_binding,
+                    pairs[0].sampler_group,
+                    pairs[0].sampler_binding,
+                ),
+                (2, 7, 2, 42),
                 "{entry} should retain its actual texture/sampler relationship"
+            );
+            assert_eq!(
+                pairs[0].base_mip_view,
+                matches!(entry, "level_zero" | "level_zero_negative"),
+                "{entry} should only allow a one-mip SRV when all accesses use literal zero"
             );
         }
 
@@ -12320,11 +12395,12 @@ mod tests {
                     "helper",
                 )
                 .unwrap(),
-            alloc::vec![SamplingPair {
+            alloc::vec![TextureSampleLevelZeroPair {
                 texture_group: 2,
                 texture_binding: 7,
                 sampler_group: 2,
                 sampler_binding: 42,
+                base_mip_view: true,
             }]
         );
         assert!(!interface
@@ -12341,11 +12417,12 @@ mod tests {
                     "helper_transformed",
                 )
                 .unwrap(),
-            alloc::vec![SamplingPair {
+            alloc::vec![TextureSampleLevelZeroPair {
                 texture_group: 2,
                 texture_binding: 7,
                 sampler_group: 2,
                 sampler_binding: 42,
+                base_mip_view: true,
             }]
         );
         assert!(!interface

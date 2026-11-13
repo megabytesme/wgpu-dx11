@@ -1054,9 +1054,17 @@ finite literal or a side-effect-free scalar expression over direct fragment
 inputs and whitelisted arithmetic. It also permits one straight-line helper:
 literal-zero LOD may use the validated coordinate arithmetic, composition,
 splat or swizzle subset; computed LOD may use the same validated coordinate-expression subset. Naga is validated first and HAL lowers only proven samples to
-implicit sampling. The currently selected view must expose one mip, and the
-bound regular sampler must have equal min/mag filters and effective anisotropy
-1, making the explicit LOD unobservable for the supported sample. Nested calls,
+implicit sampling. For a multi-mip 2D view, the backend copies the view's first
+mip into a retained one-mip sampled texture before the draw, so implicit
+sampling still addresses the requested view-relative level zero. FL9_1
+requires an SRV to include the resource's smallest mip, so the backend does
+not create a one-mip SRV over the multi-mip parent. The copy uses an explicit
+source box and zero destination offset; the scratch texture is refreshed for
+each affected draw to observe preceding writes. This adds one temporary texture
+per multi-mip view and a copy before each matching draw. With one mip visible,
+the bound regular sampler must have equal min/mag filters and effective
+anisotropy 1, making the explicit LOD unobservable for the supported sample.
+Nested calls,
 local loads, control flow, `select`, unsupported LOD expressions, offsets,
 other texture shapes, comparison samplers and incompatible draw bindings
 remain rejected. Core checks the currently bound view and sampler before each
@@ -5291,3 +5299,34 @@ expected channels. Dynamic rows and nested matrix stores remain negative cases.
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cmd.exe /d /c 'call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64 && set WGPU_DX11_REQUIRE_HARDWARE=1 && cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_matrix_component_store -- --nocapture --test-threads=1'
 ```
+
+## Multi-mip literal-zero sampling views
+
+The restricted fragment `textureSampleLevel(..., 0.0)` proof supports a
+multi-mip 2D view by copying its first view-relative mip into a one-mip sampled
+texture before each affected draw. This satisfies the FL9_1 SRV rule that a
+view include the resource's smallest mip and preserves exact level-zero
+semantics after the shader operation is lowered to implicit sampling. Copying
+uses a matching format, an explicit source box and zero destination offset.
+The scratch resource is retained by recorded commands and refreshed in replay
+order, so writes before submission are visible. General explicit LOD and
+computed nonzero LOD remain unavailable; equal min/mag filters, anisotropy one
+and minimum LOD zero are still required.
+
+The strict public test uses a 4x4 RGBA8 texture with three distinct mip colors.
+It verifies the full view's red level zero, a view beginning at mip 1's green
+level zero, an upload to mip 0 after view creation, and a pipeline transition
+whose minified implicit sample selects green mip 1 from the full view. Each
+readback checks all 64 pixels. The same test rejects nonzero sampler MinLOD,
+mixed exact/implicit sampling of one multi-mip view, and incompatible filter
+states.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
+```
+
+The forced FL9_1 test passed on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`). This creates one scratch texture per
+multi-mip 2D view and issues a copy before each draw using this proof; it is a
+correctness fallback with additional allocation and bandwidth cost.

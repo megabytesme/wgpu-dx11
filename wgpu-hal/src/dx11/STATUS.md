@@ -1,3 +1,17 @@
+## Multi-mip literal-zero sampling views — 2026-11-13
+
+The restricted fragment `textureSampleLevel(..., 0.0)` path now supports
+multi-mip 2D views. FL9_1 requires an SRV to include the resource's smallest
+mip, so the HAL does not create a base-only SRV over a multi-mip resource. It
+copies the view-relative first mip into a retained one-mip sampled texture
+using an explicit `CopySubresourceRegion` source box and zero destination
+offset, then refreshes that texture before each affected draw. Equal min/mag
+filters, anisotropy one, and zero minimum LOD remain required. Strict RTX 3090
+Ti FL9_1 readback verified a full view, a nonzero-base view, a source update
+after view creation, and a pipeline transition to minified implicit sampling;
+all checked pixels matched. This adds per-view scratch allocation and a copy
+before each matching draw. General explicit LOD remains unavailable.
+
 ## Core queue-idle error retention — 2026-11-12
 
 Queue destruction now tries a bounded idle wait before releasing resources.

@@ -23,6 +23,7 @@ pub struct ShaderModule {
 pub(super) struct TextureSampleLevelZeroPair {
     pub(super) texture: naga::ResourceBinding,
     pub(super) sampler: naga::ResourceBinding,
+    pub(super) base_mip_view: bool,
 }
 
 struct TextureSampleLevelZeroProof {
@@ -5683,6 +5684,7 @@ mod tests {
                     group: 2,
                     binding: 42,
                 },
+                base_mip_view: true,
             }]
         );
 
@@ -5814,6 +5816,7 @@ mod tests {
                     group: 0,
                     binding: 42,
                 },
+                base_mip_view: true,
             }]
         );
 
@@ -6297,10 +6300,21 @@ fn fl9_texture_sample_level_zero_proof(
             function: None,
             expression: handle,
         });
-        pairs.push(TextureSampleLevelZeroPair {
+        let mut pair = TextureSampleLevelZeroPair {
             texture: texture_binding,
             sampler: sampler_binding,
-        });
+            base_mip_view: matches!(
+                function.expressions[level],
+                naga::Expression::Literal(naga::Literal::F32(value)) if value == 0.0
+            ),
+        };
+        pair.base_mip_view = pair.base_mip_view
+            && fl9_texture_sample_level_zero_only_uses_base_mip(
+                module,
+                &function.expressions,
+                pair.texture,
+            );
+        pairs.push(pair);
     }
 
     if expressions.is_empty() {
@@ -6493,6 +6507,14 @@ fn fl9_texture_sample_level_zero_helper(
         pairs: alloc::vec![TextureSampleLevelZeroPair {
             texture: texture_binding,
             sampler: sampler_binding,
+            base_mip_view: matches!(
+                helper_function.expressions[level],
+                naga::Expression::Literal(naga::Literal::F32(value)) if value == 0.0
+            ) && fl9_texture_sample_level_zero_only_uses_base_mip(
+                module,
+                &helper_function.expressions,
+                texture_binding,
+            ),
         }],
     })
 }
@@ -6507,6 +6529,38 @@ fn fl9_is_float_vector(
         naga::TypeInner::Vector { size: actual_size, scalar }
             if actual_size == size && scalar.kind == naga::ScalarKind::Float && scalar.width == 4
     )
+}
+
+fn fl9_texture_sample_level_zero_only_uses_base_mip(
+    module: &naga::Module,
+    expressions: &naga::Arena<naga::Expression>,
+    texture_binding: naga::ResourceBinding,
+) -> bool {
+    let is_texture = |handle| {
+        let naga::Expression::GlobalVariable(global) = expressions[handle] else {
+            return false;
+        };
+        module.global_variables[global]
+            .binding
+            .is_some_and(|binding| binding == texture_binding)
+    };
+    expressions.iter().all(|(_, expression)| match *expression {
+        naga::Expression::ImageSample {
+            image,
+            level: naga::SampleLevel::Exact(level),
+            ..
+        } if is_texture(image) => matches!(
+            expressions[level],
+            naga::Expression::Literal(naga::Literal::F32(value)) if value == 0.0
+        ),
+        naga::Expression::ImageSample { image, .. } if is_texture(image) => false,
+        naga::Expression::ImageLoad { image, .. } | naga::Expression::ImageQuery { image, .. }
+            if is_texture(image) =>
+        {
+            false
+        }
+        _ => true,
+    })
 }
 
 fn fl9_sample_level_expression_supported(
