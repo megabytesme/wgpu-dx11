@@ -264,6 +264,7 @@ fn fl9_texture_sample_bias_offset_helper(
 
 fn fl9_texture_gather_helper(
     module: &Module,
+    module_info: &valid::ModuleInfo,
     entry: &crate::EntryPoint,
 ) -> Option<Handle<crate::Function>> {
     let is_vec2f = |ty| {
@@ -410,9 +411,14 @@ fn fl9_texture_gather_helper(
     else {
         return None;
     };
-    if !matches!(
-        helper_function.expressions[coordinate],
-        crate::Expression::FunctionArgument(0)
+    let mut coordinate_budget = 32;
+    if !fl9_texture_gather_coordinate_supported(
+        module,
+        &helper_function.expressions,
+        &module_info[helper],
+        coordinate,
+        &mut coordinate_budget,
+        0,
     ) {
         return None;
     }
@@ -440,11 +446,28 @@ fn fl9_texture_gather_helper(
         .expressions
         .iter()
         .any(|(handle, expression)| match *expression {
-            crate::Expression::FunctionArgument(0) => handle != coordinate,
+            crate::Expression::FunctionArgument(0) => false,
             crate::Expression::GlobalVariable(global) => {
                 global != image_global && global != sampler_global
             }
             crate::Expression::ImageSample { .. } => handle != sample,
+            crate::Expression::Literal(crate::Literal::F32(_))
+            | crate::Expression::Compose { .. }
+            | crate::Expression::Splat { .. }
+            | crate::Expression::AccessIndex { .. }
+            | crate::Expression::Swizzle { .. } => false,
+            crate::Expression::Binary {
+                op:
+                    crate::BinaryOperator::Add
+                    | crate::BinaryOperator::Subtract
+                    | crate::BinaryOperator::Multiply
+                    | crate::BinaryOperator::Divide,
+                ..
+            }
+            | crate::Expression::Unary {
+                op: crate::UnaryOperator::Negate,
+                ..
+            } => false,
             crate::Expression::ImageLoad { .. } | crate::Expression::ImageQuery { .. } => true,
             _ => true,
         })
@@ -2322,9 +2345,9 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             let texture_gather_helper = if self.options.fl9_texture_gather_proof.is_some()
                 && !reachable_regular_functions(module, &entry.function).is_empty()
             {
-                Some(fl9_texture_gather_helper(module, entry).ok_or_else(|| {
+                Some(fl9_texture_gather_helper(module, module_info, entry).ok_or_else(|| {
                     Error::Custom(
-                        "FL9 texture-gather proof permits only one coordinate-forwarding helper"
+                        "FL9 texture-gather proof permits only one helper with a supported coordinate expression"
                             .into(),
                     )
                 })?)
@@ -9194,7 +9217,7 @@ mod fl9_viewport_tests {
             @group(1) @binding(17) var image: texture_2d<f32>;
             @group(2) @binding(42) var smp: sampler;
             fn gather_image(uv: vec2f) -> vec4f {
-                return textureGather(2, image, smp, uv);
+                return textureGather(2, image, smp, uv * 0.5 + vec2f(0.125, 0.25));
             }
             @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return gather_image(uv);
@@ -9281,6 +9304,7 @@ mod fl9_viewport_tests {
             r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleBaseClampToEdge(image, smp, uv); }"#,
             r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(0, image, smp, uv) + textureGather(1, image, smp, uv); }"#,
             r#"@group(0) @binding(7) var image: texture_depth_2d; @group(0) @binding(42) var smp: sampler_comparison; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGatherCompare(image, smp, uv, 0.5); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(0, image, smp, vec2f(sin(uv.x), uv.y)); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv); }"#,
         ];
         for source in cases {
             assert!(

@@ -1143,11 +1143,12 @@ sampler at each direct and bundle draw; unsupported formats are rejected
 before HAL. FXC rejects native Gather at `ps_4_0_level_9_1`, so the Naga writer
 emits four point samples at texel centers and orders the selected channel
 according to WGSL. The selected entry may gather directly with bounded,
-side-effect-free `vec2f` coordinate arithmetic or forward its location-0
-coordinate unchanged to one straight-line helper that returns one gather.
-Nested/repeated helpers, transformed helper arguments, multi-mip views and
-unsupported operations remain rejected. The hidden sampler and dimensions use
-reserved `s15` and `b13`, with the source texture at `t0`.
+side-effect-free `vec2f` coordinate arithmetic, or pass its unchanged
+location-0 coordinate to one straight-line helper. The helper may compute its
+gather coordinate with that same bounded expression grammar and must return
+one gather. Nested/repeated helpers, transformed helper-call arguments,
+multi-mip views and unsupported operations remain rejected. The hidden sampler
+and dimensions use reserved `s15` and `b13`, with the source texture at `t0`.
 
 ```powershell
 cargo +1.93 test --offline -j32 -p wgpu-types --lib texture_gather_is_a_downlevel_capability
@@ -1169,11 +1170,11 @@ linear-view pixels from both direct and helper entries matched
 matched the decoded linear result
 `[79, 97, 37, 27]` for all 64 pixels within two steps. The same run verified
 Core rejects an unsupported R8 view and a multi-mip view before HAL. The
-direct entry also uses a bounded computed coordinate (`uv * 0.5`); all 64
-pixels matched `[76, 91, 31, 16]` within one UNORM step. A direct coordinate
-using `sin` and a helper call with a transformed argument remain rejected by
-Core, HAL and Naga validation. This does not establish behavior on historical
-FL9_1 drivers.
+direct entry and the helper now each use a bounded computed coordinate
+(`uv * 0.5`); all 64 pixels from both matched `[76, 91, 31, 16]` within one
+UNORM step. A direct coordinate or helper coordinate using `sin`, and a helper
+call with a transformed argument, remain rejected by Core, HAL and Naga
+validation. This does not establish behavior on historical FL9_1 drivers.
 
 The computed-coordinate proof and execution can be reproduced with:
 

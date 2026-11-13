@@ -782,9 +782,10 @@ WGSL's general `texture_gather` limit remains false at FL9_1. A separate
 single-mip `Rgba8Unorm` or query-supported `Rgba8UnormSrgb` 2D float view using
 a regular sampler whose U and V modes are both clamp-to-edge. The selected
 entry may gather directly with bounded side-effect-free `vec2f` arithmetic or
-forward its location-0 coordinate unchanged to one straight-line helper that
-returns one gather. Nested/repeated helpers, transformed helper arguments,
-other image operations and unsupported shader shapes remain rejected.
+pass its unchanged location-0 coordinate to one straight-line helper whose
+gather coordinate uses the same bounded expression grammar. Nested/repeated
+helpers, transformed helper-call arguments, other image operations and
+unsupported shader shapes remain rejected.
 Because FXC's level-9_1 profile rejects HLSL Gather, Naga lowers the proven
 operation to four point samples at texel centers and assembles the selected
 WGSL channel in the specified component order. The emulation uses reserved

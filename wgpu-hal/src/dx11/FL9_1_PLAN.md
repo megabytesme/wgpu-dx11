@@ -3513,3 +3513,14 @@ scoped CTS selectors. Do not assign one agent to each broad feature family:
 shader/API changes span Core, Naga, HAL and GPU tests and need one integration
 owner. The coordinator keeps the cross-layer implementation, merges evidence,
 runs the combined regression suite, and makes the checkpoint commit.
+
+## Coordinator update — computed fragment gather-helper coordinates — 2026-11-13
+
+The bounded coordinate-expression grammar now applies inside the one allowed
+fragment gather helper while its call argument remains unchanged. Core, HAL
+and Naga proofs plus strict FL9_1 GPU readback passed. General gather remains
+disabled; this is only the existing emulated one-gather subset. Continue next
+with the advertised-capability/Core/HAL/evidence matrix. Use agents for
+independent audits, shader/profile probes and narrowly scoped CTS runs, while
+one coordinator owns changes spanning multiple crates and their integration
+tests.

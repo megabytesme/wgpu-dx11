@@ -1,3 +1,28 @@
+## Computed coordinates inside the fragment `textureGather` helper — 2026-11-13
+
+The existing selected-entry gather subset now accepts the unchanged
+location-0 `vec2f` argument forwarded into its single straight-line helper,
+while allowing that helper's gather coordinate to use the existing bounded
+side-effect-free arithmetic, compose, splat and swizzle grammar. Core, HAL and
+Naga validate the helper expression against the selected function's validated
+Naga information. A transformed helper-call argument, `sin`, additional image
+operations, nested/repeated helpers and other unproven forms remain rejected.
+
+Strict public execution selected the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`, `software=false`) at requested and
+actual FL9_1. The direct and computed-helper results matched all 64 pixels;
+the helper's `uv * 0.5` coordinate produced `[76, 91, 31, 16]` within one
+UNORM step. The strict test also retained the direct/helper baseline, sRGB
+readback and R8/multi-mip rejection checks. This verifies one current driver,
+not historical FL9_1 hardware.
+
+Focused Naga, Core, HAL/FXC and strict public tests passed 1/1 each. Full Naga
+passed 173/173, Core's DX11 fixture suite 149/149, strict private HAL 529/529,
+strict public DX11 153/153, Core DX12 133/133 and HAL DX12 4/4. The focused
+public test executed physical GPU work; CPU-only suite counts are not GPU
+execution counts. Changed-crate Clippy and formatting checks passed; existing
+HAL/Core style warnings remain. `git diff --check` passed.
+
 ## Core map callbacks after fence loss — 2026-11-12
 
 Core previously returned from `Device::maintain` on a HAL wait/fence error

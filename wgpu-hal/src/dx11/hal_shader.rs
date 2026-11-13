@@ -1153,7 +1153,7 @@ mod tests {
             @group(1) @binding(7) var image: texture_2d<f32>;
             @group(2) @binding(42) var smp: sampler;
             fn gather_image(uv: vec2f) -> vec4f {
-                return textureGather(2, image, smp, uv);
+                return textureGather(2, image, smp, uv * 0.5 + vec2f(0.125, 0.25));
             }
             @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return gather_image(uv);
@@ -1190,6 +1190,7 @@ mod tests {
 
         let rejected_sources = [
             r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(2, image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv + vec2f(0.25)); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(2, image, smp, vec2f(sin(uv.x), uv.y)); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv); }"#,
             r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(2, image, smp, uv); } fn nested(uv: vec2f) -> vec4f { return gather_image(uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return nested(uv); }"#,
             r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(2, image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv) + gather_image(uv); }"#,
             r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; fn gather_image(uv: vec2f) -> vec4f { return textureGather(2, image, smp, uv) * 0.5; } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv); }"#,
@@ -6707,6 +6708,7 @@ fn fl9_texture_gather_helper_supported(
     module: &naga::Module,
     entry: &naga::Function,
     reachable: &[naga::Handle<naga::Function>],
+    module_info: &naga::valid::ModuleInfo,
 ) -> bool {
     if reachable.len() != 1
         || entry.arguments.len() != 1
@@ -6824,6 +6826,17 @@ fn fl9_texture_gather_helper_supported(
     else {
         return false;
     };
+    let mut coordinate_budget = 32;
+    if !fl9_texture_load_coordinate_expression_supported(
+        module,
+        helper,
+        &module_info[helper_handle],
+        coordinate,
+        &mut coordinate_budget,
+        0,
+    ) {
+        return false;
+    }
     let (naga::Expression::GlobalVariable(image), naga::Expression::GlobalVariable(sampler)) =
         (&helper.expressions[image], &helper.expressions[sampler])
     else {
@@ -6831,15 +6844,28 @@ fn fl9_texture_gather_helper_supported(
     };
     let (image, sampler) = (*image, *sampler);
     if image == sampler
-        || !matches!(
-            helper.expressions[coordinate],
-            naga::Expression::FunctionArgument(0)
-        )
         || helper
             .expressions
             .iter()
             .any(|(handle, expression)| !match expression {
                 naga::Expression::FunctionArgument(0) => true,
+                naga::Expression::Literal(naga::Literal::F32(_))
+                | naga::Expression::Compose { .. }
+                | naga::Expression::Splat { .. }
+                | naga::Expression::AccessIndex { .. }
+                | naga::Expression::Swizzle { .. } => true,
+                naga::Expression::Binary {
+                    op:
+                        naga::BinaryOperator::Add
+                        | naga::BinaryOperator::Subtract
+                        | naga::BinaryOperator::Multiply
+                        | naga::BinaryOperator::Divide,
+                    ..
+                }
+                | naga::Expression::Unary {
+                    op: naga::UnaryOperator::Negate,
+                    ..
+                } => true,
                 naga::Expression::GlobalVariable(global) => *global == image || *global == sampler,
                 naga::Expression::ImageSample { .. } => handle == gather,
                 _ => false,
@@ -8259,7 +8285,7 @@ fn fl9_texture_emulation_binding(
                         )
                     })
             } else {
-                !fl9_texture_gather_helper_supported(module, function, &reachable_functions)
+                !fl9_texture_gather_helper_supported(module, function, &reachable_functions, info)
             }
         }
         Fl9TextureEmulationKind::Dimensions => {

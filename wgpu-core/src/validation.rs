@@ -4336,6 +4336,7 @@ fn entry_point_uses_texture_gather(module: &naga::Module, entry_point: &naga::En
 
 fn entry_point_fl9_texture_gather_pair(
     module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
     entry_point: &naga::EntryPoint,
     entry_point_info: &naga::valid::FunctionInfo,
 ) -> Option<SamplingPair> {
@@ -4372,7 +4373,7 @@ fn entry_point_fl9_texture_gather_pair(
         .iter()
         .any(|statement| matches!(statement, naga::Statement::Call { .. }))
     {
-        return entry_point_fl9_texture_gather_helper_pair(module, entry_point);
+        return entry_point_fl9_texture_gather_helper_pair(module, module_info, entry_point);
     }
 
     if entry_point.function.body.iter().any(|statement| {
@@ -4484,6 +4485,7 @@ fn entry_point_fl9_texture_gather_pair(
 
 fn entry_point_fl9_texture_gather_helper_pair(
     module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
     entry_point: &naga::EntryPoint,
 ) -> Option<SamplingPair> {
     let mut call = None;
@@ -4559,9 +4561,14 @@ fn entry_point_fl9_texture_gather_helper_pair(
     else {
         return None;
     };
-    if !matches!(
-        helper.expressions[coordinate],
-        naga::Expression::FunctionArgument(0)
+    let mut coordinate_budget = 32;
+    if !fl9_texture_load_coordinate_expression_supported(
+        module,
+        helper,
+        &module_info[helper_handle],
+        coordinate,
+        &mut coordinate_budget,
+        0,
     ) {
         return None;
     }
@@ -8821,6 +8828,7 @@ impl Interface {
                 texture_gather_used: entry_point_uses_texture_gather(module, entry_point),
                 fl9_texture_gather_pair: entry_point_fl9_texture_gather_pair(
                     module,
+                    module_info,
                     entry_point,
                     info,
                 ),
@@ -12554,6 +12562,12 @@ mod tests {
             fn helper(uv: vec2f) -> vec4f {
                 return textureGather(2, image, smp, uv);
             }
+            fn scaled_helper(uv: vec2f) -> vec4f {
+                return textureGather(2, image, smp, uv * 0.5 + vec2f(0.125, 0.25));
+            }
+            fn unsupported_helper(uv: vec2f) -> vec4f {
+                return textureGather(2, image, smp, vec2f(sin(uv.x), uv.y));
+            }
             fn nested_helper(uv: vec2f) -> vec4f {
                 return helper(uv);
             }
@@ -12584,6 +12598,12 @@ mod tests {
             }
             @fragment fn indirect(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return helper(uv);
+            }
+            @fragment fn scaled_indirect(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return scaled_helper(uv);
+            }
+            @fragment fn unsupported_indirect(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return unsupported_helper(uv);
             }
             @fragment fn nested(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return nested_helper(uv);
@@ -12690,6 +12710,27 @@ mod tests {
                 sampler_binding: 42,
             })
         );
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_gather(
+                naga::ShaderStage::Fragment,
+                "scaled_indirect",
+                &restricted,
+            )
+            .unwrap());
+        assert_eq!(
+            interface
+                .entry_point_fl9_texture_gather_pair(
+                    naga::ShaderStage::Fragment,
+                    "scaled_indirect",
+                )
+                .unwrap(),
+            Some(SamplingPair {
+                texture_group: 1,
+                texture_binding: 7,
+                sampler_group: 2,
+                sampler_binding: 42,
+            })
+        );
         assert_eq!(
             interface
                 .entry_point_fl9_texture_gather_pair(naga::ShaderStage::Fragment, "sibling")
@@ -12711,6 +12752,7 @@ mod tests {
             "extra_query",
             "offset",
             "unsupported_direct",
+            "unsupported_indirect",
         ] {
             assert!(interface
                 .entry_point_uses_unsupported_texture_gather(
