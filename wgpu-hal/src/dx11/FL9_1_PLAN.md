@@ -3566,3 +3566,13 @@ is being used to add independent API-level evidence. The latest recorded full
 suite counts remain those in the progress journal; they were not rerun by the
 read-only audits. A repeated Lumia Device Portal query timed out, so CoreWindow
 execution on the Lumia/ARM32 device remains externally unverified.
+
+The strict public `dx11_public` suite has three consecutive 153/153 passes on
+the RTX 3090 Ti at forced FL9_1, with three logged skips for optional format
+queries. Two earlier serial attempts were anomalous (one process access
+violation and one run with later adapter-enumeration failures); the affected
+indexed and stencil cases passed individually. No shared test adapter cache
+or display-driver reset was found. HAL enumeration can filter a native FL9_1
+device-creation HRESULT into an empty adapter list, so the cause is not yet
+known. Track this as a residual stability concern and, if it reappears, add
+test-only HRESULT diagnostics before attempting a code change.

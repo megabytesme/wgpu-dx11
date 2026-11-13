@@ -19763,3 +19763,33 @@ $env:CARGO_BUILD_JOBS = '8'
 cargo xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,basic:clear:*'
 cargo xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,basic:fullscreen_quad:*'
 ```
+
+## Strict public-suite stability follow-up — 2026-11-13
+
+The complete strict `dx11_public` suite was run repeatedly on the current tree.
+Three consecutive runs completed 153/153 with no harness-level failures; each
+run logged the same three query-dependent `SKIP` branches: unsupported
+`R8G8_UNORM` vertex input, unsupported `R16G16_FLOAT` vertex input, and
+unavailable optional `Rg8Unorm` MIP support. The command was:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+Before those successful runs, one serial attempt terminated with
+`STATUS_ACCESS_VIOLATION` during
+`public_dx11_indexed_primitives_without_vertex_rate_inputs_at_fl91`; a second
+attempt completed only 140 tests before later strict cases reported no
+enumerated FL9_1 adapter (13 failures). Both that indexed case and the first
+D24S8 stencil case passed when rerun individually. The exact full suite then
+passed three times. A read-only source audit found no shared test adapter
+cache; each test creates a fresh instance and opens a native device during
+enumeration. Failed native device creation is filtered into an empty adapter
+list, obscuring the HRESULT in the strict-test assertion. Windows recorded a
+`RADAR_PRE_LEAK_64` event for the test executable but no display-driver reset
+event; this warning does not establish a D3D resource leak. There is no proven
+root cause, so the two initial anomalies remain an open test-process
+stability concern. If they recur, add test-only enumeration diagnostics that
+preserve the per-adapter FL9_1 `D3D11CreateDevice` HRESULT before attempting a
+code fix.
