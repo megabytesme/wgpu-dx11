@@ -19728,3 +19728,21 @@ native query as HAL or wgpu support.
 & 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --example dx11_probe
 cargo +1.93.1 fmt --all -- --check
 ```
+
+## Independent public-contract and coverage audits — 2026-11-13
+
+Two read-only specialist audits independently reviewed the adapter projection,
+Core gates, reachable HAL paths and test coverage. Neither found a concrete
+public-valid request that currently reaches an unsupported HAL operation, nor
+a narrow additional implementation justified by existing workload evidence.
+Both identified the advertised-capability → Core validation → HAL operation →
+test/CTS matrix as the main remaining local assurance task. The audits point
+to intentional FL9_1 exclusions already documented in `CAPABILITIES.md`, not
+new mismatches. The coverage audit's latest journaled suite counts were private
+HAL 529/529, Core FL9_1 fixture 149/149, strict public DX11 153/153 with no
+skips, Core DX12 133/133 and Naga 173/173; these are prior recorded runs, not
+tests rerun for the read-only audits. A focused strict CTS run is in progress.
+
+A retry of the Lumia Device Portal `/api/os/devicefamily` request timed out
+again. This leaves CoreWindow execution on Lumia/ARM32 as an external
+verification gap; it does not block independent desktop work.

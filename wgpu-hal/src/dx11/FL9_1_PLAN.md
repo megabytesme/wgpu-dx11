@@ -3554,3 +3554,15 @@ wgpu format projection was broadened. Future format work needs an individually
 positive selected-device query plus a tested upload, view, shader and readback
 path. The capability-to-validation-to-HAL audit remains incomplete; no
 unverified format is being advertised.
+
+## Coordinator update — independent contract and coverage audits — 2026-11-13
+
+Independent read-only audits of the adapter projection/Core/HAL reachability
+and current test coverage found no concrete advertised-capability mismatch or
+workload-backed small feature expansion. Both identify the complete
+capability → Core validation → HAL operation → test/CTS evidence matrix as the
+remaining local software-assurance priority. A strict, focused CTS execution
+is being used to add independent API-level evidence. The latest recorded full
+suite counts remain those in the progress journal; they were not rerun by the
+read-only audits. A repeated Lumia Device Portal query timed out, so CoreWindow
+execution on the Lumia/ARM32 device remains externally unverified.
