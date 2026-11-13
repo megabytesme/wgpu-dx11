@@ -19815,3 +19815,17 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 $env:CARGO_BUILD_JOBS = '8'
 & 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib sampler_state_native_border_diagnostic -- --nocapture --test-threads=1
 ```
+
+## Large direct-draw boundary and CTS fixture — 2026-11-13
+
+The strict `webgpu:api,operation,rendering,basic:large_draw:*` run selected
+the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested
+and actual FL9_1, but its four parameterizations all failed because the CTS
+fixture creates an `INDIRECT` buffer before branching on `indirect`. Core
+correctly rejects that usage on FL9_1. The fixture's zero-valued readback
+mismatches are inconclusive, not a direct-draw regression.
+
+The existing strict public draw-boundary test was rerun separately and passed
+1/1 on that adapter: a 65,536-point call split at 65,535 and rendered its last
+point, and triangle-list splitting rendered the expected last triangle. The
+CTS fixture limitation and exact command are recorded in `FL9_1_CTS.md`.

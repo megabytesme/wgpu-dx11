@@ -92,12 +92,31 @@ for related coverage and the broad-suite triage.
 | `webgpu:api,operation,rendering,depth:*` | 130 cases: 72 passed, 24 skipped, 34 failed. Source triage accounts for every failure: eight cases create D24S8 with `COPY_DST` even though the fixture never copies to it; 26 request `Depth32Float`, unavailable in this FL9_1 projection. These are texture-creation rejections, not failures of supported depth rendering. Keep D24S8 `COPY_DST` gated: D3D11 9_x permits depth-stencil resources only as `CopySubresourceRegion` sources, and Core lacks an equivalent downlevel guard on every texture-to-texture destination path. |
 | `webgpu:api,operation,rendering,color_target_state:blending,formats:*` | 4 passed, 29 skipped, 6 failed. The failures were `rgba8unorm-srgb` and `bgra8unorm-srgb` (Core rejects blending because FL9_1 sRGB blend semantics do not match wgpu), plus `r16float`, `rg16float`, `rgba16float`, and `rgb10a2unorm` (Core rejects them as non-renderable on the selected device). The CTS helper `skipIfTextureFormatNotUsableAsRenderAttachment` uses its generic format table and does not consult this backend's selected-device `getTextureFormatFeatures` projection, so those four unsupported device formats reach pipeline creation. They are not evidence of a valid Core request reaching HAL. The 29 skips include non-blendable integer formats and feature-gated formats. |
 | `image_copy:origins_and_extents` | Not a valid isolated single-layer 2D transfer selector: it generates 1D/3D and array-layer cases. Filtering to RGBA8 and 2D still includes array layers, which FL9_1 does not expose. |
-| `webgpu:api,operation,rendering,basic:large_draw:*` | `cts_runner/test.lst` contains a commented global failure expectation. No DX11-specific execution result is recorded here. |
+| `webgpu:api,operation,rendering,basic:large_draw:*` | The strict DX11 run selected the physical RTX 3090 Ti at FL9_1, but all 4 parameterizations were invalid for this adapter: the fixture creates a `GPUBufferUsage.INDIRECT` buffer unconditionally, including `indirect=false`, and Core correctly rejects that usage without `INDIRECT_EXECUTION`. The zero-pixel expectations in those poisoned runs are inconclusive for direct drawing. A separate public strict test covers the FL9_1 direct point/triangle batching boundary. |
 
 The shader and array boundaries are documented in
 [`CAPABILITIES.md`](CAPABILITIES.md#fl9_1-inventory-and-gaps). Ordinary 2D
 texture arrays are a FL9_1 feature-level restriction; do not reinterpret their
 rejection as a missing transfer implementation.
+
+The `large_draw` attempt used `WGPU_DX11_REQUIRE_HARDWARE=1` and reached the
+physical RTX 3090 Ti (`0x10de:0x2203`), requested and verified at FL9_1. Its
+summary was 0 passed, 0 skipped and 4 failed. CTS source creates the indirect
+buffer at `cts/src/webgpu/api/operation/rendering/basic.spec.ts` before the
+`indirect` branch, while Core rejects `INDIRECT` usage for this downlevel
+device in `wgpu-core/src/device/resource.rs`. The run therefore establishes
+the intended capability rejection, not a direct-draw regression. The direct
+boundary is exercised separately by
+`public_dx11_splits_point_and_triangle_draws_at_fl91_limits`.
+
+The exact commands were:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_BUILD_JOBS = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,basic:large_draw:*'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j1 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_splits_point_and_triangle_draws_at_fl91_limits -- --nocapture --test-threads=1
+```
 
 ## Scope of this inventory
 
