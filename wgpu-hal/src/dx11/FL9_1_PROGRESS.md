@@ -19569,6 +19569,17 @@ test passed 1/1. Full Naga passed 173/173, Core FL9_1 fixtures passed 149/149,
 private HAL passed 528/528, strict public DX11 passed 153/153, Core DX12 passed
 133/133, HAL DX12 passed 4/4, and the strict surface-copy test passed 1/1.
 Clippy passed on Naga, HAL, Core tests and the public D3D11 test target, with
-existing HAL/Core style warnings. Formatting and final diff checks are being
-closed after this entry. This remains a bounded emulation subset, not general
-`textureGather` or historical-driver evidence.
+existing HAL/Core style warnings. `cargo +1.93.1 fmt --all -- --check` and
+`git diff --check` passed. Implementation checkpoint: `3c467667ca8bf99a51e1cd03f7e469e1ef6ac8ea`. This remains a bounded emulation subset, not general `textureGather`
+or historical-driver evidence.
+
+## Strict CTS pipeline-output coverage — 2026-11-13
+
+The public `render_pipeline,pipeline_output_targets` selector for the sole
+legal RGBA8/vec4 component-count case passed 1/1 on the physical RTX 3090 Ti,
+with no skips or failures and requested/actual FL9_1. It renders a triangle to
+one RGBA8 color target and checks the result. This is an incremental CTS
+coverage addition, not evidence for other attachment formats or counts. The
+exact command and runner output are recorded in `FL9_1_CTS.md`. A bounded
+three-agent review is underway: contract-gap audit, strict CTS selection and
+shader/profile candidate review; agents do not own cross-layer implementation.

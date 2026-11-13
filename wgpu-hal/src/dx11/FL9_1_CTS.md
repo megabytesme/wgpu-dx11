@@ -274,3 +274,25 @@ renderable` and the zero-filled output mismatched every generated check. This
 does not establish a vertex buffer offset failure or pass. The full strict
 public DX11 suite includes passing float vertex offset/stride GPU tests; use
 those until CTS exposes a render-target format parameter for this fixture.
+
+## Single-target pipeline output — 2026-11-13
+
+The RGBA8 component-count subcase passed on the physical RTX 3090 Ti at
+requested and actual FL9_1 with no skips or failures. It creates one RGBA8
+color attachment, renders a triangle with a `vec4f` fragment output, and
+checks the rendered pixels. This supplements the color-mask and blend tests
+with ordinary public render-pipeline output validation; it does not test
+multiple attachments or unsupported output formats.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_BUILD_JOBS = '4'
+$env:CARGO_TARGET_DIR = 'C:\Users\ben\AppData\Local\Temp\wgpu-dx11-cts-probe-target'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,render_pipeline,pipeline_output_targets:color,component_count:format="rgba8unorm"'
+```
+
+The runner reported NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver
+`32.0.16.2101`, physical adapter, requested/actual FL9_1 and a verified
+FL9_1 marker: 1/1 passed. The build emitted the existing unused `level`
+warning at `wgpu-core/src/validation.rs:4012`; the runner also printed its
+expected experimental-DX11 warning.
