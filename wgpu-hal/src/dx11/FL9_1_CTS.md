@@ -461,3 +461,30 @@ Compact strict invocation (`--print-output-when test-fails`) reported 1/1
 passed, 0 skipped and 0 failed for each selector. The runner printed the
 physical-adapter FL9_1 marker twice, once per selector. The existing Visual
 Studio `vError: Unknown error` banner did not affect the run.
+
+## Compressed BC copy selector is gated by the aggregate WebGPU feature — 2026-11-14
+
+A strict attempt of the same-format BC1 copy selector selected the physical
+NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and
+actual FL9_1. The CTS reported 0 passed, 1 skipped and 0 failed; every nested
+copy subcase was skipped because it requires the aggregate
+`texture-compression-bc` feature. This adapter projection deliberately
+withholds `Features::TEXTURE_COMPRESSION_BC`, which covers BC1 through BC7,
+because the backend currently implements only BC1/2/3. D3D11-specific
+BC1/2/3 UNORM and sRGB subset features have separate strict public GPU tests,
+but this standard WebGPU CTS selector cannot exercise those partial features.
+
+The first direct Windows invocation lost the embedded JSON string quotes and
+failed in CTS query parsing before running a test; the corrected invocation
+passed the selector through a temporary `-f` list file. That file was removed
+after the run. BC2 and BC3 CTS selectors were not run because they use the same
+aggregate feature gate. Do not count this probe as GPU execution or a passing
+CTS case. The existing public wgpu tests remain the evidence for the private
+BC1/2/3 subset.
+
+For a reproducible attempt, put the exact selector below in a one-line ASCII
+file and pass it with `-f`:
+
+```text
+webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,compressed,non_array:srcFormat="bc1-rgba-unorm";dstFormat="bc1-rgba-unorm";dimension="2d"
+```

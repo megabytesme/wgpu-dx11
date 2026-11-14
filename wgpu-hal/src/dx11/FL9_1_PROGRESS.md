@@ -21475,3 +21475,23 @@ The verified code and test increment was committed as
 rendering coverage`). It adds the query-gated optional RG8 volume path and
 public line-list/depth integration coverage. The RTX did not report RG8 3D
 support, so that optional path remains skipped rather than hardware-verified.
+
+## Coordinator update — compressed BC CTS feature gate — 2026-11-14
+
+The strict BC1 2D copy selector was attempted on the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) with requested and actual FL9_1.
+Strict hardware preflight selected the expected device, but CTS skipped the
+single test case and all nested subcases because the case requires the
+aggregate WebGPU `texture-compression-bc` feature. DX11 intentionally
+withholds that BC1–BC7 feature while exposing only its separate BC1/2/3 UNORM
+and sRGB subset features. Thus this was not GPU copy execution and does not
+replace the existing strict public tests for those subset features.
+
+The first direct Windows invocation dropped the embedded JSON parameter
+quotes and failed before CTS execution. Passing the selector through a
+temporary `-f` list file fixed the invocation; the file was removed. BC2 and
+BC3 CTS selectors were not run because they use the same aggregate feature
+gate. Exact result and selector are in `FL9_1_CTS.md`. No implementation
+failure was observed. This probe confirms that the remaining CTS gap is in
+the selector/feature-granularity contract, not evidence of a broken BC copy
+path.
