@@ -21527,3 +21527,33 @@ confirmed ordinary arrays are correctly unavailable at FL9_1 and cube
 transfers already have coverage. These reviews are scoped, not exhaustive.
 Continue with the remaining advertised shader/API contract matrix and external
 historical-device, Lumia/CoreWindow, and physical device-removal validation.
+
+## Coordinator verification — public examples and independent audits — 2026-11-14
+
+After commit `ff062dbcc`, both documented public wgpu examples were rerun with
+`WGPU_DX11_REQUIRE_HARDWARE=1`. The offscreen textured indexed cube used the
+physical NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at
+requested and actual FL9_1, `software=false`; it validated 1,024 pixels:
+112 red, 277 green and 635 blue background. The visible HWND example used the
+same adapter and level and presented 60 textured, indexed, depth-tested frames.
+The commands were:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_offscreen
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_windowed -- --frames=60
+```
+
+Three read-only specialist checks covered shader/profile boundaries,
+format/usage projection, and public Core/HAL render, transfer, mapping, query
+and presentation paths. They found no new supported shader expansion or
+confirmed Core-valid request that reaches a known unsupported HAL operation
+within their reviewed scopes. A separate example review found the rotating
+scene creates its resources once and has no per-frame readback or repeated
+resource allocation. These scoped reviews do not replace the final independent
+contract audit.
+
+The configured Lumia Device Portal `/api/os/devicefamily` request timed out
+again. This is a current connectivity result, not a backend failure; actual
+Lumia/CoreWindow execution remains unverified. No code or other worktree was
+changed in this increment.
