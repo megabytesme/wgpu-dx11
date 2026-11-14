@@ -20910,3 +20910,18 @@ evidence matrix and a workload-backed gap, rather than speculative shader
 expansion. Historical FL9_1 hardware, Lumia/CoreWindow execution, physical
 device removal and production Horizon terrain remain external or application
 integration gaps.
+
+## Public DX11 selection documentation check — 2026-11-14
+
+Corrected the `wgpu-core` Cargo feature comment: DX11 is excluded from
+`Backends::default()` but can be enumerated when explicitly selected with
+`Backends::DX11` or `Backends::all()`. This matches the public `Backends`
+implementation and the strict public adapter test; the prior wording implied
+ordinary adapter enumeration was disabled entirely.
+
+`cargo +1.93.1 test --offline -j16 -p wgpu-types --lib backend` passed 2/2
+backend tests when launched through the Visual Studio cargo wrapper. Running
+the same command outside the developer environment failed because
+`link.exe` was not on PATH. The successful build emitted existing wgpu-types
+warnings for unused serde imports and unnecessary qualifications; no behavior
+changed.
