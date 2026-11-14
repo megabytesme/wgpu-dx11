@@ -20854,3 +20854,33 @@ and all untouched bytes matched.
 
 No implementation or capability changed. This closes a public-path evidence
 gap for multiple pending partial queue writes and copy/readback ordering.
+
+## Query-supported multisample-mask execution — 2026-11-14
+
+Extended the strict public RGBA8 4x resolve test to run pipeline masks `0`,
+`1`, `3`, `0x10` and `1 << 32` through the FL9_1 output merger and readback.
+On the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+requested and actual FL9_1, masks 1 and 3 changed all 64 pixels to
+`[64, 64, 255, 255]` and `[128, 128, 255, 255]` within one UNORM code value.
+Zero, bit 4 (outside the 4x sample set) and the high-only 64-bit mask preserved
+all 64 blue pixels. This verifies bit selection, native high-bit truncation,
+the zero-mask translation, resolve and pipeline changes on the selected modern
+driver; it is not evidence from historical hardware.
+
+The focused strict public test passed 1/1, and the complete strict public
+`dx11_public` target passed 164/164 test functions (0 failed, 0 ignored).
+The broader suite mixes GPU and CPU validation tests and may log explicit
+optional-capability skips. `cargo +1.93.1 fmt --all -- --check`,
+`git diff --check`, and public-target Clippy passed; Clippy emitted the same
+eight pre-existing D3D11 HAL warnings and no warning from the changed test.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_NET_OFFLINE = 'true'
+$env:CARGO_TARGET_DIR = 'E:\Temp\wgpu-mission-gpu-target'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_four_sample_rgba8_at_fl91 -- --exact --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --tests --no-default-features --features dx11,wgsl,std
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```

@@ -33844,110 +33844,163 @@ fn public_dx11_resolves_four_sample_rgba8_at_fl91() {
             "PASS: FL9_1 4x targetless {depth_format:?} depth prepass blocked the later green draw; 64/64 resolved pixels remained blue"
         );
     }
-    let masked_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 four-sample zero-mask pipeline"),
-        layout: None,
-        vertex: VertexState {
-            module: &shader,
-            entry_point: Some("vs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            buffers: &vertex_layout,
-        },
-        primitive: PrimitiveState::default(),
-        depth_stencil: None,
-        multisample: MultisampleState {
-            count: 4,
-            mask: 0,
-            ..Default::default()
-        },
-        fragment: Some(FragmentState {
-            module: &shader,
-            entry_point: Some("fs"),
-            compilation_options: PipelineCompilationOptions::default(),
-            targets: &targets,
-        }),
-        multiview_mask: None,
-        cache: None,
+    let mask_vertex_data = [
+        [-1.0f32, -1.0, 0.25, 1.0, 1.0, 1.0, 1.0],
+        [3.0, -1.0, 0.25, 1.0, 1.0, 1.0, 1.0],
+        [-1.0, 3.0, 0.25, 1.0, 1.0, 1.0, 1.0],
+    ];
+    let mask_vertex_bytes: Vec<u8> = mask_vertex_data
+        .into_iter()
+        .flatten()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let mask_vertices = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 full-screen sample-mask vertices"),
+        size: mask_vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
     });
-    let mut masked_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-        label: Some("FL9_1 multisample zero-mask validation"),
-    });
-    {
-        let mut pass = masked_encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("FL9_1 four-sample zero-mask pass"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: &msaa_view,
-                depth_slice: None,
-                resolve_target: Some(&resolved_view),
-                ops: Operations {
-                    load: LoadOp::Clear(Color {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 1.0,
-                        a: 1.0,
-                    }),
-                    store: StoreOp::Discard,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_pipeline(&masked_pipeline);
-        pass.set_vertex_buffer(0, vertices.slice(..));
-        pass.draw(0..3, 0..1);
-    }
-    masked_encoder.copy_texture_to_buffer(
-        TexelCopyTextureInfo {
-            texture: &resolved,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        TexelCopyBufferInfo {
-            buffer: &readback,
-            layout: TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(256),
-                rows_per_image: Some(8),
-            },
-        },
-        Extent3d {
-            width: 8,
-            height: 8,
-            depth_or_array_layers: 1,
-        },
-    );
-    let submission = queue.submit([masked_encoder.finish()]);
-    let (sender, receiver) = std::sync::mpsc::channel();
-    readback
+    mask_vertices
         .slice(..)
-        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
-    device
-        .poll(PollType::Wait {
-            submission_index: Some(submission),
-            timeout: Some(Duration::from_secs(10)),
-        })
-        .expect("wait for FL9_1 four-sample zero-mask render and resolve");
-    receiver
-        .recv_timeout(Duration::from_secs(10))
-        .expect("zero-mask resolve readback callback")
-        .expect("map zero-mask resolve readback");
-    {
-        let data = readback
+        .get_mapped_range_mut()
+        .expect("mapped full-screen sample-mask vertices")
+        .copy_from_slice(&mask_vertex_bytes);
+    mask_vertices.unmap();
+
+    for (mask, expected) in [
+        (0u64, [0, 0, 255, 255]),
+        (1, [64, 64, 255, 255]),
+        (3, [128, 128, 255, 255]),
+        (0x10, [0, 0, 255, 255]),
+        (1u64 << 32, [0, 0, 255, 255]),
+    ] {
+        let masked_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 four-sample mask pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layout,
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState {
+                count: 4,
+                mask,
+                ..Default::default()
+            },
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+        let mut masked_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("FL9_1 multisample mask validation"),
+        });
+        {
+            let mut pass = masked_encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 four-sample mask pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &msaa_view,
+                    depth_slice: None,
+                    resolve_target: Some(&resolved_view),
+                    ops: Operations {
+                        load: LoadOp::Clear(Color {
+                            r: 0.0,
+                            g: 0.0,
+                            b: 1.0,
+                            a: 1.0,
+                        }),
+                        store: StoreOp::Discard,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&masked_pipeline);
+            pass.set_vertex_buffer(0, mask_vertices.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        masked_encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &resolved,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        let submission = queue.submit([masked_encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
             .slice(..)
-            .get_mapped_range()
-            .expect("mapped zero-mask resolved pixels");
-        for y in 0..8 {
-            for x in 0..8 {
-                let offset = y * 256 + x * 4;
-                assert_eq!(&data[offset..offset + 4], &[0, 0, 255, 255]);
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for FL9_1 four-sample mask render and resolve");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("sample-mask resolve readback callback")
+            .expect("map sample-mask resolve readback");
+        let mut changed_pixels = 0;
+        {
+            let data = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped sample-mask resolved pixels");
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = y * 256 + x * 4;
+                    let pixel = &data[offset..offset + 4];
+                    if pixel == [0, 0, 255, 255] {
+                        continue;
+                    }
+                    changed_pixels += 1;
+                    for (channel, expected_channel) in expected.into_iter().enumerate() {
+                        assert!(
+                            pixel[channel].abs_diff(expected_channel) <= 1,
+                            "FL9_1 4x mask {mask:#x} pixel ({x}, {y}) channel {channel}: expected {expected_channel}, got {}",
+                            pixel[channel]
+                        );
+                    }
+                }
             }
         }
+        if mask == 1 || mask == 3 {
+            assert!(
+                changed_pixels > 0,
+                "sample mask {mask:#x} covered no pixels"
+            );
+        } else {
+            assert_eq!(changed_pixels, 0, "sample mask {mask:#x} enabled coverage");
+        }
+        readback.unmap();
+        println!(
+            "PASS: FL9_1 RGBA8 4x mask {mask:#x} changed {changed_pixels}/64 pixels; covered output matched {expected:?}"
+        );
     }
-    readback.unmap();
-    println!("PASS: FL9_1 RGBA8 4x zero sample-mask draw preserved all 64 blue clear pixels");
 }
 
 #[test]

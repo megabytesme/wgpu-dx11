@@ -3953,9 +3953,18 @@ edge pixels and 28 blue clear pixels; all 64 green channels were zero,
 confirming the farther draw failed depth. This verifies the selected RTX
 execution path, not every FL9_1 driver.
 
-The same strict run then cleared the multisampled target blue, rendered with a
-zero WebGPU sample mask and resolved again; all 64 pixels remained exactly
-`[0, 0, 255, 255]`.
+The strict public resolve test checks sample masks `0`, `1`, `3`, `0x10` and
+`1 << 32` on the query-supported 4x target. The zero, out-of-range and
+high-only masks leave all 64 pixels blue. Masks `1` and `3` change all 64
+pixels to `[64, 64, 255, 255]` and `[128, 128, 255, 255]`, respectively,
+within one UNORM code value. This verifies individual and multiple active
+sample bits, ignores bits outside the sample count, and exercises FL9_1's
+nonzero native-mask translation.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_resolves_four_sample_rgba8_at_fl91 -- --exact --nocapture --test-threads=1
+```
 
 ### FL9_1 alpha-to-coverage validation
 

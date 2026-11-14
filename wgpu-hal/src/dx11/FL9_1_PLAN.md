@@ -1,5 +1,13 @@
 # FL9_1 completion plan
 
+## Latest coordinator increment — multisample-mask execution — 2026-11-14
+
+Strict forced-FL9_1 public rendering now verifies 4x masks `0`, `1`, `3`,
+`0x10` and `1 << 32` through resolve and pixel readback. Masks 1 and 3
+produced the expected quarter- and half-coverage values in all 64 pixels;
+zero and out-of-range bits preserved the blue clear. This covers the selected
+device's partial sample-mask execution and the zero-mask native workaround.
+
 ## Latest coordinator increment — disjoint public queue writes — 2026-11-14
 
 Two `Queue::write_buffer` calls to distinct offsets are now verified through

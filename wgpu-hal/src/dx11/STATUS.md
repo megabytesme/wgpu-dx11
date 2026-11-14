@@ -2341,3 +2341,13 @@ test on the RTX 3090 Ti explicitly forced FL9_1 and verified all 64 pixels
 after switching between 4x2 and 8x4 textures; the tint, dimensions and texel
 values all affected the result. Uniform coexistence remains unsupported for
 helper, 3D/cube and explicit-mip query paths.
+
+## Query-supported multisample-mask execution — 2026-11-14
+
+The strict public 4x RGBA8 resolve test now exercises masks `0`, `1`, `3`,
+`0x10` and `1 << 32`. On the RTX 3090 Ti at requested/actual FL9_1, masks 1
+and 3 changed all 64 pixels to quarter- and half-coverage white over blue;
+zero and bits outside the four-sample range preserved all 64 blue pixels.
+The test exercises sample-mask state changes, FL9_1's zero-mask translation,
+64-bit-to-native mask truncation, resolve and readback. This is selected modern
+driver evidence only.
