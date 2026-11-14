@@ -1645,8 +1645,13 @@ explicit cofactors. DX11 exposes `mat2x2` and `mat3x3` through independent
 `DownlevelLimits::matrix_inverse_2x2` and `matrix_inverse_3x3` limits. The
 tested Level 9 vertex profile also supports the separate
 `matrix_inverse_4x4_vertex` limit; Core rejects `mat4x4` inverse in fragment
-shaders and keeps general `matrix_inverse` false. Core checks the selected
-entry point and reachable helpers before HAL. Strict forced-FL9_1 GLSL tests
+shaders and keeps general `matrix_inverse` false. A runtime-data fragment
+`mat4x4` inverse translated by Naga compiles for the shader-model-5 control but
+FXC rejects `ps_4_0_level_9_1` with X5608: 108 arithmetic instruction slots
+exceed the profile's 64-slot limit (and 108 total slots exceed its 96-slot
+limit). Core must continue rejecting it before HAL; this is an observed
+compiler/profile budget, not a native matrix-size limit. Core checks the
+selected entry point and reachable helpers before HAL. Strict forced-FL9_1 GLSL tests
 execute `mat2x2` and `mat3x3` in both stages and a runtime-data, non-symmetric
 `mat4x4` inverse in the vertex stage. The mat4 case matched all 64 pixels at
 `[64, 128, 128, 255]` within two UNORM steps; a fragment mat4 inverse is still

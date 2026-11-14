@@ -1901,11 +1901,17 @@ mat4 and other unsupported shapes fail as validation errors before HAL. The
 strict public FL9_1 GLSL test executes both mat2 and mat3 inverse in vertex and
 fragment stages. All 64 mat2 pixels matched `[0, 255, 0, 255]`; the
 non-symmetric mat3 output matched `[64, 64, 64, 255]`, with independent vertex
-and fragment results in separate channels. A mat4 negative test
-confirmed Core rejection without an internal HAL error. WGSL has no inverse
-builtin, so this applies to GLSL/SPIR-V or Naga IR inputs. Other shapes and
-DX12/Metal projection remain unavailable. This is a bounded translator
-capability, not additional FL9_1 hardware support.
+and fragment results in separate channels. A mat4 negative test confirmed
+Core rejection without an internal HAL error. A new Naga-to-FXC compiler probe
+uses runtime matrix inputs: its `ps_5_0` control compiles, while
+`ps_4_0_level_9_1` is rejected with X5608 because generated code uses 108
+arithmetic slots against the 64-slot pixel limit and 108 total slots against
+the 96-slot limit. This measures the compiler/profile boundary for the
+currently generated inverse; Core keeps fragment mat4 inverse rejected. The
+probe is compiler-only. WGSL has no inverse builtin, so this applies to
+GLSL/SPIR-V or Naga IR inputs. Other shapes and DX12/Metal projection remain
+unavailable. This is a bounded translator capability, not additional FL9_1
+hardware support.
 
 The HLSL writer now lowers `outerProduct` for validated f32 vectors and square
 or rectangular matrices. DX11 exposes the corresponding downlevel limit, and

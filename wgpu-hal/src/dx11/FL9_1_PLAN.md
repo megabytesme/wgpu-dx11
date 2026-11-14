@@ -4,7 +4,7 @@
 
 ### Verification refresh — optional RG8 3D path
 
-The latest private HAL suite passed 546/546. After adding the combined
+The latest private HAL suite passed 547/547. After adding the combined
 textured-depth case, the complete strict public D3D11 target passed 173/173 in
 one process; four optional selected-device subcases logged explicit skips.
 Fixture-enabled Core passed 155/155, Core DX12 passed 139/139, and
@@ -12,6 +12,12 @@ Fixture-enabled Core passed 155/155, Core DX12 passed 139/139, and
 single-process public runs intermittently hit FXC internal `0x8007000e` errors
 in varying shader tests; the latest full run succeeded, and process-sharded
 runs remain a reproducible alternative.
+
+The latest compiler-boundary probe compiles a runtime-data fragment `mat4`
+inverse successfully under the shader-model-5 control, then confirms FXC
+rejects the generated FL9_1 pixel shader at 108 arithmetic slots (limit 64)
+and 108 total slots (limit 96). The Core rejection remains accurate; no
+fragment inverse capability was added.
 
 The new optional RG8 3D path is gated by the selected device's positive
 `TEXTURE3D | SHADER_SAMPLE` query. The RTX 3090 Ti returned `0x0002c320` for

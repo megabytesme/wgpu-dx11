@@ -21495,3 +21495,35 @@ gate. Exact result and selector are in `FL9_1_CTS.md`. No implementation
 failure was observed. This probe confirms that the remaining CTS gap is in
 the selector/feature-granularity contract, not evidence of a broken BC copy
 path.
+
+## Coordinator increment — fragment mat4 inverse profile-boundary probe — 2026-11-14
+
+A read-only shader audit proposed checking whether runtime-data fragment
+`mat4x4<f32>` inverse could fit the FL9_1 pixel profile. The new test parses a
+GLSL fragment through Naga, confirms its shader-model-5 control compiles, then
+compiles the generated HLSL with the production `ps_4_0_level_9_1` FXC path.
+FXC rejects it with X5608: 108 arithmetic instruction slots exceed the
+profile's 64-slot limit; it also reports 108 total slots against the 96-slot
+limit. The fragment-stage Core rejection remains correct, and no capability
+was added. This is compiler evidence only; WGSL has no matrix inverse builtin.
+
+The `wgpu-hal` dev dependency now enables Naga's GLSL parser for this compiler
+regression test only. The focused test passed 1/1. An initial invocation used
+`--exact` without the full Rust test path and matched zero tests; the corrected
+substring invocation ran the intended test. Then the complete strict private
+HAL target passed 547/547 test functions with `WGPU_DX11_REQUIRE_HARDWARE=1`.
+GPU cases selected NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at explicitly requested/actual FL9_1. The suite included real
+upload, draw, synchronization, and readback executions; optional capability
+subcases that logged SKIP are not counted as GPU passes. Seven existing
+`unused_qualifications` warnings and the Visual Studio `vError: Unknown error`
+startup banner remained; no new warnings were introduced.
+
+Independent pipeline and texture-transfer audits found no concrete new
+Core-valid-to-unimplemented-HAL mismatch in their reviewed areas. The pipeline
+audit confirmed existing coverage for raster state, topology, depth/stencil,
+bundles, resolves, and rejection of unsupported targets; the texture audit
+confirmed ordinary arrays are correctly unavailable at FL9_1 and cube
+transfers already have coverage. These reviews are scoped, not exhaustive.
+Continue with the remaining advertised shader/API contract matrix and external
+historical-device, Lumia/CoreWindow, and physical device-removal validation.

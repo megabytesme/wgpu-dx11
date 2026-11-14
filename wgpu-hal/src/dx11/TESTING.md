@@ -5127,6 +5127,18 @@ at requested/actual FL9_1. WGSL has no inverse builtin; this covers GLSL and
 other Naga IR sources containing the operation and does not establish behavior
 on historical drivers.
 
+The shader compiler test also translates a runtime-data fragment `mat4x4`
+inverse with Naga and compiles it for both `ps_5_0` and
+`ps_4_0_level_9_1`. The shader-model-5 control compiles; FXC rejects the FL9_1
+profile with X5608 because its 108 arithmetic slots exceed the 64-slot pixel
+budget (it also reports 108 total slots against the 96-slot total budget).
+This establishes why the fragment-stage Core restriction remains in place; it
+is a compiler-only boundary test, not GPU execution.
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu-hal --features dx11 --lib fl91_fragment_mat4_inverse_exceeds_pixel_profile_instruction_budget -- --nocapture
+```
+
 ### Direct 2D `textureLoad` with `textureDimensions`
 
 ```powershell

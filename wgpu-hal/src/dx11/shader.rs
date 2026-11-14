@@ -3040,6 +3040,68 @@ mod tests {
     }
 
     #[test]
+    fn fl91_fragment_mat4_inverse_exceeds_pixel_profile_instruction_budget() {
+        use naga::{front::glsl, ShaderStage};
+
+        let source = r#"#version 450
+            layout(location = 0) in vec4 c0;
+            layout(location = 1) in vec4 c1;
+            layout(location = 2) in vec4 c2;
+            layout(location = 3) in vec4 c3;
+            layout(location = 0) out vec4 color;
+            void main() {
+                mat4 m = mat4(c0, c1, c2, c3);
+                color = inverse(m) * vec4(1.0, 2.0, 3.0, 5.0);
+            }
+        "#;
+        let mut parser = glsl::Frontend::default();
+        let module = parser
+            .parse(&glsl::Options::from(ShaderStage::Fragment), source)
+            .expect("parse runtime-data fragment mat4 inverse shader");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate runtime-data fragment mat4 inverse shader");
+
+        assert!(compile_resource_free_naga(
+            &module,
+            &info,
+            ShaderStage::Fragment,
+            "main",
+            ShaderProfile::Pixel5_0,
+        )
+        .expect("the shader-model-5 control shader must compile")
+        .starts_with(b"DXBC"));
+
+        let error = compile_resource_free_naga(
+            &module,
+            &info,
+            ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+        )
+        .expect_err("FL9_1 pixel instruction budget must reject fragment mat4 inverse");
+        let NagaCompileError::Compilation(error) = error else {
+            panic!("unexpected Naga translation failure: {error:?}");
+        };
+        std::println!(
+            "FL9_1 fragment mat4 inverse FXC diagnostic: {}",
+            error.message
+        );
+        assert!(error.message.contains("X5608"), "{}", error.message);
+        assert!(
+            error
+                .message
+                .contains("too many arithmetic instruction slots"),
+            "{}",
+            error.message
+        );
+        assert!(error.message.contains("64"), "{}", error.message);
+    }
+
+    #[test]
     fn naga_unused_entry_point_resources_need_no_binding() {
         use naga::{
             valid::{Capabilities, ValidationFlags, Validator},
