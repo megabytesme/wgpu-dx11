@@ -8847,6 +8847,348 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
 }
 
 #[test]
+fn public_dx11_bgra8_unorm_blending_matches_reported_support_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters
+        .into_iter()
+        .find(|adapter| adapter.get_info().driver_info.contains("physical"))
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let format = TextureFormat::Bgra8Unorm;
+    let format_features = adapter.get_texture_format_features(format);
+    let required_usages = TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC;
+    if !format_features
+        .flags
+        .contains(TextureFormatFeatureFlags::BLENDABLE)
+        || !format_features.allowed_usages.contains(required_usages)
+    {
+        assert!(
+            !required,
+            "strict mode requires the selected FL9_1 adapter to report BGRA8Unorm blending and readback support: {format_features:?}"
+        );
+        println!("SKIP: BGRA8Unorm blending/readback is not reported: {format_features:?}");
+        return;
+    }
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; BGRA8Unorm={format_features:?}",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 BGRA8 blend test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected physical FL9_1 device");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 BGRA8 blend shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.0, 1.0); }\n\
+             @fragment fn base() -> @location(0) vec4f { return vec4f(0.125, 0.375, 0.625, 0.5); }\n\
+             @fragment fn overlay() -> @location(0) vec4f { return vec4f(0.25, 0.125, 0.0625, 0.25); }"
+                .into(),
+        ),
+    });
+    let vertices: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 BGRA8 blend fullscreen triangle"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex_buffer
+        .get_mapped_range_mut(..)
+        .expect("map BGRA8 blend triangle vertices")
+        .copy_from_slice(&vertices);
+    vertex_buffer.unmap();
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 BGRA8 blend color target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format,
+        usage: required_usages,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 BGRA8 blend readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let blend = BlendState {
+        color: BlendComponent {
+            src_factor: BlendFactor::One,
+            dst_factor: BlendFactor::OneMinusSrcAlpha,
+            operation: BlendOperation::Add,
+        },
+        alpha: BlendComponent {
+            src_factor: BlendFactor::One,
+            dst_factor: BlendFactor::OneMinusSrcAlpha,
+            operation: BlendOperation::Add,
+        },
+    };
+    let pipeline = |entry_point, blend| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 BGRA8 blend pipeline"),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &[VertexAttribute {
+                        format: VertexFormat::Float32x2,
+                        offset: 0,
+                        shader_location: 0,
+                    }],
+                })],
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format,
+                    blend,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let base = pipeline("base", None);
+    let overlay = pipeline("overlay", Some(blend));
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 BGRA8 blend commands"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 BGRA8 blend pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_pipeline(&base);
+        pass.draw(0..3, 0..1);
+        pass.set_pipeline(&overlay);
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for BGRA8 blend pass");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("BGRA8 blend readback callback")
+        .expect("map BGRA8 blend readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                for (channel, (&observed, expected)) in data[offset..offset + 4]
+                    .iter()
+                    .zip([135, 104, 88, 159])
+                    .enumerate()
+                {
+                    assert!(
+                        observed.abs_diff(expected) <= 1,
+                        "BGRA blend pixel ({x}, {y}) byte {channel}: expected {expected}, observed {observed}"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!(
+        "PASS: public FL9_1 BGRA8 blending matched BGRA bytes [135, 104, 88, 159] in all 64 pixels"
+    );
+}
+
+#[test]
+fn public_dx11_vertex_attribute_limit_boundary_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters
+        .into_iter()
+        .find(|adapter| adapter.get_info().driver_info.contains("physical"))
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let limits = adapter.limits();
+    assert_eq!(limits.max_vertex_attributes, 16);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; max_vertex_attributes={}",
+        info.name, info.vendor, info.device, info.driver_info, limits.max_vertex_attributes
+    );
+    let (device, _queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 vertex attribute limit test"),
+        required_features: Features::empty(),
+        required_limits: limits,
+        ..Default::default()
+    }))
+    .expect("request the selected physical FL9_1 device");
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 vertex attribute limit shader"),
+        source: ShaderSource::Wgsl(
+            "struct VertexOutput { @builtin(position) position: vec4f, @location(0) color: vec4f, }\n\
+             @vertex fn vs(@location(0) position: vec2f, @location(15) color: vec4f) -> VertexOutput {\n\
+                 var output: VertexOutput; output.position = vec4f(position, 0.0, 1.0); output.color = color; return output;\n\
+             }\n\
+             @fragment fn fs(@location(0) color: vec4f) -> @location(0) vec4f { return color; }"
+                .into(),
+        ),
+    });
+    let attributes = [
+        VertexAttribute {
+            format: VertexFormat::Float32x2,
+            offset: 0,
+            shader_location: 0,
+        },
+        VertexAttribute {
+            format: VertexFormat::Float32x4,
+            offset: 8,
+            shader_location: 15,
+        },
+    ];
+    let make_pipeline = |label, attributes: &[VertexAttribute]| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(label),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 24,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes,
+                })],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some("fs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let _highest_valid = make_pipeline("FL9_1 location 15 pipeline", &attributes);
+    println!("PASS: Core accepted vertex attribute location 15 at the 16-slot limit");
+
+    let invalid_attributes = [
+        attributes[0],
+        attributes[1],
+        VertexAttribute {
+            format: VertexFormat::Float32x4,
+            offset: 24,
+            shader_location: 16,
+        },
+    ];
+    expect_validation_error(&device, "vertex attribute location 16", || {
+        drop(make_pipeline(
+            "FL9_1 out-of-range vertex attribute pipeline",
+            &invalid_attributes,
+        ));
+    });
+    println!(
+        "PASS: Core rejected vertex attribute location 16 against the advertised 16-slot limit"
+    );
+}
+
+#[test]
 fn public_dx11_color_write_masks_preserve_disabled_channels_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

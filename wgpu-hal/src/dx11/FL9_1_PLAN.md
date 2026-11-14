@@ -1,5 +1,14 @@
 # FL9_1 completion plan
 
+## Latest coordinator increment — format and vertex-limit evidence — 2026-11-14
+
+Strict public test coverage now verifies BGRA8Unorm blending when the selected
+format query reports `BLENDABLE`, and the FL9_1 16-slot vertex-attribute
+boundary. The RTX 3090 Ti passed the BGRA blend/readback check and location-15
+pipeline creation; Core rejected location 16. No capability projection
+changed. The full strict public target passed 161/161. Historical FL9_1
+behavior remains unverified.
+
 ## Coordinator check-in — 2026-11-14
 
 Independent graphics, shader and Core/HAL/CTS reviews agree that the backend

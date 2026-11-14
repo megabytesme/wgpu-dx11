@@ -5499,3 +5499,28 @@ FL9_1. Each 2D format copied and sampled all four mips, matching 64/64 pixels;
 each cube format sampled four mips on all six faces, matching 768/768 pixels.
 No required format was skipped. Other adapters may lack these optional query
 bits; normal tests may then skip this hardware test, while strict mode fails.
+
+## BGRA8 blending and vertex attribute limit
+
+`public_dx11_bgra8_unorm_blending_matches_reported_support_at_fl91` runs when
+the selected adapter reports `BLENDABLE` and render-target/readback usage for
+BGRA8Unorm. It draws distinct base and premultiplied overlay colors, then
+checks all 64 copied pixels in native BGRA byte order. Strict mode treats a
+missing required format capability as a failure; ordinary runs report a
+recognizable skip.
+
+`public_dx11_vertex_attribute_limit_boundary_at_fl91` checks the adapter's
+advertised 16-attribute limit, accepts shader input location 15, and verifies
+that Core rejects location 16 before the HAL pipeline path.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_bgra8_unorm_blending_matches_reported_support_at_fl91 -- --exact --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_vertex_attribute_limit_boundary_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), both tests
+requested and confirmed FL9_1. BGRA8 reported `BLENDABLE`; all 64 pixels
+matched BGRA `[135, 104, 88, 159]`. Vertex location 15 pipeline creation
+passed and location 16 was rejected by Core. These results verify the selected
+adapter only, not historical FL9_1 driver behavior.

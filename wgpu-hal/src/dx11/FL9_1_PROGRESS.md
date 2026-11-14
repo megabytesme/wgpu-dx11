@@ -20738,3 +20738,19 @@ unexposed ray-query feature. Treat this as a HAL-interface limitation to
 resolve before describing direct HAL use as panic-free; it does not block the
 current public `wgpu` request path. Existing surface/map/capability `expect`s
 were judged internal invariants with no valid public trigger in the audit.
+
+## Coordinator increment — BGRA8 blending and vertex-input boundary — 2026-11-14
+
+Added two public capability-boundary regressions without changing the
+projection. BGRA8Unorm is now pixel-tested for blending only when the selected
+adapter advertises `BLENDABLE` and render/readback usages. At forced FL9_1,
+the RTX 3090 Ti reported those capabilities; premultiplied overlay output
+matched BGRA bytes `[135, 104, 88, 159]` in all 64 pixels. The second test
+asserts `max_vertex_attributes == 16`, accepts shader/pipeline input at
+location 15, and confirms Core rejects location 16 before the HAL path.
+
+Both focused strict tests passed 1/1 each. The complete strict public DX11
+target then passed 161/161 with no failures or ignored tests. Public-target
+Clippy passed; only the eight existing D3D11 HAL warnings remained, and neither
+new test added a warning. Formatting and `git diff --check` passed. This is
+selected-adapter evidence, not historical FL9_1 validation.
