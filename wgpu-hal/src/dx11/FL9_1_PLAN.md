@@ -44,7 +44,7 @@ downstream smoke test should select DX11 explicitly and render an existing
 2D-textured indexed mesh to offscreen RGBA8, verify readback, then present it
 in the app's HWND. Terrain would need an application-side atlas/shader route.
 
-## Latest coordinator increment — query-gated R8 FL9_1 3D textures — 2026-11-14
+## Latest coordinator increment — query-gated R8 FL9_1 3D textures — `cb6e8c0b5`
 
 The 3D format projection now separates static FL9_1 format guarantees from
 selected-device `TEXTURE3D | SHADER_SAMPLE` queries for RGBA8 and R8_UNORM.

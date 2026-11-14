@@ -2,8 +2,9 @@
 
 ## Coordinator status — 2026-11-14
 
-The latest verified worktree increment (pending commit) adds query-gated R8
-3D textures alongside RGBA8. Format-sized storage now covers volume creation,
+The latest verified checkpoint is `cb6e8c0b5` (`dx11: add query-gated FL9_1
+R8 3D textures`). It adds query-gated R8 3D textures alongside RGBA8.
+Format-sized storage now covers volume creation,
 views, zero initialization, upload, ordered CPU-shadow copies/readback and
 sampling. R8 remains excluded from the RGBA8-only 3D `textureLoad` emulation.
 The previous committed base is `0f9fed45a` (`dx11: allow alpha-equivalent

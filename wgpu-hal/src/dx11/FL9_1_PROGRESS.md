@@ -21286,7 +21286,7 @@ capability subcase was explicitly skipped. Generalizing R8 volume shadow,
 upload, copy/readback and sample paths remains a possible capability expansion
 if a workload needs it.
 
-## Query-gated R8 FL9_1 3D volume support — 2026-11-14
+## Query-gated R8 FL9_1 3D volume support — `cb6e8c0b5` — 2026-11-14
 
 The R8-only 3D exclusion was replaced with a per-format mask for RGBA8 and
 R8_UNORM. Projection intersects the FL9_1 required-format guarantee, the
