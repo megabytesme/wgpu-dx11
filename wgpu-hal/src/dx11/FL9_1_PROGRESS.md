@@ -19829,3 +19829,12 @@ The existing strict public draw-boundary test was rerun separately and passed
 1/1 on that adapter: a 65,536-point call split at 65,535 and rendered its last
 point, and triangle-list splitting rendered the expected last triangle. The
 CTS fixture limitation and exact command are recorded in `FL9_1_CTS.md`.
+
+## Lumia CoreWindow access recheck — 2026-11-14
+
+The configured Lumia Device Portal helper timed out on the read-only
+`/api/os/devicefamily` request. A separate `Test-NetConnection` probe to
+`192.168.1.157:443` returned false. No device settings or TLS verification
+were changed. Actual ARM32/CoreWindow execution remains blocked on the phone
+being reachable with Device Portal enabled; software-side validation can
+continue independently.
