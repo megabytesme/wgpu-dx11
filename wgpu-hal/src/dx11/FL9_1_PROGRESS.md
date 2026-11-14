@@ -48,6 +48,8 @@ git diff --check
 
 ## Coordinator increment — direct fragment textureGather with one uniform — 2026-11-14
 
+Implementation checkpoint: `e52cb32ea` (`dx11: allow a uniform with direct FL9_1 texture gather`).
+
 Extended only the direct selected fragment `textureGather` proof to allow one
 used, bound `vec4f` uniform. Helper gathers, extra used resources, a second or
 other-shaped uniform, and `select` remain rejected. Core, HAL and Naga each
