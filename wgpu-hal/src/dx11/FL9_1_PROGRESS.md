@@ -20886,3 +20886,27 @@ $env:CARGO_TARGET_DIR = 'E:\Temp\wgpu-mission-gpu-target'
 cargo +1.93.1 fmt --all -- --check
 git diff --check
 ```
+
+## Coordinator status inquiry and delegated audits — 2026-11-14
+
+The working tree was clean at `0d7b9e6ca`. Three bounded read-only audits
+revisited the current remaining work:
+
+- A Core-to-HAL audit of submission, render passes, draws, buffers and texture
+  copies found no concrete Core-valid operation reaching a known unsupported
+  or misexecuted HAL path. This is scoped evidence, not a complete API audit.
+- A shader-subset audit found no new safe feature candidate; helper-based
+  `textureSampleLevel(..., 0.0)` with one tint uniform was already implemented
+  and GPU-tested.
+- CTS triage confirmed `fails-if(dx12)` leaves
+  `image_copy:offsets_and_sizes:*` active on DX11. The runner selects inner
+  cases only through format and dimension, while copy depth and padding are
+  generated subcases and cannot be selected individually. The prior aggregate
+  result therefore remains inconclusive for the supported one-layer path; no
+  CTS list or code was changed and no test was run in this audit.
+
+The immediate local priority remains a systematic capability-to-Core/HAL/CTS
+evidence matrix and a workload-backed gap, rather than speculative shader
+expansion. Historical FL9_1 hardware, Lumia/CoreWindow execution, physical
+device removal and production Horizon terrain remain external or application
+integration gaps.

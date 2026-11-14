@@ -4067,3 +4067,22 @@ DX11 153/153, strict public DX11 157/157, Core DX12 140/140. See
 FL9_1 drivers, out-of-range palette indices, Lumia/CoreWindow execution, or
 physical device-removal recovery. Public DX11 remains explicitly opt-in and
 constrained; the completion mission remains active.
+
+## Current coordinator handoff — 2026-11-14
+
+Latest checkpoint: `0d7b9e6ca` on `uwp-dx11`; working tree was clean. The
+strict public `dx11_public` suite most recently passed 164/164 test functions
+on the RTX 3090 Ti at requested and actual FL9_1; the private HAL suite last
+passed 537/537. These are broad selected-device results, not historical-device
+or exhaustive contract proof.
+
+Recent read-only audits found no confirmed Core-valid-to-HAL gap in the
+reviewed command, draw, buffer and texture-copy paths, and no new low-risk
+shader expansion. The `image_copy:offsets_and_sizes` CTS parent remains
+inconclusive because it includes unsupported array/other-dimension subcases
+and cannot select its generated copy-depth leaves. Continue the full public
+capability/operation/CTS audit, then implement only a reproduced gap or a
+workload-justified FL9_1 feature. Do not parallelize cross-crate edits or
+heavyweight GPU suites. Historical FL9_1 hardware, Lumia/CoreWindow, physical
+device removal and production Horizon terrain remain unverified or blocked by
+external requirements.
