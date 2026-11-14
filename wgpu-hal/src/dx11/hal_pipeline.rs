@@ -3104,6 +3104,23 @@ impl RenderPipeline {
                 pair.requires_single_mip =
                     !level_zero_pair.base_mip_view && level_zero_pair.selected_mip_level.is_none();
             }
+            let grad_pairs = fragment.module.texture_sample_grad_single_mip_pairs(
+                naga::ShaderStage::Fragment,
+                fragment.entry_point,
+            )?;
+            for grad_pair in grad_pairs {
+                let Some(pair) = fragment_pairs.iter_mut().find(|pair| {
+                    pair.texture == grad_pair.texture && pair.sampler == grad_pair.sampler
+                }) else {
+                    return Err(crate::PipelineError::Linkage(
+                        wgt::ShaderStages::FRAGMENT,
+                        "FL9_1 gradient-sampling relationship is missing from the native binding map"
+                            .into(),
+                    ));
+                };
+                pair.requires_single_mip = true;
+                pair.requires_bias_compatible = true;
+            }
             validate_sampling_pairs(
                 &desc.layout.bindings,
                 &fragment_pairs,

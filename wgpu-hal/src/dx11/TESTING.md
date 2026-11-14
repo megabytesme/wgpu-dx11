@@ -1,5 +1,34 @@
 # Direct3D 11 validation plan
 
+## Restricted FL9_1 fragment `textureSampleGrad`
+
+The only enabled explicit-gradient case is one direct, unconditional fragment
+sample of a non-array `texture_2d<f32>` with a regular sampler. The selected
+view must expose one mip and min/mag filters must match with anisotropy 1. On
+that combination, the explicit gradients cannot change the chosen mip or
+spatial filter, so the HAL lowers the sample to implicit sampling. Derivative
+operations, helper/control-flow gradient samples, multi-mip views, and
+incompatible samplers remain rejected. The limit is distinct from and does
+not enable `fragment_derivatives`.
+
+Run CPU proof/model tests and the strict public GPU case:
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu-types restricted_single_mip_sample_grad_is_a_downlevel_limit
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu-hal --features dx11 --lib fl91_sample_grad_single_mip_proof_lowers_only_straight_line_samples
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu-core --features dx11,wgsl --lib fl9_single_mip_sample_grad_requires_direct_unconditional_fragment_use
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu-hal --features dx11 --lib single_mip_sample_grad_projection_is_separate_from_derivative_support
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_sampled_mip_chain_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+The public test is grouped with the existing mip-chain workload to avoid an
+extra device lifetime in the full GPU suite. It verifies 64 output pixels
+sampled through a one-mip view and rejects the same shader draw with a
+multi-mip view. The strict run selected an NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual FL9_1 with
+`software=false`.
+
 ## Helper-based explicit LOD zero with a tint uniform
 
 The selected fragment entry may call one supported straight-line sample

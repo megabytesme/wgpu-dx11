@@ -843,13 +843,15 @@ FL9_1.
 The FL9_1 projection exposes `max_texture_sample_bias = 3` and disables dynamic
 bias and texel offsets. Core's per-entry analysis follows helper calls, so
 unsupported bias forms produce public validation errors instead of HAL
-compiler errors. The FL9_1 projection also disables fragment derivatives and
-explicit texture gradients; core rejects selected-entry `dpdx`, `dpdy` and
-`textureSampleGrad`, including helper calls. FXC diagnostics show `ddx` cannot
-map to the level-9_1 instruction set and `SampleGrad` is unsupported by
-`ps_2_0`. `wgpu-info` prints these downlevel limits. Synthetic tests cover
-fractional bias, derivative helpers and entry-point isolation; this does not
-claim full biased or explicit-gradient sampling support.
+compiler errors. General fragment derivatives remain disabled; selected-entry
+`dpdx`, `dpdy` and derivative-based sampling are rejected because FXC's level-
+9_1 profile cannot express them. A separately gated direct `textureSampleGrad`
+case is supported only for a single-mip 2D float view and a regular sampler
+with matching min/mag filters and anisotropy one. Its explicit gradients
+cannot affect the sole exposed mip or the shared spatial filter, so Core and HAL
+validate this limited semantic equivalence against the live draw bindings. The
+default downlevel limit remains false. `wgpu-info` prints the distinct limits;
+synthetic tests cover helper/control-flow rejection and entry-point isolation.
 
 General `textureSampleLevel` remains restricted. A separate narrow
 `texture_sample_level_zero_2d_float_fragment` limit allows direct,
@@ -2376,3 +2378,17 @@ zero and bits outside the four-sample range preserved all 64 blue pixels.
 The test exercises sample-mask state changes, FL9_1's zero-mask translation,
 64-bit-to-native mask truncation, resolve and readback. This is selected modern
 driver evidence only.
+
+## Restricted FL9_1 fragment `textureSampleGrad`
+
+One direct, unconditional fragment `textureSampleGrad` is lowered to implicit
+sampling only when the selected image is a non-array 2D float texture, its
+currently bound view exposes exactly one mip, and the regular sampler has
+matching min/mag filters with anisotropy one. Core and HAL prove the selected
+entry-point shape and recheck live bindings before drawing. This does not
+enable derivatives, helper/control-flow samples or general explicit-gradient
+semantics. Strict FL9_1 execution on the RTX 3090 Ti rendered the existing
+four-level patterned mip chain through a single-mip view and verified all 64
+pixels; a draw using the same pipeline and a multi-mip view was rejected by
+Core before HAL. The full public target passed 169/169 in strict mode. This is
+selected modern-driver evidence, not validation on historical FL9_1 hardware.

@@ -1268,6 +1268,8 @@ pub struct RenderPipeline {
     pub(crate) immediate_slots_required: naga::valid::ImmediateSlots,
     pub(crate) sampling_pairs: Vec<validation::SamplingPair>,
     pub(crate) fl9_texture_sample_level_zero_pairs: Vec<validation::TextureSampleLevelZeroPair>,
+    pub(crate) fl9_texture_sample_grad_single_mip_pairs:
+        Vec<validation::TextureSampleGradSingleMipPair>,
     pub(crate) fl9_texture_gather_pair: Option<validation::SamplingPair>,
     pub(crate) fl9_texture_load_bindings: Vec<validation::TextureLoadBinding>,
     pub(crate) fl9_texture_sample_bias_offset_binding:
@@ -1364,6 +1366,7 @@ impl RenderPipeline {
             immediate_slots_required: naga::valid::ImmediateSlots::default(),
             sampling_pairs: Vec::new(),
             fl9_texture_sample_level_zero_pairs: Vec::new(),
+            fl9_texture_sample_grad_single_mip_pairs: Vec::new(),
             fl9_texture_gather_pair: None,
             fl9_texture_load_bindings: Vec::new(),
             fl9_texture_sample_bias_offset_binding: None,

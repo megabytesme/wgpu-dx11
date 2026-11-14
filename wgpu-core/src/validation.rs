@@ -337,6 +337,7 @@ struct EntryPoint {
     sampling_pairs: FastHashSet<(naga::Handle<Resource>, naga::Handle<Resource>)>,
     texture_sample_biases: Vec<TextureSampleBias>,
     fragment_derivatives_used: bool,
+    fl9_texture_sample_grad_single_mip_pairs: Option<Vec<TextureSampleGradSingleMipPair>>,
     texture_sample_level_used: bool,
     fl9_texture_sample_level_zero_pairs: Option<Vec<TextureSampleLevelZeroPair>>,
     texture_gather_used: bool,
@@ -373,6 +374,14 @@ pub(crate) struct TextureSampleLevelZeroPair {
     pub base_mip_view: bool,
     pub selected_mip_level: Option<u32>,
     pub allow_multi_mip_integer_lod: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Hash, Ord, PartialOrd)]
+pub(crate) struct TextureSampleGradSingleMipPair {
+    pub texture_group: u32,
+    pub texture_binding: u32,
+    pub sampler_group: u32,
+    pub sampler_binding: u32,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4045,6 +4054,116 @@ fn entry_point_uses_fragment_derivatives(
         collect_called_functions(&function.body, &mut called_functions);
     }
     false
+}
+
+fn fl9_texture_sample_grad_single_mip_pairs(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+) -> Option<Vec<TextureSampleGradSingleMipPair>> {
+    if entry_point.stage != naga::ShaderStage::Fragment
+        || fl9_texture_sample_grad_block_is_straight_line(&entry_point.function.body).is_none()
+        || entry_point
+            .function
+            .expressions
+            .iter()
+            .any(|(_, expression)| {
+                matches!(
+                    expression,
+                    naga::Expression::Derivative { .. } | naga::Expression::Select { .. }
+                )
+            })
+    {
+        return None;
+    }
+
+    let mut pairs = Vec::new();
+    for (_, expression) in entry_point.function.expressions.iter() {
+        let naga::Expression::ImageSample {
+            image,
+            sampler,
+            array_index,
+            offset,
+            level: naga::SampleLevel::Gradient { .. },
+            depth_ref,
+            gather,
+            clamp_to_edge,
+            ..
+        } = *expression
+        else {
+            continue;
+        };
+        if array_index.is_some()
+            || offset.is_some()
+            || depth_ref.is_some()
+            || gather.is_some()
+            || clamp_to_edge
+        {
+            return None;
+        }
+        let naga::Expression::GlobalVariable(image) = entry_point.function.expressions[image]
+        else {
+            return None;
+        };
+        let naga::Expression::GlobalVariable(sampler) = entry_point.function.expressions[sampler]
+        else {
+            return None;
+        };
+        let image = &module.global_variables[image];
+        let sampler = &module.global_variables[sampler];
+        if image.space != naga::AddressSpace::Handle
+            || !matches!(
+                module.types[image.ty].inner,
+                naga::TypeInner::Image {
+                    dim: naga::ImageDimension::D2,
+                    arrayed: false,
+                    class: naga::ImageClass::Sampled {
+                        kind: naga::ScalarKind::Float,
+                        multi: false,
+                    },
+                }
+            )
+            || sampler.space != naga::AddressSpace::Handle
+            || !matches!(
+                module.types[sampler.ty].inner,
+                naga::TypeInner::Sampler { comparison: false }
+            )
+        {
+            return None;
+        }
+        let (Some(texture), Some(sampler)) = (image.binding, sampler.binding) else {
+            return None;
+        };
+        pairs.push(TextureSampleGradSingleMipPair {
+            texture_group: texture.group,
+            texture_binding: texture.binding,
+            sampler_group: sampler.group,
+            sampler_binding: sampler.binding,
+        });
+    }
+    if pairs.is_empty() {
+        return None;
+    }
+    pairs.sort_unstable();
+    pairs.dedup();
+    Some(pairs)
+}
+
+fn fl9_texture_sample_grad_block_is_straight_line(block: &naga::Block) -> Option<bool> {
+    let mut returns = false;
+    for statement in block.iter() {
+        if returns {
+            return None;
+        }
+        match statement {
+            naga::Statement::Emit(_) | naga::Statement::Store { .. } => {}
+            naga::Statement::Return { .. } => returns = true,
+            naga::Statement::Block(block) => {
+                returns = fl9_texture_sample_grad_block_is_straight_line(block)?
+            }
+            _ => return None,
+        }
+    }
+    Some(returns)
 }
 
 fn function_uses_texture_sample_level(function: &naga::Function) -> bool {
@@ -9202,6 +9321,10 @@ impl Interface {
                     module,
                     entry_point,
                 ),
+                fl9_texture_sample_grad_single_mip_pairs: fl9_texture_sample_grad_single_mip_pairs(
+                    module,
+                    entry_point,
+                ),
                 texture_sample_level_used: entry_point_uses_texture_sample_level(
                     module,
                     entry_point,
@@ -9926,7 +10049,27 @@ impl Interface {
         };
         Ok(stage == naga::ShaderStage::Fragment
             && entry_point.fragment_derivatives_used
-            && !limits.fragment_derivatives)
+            && !limits.fragment_derivatives
+            && !(limits.texture_sample_grad_2d_float_single_mip_fragment
+                && entry_point
+                    .fl9_texture_sample_grad_single_mip_pairs
+                    .as_ref()
+                    .is_some_and(|pairs| !pairs.is_empty())))
+    }
+
+    pub(crate) fn entry_point_fl9_texture_sample_grad_single_mip_pairs(
+        &self,
+        stage: naga::ShaderStage,
+        entry_point_name: &str,
+    ) -> Result<Vec<TextureSampleGradSingleMipPair>, StageError> {
+        let key = (stage, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point
+            .fl9_texture_sample_grad_single_mip_pairs
+            .clone()
+            .unwrap_or_default())
     }
 
     pub(crate) fn entry_point_uses_unsupported_texture_sample_level(
@@ -10708,7 +10851,7 @@ mod tests {
 
     use super::{
         BuiltIn, EntryPoint, Interface, InterfaceVar, SamplingPair, StageError,
-        TextureSampleLevelZeroPair, Varying,
+        TextureSampleGradSingleMipPair, TextureSampleLevelZeroPair, Varying,
     };
 
     #[test]
@@ -12646,6 +12789,105 @@ mod tests {
                 &fl91,
             )
             .is_err());
+    }
+
+    #[test]
+    fn fl9_single_mip_sample_grad_requires_direct_unconditional_fragment_use() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(2) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            fn helper(uv: vec2f) -> vec4f {
+                return textureSampleGrad(image, smp, uv, vec2f(0.25, 0.0), vec2f(0.0, 0.25));
+            }
+            @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleGrad(image, smp, uv, vec2f(0.25, 0.0), vec2f(0.0, 0.25));
+            }
+            @fragment fn control_flow(@location(0) uv: vec2f) -> @location(0) vec4f {
+                if uv.x > 0.5 { return textureSampleGrad(image, smp, uv, vec2f(0.25, 0.0), vec2f(0.0, 0.25)); }
+                return vec4f(0.0);
+            }
+            @fragment fn helper_call(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return helper(uv);
+            }
+            @fragment fn derivative(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleGrad(image, smp, uv, dpdx(uv), dpdy(uv));
+            }
+            @fragment fn unrelated() -> @location(0) vec4f { return vec4f(1.0); }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let limits = wgt::DownlevelLimits {
+            texture_sample_grad_2d_float_single_mip_fragment: true,
+            fragment_derivatives: false,
+            ..Default::default()
+        };
+
+        assert!(!interface
+            .entry_point_uses_unsupported_fragment_derivatives(
+                naga::ShaderStage::Fragment,
+                "direct",
+                &limits,
+            )
+            .unwrap());
+        assert_eq!(
+            interface
+                .entry_point_fl9_texture_sample_grad_single_mip_pairs(
+                    naga::ShaderStage::Fragment,
+                    "direct",
+                )
+                .unwrap(),
+            alloc::vec![TextureSampleGradSingleMipPair {
+                texture_group: 2,
+                texture_binding: 7,
+                sampler_group: 2,
+                sampler_binding: 42,
+            }]
+        );
+        for entry in ["control_flow", "helper_call", "derivative"] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_fragment_derivatives(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                        &limits,
+                    )
+                    .unwrap(),
+                "{entry} must not enter the implicit-sampling lowering subset"
+            );
+            assert!(interface
+                .entry_point_fl9_texture_sample_grad_single_mip_pairs(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                )
+                .unwrap()
+                .is_empty());
+        }
+        assert!(!interface
+            .entry_point_uses_unsupported_fragment_derivatives(
+                naga::ShaderStage::Fragment,
+                "unrelated",
+                &limits,
+            )
+            .unwrap());
+        let without_fl9_sample_grad = wgt::DownlevelLimits {
+            fragment_derivatives: false,
+            ..wgt::DownlevelLimits::default()
+        };
+        assert!(interface
+            .entry_point_uses_unsupported_fragment_derivatives(
+                naga::ShaderStage::Fragment,
+                "direct",
+                &without_fl9_sample_grad,
+            )
+            .unwrap());
     }
 
     #[test]

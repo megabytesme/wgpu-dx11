@@ -700,6 +700,9 @@ impl<'scope, 'snatch_guard, 'cmd_enc> State<'scope, 'snatch_guard, 'cmd_enc> {
                 .check_fl9_texture_sample_level_zero_bindings(pipeline.as_ref())?;
             self.pass
                 .binder
+                .check_fl9_texture_sample_grad_bindings(pipeline.as_ref())?;
+            self.pass
+                .binder
                 .check_fl9_texture_gather_bindings(pipeline.as_ref())?;
             self.pass
                 .binder

@@ -92,6 +92,10 @@ pub enum DrawError {
     IncompatibleTextureSampleLevelView { group: u32, binding: u32 },
     #[error("The restricted FL9_1 textureSampleLevel path requires a regular sampler with matching min/mag filters and anisotropy 1 at group {group} binding {binding}")]
     IncompatibleTextureSampleLevelSampler { group: u32, binding: u32 },
+    #[error("The restricted FL9_1 textureSampleGrad path requires a single-mip view at group {group} binding {binding}")]
+    IncompatibleTextureSampleGradView { group: u32, binding: u32 },
+    #[error("The restricted FL9_1 textureSampleGrad path requires a regular sampler with matching min/mag filters and anisotropy 1 at group {group} binding {binding}")]
+    IncompatibleTextureSampleGradSampler { group: u32, binding: u32 },
     #[error("The restricted FL9_1 textureGather path requires a single-mip view at group {group} binding {binding}")]
     IncompatibleTextureGatherView { group: u32, binding: u32 },
     #[error("The restricted FL9_1 textureGather path requires ClampToEdge addressing on U and V at group {group} binding {binding}")]

@@ -352,6 +352,7 @@ pub(super) struct BackendCapabilities {
     pub fragment_texture_sample_compare_offset_2d_single_mip: bool,
     pub fragment_texture_sample_level_zero_2d_single_mip: bool,
     pub fragment_texture_sample_level_integer_2d: bool,
+    pub fragment_texture_sample_grad_2d_single_mip: bool,
     pub texture_array_layers: u32,
     pub cube_texture_sampling: bool,
     pub cube_texture_mipmaps: bool,
@@ -515,6 +516,7 @@ impl BackendCapabilities {
         fragment_texture_sample_compare_offset_2d_single_mip: true,
         fragment_texture_sample_level_zero_2d_single_mip: true,
         fragment_texture_sample_level_integer_2d: true,
+        fragment_texture_sample_grad_2d_single_mip: true,
         texture_array_layers: 1,
         cube_texture_sampling: true,
         cube_texture_mipmaps: true,
@@ -682,6 +684,11 @@ impl Capabilities {
     pub fn private_fl91_fragment_texture_sample_level_integer_2d(&self) -> bool {
         self.hardware.level == FeatureLevel::L9_1
             && self.backend.fragment_texture_sample_level_integer_2d
+    }
+
+    pub fn private_fl91_fragment_texture_sample_grad_2d_single_mip(&self) -> bool {
+        self.hardware.level == FeatureLevel::L9_1
+            && self.backend.fragment_texture_sample_grad_2d_single_mip
     }
 
     pub fn private_fl91_fragment_texture_load_3d_float(&self) -> bool {
@@ -1043,6 +1050,8 @@ impl Capabilities {
                     .private_fl91_fragment_texture_sample_level_zero_2d_single_mip(),
                 texture_sample_level_integer_2d_float_fragment: self
                     .private_fl91_fragment_texture_sample_level_integer_2d(),
+                texture_sample_grad_2d_float_single_mip_fragment: self
+                    .private_fl91_fragment_texture_sample_grad_2d_single_mip(),
                 texture_gather: self.hardware.texture_gather && self.backend.texture_gather,
                 texture_gather_2d_float_fragment: self.backend.texture_gather_2d_float_fragment,
                 runtime_integer_shader_operations: self.backend.runtime_integer_shader_operations,
@@ -5030,6 +5039,42 @@ mod tests {
             FeatureLevel::L11_1,
         ] {
             assert!(!model(level).private_fl91_fragment_texture_sample_level_integer_2d());
+        }
+    }
+
+    #[test]
+    fn single_mip_sample_grad_projection_is_separate_from_derivative_support() {
+        let mut fl91 = model(FeatureLevel::L9_1);
+        assert!(fl91.private_fl91_fragment_texture_sample_grad_2d_single_mip());
+        let projected = fl91
+            .wgpu_projection()
+            .unwrap()
+            .capabilities
+            .downlevel
+            .limits;
+        assert!(projected.texture_sample_grad_2d_float_single_mip_fragment);
+        assert!(!projected.fragment_derivatives);
+
+        fl91.backend.fragment_texture_sample_grad_2d_single_mip = false;
+        assert!(
+            !fl91
+                .wgpu_projection()
+                .unwrap()
+                .capabilities
+                .downlevel
+                .limits
+                .texture_sample_grad_2d_float_single_mip_fragment
+        );
+
+        for level in [
+            FeatureLevel::L9_2,
+            FeatureLevel::L9_3,
+            FeatureLevel::L10_0,
+            FeatureLevel::L10_1,
+            FeatureLevel::L11_0,
+            FeatureLevel::L11_1,
+        ] {
+            assert!(!model(level).private_fl91_fragment_texture_sample_grad_2d_single_mip());
         }
     }
 

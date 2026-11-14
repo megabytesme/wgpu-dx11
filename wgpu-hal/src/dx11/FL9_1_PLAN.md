@@ -3,17 +3,18 @@
 ## Coordinator status synthesis — current 2026-11-14
 
 The public path has meaningful FL9_1 rendering coverage but remains a
-constrained opt-in subset. The latest strict test targets passed: public
-D3D11 169/169, Core DX11 fixtures 154/154, and private HAL 541/541 on the
-physical RTX 3090 Ti at explicitly requested and confirmed FL9_1. Core DX12
-passed 138/138 and wgpu-types passed 118/118. New coverage includes fixed
-integer fragment texture LOD at full-view mip levels 1 and 2, nonzero-base
-views, source updates after scratch-view caching, one-mip behavior and
-validation failures for invalid view/sampler ranges. Formatting, diff checks
-and affected Clippy checks passed. Strict DX11 CTS passed 4/4 buffer-to-buffer
-copy selectors and six selected 2D color texture-copy selectors (1/1 each,
-with no skipped or failed leaves). The first CTS runner build exceeded current
-system commit headroom; its sequential low-debug build succeeded.
+constrained opt-in subset. The latest strict public D3D11 target passed
+169/169 test functions and the private HAL suite passed 543/543 on the physical
+RTX 3090 Ti at explicitly requested and confirmed FL9_1. New coverage permits
+only direct, unconditional fragment `textureSampleGrad` on single-mip 2D float
+views with matching min/mag filters and anisotropy 1; Core validates the
+selected view and sampler before draw, and HAL lowers the proven operation to
+implicit sampling. Readback verified all 64 output pixels. Helper, derivative,
+control-flow and unsupported sampler/view forms remain rejected. Focused Core,
+HAL, and wgpu-types unit tests passed; a focused Core DX12 test passed. Clippy
+completed with existing HAL and wgpu-types warnings, and formatting plus diff
+checks passed. Earlier strict runs remain recorded below; they are not results
+for this latest code state.
 
 Remaining gaps divide into unfinished capability/validation/CTS evidence and
 workload-led implementation, deliberate FL9_1/profile exclusions (compute,
@@ -63,6 +64,34 @@ remain a coverage task, not a proven exhaustive audit. Keep using agents for
 independent read-only audits, specification/compiler research and isolated
 CTS triage; cross-crate code changes and strict GPU integration stay
 coordinator-owned.
+
+## Latest coordinator increment — restricted fragment textureSampleGrad — 2026-11-14
+
+Added a distinct downlevel limit for one narrowly proven operation: a direct,
+unconditional fragment `textureSampleGrad` on non-array `texture_2d<f32>`
+resources. Core and the private HAL validate the selected entry point and
+retain its exact texture/sampler relationships. Draw validation permits the
+operation only when every bound view has one mip and each used sampler has
+matching min/mag filters with anisotropy 1. HAL lowers only those proven sample
+expressions to implicit sampling, for which explicit gradients cannot change
+the selected mip or spatial filter. General derivatives, helper calls,
+control-flow forms, offsets, comparison/depth sampling, and other sampler or
+view configurations remain unavailable. No public backend enumeration or
+default selection changed.
+
+The strict public test sampled a single-mip view at source mip 1 and verified
+64/64 readback pixels. A multi-mip view was rejected in Core before HAL; helper,
+derivative, control-flow and unsupported-bias shapes remain rejected. The
+physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) was explicitly
+requested and confirmed at FL9_1 with `software=false`. This is not evidence
+for historical FL9_1 drivers.
+
+Latest verification: public D3D11 passed 169/169, private HAL passed 543/543,
+focused Core/DX11 and HAL lowering tests passed, the focused Core DX12 test
+passed, and the `wgpu-types` limit test passed. HAL and public Clippy completed
+with existing warnings; Clippy with `-D warnings` remains blocked by 28
+pre-existing HAL warnings. Rust 1.93.1 formatting and `git diff --check`
+passed. Exact command results are in `FL9_1_PROGRESS.md`.
 
 ## Latest coordinator increment — multisample-mask execution — 2026-11-14
 

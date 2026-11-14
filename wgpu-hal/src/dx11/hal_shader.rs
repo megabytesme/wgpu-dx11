@@ -27,6 +27,17 @@ pub(super) struct TextureSampleLevelZeroPair {
     pub(super) selected_mip_level: Option<u32>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct TextureSampleGradSingleMipPair {
+    pub(super) texture: naga::ResourceBinding,
+    pub(super) sampler: naga::ResourceBinding,
+}
+
+struct TextureSampleGradSingleMipProof {
+    expressions: Vec<naga::Handle<naga::Expression>>,
+    pairs: Vec<TextureSampleGradSingleMipPair>,
+}
+
 struct TextureSampleLevelZeroProof {
     expressions: Vec<TextureSampleLevelZeroExpression>,
     pairs: Vec<TextureSampleLevelZeroPair>,
@@ -6716,6 +6727,108 @@ mod tests {
         .unwrap()
         .is_some());
     }
+
+    #[test]
+    fn fl91_sample_grad_single_mip_proof_lowers_only_straight_line_samples() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            fn helper(uv: vec2f) -> vec4f {
+                return textureSampleGrad(image, smp, uv, vec2f(0.5, 0.0), vec2f(0.0, 0.5));
+            }
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleGrad(image, smp, uv, vec2f(0.5, 0.0), vec2f(0.0, 0.5));
+            }
+            @fragment fn control(@location(0) uv: vec2f) -> @location(0) vec4f {
+                if uv.x > 0.5 { return textureSampleGrad(image, smp, uv, vec2f(0.5, 0.0), vec2f(0.0, 0.5)); }
+                return vec4f(0.0);
+            }
+            @fragment fn helper_call(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return helper(uv);
+            }
+            @fragment fn derivative(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleGrad(image, smp, uv, dpdx(uv), dpdy(uv));
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::all(),
+        )
+        .validate(&module)
+        .unwrap();
+        let proof = fl9_texture_sample_grad_single_mip_proof(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+        )
+        .unwrap()
+        .expect("direct gradient sample enters the narrow proof");
+        assert_eq!(proof.pairs.len(), 1);
+        assert_eq!(proof.pairs[0].texture.binding, 7);
+        assert_eq!(proof.pairs[0].sampler.binding, 42);
+
+        for entry in ["control", "helper_call", "derivative"] {
+            assert!(
+                fl9_texture_sample_grad_single_mip_proof(
+                    &module,
+                    &info,
+                    naga::ShaderStage::Fragment,
+                    entry,
+                )
+                .is_err(),
+                "{entry} must remain unsupported"
+            );
+        }
+
+        let entry_index = module
+            .entry_points
+            .iter()
+            .position(|entry| entry.stage == naga::ShaderStage::Fragment && entry.name == "main")
+            .unwrap();
+        let mut lowered = module.clone();
+        lower_fl9_texture_sample_grad_single_mip(&mut lowered, entry_index, &proof)
+            .expect("lower the validated gradient sample");
+        let (hlsl, generated_entry) = translate_naga_with_viewport_and_fl9_inputs(
+            &lowered,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &[
+                ShaderBinding {
+                    binding: naga::ResourceBinding {
+                        group: 0,
+                        binding: 7,
+                    },
+                    slot: 0,
+                    kind: ShaderBindingKind::TextureFloat,
+                },
+                ShaderBinding {
+                    binding: naga::ResourceBinding {
+                        group: 0,
+                        binding: 42,
+                    },
+                    slot: 0,
+                    kind: ShaderBindingKind::Sampler,
+                },
+            ],
+            Fl9ShaderInputOptions::default(),
+        )
+        .expect("translate lowered sample to the FL9_1 profile");
+        assert!(hlsl.contains(".Sample("), "{hlsl}");
+        assert!(!hlsl.contains("SampleGrad"), "{hlsl}");
+        let bytecode = super::super::shader::compile_hlsl(
+            &hlsl,
+            &generated_entry,
+            ShaderProfile::PixelLevel9_1,
+        )
+        .expect("FXC accepts the semantics-preserving single-mip lowering");
+        assert!(bytecode.starts_with(b"DXBC"));
+    }
 }
 
 crate::impl_dyn_resource!(ShaderModule);
@@ -6952,6 +7065,169 @@ fn fl9_texture_sample_level_zero_proof(
     });
     pairs.dedup();
     Ok(Some(TextureSampleLevelZeroProof { expressions, pairs }))
+}
+
+fn fl9_texture_sample_grad_single_mip_proof(
+    module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
+    stage: naga::ShaderStage,
+    entry: &str,
+) -> Result<Option<TextureSampleGradSingleMipProof>, crate::PipelineError> {
+    let stages = if stage == naga::ShaderStage::Fragment {
+        wgt::ShaderStages::FRAGMENT
+    } else {
+        wgt::ShaderStages::VERTEX
+    };
+    let entry_index = module
+        .entry_points
+        .iter()
+        .position(|candidate| candidate.stage == stage && candidate.name == entry)
+        .ok_or(crate::PipelineError::EntryPoint(stage))?;
+    let function = &module.entry_points[entry_index].function;
+    let info = module_info.get_entry_point(entry_index);
+    let has_grad = reachable_expression(
+        module,
+        module_info,
+        function,
+        info,
+        |_, _, _, expression| {
+            matches!(
+                expression,
+                naga::Expression::ImageSample {
+                    level: naga::SampleLevel::Gradient { .. },
+                    ..
+                }
+            )
+        },
+    );
+    if !has_grad {
+        return Ok(None);
+    }
+
+    let invalid = || {
+        crate::PipelineError::Linkage(
+            stages,
+            "D3D11 FL9_1 only supports direct, unconditional textureSampleGrad on a single-mip 2D float view with a regular sampler, matching min/mag filters and anisotropy one".into(),
+        )
+    };
+    if stage != naga::ShaderStage::Fragment
+        || fl9_flat_block(&function.body).is_none()
+        || function.body.iter().any(|statement| {
+            matches!(
+                statement,
+                naga::Statement::Call { .. }
+                    | naga::Statement::If { .. }
+                    | naga::Statement::Switch { .. }
+                    | naga::Statement::Loop { .. }
+                    | naga::Statement::Kill
+            )
+        })
+    {
+        return Err(invalid());
+    }
+
+    let mut expressions = Vec::new();
+    let mut pairs = Vec::new();
+    for (handle, expression) in function.expressions.iter() {
+        if info[handle].ref_count == 0 {
+            continue;
+        }
+        if matches!(
+            expression,
+            naga::Expression::Derivative { .. } | naga::Expression::Select { .. }
+        ) {
+            return Err(invalid());
+        }
+        let naga::Expression::ImageSample {
+            image,
+            sampler,
+            array_index,
+            offset,
+            level: naga::SampleLevel::Gradient { .. },
+            depth_ref,
+            gather,
+            clamp_to_edge,
+            ..
+        } = *expression
+        else {
+            continue;
+        };
+        if array_index.is_some()
+            || offset.is_some()
+            || depth_ref.is_some()
+            || gather.is_some()
+            || clamp_to_edge
+        {
+            return Err(invalid());
+        }
+        let naga::Expression::GlobalVariable(texture) = function.expressions[image] else {
+            return Err(invalid());
+        };
+        let naga::Expression::GlobalVariable(sampler) = function.expressions[sampler] else {
+            return Err(invalid());
+        };
+        let texture = &module.global_variables[texture];
+        let sampler = &module.global_variables[sampler];
+        let valid_texture = texture.space == naga::AddressSpace::Handle
+            && texture.binding.is_some()
+            && matches!(
+                module.types[texture.ty].inner,
+                naga::TypeInner::Image {
+                    dim: naga::ImageDimension::D2,
+                    arrayed: false,
+                    class: naga::ImageClass::Sampled {
+                        kind: naga::ScalarKind::Float,
+                        multi: false,
+                    },
+                }
+            );
+        let valid_sampler = sampler.space == naga::AddressSpace::Handle
+            && sampler.binding.is_some()
+            && matches!(
+                module.types[sampler.ty].inner,
+                naga::TypeInner::Sampler { comparison: false }
+            );
+        let (Some(texture), Some(sampler)) = (texture.binding, sampler.binding) else {
+            return Err(invalid());
+        };
+        if !valid_texture || !valid_sampler {
+            return Err(invalid());
+        }
+        expressions.push(handle);
+        pairs.push(TextureSampleGradSingleMipPair { texture, sampler });
+    }
+    if expressions.is_empty() {
+        return Err(invalid());
+    }
+    pairs.sort_unstable_by_key(|pair| {
+        (
+            pair.texture.group,
+            pair.texture.binding,
+            pair.sampler.group,
+            pair.sampler.binding,
+        )
+    });
+    pairs.dedup();
+    Ok(Some(TextureSampleGradSingleMipProof { expressions, pairs }))
+}
+
+fn lower_fl9_texture_sample_grad_single_mip(
+    module: &mut naga::Module,
+    entry_index: usize,
+    proof: &TextureSampleGradSingleMipProof,
+) -> Result<(), ()> {
+    for expression in &proof.expressions {
+        let naga::Expression::ImageSample { level, .. } =
+            &mut module.entry_points[entry_index].function.expressions[*expression]
+        else {
+            return Err(());
+        };
+        if !matches!(level, naga::SampleLevel::Gradient { .. }) {
+            return Err(());
+        }
+        *level = naga::SampleLevel::Auto;
+    }
+    Ok(())
 }
 
 fn fl9_texture_sample_level_zero_helper(
@@ -14369,6 +14645,20 @@ impl ShaderModule {
         Ok(proof.map_or_else(Vec::new, |proof| proof.pairs))
     }
 
+    pub(super) fn texture_sample_grad_single_mip_pairs(
+        &self,
+        stage: naga::ShaderStage,
+        entry: &str,
+    ) -> Result<Vec<TextureSampleGradSingleMipPair>, crate::PipelineError> {
+        let proof = fl9_texture_sample_grad_single_mip_proof(
+            &self.shader.module,
+            &self.shader.info,
+            stage,
+            entry,
+        )?;
+        Ok(proof.map_or_else(Vec::new, |proof| proof.pairs))
+    }
+
     pub(super) fn uses_sample_bias(
         &self,
         stage: naga::ShaderStage,
@@ -14519,6 +14809,17 @@ impl ShaderModule {
                         )
                     },
                 )?;
+            }
+            if let Some(proof) =
+                fl9_texture_sample_grad_single_mip_proof(&module, &info, stage, entry)?
+            {
+                lower_fl9_texture_sample_grad_single_mip(&mut module, entry_index, &proof)
+                    .map_err(|_| {
+                        crate::PipelineError::Linkage(
+                            stages,
+                            "D3D11 FL9_1 textureSampleGrad lowering proof became invalid".into(),
+                        )
+                    })?;
             }
         }
         let mut sample_bias_offset_expression = None;

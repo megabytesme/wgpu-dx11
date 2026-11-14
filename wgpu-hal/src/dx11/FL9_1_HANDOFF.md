@@ -2,17 +2,22 @@
 
 ## Coordinator status — 2026-11-14
 
-The latest code checkpoint is `bbd6604859470634fe22636a99213a2bede8da3e`
-(`dx11: support fixed integer fragment texture LOD`). It records the selected-
-entry integer-level `textureSampleLevel` implementation, validation, lowering
-and readback tests. The latest strict runs passed 541/541 private HAL tests,
-154/154 Core DX11 fixture tests (one conditional unsupported-format subcase
-skipped), and 169/169 public DX11 test functions on a physical RTX 3090 Ti
-(`0x10de:0x2203`, driver `32.0.16.2101`) with FL9_1 explicitly requested and
-confirmed. Core DX12 passed 138/138 and `wgpu-types` 118/118. Three fresh strict
-CTS selectors for clear, fullscreen quad and the RGBA8 output target each
-passed 1/1 with no skips or failures. These counts are regression evidence,
-not a measure of API completeness or the number of GPU executions.
+The latest verified worktree increment is a narrow selected-entry fragment
+`textureSampleGrad` subset, not yet committed. Core and HAL prove it is direct,
+unconditional sampling of non-array 2D float textures with regular samplers;
+draw validation additionally requires a single-mip view, matching min/mag
+filters and anisotropy 1. HAL lowers only this proven case to implicit sampling
+for the FL9_1 profile. Helper, derivative, control-flow, multi-mip and other
+sampler forms remain rejected. The strict public test verified 64/64 pixels
+through a one-mip view and confirmed Core rejects a multi-mip view before HAL.
+
+Latest strict results are public D3D11 169/169 and private HAL 543/543 on the
+physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) with FL9_1
+explicitly requested and confirmed. Focused Core and HAL tests, a Core DX12
+test and the `wgpu-types` limit test passed. Formatting and `git diff --check`
+passed. Clippy completed with existing warnings; HAL `-D warnings` still fails
+on 28 pre-existing warnings. Full commands and details are in
+`FL9_1_PROGRESS.md`.
 
 The implemented subset covers desktop offscreen and HWND rendering, textured
 depth-tested draws, tested multi-group resource patterns, uniforms and dynamic

@@ -1039,6 +1039,7 @@ impl super::Adapter {
             texture_sample_level: true,
             texture_sample_level_zero_2d_float_fragment: false,
             texture_sample_level_integer_2d_float_fragment: false,
+            texture_sample_grad_2d_float_single_mip_fragment: false,
             texture_gather: supported((3, 1), (4, 0))
                 || extensions.contains("GL_ARB_texture_gather"),
             texture_gather_2d_float_fragment: false,

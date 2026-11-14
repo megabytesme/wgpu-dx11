@@ -5823,6 +5823,7 @@ impl Device {
         let mut immediate_slots_required = naga::valid::ImmediateSlots::default();
         let mut sampling_pairs = Vec::new();
         let mut fl9_texture_sample_level_zero_pairs = Vec::new();
+        let mut fl9_texture_sample_grad_single_mip_pairs = Vec::new();
         let mut fl9_texture_gather_pair = None;
         let mut fl9_texture_load_bindings = Vec::new();
         let mut fl9_texture_sample_bias_offset_binding = None;
@@ -6597,6 +6598,23 @@ impl Device {
                     );
                 }
 
+                if self
+                    .downlevel
+                    .limits
+                    .texture_sample_grad_2d_float_single_mip_fragment
+                {
+                    if let Some(interface) = shader_module.interface.interface() {
+                        fl9_texture_sample_grad_single_mip_pairs.extend(
+                            interface
+                                .entry_point_fl9_texture_sample_grad_single_mip_pairs(
+                                    stage.to_naga(),
+                                    &fragment_entry_point_name,
+                                )
+                                .map_err(stage_err)?,
+                        );
+                    }
+                }
+
                 let interface = shader_module.interface.interface();
                 let uses_texture_load = match interface {
                     Some(interface) => interface
@@ -7170,6 +7188,8 @@ impl Device {
         };
         sampling_pairs.sort_unstable();
         sampling_pairs.dedup();
+        fl9_texture_sample_grad_single_mip_pairs.sort_unstable();
+        fl9_texture_sample_grad_single_mip_pairs.dedup();
 
         let supports_viewport_transform = raw.supports_viewport_transform();
         let pipeline = pipeline::RenderPipeline {
@@ -7189,6 +7209,7 @@ impl Device {
             immediate_slots_required,
             sampling_pairs,
             fl9_texture_sample_level_zero_pairs,
+            fl9_texture_sample_grad_single_mip_pairs,
             fl9_texture_gather_pair,
             fl9_texture_load_bindings,
             fl9_texture_sample_bias_offset_binding,
