@@ -21469,3 +21469,9 @@ workload. Historical FL9_1 hardware, Lumia/CoreWindow execution and physical
 device-removal recovery remain external verification gates. Agent work is
 most useful for disjoint audits and probes; the coordinator owns cross-crate
 implementation and serializes strict GPU runs.
+
+The verified code and test increment was committed as
+`9152a4e8d89f2b37ac795870f1ad834119ae81fd` (`dx11: expand FL9_1 formats and
+rendering coverage`). It adds the query-gated optional RG8 volume path and
+public line-list/depth integration coverage. The RTX did not report RG8 3D
+support, so that optional path remains skipped rather than hardware-verified.

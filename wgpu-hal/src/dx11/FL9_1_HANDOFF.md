@@ -4151,12 +4151,12 @@ A read-only Lumia Device Portal query to `/api/os/devicefamily` timed out. This 
 
 ## Current coordinator handoff — optional RG8 3D increment — 2026-11-14
 
-Branch `uwp-dx11`, HEAD `1e623946cb316ad69a0b834b736347df950f67fc`. The worktree
-contains 13 modified tracked files for query-gated RG8_UNORM 3D projection,
-public nonindexed line-list boundary and textured depth-tested integration
-tests, and documentation. Preserve them. The user explicitly confirmed the
-autonomous mission's focused-commit policy; this verified checkpoint is being
-recorded in Git and will not be pushed.
+Branch `uwp-dx11`; verified code checkpoint `9152a4e8d89f2b37ac795870f1ad834119ae81fd`
+(`dx11: expand FL9_1 formats and rendering coverage`). The checkpoint includes
+query-gated RG8_UNORM 3D projection, public nonindexed line-list boundary and
+textured depth-tested integration tests, and documentation. The working tree
+was clean after that checkpoint. It is a selected-device implementation; no
+push was made.
 
 The private HAL suite passed 546/546. The complete strict public D3D11 target
 passed 173/173 test functions in one process after the textured depth test was
