@@ -21575,3 +21575,23 @@ cache and acceleration-structure stubs remain behind absent Core features or
 flags. Lifecycle `expect`s rely on Core/HAL ownership invariants, and the
 capability-model `unreachable!` branches follow checked format subsets. This
 review is scoped and does not prove every HAL method safe.
+
+## ARM32 UWP cross-check — current public DX11 build — 2026-11-14
+
+The current public `wgpu` crate and its Core/HAL dependencies passed an
+ARM32 UWP cross-check with the pinned Rust 1.93.1 source toolchain and Visual
+Studio 2022 ARM/UWP environment:
+
+```powershell
+$env:RUSTC_BOOTSTRAP = '1'
+$env:CARGO_NET_OFFLINE = 'true'
+$env:CARGO_BUILD_JOBS = '4'
+$env:CARGO_TARGET_DIR = 'E:\Temp\wgpu-arm32-target'
+cargo +1.93.1 -Z build-std=core,alloc,std,panic_abort check --offline -j4 -p wgpu --target thumbv7a-uwp-windows-msvc --no-default-features --features dx11,wgsl,std
+```
+
+The command completed successfully in 43.27 seconds, compiling `wgpu-hal`,
+`wgpu-core`, Naga, `wgpu-types` and `wgpu` for `thumbv7a-uwp-windows-msvc`.
+This verifies compile-time target compatibility only; the Lumia Device Portal
+is still timing out, so no ARM32 device creation, CoreWindow surface or GPU
+rendering result is claimed.
