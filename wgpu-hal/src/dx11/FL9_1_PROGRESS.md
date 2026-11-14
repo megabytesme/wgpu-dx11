@@ -20451,9 +20451,9 @@ or its existing untracked deployment data. A representative app validation
 still needs the actual client/render source or a backend-neutral extracted
 scene/shader workload.
 
-The R8 selector and documentation are part of this coordinator increment. The
-six-selector inventory passed `lst_files_are_sorted` after the R8 addition;
-its commit hash will be recorded in the subsequent checkpoint entry.
+The R8 selector and documentation are part of the coordinator increment
+committed as `d660664b7`. The six-selector inventory passed
+`lst_files_are_sorted` after the R8 addition.
 
 ```powershell
 $env:CARGO_TARGET_DIR = 'C:\Users\ben\AppData\Local\Temp\wgpu-dx11-completion-target'
