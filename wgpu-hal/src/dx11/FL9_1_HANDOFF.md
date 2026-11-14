@@ -4109,3 +4109,14 @@ FL9_1 (source offsets 0 and 8). It is now in the shared passing list after
 1/1 passes on DX11, DX12 and Vulkan and a passing list-sorting check. The
 detailed agent synthesis and command are recorded in
 `FL9_1_PROGRESS.md`.
+## Current coordinator handoff — 2026-11-14
+
+Branch `uwp-dx11`, HEAD `e62c3b7d0` (`dx11: verify FL9_1 public capability boundaries`), clean worktree, 308 commits ahead of `origin/uwp-dx11`. The focused checkpoint added strict public evidence for packed/SNORM vertex formats and the 2048-wide FL9_1 texture limit, updated the capability/CTS/testing records, and preserved the existing anisotropic minification test. No production capability was expanded.
+
+Latest complete strict runs used the physical NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) with requested and actual FL9_1: public `dx11_public` 169/169 and private HAL library 538/538. The 2048-wide upload and final-texel readback matched `[29, 113, 197, 251]`; Core rejected width 2049. Both affected-crate Clippy commands succeeded with existing D3D11 HAL warnings; all-workspace formatting and `git diff --check` passed. Strict mode was `WGPU_DX11_REQUIRE_HARDWARE=1`.
+
+Three disjoint read-only audits found no confirmed public-Core-valid request reaching a known HAL rejection in their reviewed scopes. Uniform support is broad for the tested subset, but accepted WGSL forms remain deliberately narrow around FL9_1 compiler constraints. Resource review found selected-device boundary evidence gaps rather than a concrete failure. The application-facing review considers this suitable for explicitly selected experiments, not a drop-in backend; a real Horizon renderer was not available for integration.
+
+Remaining work is split between: (1) evidence-led implementation for concrete application/API gaps, while keeping the capability-to-Core-to-HAL audit non-exhaustive until covered systematically; (2) intentional FL9_1/profile restrictions such as compute/UAV/storage, geometry shaders, multiple color outputs, indirect draws, query families, 1D/array textures, vertex texture sampling and unsupported shader forms; and (3) external verification on historical FL9_1 drivers, Lumia ARM32/CoreWindow, and a physically removed/reset device. Forced FL9_1 on the modern RTX is not a substitute for those devices.
+
+Agents are most useful for independent, disjoint audits and compiler/spec probes. Keep cross-crate implementation choices, GPU tests and final integration coordinated here; serialize heavyweight Cargo/GPU runs. Do not assign agents one feature category each for concurrent implementation. The next local increment should be chosen from a specific supported-workload or public-validation gap, not speculative expansion of blocked FL9_1 features.
