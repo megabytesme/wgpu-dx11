@@ -19,6 +19,13 @@ device-removal paths. Agents should handle disjoint audits, compiler/spec
 probes and isolated tests; the coordinator owns feature selection and
 cross-crate integration, with one Cargo/GPU run at a time.
 
+Read-only inspection of the sibling `HorizonWiiU` source found the production
+renderer, but its Windows target currently selects DX12 and its normal terrain
+pipeline requires `texture_2d_array`; the current FL9_1 projection cannot run
+that pipeline. A standalone indexed mesh using a 2D texture is a realistic
+first app integration smoke test. Actual terrain rendering requires a separate
+application-side atlas/shader path, not an FL9_1 capability claim.
+
 ## Latest coordinator increment — multisample-mask execution — 2026-11-14
 
 Strict forced-FL9_1 public rendering now verifies 4x masks `0`, `1`, `3`,
