@@ -695,7 +695,8 @@ impl Surface {
                 mapping.ptr.as_ptr().add(256),
                 8,
             );
-            crate::Device::flush_mapped_ranges(&device, &upload, core::iter::once(0..264)).unwrap();
+            crate::Device::flush_mapped_ranges(&device, &upload, core::iter::once(0..264))
+                .map_err(crate::SurfaceError::Device)?;
         }
         let copy = crate::BufferTextureCopy {
             buffer_layout: wgt::TexelCopyBufferLayout {

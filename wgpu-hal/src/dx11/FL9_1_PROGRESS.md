@@ -21133,6 +21133,24 @@ historical FL9_1, Lumia/CoreWindow and device-removal verification. Agents remai
 for independent audits and selector triage; cross-crate implementation and GPU integration
 stay coordinator-owned.
 
+## Coordinator increment — diagnostic surface error propagation — 2026-11-14
+
+A full read-only scan of production D3D11 HAL panic/unwrap paths found no confirmed public
+Core-valid path to an unimplemented operation or panic. It did find one doc-hidden unsafe
+UWP diagnostic path that unwrapped `flush_mapped_ranges`; the call now maps the failure to
+the existing `SurfaceError::Device` result. The full strict D3D11 HAL library suite passed
+541/541 on the physical RTX 3090 Ti, explicitly requested and selected at FL9_1. The test
+command used the `dx11` feature; an earlier default-feature command and an overly narrow
+test-name filter each ran only two unrelated tests and were not treated as verification.
+HAL Clippy completed with 28 pre-existing warnings and no new diagnostic-path warning;
+Rust 1.93.1 workspace formatting and `git diff --check` passed. A separate render-pipeline
+audit found no advertised-valid mismatch; the remaining large-draw and raster-edge evidence
+requires a historical FL9_1 device. CTS triage found that current shader-execution selectors
+cannot isolate the narrow custom FL9_1 shader proofs: their generated tests require compute,
+RGBA32Uint render targets, multiple mips or shader forms outside the projection. Continue
+using the strict public/Core/HAL regression tests for those exact shapes rather than claiming
+the broad CTS selectors as evidence.
+
 ## Verified code checkpoint — fixed integer fragment LOD — 2026-11-14
 
 Commit `bbd6604859470634fe22636a99213a2bede8da3e` (`dx11: support fixed integer fragment texture LOD`) records the selected-entry fragment `textureSampleLevel` implementation, Core/HAL capability validation, shader lowering and tests. The strict public, Core fixture and private HAL suites passed 169/169, 154/154 and 541/541 respectively on the RTX 3090 Ti forced to FL9_1; the Core fixture logged one conditional RG8 vertex-format skip because the selected device does not report that format. Core DX12 passed 138/138 and `wgpu-types` 118/118. Clippy, workspace formatting and `git diff --check` passed, with the existing warning counts recorded above. This code commit includes the support-inventory journal entry and three fresh strict CTS results: clear 1/1, fullscreen quad 1/1 and RGBA8 pipeline output target 1/1, each with zero skips/failures. The first direct parameterized selector invocation lost its JSON quotes and executed no case; the canonical selector was rerun via a temporary selector-list file and passed. The temporary file was removed. No changes remain uncommitted after the code checkpoint.
