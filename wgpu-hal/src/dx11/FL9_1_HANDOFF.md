@@ -2,70 +2,59 @@
 
 ## Coordinator status — 2026-11-14
 
-Current support is a constrained opt-in public desktop graphics subset, not a
-general FL9_1-complete wgpu backend. Commit `4193ea447` permits one existing
-helper-based fragment `textureSampleLevel(..., 0.0)` result to be multiplied
-by one selected-entry-used `vec4<f32>` tint uniform. Core/HAL accept only that
-exact componentwise product shape and reject addition, scalar promotion, extra
-resources and control flow. FXC accepts the lowered shader; the strict RTX
-3090 Ti test checked all 64 pixels against two distinct tinted texel colors
-at requested/actual FL9_1. Core DX11, private HAL, public DX11 and Core DX12
-suites passed 153, 534, 157 and 140 tests respectively.
+Branch `uwp-dx11` is clean at `d9f7be3f5`. D3D11 is an experimental public
+backend available through explicit selection; it remains excluded from default
+backend selection. The latest recorded strict runs passed 169/169 public DX11
+test functions and 538/538 private HAL tests on a physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) with FL9_1 explicitly requested and
+confirmed. These counts are regression evidence, not a measure of API
+completeness or the number of GPU executions.
 
-Recent committed coverage also verifies fragment `textureGather` across
-separate groups with a tint uniform (`c2e278703`), the maximum 253-entry
-uniform-indexed vertex palette (`52569af72`), and 13 vertex plus 13 fragment
-uniforms in one group (`a53bb7298`). Each strict draw checked all 64 pixels.
-The tint change is committed as `4193ea447`.
+The implemented subset covers desktop offscreen and HWND rendering, textured
+depth-tested draws, tested multi-group resource patterns, uniforms and dynamic
+ranges, selected texture formats/views/transfers, samplers, and query-gated
+depth and multisample paths. ARM32 UWP library checking and a minimal explicit
+DX11 consumer link passed using Rust 1.93.1 `build-std`; neither AppX activation
+nor Lumia/CoreWindow GPU execution has occurred.
 
 ### Remaining support work
 
-- **Implementation and validation:** finish a capability-to-Core-to-HAL
-  operation matrix; extend selected shader and resource paths only when an
-  actual application or validated API contract needs them; expand curated CTS
-  coverage for supported descriptors and operations. Existing audits have
-  not found a confirmed Core-valid-to-known-unimplemented-HAL mismatch in the
-  paths they reviewed, but those audits are scoped, not exhaustive.
-- **Hardware/profile boundaries:** compute/UAV/storage execution, geometry
-  shaders, multiple color outputs, indirect drawing and occlusion queries
-  remain excluded at FL9_1. Other public support remains deliberately
-  restricted for shader operations, formats, views, usages and descriptor
-  combinations. These are not candidates for forced enablement.
-- **External verification:** no historical FL9_1 adapter/driver has been
-  tested; the Lumia ARM32/CoreWindow runtime could not be reached; physical
-  TDR/device-removal recovery has not been exercised. A modern RTX forced to
-  FL9_1 is not a substitute for those systems.
-- **Usability evidence:** desktop offscreen and HWND rendering are tested, but
-  the repository has not yet passed a representative application workload
-  such as Horizon. A read-only review of the local Horizon client-oracle found
-  only integration probes; the production client/render crates are absent and
-  the current game bridge does not select DX11. Its terrain probe uses a
-  `D2Array`, with an app-side atlas prototype as a possible FL9_1 alternative.
-  The backend should be used through explicit DX11 selection and within the
-  published experimental projection.
+- **Implementation and validation:** the public capability-to-Core-to-HAL and
+  curated CTS matrices remain incomplete. Scoped audits have found no
+  confirmed public-valid request reaching a known unsupported HAL operation,
+  but this is not exhaustive. Expand only against a concrete API contract or
+  workload, with matching Core/HAL validation and GPU evidence.
+- **Shader and resource boundaries:** compute/UAV/storage execution, geometry
+  shaders, multiple color outputs, indirect drawing, occlusion queries,
+  ordinary 1D and 2D-array textures, vertex texture sampling, and broad WGSL
+  semantics remain unavailable. Exact profile/resource restrictions must
+  continue to fail safely; do not force-enable them from RTX behavior.
+- **Application fit:** the production Horizon renderer is in the sibling
+  `HorizonWiiU` checkout. Its Windows target currently selects DX12, and its
+  terrain path relies on 2D-array sprite textures plus gradient/explicit-LOD
+  sampling. That path does not fit the current FL9_1 projection. A small
+  2D-textured mesh smoke test would prove app selection/presentation only;
+  terrain needs an application-side atlas/shader route or a separately
+  justified generic emulation.
+- **External verification:** historical FL9_1 drivers, Lumia ARM32/CoreWindow
+  runtime behavior, and physical TDR/device-removal recovery remain untested.
+  The modern RTX forced to FL9_1 does not substitute for these systems.
 
-The query-gated `Rg16Snorm` 2D-to-2D CTS probe was attempted on the RTX 3090 Ti
-at forced FL9_1 and skipped because `texture-formats-tier1` is absent from the
-conservative projection. It is not a pass and must not enter the curated test
-inventory. The RGBA8 2D copy selector already passed 1/1 with no skips or
-failures. Six R8/BGRA8/RGBA8 2D copy selectors now pass 6/6 on DX11, DX12 and
-Vulkan, including their linear/sRGB pairs in both directions. Scoped API,
-resource/transfer and shader audits found no confirmed public-valid request
-reaching an unimplemented HAL operation in the reviewed paths, and no
-workload-independent shader expansion ready to implement. Continue
-projection-constrained CTS coverage or obtain a representative application
-workload before selecting another feature slice.
+The 2D copy CTS cases for R8/BGRA8/RGBA8 and their supported linear/sRGB pairs
+passed 6/6 on DX11, DX12 and Vulkan. Query-gated `Rg16Snorm` was skipped because
+the format tier is not projected; it is not a pass. Broad selectors that
+include unsupported array or mip subcases remain excluded when the runner
+cannot isolate the supported cases.
 
-The broad RG8 same-format CTS selector is not curated: its nested four-mip
-cases exceed the device's reported `SINGLE_MIP_ONLY` boundary. The supported
-single-mip RG8 upload/copy/readback path has separate strict public GPU tests.
-
-Use agents for bounded read-only audits, compiler/specification probes,
-supported-CTS triage and application requirement reviews. Keep each
-cross-crate implementation, strict GPU run and checkpoint with the
-coordinator; serialize GPU tests so results have one clear owner. Agents
-cannot provide historical hardware, Lumia or physical TDR evidence without
-those devices being available.
+The latest independent contract review found no concrete public-valid request
+reaching a known unsupported HAL path among the reviewed compute, indirect,
+ray-tracing, pipeline-cache and query gates. The direct-HAL
+`tlas_instance_to_bytes` helper still panics, but Core gates it behind the
+unexposed ray-query feature. The CoreWindow source review found the dispatcher,
+owner-thread and lifetime checks present; actual Lumia runtime behavior remains
+unknown. Keep using agents for bounded audits and CTS triage; the coordinator
+owns cross-layer implementation, strict GPU runs and commits, and serializes
+hardware tests.
 
 ## Coordinator status — 2026-11-14
 

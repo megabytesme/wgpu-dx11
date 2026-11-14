@@ -21044,3 +21044,27 @@ The configured Lumia Device Portal `/api/os/devicefamily` request timed out. Lum
 Rust 1.93.1 has no prebuilt `thumbv7a-uwp-windows-msvc` std component. After installing `rust-src`, the pinned compiler built `core`, `alloc`, `std` and `panic_abort` from source. With Visual Studio configured for `-arch=arm -host_arch=x64 -app_platform=UWP -winsdk=10.0.22621.0 -vcvars_ver=14.44`, `cargo -Z build-std=core,alloc,std,panic_abort check --offline -j32 -p wgpu --target thumbv7a-uwp-windows-msvc --no-default-features --features dx11,wgsl,std` passed for the `wgpu-hal` → `wgpu-core` → public `wgpu` chain. A temporary minimal consumer selecting `Backends::DX11` built and linked for ARM32 UWP. This is compile/link evidence only; the binary was not activated on a device.
 
 `cargo check -p wgpu --tests` failed in the test/example dependency graph while compiling `windows-sys 0.52.0` (missing `DELAYLOAD_INFO`, `TBBUTTON` and shell notification types); the standalone consumer avoids that dependency. No backend source change was required for the library cross-check. The Lumia Device Portal still times out and TCP 443 at `192.168.1.157` is unreachable, so no Lumia adapter or rendering claim is made.
+
+## Coordinator follow-up — public contract and CoreWindow reviews — 2026-11-14
+
+The current clean checkpoint is `d9f7be3f5`. A fresh scoped Core/HAL review
+checked unsupported compute, indirect, ray-tracing, pipeline-cache and query
+paths. Core gates these behind capabilities that the DX11 projection does not
+expose; no public-valid request reaching those HAL stubs was identified. The
+direct `tlas_instance_to_bytes` panic remains unreachable through the current
+public feature gate. This review does not cover every format, shader shape,
+surface operation or error path.
+
+A separate CoreWindow review found dispatcher and owner-thread checks in
+surface creation/configuration/acquisition/presentation, retained agile window
+references, and serialized immediate-context access. It found no concrete
+source defect. The ARM32 UWP library check and minimal consumer link are
+compile/link evidence only: adapter creation, CoreWindow swapchain creation,
+present/resize, and ARM32 stability still require the unreachable Lumia
+device. The test-graph check remains blocked in `windows-sys 0.52.0` by missing
+Win32 declarations; it does not affect the minimal library consumer.
+
+The remaining local task is still evidence-led completion of the
+capability/Core/HAL and applicable CTS matrices. Do not treat a scoped audit as
+proof of the full contract, or an intentional FL9_1 exclusion as an
+implementation target without a correct, validated emulation path.
