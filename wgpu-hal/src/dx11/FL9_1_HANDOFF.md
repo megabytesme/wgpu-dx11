@@ -1,6 +1,33 @@
 # FL9_1 handoff
 
-## Coordinator status — surface loss routing and current support — 2026-11-12
+## Coordinator status — 2026-11-14
+
+The latest verified code checkpoint is `e52cb32ea` (`dx11: allow a uniform
+with direct FL9_1 texture gather`); `1f4b637f4` records its evidence. This
+bounded Core/HAL/Naga proof permits one used `vec4f` uniform alongside a
+direct selected fragment gather while preserving the emulation's reserved
+registers. Its strict public GPU test checked all 64 pixels on the RTX 3090 Ti
+at requested and actual FL9_1.
+
+Latest suite totals are 156/156 public D3D11 test functions, 533/533 private
+HAL tests, 152/152 Core DX11 fixture tests, 175/175 Naga tests and 136/136
+targeted Core DX12 tests. These are test-function counts, not counts of GPU
+renders; optional device/format subcases can log explicit SKIP. The public
+suite includes the check that DX11 remains absent from default backend
+selection. Explicit DX11 selection is available experimentally with a
+conservative FL9_1 projection.
+
+The backend remains **PARTIALLY COMPLETE** against the autonomous mission.
+It is usable for constrained native desktop rendering through public wgpu,
+but it is not a complete FL9_1 implementation. Broader graphics and shader
+subsets, remaining Core/HAL validation and error-path audits, capability/CTS
+coverage, historical FL9_1 devices, Lumia ARM32/CoreWindow runtime, and
+physical device-removal recovery remain open. Native FL9_1 exclusions such as
+compute/UAV execution, geometry shaders, multiple color outputs, indirect
+drawing and occlusion queries remain unavailable and should be rejected
+accurately.
+
+## Earlier coordinator status — surface loss routing — 2026-11-12
 
 The cross-device surface lifecycle now reports pending-present timeouts and
 device loss through an additive fallible HAL unconfigure operation. Core keeps
