@@ -42,6 +42,8 @@ only.
 | `webgpu:api,operation,rendering,color_target_state:blend_constant,initial:*` | 1/1 passed, no skips | Initial blend-constant behavior. |
 | `webgpu:api,operation,rendering,color_target_state:blend_constant,not_inherited:*` | 1/1 passed, no skips | Pass-to-pass blend-constant reset. |
 | `webgpu:api,operation,command_buffer,clearBuffer:clear:*` | 1/1 passed, 50 subcases, no skips or failures | GPU clear, offsets/ranges, and readback. |
+| `webgpu:api,operation,buffers,map:mapAsync,read,*` | 18/18 passed, no skips or failures | `mapAsync` read ranges, including default/explicit/minimal range expansion and typed-array access. |
+| `webgpu:api,operation,buffers,map:mapAsync,write,*` | 10/10 passed, no skips or failures | `mapAsync` write ranges and preservation of unchanged ranges across map/unmap. |
 | `webgpu:api,operation,command_buffer,copyBufferToBuffer:single:*` | 2/2 passed, no skips or failures | Basic buffer copies. |
 | `webgpu:api,operation,command_buffer,copyBufferToBuffer:copy_order:*` | 1/1 passed, no skips or failures | Ordered overlapping-range copies. |
 | `webgpu:api,operation,command_buffer,copyBufferToBuffer:state_transitions:*` | 1/1 passed, no skips or failures | Ordered partial copies and readback. |

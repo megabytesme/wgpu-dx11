@@ -4787,6 +4787,47 @@ shader operation. The public `dx11_public` target also has
 volume upload, a partial 3D-to-3D copy, padded readback rows and untouched
 destination texels through the ordinary public wgpu API.
 
+### Query-gated RG8_UNORM 3D volume path
+
+RG8_UNORM is not a 10Level9 FL9_1 required-format guarantee. Its 3D format
+bit is added only when the selected device reports both
+`D3D11_FORMAT_SUPPORT_TEXTURE3D` and `D3D11_FORMAT_SUPPORT_SHADER_SAMPLE`;
+2D RG8 support is not used as a proxy. The synthetic capability test covers
+the positive query, unavailable and partial queries, projection of only the
+RG8 bit, and global mip behavior when RG8 is mixed with other 3D formats.
+
+`fl91_rg8_3d_upload_copy_readback_and_sampling_when_queried` reuses the
+format-sized volume path for two-byte texels. It uploads a padded 2×2×2 region
+from a nonzero buffer offset, copies it between volumes, reads back all 64
+voxels with padded rows/depth and sentinel bytes, then samples every slice and
+checks RG-to-RGBA expansion. An unavailable optional query is a recognizable
+SKIP in ordinary and strict runs; strict mode still fails if the required
+physical FL9_1 adapter is unavailable. The strict RTX 3090 Ti run reported
+`0x0002c320`, without the optional `TEXTURE3D` support bit, so no RG8 3D GPU
+operation was executed.
+`public_dx11_query_gated_rg8_3d_upload_copy_and_readback_at_fl91` checks the
+same selected capability through the public API and validates upload, partial
+copy, initialization and padded readback when supported. The strict public
+test also emitted `SKIP` for the selected device's missing optional support.
+Both tests must execute on a device reporting RG8 3D support before that path
+can be reported as hardware verified.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu-hal --features dx11 --lib fl91_rg8_3d_upload_copy_readback_and_sampling_when_queried -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_rg8_3d_upload_copy_and_readback_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti, `CheckFormatSupport` returned `0x0002c320` for
+`R8G8_UNORM`, without `D3D11_FORMAT_SUPPORT_TEXTURE3D`. Both strict tests
+therefore reported `SKIP`; neither test executed RG8 3D GPU operations. The
+strict HAL suite passed 546/546 test functions, including this explicit
+optional-capability skip. The public target passed all 172 test functions
+when run in five fresh strict processes (40, 40, 40, 40 and 12 tests).
+Single-process full-target runs intermittently hit FXC's internal parser
+error `0x8007000e` in different shaders; each affected test passed when run
+alone. This was not treated as a GPU pass for the skipped RG8 path.
+
 ### `textureNumLevels` image and sampler in separate groups
 
 The strict 2D test puts the queried texture at group 2/binding 42 and tests a
@@ -5729,3 +5770,32 @@ building the `windows-sys 0.52` dependency pulled in through test/example
 dependencies (`DELAYLOAD_INFO`, `TBBUTTON` and shell notification types are
 missing for this target); the library check and standalone consumer do not use
 that dependency path.
+
+## Public textured depth-tested FL9_1 rendering
+
+The strict public test binds a 1x1 sampled RGBA8 texture and sampler at sparse
+logical bindings 7 and 42, then draws three full-screen triangles using green,
+red and blue source textures at increasing depth. `Depth24Plus` uses a `Less`
+comparison and depth writes. The closer middle draw must replace the first;
+the later farther draw must fail depth testing. All 64 pixels read back as
+opaque red, proving the sampled resource transition and depth test through
+public wgpu, Core and the D3D11 HAL.
+
+Run from the Visual Studio developer environment with Rust 1.93.1:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_NET_OFFLINE = 'true'
+$env:CARGO_TARGET_DIR = 'E:\Temp\wgpu-mission-gpu-target'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_textured_depth_test_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+On 2026-11-14 the test executed on the physical NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) with requested and actual FL9_1 and
+`software=false`; 64/64 output pixels matched. The complete strict public
+D3D11 target then passed 173/173 test functions in one process. Four optional
+selected-device subcases printed `SKIP` for R8G8_UNORM and R16G16_FLOAT vertex
+input, RG8 3D transfers, and Rg8Unorm mip support; those are not counted as
+GPU feature passes. Earlier full single-process runs had intermittent FXC
+internal errors, although this latest run succeeded. Repeat the complete
+target after future public-path changes.

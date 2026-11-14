@@ -2,17 +2,47 @@
 
 ## Coordinator status synthesis — current 2026-11-14
 
+### Verification refresh — optional RG8 3D path
+
+The latest private HAL suite passed 546/546. After adding the combined
+textured-depth case, the complete strict public D3D11 target passed 173/173 in
+one process; four optional selected-device subcases logged explicit skips.
+Fixture-enabled Core passed 155/155, Core DX12 passed 139/139, and
+`wgpu-types` passed 120 unit tests plus 14 doc tests (21 ignored). Earlier
+single-process public runs intermittently hit FXC internal `0x8007000e` errors
+in varying shader tests; the latest full run succeeded, and process-sharded
+runs remain a reproducible alternative.
+
+The new optional RG8 3D path is gated by the selected device's positive
+`TEXTURE3D | SHADER_SAMPLE` query. The RTX 3090 Ti returned `0x0002c320` for
+`R8G8_UNORM` at forced FL9_1, without `TEXTURE3D`, so strict private and public
+tests explicitly skipped that optional path. It has not been GPU-verified.
+RGBA8 and R8 volume paths remain covered. See the latest entry in
+`FL9_1_PROGRESS.md` for commands and full interpretation.
+
+The focused public textured depth test now joins the actual wgpu-to-HAL path:
+three sparse-bound sampled textures are drawn over one another at increasing
+depth, and all 64 readback pixels retain the nearer red sample after the later
+blue fragment is rejected. The strict RTX 3090 Ti run requested and confirmed
+FL9_1. The complete strict public target was rerun after adding this test and
+passed 173/173 in one process, with four explicit optional-capability skips.
+Earlier full runs had intermittent FXC internal errors; they did not recur in
+this latest run.
+
 The explicit `Backends::DX11` public path is usable for the documented FL9_1
-subset, but it is not a drop-in backend or Core WebGPU implementation. The
-latest full strict public D3D11 suite passed 170/170 and the private HAL suite
-passed 545/545 on the physical RTX 3090 Ti at explicitly requested and
-confirmed FL9_1. This includes public alpha-equivalent coupled blending,
+subset, but it is not a drop-in backend or Core WebGPU implementation.
+An earlier strict public D3D11 checkpoint passed 171/171 and the private HAL
+suite passed 545/545 on the physical RTX 3090 Ti at explicitly requested and
+confirmed FL9_1. The public suite now includes a 65,536-vertex nonindexed
+LineList boundary draw: the final pair rendered after the split and all other
+pixels remained blue. This includes public alpha-equivalent coupled blending,
 verified against all 64 pixels, and the prior selected-entry texture-load,
-fixed-LOD and gradient-lowering subsets. The strict Core fixture passed 1/1
-(154 unrelated tests filtered; one optional RG8 mip capability case skipped),
-Core DX12 passed 139/139, and `wgpu-types` blend projection tests passed. The
-curated CTS sorter passed; strict state-transition probes passed, and same-
-format sRGB texture-copy selectors passed 2/2 with zero skips/failures.
+fixed-LOD and gradient-lowering subsets. The strict Core fixture passed 155/155,
+Core DX12 passed 139/139, and the focused `wgpu-types` volume-shape contract
+test passed 1/1. The curated CTS sorter passed; strict state-transition probes
+passed, and same-format sRGB texture-copy selectors passed 2/2 with zero
+skips/failures. Strict public buffer-mapping CTS also passed `mapAsync,read,*`
+18/18 and `mapAsync,write,*` 10/10 with no skips or failures.
 
 Current code gaps are primarily unexhausted capability/validation/CTS matrices
 and concrete workload requests, not a known broad Core-valid-to-HAL failure in
@@ -4062,3 +4092,23 @@ whose generated cases match the FL9_1 projection. Agents should investigate
 disjoint categories; cross-crate fixes and strict GPU integration remain under
 one coordinator. Historical FL9_1 hardware, Lumia/CoreWindow runtime and actual
 device-removal/TDR behavior remain external verification requirements.
+
+## Coordinator update — optional RG8 3D capability — 2026-11-14
+
+The query-gated RG8_UNORM 3D path now uses an independent `DownlevelLimits`
+format bit and the existing byte-width-aware volume implementation. It is
+exposed only on a device that positively reports both `TEXTURE3D` and
+`SHADER_SAMPLE`; it does not broaden the 3D `textureLoad` emulation. The RTX
+3090 Ti at forced FL9_1 returned `0x0002c320`, lacking `TEXTURE3D`, so both
+strict RG8 3D tests explicitly skipped and this optional path remains
+unverified on hardware.
+
+The full private HAL suite passed 546/546, fixture-enabled Core passed
+155/155, Core DX12 passed 139/139, and wgpu-types passed 120 unit tests plus
+14 doc tests (21 ignored). All 172 public D3D11 test functions passed across
+five fresh strict test processes; four tests logged optional format skips.
+Single-process public runs intermittently failed different shader tests with
+FXC's internal parser `0x8007000e`; the affected tests passed alone. See the
+progress journal for exact commands and interpretation. The mission remains
+PARTIALLY COMPLETE: do not count the optional RG8 path as GPU proven, and keep
+historical hardware, Lumia/CoreWindow and device-removal verification open.

@@ -1995,17 +1995,22 @@ explicitly marks the method unsupported on every 9.x feature level. The
 numeric `Limits::max_texture_dimension_1d` value therefore does not imply that
 the D3D11 FL9_1 API can create such a resource. Three-dimensional resources
 are exposed per format only when the selected device query includes
-`TEXTURE3D | SHADER_SAMPLE`, the FL9_1 format guarantee applies and the
-sampled-upload backend path is present. The current format mask supports POT
-RGBA8 and R8_UNORM, single-sample volumes up to the FL9_1 dimension limit of
+`TEXTURE3D | SHADER_SAMPLE` and the sampled-upload backend path is present.
+RGBA8 and R8_UNORM additionally rely on their FL9_1 format guarantees. RG8_UNORM
+is not a 10Level9 required-format guarantee: it is exposed only when the
+selected device positively reports both required format-support bits. Support
+for 2D RG8 does not imply 3D support. The current format mask supports POT
+RGBA8, R8_UNORM and query-gated RG8_UNORM, single-sample volumes up to the FL9_1 dimension limit of
 256, with `TEXTURE_BINDING | COPY_DST` usages. `COPY_SRC` is also accepted when requested
 for an execution-ordered CPU shadow used for texture-to-buffer readback and
 the 3D-to-3D copy fallback;
 it does not enable native 3D GPU copies. R8 uses the same format-aware volume
-upload, shadow, copy and readback paths with one-byte texels. Mip chains are
+upload, shadow, copy and readback paths with one-byte texels; query-gated RG8
+uses two-byte texels through those same format-sized paths. Mip chains are
 exposed only when every format in the projected 3D format mask reports
 `D3D11_FORMAT_SUPPORT_MIP` and the backend mip path is enabled, because the
-downlevel mip limit is global rather than per format.
+downlevel mip limit is global rather than per format. RGBA8, R8 and RG8 do not
+inherit mip support from one another.
 Each mip is initialized and uploaded separately; shader resource views must
 include the resource's lowest mip, as required by the
 10Level9 FL9_1 view contract. A new downlevel limit lets core reject
@@ -2034,9 +2039,17 @@ A strict private test also uploads a padded, nonzero-offset 2×2×2 region to a
 4×4×4 RGBA8 volume at (1,1,1), samples every slice, and checks all 64 pixels,
 including initialized untouched voxels. A parallel R8_UNORM test validates
 the one-byte shadow layout and sampled `r,0,0,1` expansion for all 64 output
-pixels. Both passed on the RTX 3090 Ti at requested/actual FL9_1. A strict
+pixels. A query-gated RG8_UNORM test covers two-byte uploads, partial copies,
+padded readback and sampled `r,g,0,1` output. If the selected device does not
+report optional 3D support, it emits an explicit SKIP even in strict mode;
+strict mode still requires the physical FL9_1 adapter. On the RTX 3090 Ti
+forced to FL9_1, the RG8 query returned `0x0002c320` without the `TEXTURE3D`
+bit, so this optional path was not executed. A strict
 public wgpu test also uploads R8 volume data, copies a partial 2x2x2 region,
 and reads back all 64 voxels through a padded layout with sentinels intact. A
+query-gated public RG8 test exercises upload, copy and readback through the
+selected public capability projection. These tests require separate physical
+execution evidence before being described as hardware passes. A
 separate strict public test checks ordered upload
 followed by full-volume and partial-region CPU-shadow readback, including
 nonzero buffer offsets and padded row/depth layouts; all 64 volume texels and

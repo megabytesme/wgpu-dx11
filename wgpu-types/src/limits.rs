@@ -1802,6 +1802,7 @@ impl DownlevelLimits {
         match format {
             crate::TextureFormat::Rgba8Unorm => 1 << 0,
             crate::TextureFormat::R8Unorm => 1 << 1,
+            crate::TextureFormat::Rg8Unorm => 1 << 2,
             _ => 0,
         }
     }
@@ -2650,9 +2651,17 @@ mod tests {
     fn three_dimensional_texture_limits_are_checked_as_a_shape_contract() {
         let rgba8 = DownlevelLimits::texture_3d_format_bit(crate::TextureFormat::Rgba8Unorm);
         let r8 = DownlevelLimits::texture_3d_format_bit(TextureFormat::R8Unorm);
+        let rg8 = DownlevelLimits::texture_3d_format_bit(TextureFormat::Rg8Unorm);
         assert_ne!(rgba8, r8);
+        assert_ne!(rgba8, rg8);
+        assert_ne!(r8, rg8);
         assert_eq!(rgba8, 1 << 0);
         assert_eq!(r8, 1 << 1);
+        assert_eq!(rg8, 1 << 2);
+        assert_eq!(
+            DownlevelLimits::texture_3d_format_bit(TextureFormat::Rgba16Float),
+            0
+        );
         let supported_usage =
             (crate::TextureUsages::TEXTURE_BINDING | crate::TextureUsages::COPY_DST).bits();
         let available = DownlevelLimits {
@@ -2674,6 +2683,21 @@ mod tests {
             ..DownlevelLimits::default()
         };
         assert!(available.check_limits(&required));
+        assert!(available.supports_texture_3d_format(TextureFormat::Rgba8Unorm));
+        assert!(!available.supports_texture_3d_format(TextureFormat::R8Unorm));
+        assert!(!available.supports_texture_3d_format(TextureFormat::Rg8Unorm));
+        assert!(!available.supports_texture_3d_format(TextureFormat::Rgba16Float));
+        let rg8_available = DownlevelLimits {
+            texture_3d: true,
+            texture_3d_usage_mask: supported_usage,
+            texture_3d_format_mask: rg8,
+            ..DownlevelLimits::default()
+        };
+        assert!(rg8_available.supports_texture_3d_format(TextureFormat::Rg8Unorm));
+        assert!(!rg8_available.supports_texture_3d_format(TextureFormat::Rgba8Unorm));
+        assert!(!rg8_available.supports_texture_3d_format(TextureFormat::R8Unorm));
+        assert!(!rg8_available.supports_texture_3d_format(TextureFormat::Rgba16Float));
+        assert!(DownlevelLimits::default().supports_texture_3d_format(TextureFormat::Rgba16Float));
         assert!(!available.check_limits(&DownlevelLimits {
             texture_3d: true,
             texture_3d_usage_mask: crate::TextureUsages::STORAGE_BINDING.bits(),
@@ -2686,7 +2710,7 @@ mod tests {
         assert!(!available.check_limits(&DownlevelLimits {
             texture_3d: true,
             texture_3d_usage_mask: supported_usage,
-            texture_3d_format_mask: 1 << 2,
+            texture_3d_format_mask: rg8,
             texture_3d_mipmaps: false,
             texture_3d_texture_copies: false,
             npot_texture_3d: false,

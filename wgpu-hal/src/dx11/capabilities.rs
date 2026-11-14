@@ -746,7 +746,7 @@ impl Capabilities {
         {
             return 0;
         }
-        [
+        let guaranteed_formats = [
             (wgt::TextureFormat::Rgba8Unorm, self.driver.rgba8, true),
             (
                 wgt::TextureFormat::R8Unorm,
@@ -761,7 +761,13 @@ impl Capabilities {
             } else {
                 mask
             }
-        })
+        });
+        let rg8_unorm = wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Rg8Unorm);
+        if matches!(self.driver.rg8_unorm, Query::Value(bits) if bits & required == required) {
+            guaranteed_formats | rg8_unorm
+        } else {
+            guaranteed_formats
+        }
     }
 
     pub fn texture_3d_mipmaps(&self) -> bool {
@@ -770,16 +776,12 @@ impl Capabilities {
             return false;
         }
         [
-            (
-                wgt::TextureFormat::Rgba8Unorm,
-                self.driver.rgba8,
-            ),
+            (wgt::TextureFormat::Rgba8Unorm, self.driver.rgba8),
             (wgt::TextureFormat::R8Unorm, self.driver.r8_unorm),
+            (wgt::TextureFormat::Rg8Unorm, self.driver.rg8_unorm),
         ]
         .into_iter()
-        .filter(|(format, _)| {
-            mask & wgt::DownlevelLimits::texture_3d_format_bit(*format) != 0
-        })
+        .filter(|(format, _)| mask & wgt::DownlevelLimits::texture_3d_format_bit(*format) != 0)
         .all(|(_, query)| {
             matches!(query, Query::Value(bits) if bits & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0)
         })
@@ -2615,11 +2617,13 @@ mod tests {
         let mut unavailable_3d_query = fl91;
         unavailable_3d_query.driver.rgba8 = Query::Unavailable(-1);
         unavailable_3d_query.driver.r8_unorm = Query::Unavailable(-1);
+        unavailable_3d_query.driver.rg8_unorm = Query::Unavailable(-1);
         assert!(!unavailable_3d_query.private_fl91_fragment_texture_dimensions_3d_float());
         assert!(!unavailable_3d_query.private_fl91_fragment_texture_num_levels_3d_float());
         let mut missing_3d_support = fl91;
         missing_3d_support.driver.rgba8 = Query::Value(0);
         missing_3d_support.driver.r8_unorm = Query::Value(0);
+        missing_3d_support.driver.rg8_unorm = Query::Value(0);
         assert!(!missing_3d_support.private_fl91_fragment_texture_dimensions_3d_float());
         assert!(!missing_3d_support.private_fl91_fragment_texture_num_levels_3d_float());
 
@@ -2862,11 +2866,13 @@ mod tests {
     fn texture_3d_sampling_requires_its_own_query_and_backend_paths() {
         let rgba8 = wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Rgba8Unorm);
         let r8 = wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::R8Unorm);
+        let rg8 = wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Rg8Unorm);
         let required =
             (D3D11_FORMAT_SUPPORT_TEXTURE3D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
         let mut supported = model(FeatureLevel::L9_1);
         supported.driver.rgba8 = Query::Value(required);
         supported.driver.r8_unorm = Query::Unavailable(-1);
+        supported.driver.rg8_unorm = Query::Unavailable(-1);
         assert_eq!(supported.texture_3d_format_mask(), rgba8);
         let projection = supported.wgpu_projection().expect("FL9_1 projection");
         assert!(projection.capabilities.downlevel.limits.texture_3d);
@@ -2931,6 +2937,7 @@ mod tests {
         let mut r8_supported = model(FeatureLevel::L9_1);
         r8_supported.driver.rgba8 = Query::Unavailable(-1);
         r8_supported.driver.r8_unorm = Query::Value(required);
+        r8_supported.driver.rg8_unorm = Query::Unavailable(-1);
         assert_eq!(r8_supported.texture_3d_format_mask(), r8);
         let r8_projection = r8_supported.wgpu_projection().expect("FL9_1 projection");
         assert!(r8_projection.capabilities.downlevel.limits.texture_3d);
@@ -2955,6 +2962,62 @@ mod tests {
         assert_eq!(mixed_mips.texture_3d_format_mask(), rgba8 | r8);
         assert!(!mixed_mips.texture_3d_mipmaps());
 
+        let mut rg8_supported = model(FeatureLevel::L9_1);
+        rg8_supported.driver.rgba8 = Query::Unavailable(-1);
+        rg8_supported.driver.r8_unorm = Query::Unavailable(-1);
+        rg8_supported.driver.rg8_unorm = Query::Value(required);
+        assert_eq!(rg8_supported.texture_3d_format_mask(), rg8);
+        let rg8_projection = rg8_supported.wgpu_projection().expect("FL9_1 projection");
+        assert!(rg8_projection.capabilities.downlevel.limits.texture_3d);
+        assert!(rg8_projection
+            .capabilities
+            .downlevel
+            .limits
+            .supports_texture_3d_format(wgt::TextureFormat::Rg8Unorm));
+        assert!(!rg8_projection
+            .capabilities
+            .downlevel
+            .limits
+            .supports_texture_3d_format(wgt::TextureFormat::R8Unorm));
+        assert!(!rg8_projection
+            .capabilities
+            .downlevel
+            .limits
+            .supports_texture_3d_format(wgt::TextureFormat::Rgba8Unorm));
+        assert!(!rg8_supported.texture_3d_mipmaps());
+
+        rg8_supported.driver.rg8_unorm = Query::Value(required | mip);
+        assert!(rg8_supported.texture_3d_mipmaps());
+
+        let mut mixed_rg8_mips = supported;
+        mixed_rg8_mips.driver.rgba8 = Query::Value(required | mip);
+        mixed_rg8_mips.driver.rg8_unorm = Query::Value(required);
+        assert_eq!(mixed_rg8_mips.texture_3d_format_mask(), rgba8 | rg8);
+        assert!(!mixed_rg8_mips.texture_3d_mipmaps());
+
+        for query in [
+            Query::Unavailable(-1),
+            Query::Value(0),
+            Query::Value(D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32),
+            Query::Value(D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32),
+            Query::Value(
+                (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32,
+            ),
+        ] {
+            let mut caps = rg8_supported;
+            caps.driver.rg8_unorm = query;
+            assert_eq!(caps.texture_3d_format_mask(), 0);
+            assert!(
+                !caps
+                    .wgpu_projection()
+                    .expect("FL9_1 projection")
+                    .capabilities
+                    .downlevel
+                    .limits
+                    .texture_3d
+            );
+        }
+
         for query in [
             Query::Unavailable(-1),
             Query::Value(0),
@@ -2964,6 +3027,7 @@ mod tests {
             let mut caps = supported;
             caps.driver.rgba8 = query;
             caps.driver.r8_unorm = query;
+            caps.driver.rg8_unorm = query;
             assert_eq!(caps.texture_3d_format_mask(), 0);
             let projection = caps.wgpu_projection().expect("FL9_1 projection");
             assert!(!projection.capabilities.downlevel.limits.texture_3d);
@@ -3393,7 +3457,7 @@ mod tests {
             .downlevel
             .limits
             .supports_texture_3d_format(wgt::TextureFormat::Rgba8Unorm));
-        assert!(!exposed
+        assert!(exposed
             .downlevel
             .limits
             .supports_texture_3d_format(wgt::TextureFormat::Rg8Unorm));

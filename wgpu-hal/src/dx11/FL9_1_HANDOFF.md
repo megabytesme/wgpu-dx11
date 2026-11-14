@@ -2,8 +2,13 @@
 
 ## Coordinator status — 2026-11-14
 
-The latest verified checkpoint is `cb6e8c0b5` (`dx11: add query-gated FL9_1
-R8 3D textures`). It adds query-gated R8 3D textures alongside RGBA8.
+The latest committed code checkpoint is `cb6e8c0b583e5f327104fb39451b96997c864d4a`
+(`dx11: add query-gated FL9_1 R8 3D textures`); the latest committed HEAD is
+`1e623946cb316ad69a0b834b736347df950f67fc`, which records its verification.
+The working tree contains a verified test-only addition in
+`wgpu/tests/dx11_public.rs`, currently uncommitted under the workspace's
+no-agent-commits instruction. It adds strict GPU coverage for the nonindexed
+LineList chunk boundary. The R8 change adds query-gated R8 3D textures alongside RGBA8.
 Format-sized storage now covers volume creation,
 views, zero initialization, upload, ordered CPU-shadow copies/readback and
 sampling. R8 remains excluded from the RGBA8-only 3D `textureLoad` emulation.
@@ -13,12 +18,20 @@ equations and validates accepted alpha-equivalent factors in both Core and HAL.
 
 Full strict suites on the NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver
 `32.0.16.2101`) explicitly requested and confirmed FL9_1 passed: public
-`dx11_public` 170/170, private HAL 545/545, and Core fixture-enabled tests
-155/155. The new public R8 transfer test and the Core R8 format/view fixture
+`dx11_public` 171/171, private HAL 545/545, and Core fixture-enabled tests
+155/155. The public LineList boundary test rendered six expected red pixels
+after the 65,536-vertex split, with every other target pixel blue. The new
+public R8 transfer test and the Core R8 format/view fixture
 ran within those suites. The focused `wgpu-types` volume-shape test passed
 1/1. Selected-device optional format cases may still log a prerequisite skip;
 they are not counted as independent hardware successes. See
 `FL9_1_PROGRESS.md` and `FL9_1_CTS.md` for prior check results.
+
+The latest additional validation passed the strict public `mapAsync,read,*`
+CTS selector 18/18 and `mapAsync,write,*` 10/10, both with zero skips. The
+public wgpu regression suite passed 171/171 after adding the LineList boundary
+readback. The Lumia Device Portal request timed out in this session, so the
+CoreWindow smoke run could not be attempted on the phone.
 
 The implemented subset covers desktop offscreen and HWND rendering, textured
 depth-tested draws, tested multi-group resource patterns, uniforms and dynamic
@@ -4135,6 +4148,45 @@ Agents are most useful for independent, disjoint audits and compiler/spec probes
 The `HorizonWiiU` sibling source is available for read-only workload inspection. The Windows client currently enables only DX12; its ordinary terrain pipeline declares 2D-array sprite resources and therefore cannot run under the current FL9_1 projection. Optional culling/OIT can be disabled, but that does not remove the terrain array requirement. The first useful integration smoke test is an app-selected simple 2D-textured mesh; a terrain integration requires an application-side atlas/shader variant. No sibling project files were changed.
 
 A read-only Lumia Device Portal query to `/api/os/devicefamily` timed out. This leaves CoreWindow/ARM32 and historical hardware verification open without indicating a D3D11 failure.
+
+## Current coordinator handoff — optional RG8 3D increment — 2026-11-14
+
+Branch `uwp-dx11`, HEAD `1e623946cb316ad69a0b834b736347df950f67fc`. The worktree
+contains 13 modified tracked files for query-gated RG8_UNORM 3D projection,
+public nonindexed line-list boundary and textured depth-tested integration
+tests, and documentation. Preserve them. The user explicitly confirmed the
+autonomous mission's focused-commit policy; this verified checkpoint is being
+recorded in Git and will not be pushed.
+
+The private HAL suite passed 546/546. The complete strict public D3D11 target
+passed 173/173 test functions in one process after the textured depth test was
+added; four optional format subcases logged explicit skips. Fixture-enabled
+Core passed 155/155, Core DX12 passed 139/139, and `wgpu-types` passed 120 unit
+tests plus 14 doc tests (21 ignored). Earlier monolithic public runs
+intermittently hit FXC internal `0x8007000e` errors in varying shader tests;
+the latest complete run succeeded.
+
+The strict selected adapter was the physical NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), with FL9_1 requested and confirmed.
+Its `R8G8_UNORM` format query was `0x0002c320` and did not include
+`TEXTURE3D`; private and public RG8 3D tests correctly printed `SKIP`, so no
+hardware execution is claimed for the optional RG8 volume path. Existing R8
+and RGBA8 volume paths remain exercised.
+
+A new focused public wgpu textured depth test passed 1/1 on that RTX at forced
+FL9_1. Three sparse-bound sampled textures were drawn at increasing depth;
+all 64 pixels retained the middle red sample after the farther blue draw was
+rejected. The subsequent full 173-function strict public run also passed.
+
+Current product status: explicitly selected FL9_1 is useful for the tested
+subset, not drop-in wgpu compatibility. Remaining software priorities are
+evidence-led Core/HAL/CTS contract coverage and concrete consumer integration.
+Compute/UAV/storage, geometry, MRT, indirect draw, occlusion queries, ordinary
+1D/2D-array textures and unsupported shader forms remain deliberate
+restrictions. Historical FL9_1 hardware, Lumia/CoreWindow runtime and physical
+device-removal recovery remain external gates. Use agents for disjoint
+specification, capability and CTS audits; keep cross-crate implementation,
+hardware validation and integration coordinated here.
 
 ## Coordinator update — ARM32 UWP build evidence — 2026-11-14
 

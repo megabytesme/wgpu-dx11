@@ -573,6 +573,7 @@ pub(super) fn volume_byte_count(
 pub(super) fn texture_3d_dxgi_format(format: wgt::TextureFormat) -> Option<DXGI_FORMAT> {
     match format {
         wgt::TextureFormat::R8Unorm => Some(DXGI_FORMAT_R8_UNORM),
+        wgt::TextureFormat::Rg8Unorm => Some(DXGI_FORMAT_R8G8_UNORM),
         wgt::TextureFormat::Rgba8Unorm => Some(DXGI_FORMAT_R8G8B8A8_UNORM),
         _ => None,
     }

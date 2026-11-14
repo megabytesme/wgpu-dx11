@@ -2402,6 +2402,34 @@ format projection and D3 view. R8 volumes still cannot be render attachments
 or GPU-written sources for the CPU-shadow copy fallback. The selected RTX
 does not establish behavior on historical FL9_1 drivers.
 
+## Optional RG8_UNORM 3D textures
+
+RG8_UNORM is not a format guaranteed by the 10Level9 FL9_1 table. The
+selected-device projection now adds its 3D format bit only after a positive
+`CheckFormatSupport` result containing both `TEXTURE3D` and `SHADER_SAMPLE`;
+2D support and the modern GPU's maximum feature level are not substitutes for
+that query. The existing format-sized volume upload, CPU shadow, partial copy,
+readback, view and sampled-output paths accept its two-byte texels once that
+predicate is satisfied. It remains excluded from the RGBA8-only 3D
+`textureLoad` emulation.
+
+Synthetic capability cases cover a positive optional query, missing or
+incomplete query bits, a 3D-only projection, and the global mip limit when
+RG8 is combined with formats that do or do not report MIP. The RTX 3090 Ti
+forced to FL9_1 returned `0x0002c320` for RG8 format support, without the
+required `TEXTURE3D` bit. The strict private HAL and public tests both emitted
+an explicit `SKIP`; neither is a GPU execution pass. Their code paths remain
+unverified on hardware that positively reports RG8 3D sampling support.
+
+## Public textured depth-tested FL9_1 draw — 2026-11-14
+
+The strict public test binds a sampled texture and sampler at sparse logical
+bindings 7 and 42, then draws green, red and blue full-screen textures at
+increasing depth. The nearer red draw passes the `Depth24Plus` `Less` test and
+the later farther blue draw is rejected. CPU readback matched opaque red for
+all 64 pixels on the RTX 3090 Ti at requested and actual FL9_1. This proves
+the combined sampled-resource and depth path for this exact pipeline shape.
+
 ## Restricted FL9_1 fragment `textureSampleGrad`
 
 One direct, unconditional fragment `textureSampleGrad` is lowered to implicit

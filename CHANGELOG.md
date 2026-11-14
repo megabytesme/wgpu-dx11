@@ -90,6 +90,7 @@ Bottom level categories:
 - Add selected-format-query-gated same-format GPU copies for RGB5A1 and RGBA4 textures in the opt-in FL9_1 D3D11 backend.
 - Add query-backed single-mip R8 and RG8 color attachments to the opt-in D3D11 backend.
 - Add query-gated single-mip RGB565 color attachments to the opt-in D3D11 backend.
+- Permit query-gated RG8_UNORM 3D textures in the opt-in FL9_1 D3D11 backend when the selected device reports 3D sampling support.
 - Add selected-device-query-gated FL9_1 RGBA8 3D texture sampling and staged uploads to the opt-in D3D11 backend.
 - Add ordered CPU-shadow texture-to-buffer readback for query-supported, CPU-written FL9_1 D3D11 RGBA8 volumes.
 - Add query-gated R8, RG8 and RGB565 texture copies and CPU readback to the opt-in D3D11 backend.

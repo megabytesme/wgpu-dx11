@@ -1,3 +1,44 @@
+## Public nonindexed LineList batch-boundary readback — 2026-11-14
+
+Added `public_dx11_splits_nonindexed_line_list_at_fl91_vertex_limit` to the
+public D3D11 test target. It draws 65,538 vertices, forcing the backend's
+65,536-vertex direct LineList chunk boundary. The first chunk is outside the
+clip volume; the final pair draws a visible line. The test checks the expected
+red line and confirms all remaining 8x8 target pixels retain the blue clear.
+
+With `WGPU_DX11_REQUIRE_HARDWARE=1`, the focused test ran on the physical NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), explicitly
+requesting and confirming FL9_1 with `software=false`; the final pair rendered
+six red pixels. The full strict public D3D11 suite passed 171/171 test
+functions, 0 failed, 0 ignored and 0 filtered. This is GPU evidence for the
+selected modern driver, not historical FL9_1 hardware.
+
+`rustfmt +1.93.1 --edition 2021 --check wgpu/tests/dx11_public.rs` passed.
+Public-test Clippy passed with the same eight pre-existing D3D11 HAL warnings.
+`git diff --check` passed. Cargo used the existing Visual Studio wrapper,
+which prints its pre-existing `vError: Unknown error` banner before succeeding.
+The authenticated Lumia Device Portal request timed out, so CoreWindow runtime
+verification remains external.
+
+The strict public buffer-mapping CTS selectors also passed on the same
+physical FL9_1 adapter: `mapAsync,read,*` passed 18/18 and
+`mapAsync,write,*` passed 10/10, both with zero skips, warnings or failures.
+The write selector includes `unchanged_ranges_preserved` and its mapped-at-
+creation and mapped-range variants. An initial invocation with shell-quoted
+selectors failed in the CTS parser before running cases; omitting the literal
+single quotes fixed the Windows `cmd.exe` argument handling. No implementation
+failure was observed.
+
+```powershell
+cmd.exe /d /s /c "set WGPU_DX11_REQUIRE_HARDWARE=1&& call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_splits_nonindexed_line_list_at_fl91_vertex_limit -- --exact --nocapture --test-threads=1"
+cmd.exe /d /s /c "set WGPU_DX11_REQUIRE_HARDWARE=1&& call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1"
+cmd.exe /d /s /c "set CARGO_BUILD_JOBS=4&& set WGPU_DX11_REQUIRE_HARDWARE=1&& call E:\Temp\wgpu_mission_cargo.bat xtask cts --skip-checkout --backend dx11 --require-dx11-hardware webgpu:api,operation,buffers,map:mapAsync,read,*"
+cmd.exe /d /s /c "set CARGO_BUILD_JOBS=4&& set WGPU_DX11_REQUIRE_HARDWARE=1&& call E:\Temp\wgpu_mission_cargo.bat xtask cts --skip-checkout --backend dx11 --require-dx11-hardware webgpu:api,operation,buffers,map:mapAsync,write,*"
+cmd.exe /d /s /c "call E:\Temp\wgpu_mission_cargo.bat clippy --offline -j4 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std"
+rustfmt +1.93.1 --edition 2021 --check wgpu/tests/dx11_public.rs
+git diff --check
+```
+
 ## Helper sample composed with a tint uniform — 2026-11-14
 
 The selected-entry Core and HAL proofs now accept one caller expression of
@@ -21328,3 +21369,103 @@ contract, rather than the legacy D3D9 minimum-capability table's optional
 `D3DPMISCCAPS_BLENDOP` bit, governs this backend. The RTX has strict readback
 coverage for all five operations; historical-device execution remains
 unverified.
+
+## Coordinator increment — optional RG8 3D projection and grouped public run — 2026-11-14
+
+Added a query-gated RG8_UNORM bit to the shared 3D downlevel-format mask and
+extended the D3D11 volume-format path to two-byte texels. RG8 3D is not a
+10Level9 guarantee: exposure requires the selected device to positively report
+both `TEXTURE3D` and `SHADER_SAMPLE`. Synthetic HAL and wgpu-types coverage
+checks positive, missing and incomplete queries and global mip projection.
+The existing RGBA8-only 3D `textureLoad` emulation remains unchanged.
+
+On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) explicitly forced
+to FL9_1, `CheckFormatSupport(R8G8_UNORM)` returned `0x0002c320`, which lacks
+`TEXTURE3D`. The strict private HAL and public RG8 3D tests both emitted
+`SKIP`; the optional RG8 3D upload/copy/readback/sample path was not executed
+on hardware and is not reported as a GPU pass. Existing R8 and RGBA8 3D
+hardware paths remain available and passed in the full HAL and Core fixture
+runs.
+
+Validation after this increment: private D3D11 HAL 546/546 test functions
+passed, with the new optional RG8 test logged as SKIP; the full fixture-enabled
+Core suite passed 155/155; Core DX12 passed 139/139; `wgpu-types` passed
+120/120 unit tests and 14/35 doc tests (21 ignored); the focused Core
+zero-default-backend check passed 1/1. The strict public suite's 172 test
+functions all passed across five fresh processes (40, 40, 40, 40 and 12),
+with four explicit optional format skips. Full single-process public runs
+intermittently returned FXC `X8000` / `0x8007000e` internal parser errors in
+different shader tests; each affected test passed alone. This makes process
+sharding the currently reproducible full-target run on this workstation.
+
+Rust 1.93.1 formatting checks passed for the changed Rust files. Clippy passed
+for `wgpu-types`, D3D11 HAL, Core fixture tests and public `dx11_public`; it
+reported existing serde/qualification, HAL and fixture lints, with no new
+warning attributed to the RG8 format-mask path. Public adapter selection
+remains explicitly opt-in; default backend selection is unchanged.
+
+The increment is uncommitted. The workspace `AGENTS.md` says not to create
+commits, so preserve the working-tree changes for review. The mission remains
+partially complete: the RG8 optional path needs a device that actually reports
+3D support, the public test target is more reliable when process-sharded, and
+historical FL9_1, Lumia/CoreWindow and physical device-removal validation
+remain external gates.
+
+## Public textured depth-tested render — 2026-11-14
+
+Added a focused public wgpu integration test that combines sparse sampled
+resources with depth testing. The WGSL fragment stage samples a 1x1 RGBA8
+texture using logical bindings 7 and 42. Three full-screen triangles use
+green, red and blue textures at depths 0.75, 0.25 and 0.90. With a
+`Depth24Plus` attachment and `Less` compare, the red draw replaces green and
+the later blue draw is rejected. This checks texture upload, bind-group
+transitions, shader compilation, command execution, depth writes/tests,
+synchronization and pixel readback through public wgpu, Core, HAL and D3D11.
+
+Strict command:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_textured_depth_test_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+The focused test passed 1/1 on the physical RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`) at explicitly requested and confirmed FL9_1; all 64
+pixels were opaque red. The complete strict public target was then rerun in
+one process and passed 173/173 with four optional selected-device skips: IA
+support for `R8G8_UNORM`, IA support for `R16G16_FLOAT`, optional RG8 3D
+transfer support, and optional `Rg8Unorm` mip support. The first two tests
+also completed their applicable Core rejection checks. The earlier
+single-process FXC `0x8007000e` errors did not recur in this run.
+
+Formatting and public-test Clippy passed; Clippy reported eight existing HAL
+warnings and no new warning in the public test. `git diff --check` passes.
+The buffer/mapping audit found no confirmed public Core-to-HAL mismatch in its
+scoped review, but did not run tests and is not exhaustive. The completion
+mission remains active.
+
+## Coordinator support inventory — parallel audits — 2026-11-14
+
+Three read-only audits reviewed public adapter/capability exposure,
+resource/transfer/view/lifecycle paths, and graphics/shader/application
+workloads. They did not run tests or edit files. No audit found a confirmed
+public-valid operation reaching a known unsupported HAL path in its reviewed
+scope; the combined review remains non-exhaustive.
+
+The public opt-in adapter path, explicit FL9_1 device selection, multiple
+groups, dynamic uniform offsets, depth/stencil, and public offscreen/HWND
+textured-cube examples are already implemented and tested. They are not
+current missing-feature items. Remaining backend breadth is mainly the
+deliberately narrow shader/compiler contract and the need to continue mapping
+public Core acceptance to truthful HAL execution and CTS coverage. FL9_1
+unavailable paths include compute/UAV/storage, geometry shaders, MRT, indirect
+draws, occlusion queries, ordinary 1D/2D-array textures and vertex texture
+sampling; consult `CAPABILITIES.md` for the exact per-operation contract.
+
+The sibling Horizon terrain path uses 2D-array textures, which the FL9_1
+contract cannot provide. Its terrain needs an application-side atlas/shader
+route; the backend's public textured cube demonstrates a separate supported
+workload. Historical FL9_1 hardware, Lumia/CoreWindow execution and physical
+device-removal recovery remain external verification gates. Agent work is
+most useful for disjoint audits and probes; the coordinator owns cross-crate
+implementation and serializes strict GPU runs.
