@@ -205,7 +205,7 @@ it does not cover the known separate-alpha portability issue.
 
 ## Additional strict texture-copy selector — 2026-11-14
 
-Four selected 2D-to-2D copy selectors passed without skips or failures on the
+Five selected 2D-to-2D copy selectors passed without skips or failures on the
 physical RTX 3090 Ti at requested and actual FL9_1: same-format BGRA8 UNORM,
 plus linear-to-sRGB and sRGB-to-linear pairs for both RGBA8 and BGRA8. The
 copies preserve stored bits; they do not perform color-space conversion. The
@@ -224,12 +224,16 @@ cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware '
 cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rg16snorm";dstFormat="rg16snorm";dimension="2d"'
 ```
 
-The strict BGRA8 run selected NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
-driver `32.0.16.2101`), requested and confirmed FL9_1. Each of the four
-supported selectors reported 1 pass, 0 skips and 0 failures (4/4 total).
+The strict runs selected NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), requested and confirmed FL9_1. Each of the five
+supported selectors reported 1 pass, 0 skips and 0 failures (5/5 total).
 The Rg16Snorm run selected the same adapter and reported 0 passes, 1 skipped
 test case and 0 failures; each subcase required the unexposed
 `texture-formats-tier1` feature.
+
+The same five supported selectors passed 5/5 on both DX12 and Vulkan. Vulkan
+logged that an optional OBS layer manifest was unavailable, but all selected
+test cases completed without skips or failures.
 
 An attempted narrowly filtered RGBA8 texture-zero-initialization selector
 matched no cases. Its requested aspect, mip, sample-count, layer and related

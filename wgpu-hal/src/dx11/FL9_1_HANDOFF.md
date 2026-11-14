@@ -44,9 +44,10 @@ The query-gated `Rg16Snorm` 2D-to-2D CTS probe was attempted on the RTX 3090 Ti
 at forced FL9_1 and skipped because `texture-formats-tier1` is absent from the
 conservative projection. It is not a pass and must not enter the curated test
 inventory. The RGBA8 2D copy selector already passed 1/1 with no skips or
-failures. Four BGRA8/RGBA8 2D copy selectors now pass 4/4, including their
-linear/sRGB pairs in both directions. Scoped API, resource/transfer and shader audits found no confirmed public-valid
-request reaching an unimplemented HAL operation in the reviewed paths, and no
+failures. Five BGRA8/RGBA8 2D copy selectors now pass 5/5 on DX11, DX12 and
+Vulkan, including their linear/sRGB pairs in both directions. Scoped API,
+resource/transfer and shader audits found no confirmed public-valid request
+reaching an unimplemented HAL operation in the reviewed paths, and no
 workload-independent shader expansion ready to implement. Continue
 projection-constrained CTS coverage or obtain a representative application
 workload before selecting another feature slice.
