@@ -6,8 +6,11 @@ fn main() {
         Direct3D11::{
             D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_RENDER_TARGET,
             D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
+            D3D11_FORMAT_SUPPORT_TEXTURECUBE,
         },
         Dxgi::Common::{
+            DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_BC1_UNORM_SRGB, DXGI_FORMAT_BC2_UNORM,
+            DXGI_FORMAT_BC2_UNORM_SRGB, DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB,
             DXGI_FORMAT_R16G16B16A16_FLOAT, DXGI_FORMAT_R16G16_FLOAT, DXGI_FORMAT_R16_FLOAT,
             DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R32_FLOAT,
         },
@@ -38,11 +41,18 @@ fn main() {
                             ("R16G16B16A16_FLOAT", DXGI_FORMAT_R16G16B16A16_FLOAT),
                             ("R32_FLOAT", DXGI_FORMAT_R32_FLOAT),
                             ("R32G32_FLOAT", DXGI_FORMAT_R32G32_FLOAT),
+                            ("BC1_UNORM", DXGI_FORMAT_BC1_UNORM),
+                            ("BC1_SRGB", DXGI_FORMAT_BC1_UNORM_SRGB),
+                            ("BC2_UNORM", DXGI_FORMAT_BC2_UNORM),
+                            ("BC2_SRGB", DXGI_FORMAT_BC2_UNORM_SRGB),
+                            ("BC3_UNORM", DXGI_FORMAT_BC3_UNORM),
+                            ("BC3_SRGB", DXGI_FORMAT_BC3_UNORM_SRGB),
                         ] {
                             match device.check_format_support(format) {
                                 Ok(flags) => println!(
-                                    "FL9_1 {name}: flags={flags:#010x} texture2d={} sample={} mip={} render_target={}",
+                                    "FL9_1 {name}: flags={flags:#010x} texture2d={} texture_cube={} sample={} mip={} render_target={}",
                                     flags & D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32 != 0,
+                                    flags & D3D11_FORMAT_SUPPORT_TEXTURECUBE.0 as u32 != 0,
                                     flags & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32 != 0,
                                     flags & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0,
                                     flags & D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32 != 0,

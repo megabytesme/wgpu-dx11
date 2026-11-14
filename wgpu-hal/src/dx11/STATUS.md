@@ -1,3 +1,30 @@
+## Query-gated BC1/BC2/BC3 mip chains — 2026-11-14
+
+The private/public mip paths for BC1, BC2 and BC3 UNORM and sRGB now require
+the selected format query to report `TEXTURE2D | SHADER_SAMPLE | MIP` and the
+backend mip implementation gate. Cube chains additionally require
+`TEXTURECUBE`. This is optional selected-device support, not a new FL9_1
+guarantee. `SINGLE_MIP_ONLY` remains projected whenever one of those
+requirements is absent. BC4–BC7, render-target use and UNORM/sRGB view
+reinterpretation remain unsupported.
+
+Strict public GPU execution on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) explicitly requested and confirmed FL9_1. For all six BC1/2/3
+UNORM and sRGB formats, it uploaded four mip levels, required and issued
+same-format texture copies for every mip, sampled each copied mip, and matched
+64/64 output pixels per format. It also uploaded and sampled all six faces
+across four cube mip levels for each format, matching 768/768 pixels per
+format. Logical 2×2 and 1×1 mips use one physical 4×4 block.
+
+FL9_x documents possible corruption when copying from mapped staging resources
+to default resources with a null box and mismatched dimensions. For a full BC
+upload, replay now copies the mapped bytes into owned CPU memory before the
+null-box `UpdateSubresource` call; the staging resource is no longer the update
+source. This adds one CPU copy for a full compressed upload. Whole-mip
+texture-to-texture copies use the null-box `CopySubresourceRegion` form only
+between equal-sized DEFAULT subresources at zero destination offsets. The strict
+RTX run verifies current driver behavior, not historical FL9_1 drivers.
+
 ## Helper-based explicit LOD zero with a tint uniform — 2026-11-14
 
 Core and HAL now permit one selected fragment entry point to forward its
@@ -899,9 +926,11 @@ public projection reports that format restriction.
 
 Per-format `SINGLE_MIP_ONLY` metadata is also projected through
 `TextureFormatFeatures`, and core rejects larger mip chains before HAL. The
-R8G8_UNORM, BC1_UNORM, BC2_UNORM, BC3_UNORM, D16_UNORM and D24S8 remain
-single-mip in the private implementation. R16G16_SNORM, R8G8_SNORM and
-R8G8B8A8_SNORM support sampled/upload mip chains only when the selected device
+R8G8_UNORM, D16_UNORM and D24S8 remain single-mip in the private
+implementation. BC1/2/3 variants additionally remain single-mip when their
+selected format query lacks `TEXTURE2D | SHADER_SAMPLE | MIP` or the backend
+mip path is disabled. R16G16_SNORM, R8G8_SNORM and R8G8B8A8_SNORM support
+sampled/upload mip chains only when the selected device
   reports `TEXTURE2D | MIP`; the independent `SHADER_SAMPLE` query controls
   filterability. Same-format GPU texture copies are separately available for
   RGBA8_SNORM when its selected `TEXTURE2D` query and backend path are positive.
@@ -1199,14 +1228,19 @@ all out-of-target rectangles. Other backends keep the default true capability.
   FL9_1 test uploads, copies, samples and validates the destination. A separate
   gated ordered raw-byte shadow supports CPU readback; render-target use remains
   unsupported.
-- BC1/BC2/BC3_UNORM have queried one-mip, one-layer sampled/upload subsets and
-  block-aligned GPU texture-copy source paths. Dimensions, row pitches, offsets,
-  updates and copy boxes align to 4×4 blocks and the format block size (8 bytes
-  for BC1; 16 for BC2/BC3). Strict forced-FL9_1 tests upload, partially replace,
-  copy to a second texture and sample all 256 output pixels per format. Their
-  query-gated texture-to-buffer operation uses ordered CPU shadows because
-  native FL9_x staging reads are unavailable.
-  Render-target, mip-chain and sRGB view uses remain unsupported.
+- BC1/BC2/BC3_UNORM and sRGB have query-gated sampled/upload mip chains when
+  `TEXTURE2D | SHADER_SAMPLE | MIP` and the backend path are enabled; cube mip
+  chains additionally require `TEXTURECUBE`. Base dimensions are block aligned,
+  and partial origins/regions follow block alignment with logical-edge tails.
+  Strict forced-FL9_1 public tests uploaded, GPU-copied and sampled all four
+  mips for all six variants, including 2×2 and 1×1 logical tails, and verified
+  all 64 output pixels per format. A second strict path sampled four mips on
+  all six cube faces for each variant and verified all 768 pixels per format.
+  Full compressed uploads detach bytes from mapped staging memory before the
+  null-box `UpdateSubresource` call; same-sized full mip GPU copies use a null
+  source box. Query-gated texture-to-buffer readback remains an ordered CPU
+  shadow because native FL9_x staging reads are unavailable. Render-target,
+  BC4–BC7 and cross-family/view reinterpretation remain unsupported.
 - Copy-only color texture views can retain metadata and texture ownership without
   creating native sampled or attachment views. They cannot be used for sampling
   or rendering; core upload, copy and readback were verified for both formats.

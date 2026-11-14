@@ -329,6 +329,7 @@ pub(super) struct BackendCapabilities {
     pub bc2_texture_to_texture_copy: bool,
     pub bc3_sampled_upload: bool,
     pub bc3_texture_to_texture_copy: bool,
+    pub bc_sampled_mips: bool,
     pub bc_texture_to_buffer_shadow_readback: bool,
     pub packed_16bit_shadow_copy_readback: bool,
     pub packed_16bit_sampled_upload: bool,
@@ -490,6 +491,7 @@ impl BackendCapabilities {
         bc2_texture_to_texture_copy: true,
         bc3_sampled_upload: true,
         bc3_texture_to_texture_copy: true,
+        bc_sampled_mips: true,
         bc_texture_to_buffer_shadow_readback: true,
         packed_16bit_shadow_copy_readback: true,
         packed_16bit_sampled_upload: true,
@@ -788,6 +790,23 @@ impl Capabilities {
         self.hardware.packed_16bit_sampled_texture
             && self.backend.packed_16bit_sampled_upload
             && self.backend.packed_16bit_sampled_mips
+            && matches!(query, Query::Value(bits) if bits & required == required)
+    }
+
+    pub fn bc_mip_chains_supported(&self, format: wgt::TextureFormat) -> bool {
+        let query = match format {
+            wgt::TextureFormat::Bc1RgbaUnorm => self.driver.bc1_unorm,
+            wgt::TextureFormat::Bc2RgbaUnorm => self.driver.bc2_unorm,
+            wgt::TextureFormat::Bc3RgbaUnorm => self.driver.bc3_unorm,
+            wgt::TextureFormat::Bc1RgbaUnormSrgb => self.driver.bc1_srgb,
+            wgt::TextureFormat::Bc2RgbaUnormSrgb => self.driver.bc2_srgb,
+            wgt::TextureFormat::Bc3RgbaUnormSrgb => self.driver.bc3_srgb,
+            _ => return false,
+        };
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+            | D3D11_FORMAT_SUPPORT_MIP.0) as u32;
+        self.backend.bc_sampled_mips
             && matches!(query, Query::Value(bits) if bits & required == required)
     }
 
@@ -1397,6 +1416,12 @@ impl Capabilities {
             wgt::TextureFormat::Rgb5g6b5Unorm
             | wgt::TextureFormat::Rgb5a1Unorm
             | wgt::TextureFormat::Rgba4Unorm => self.packed_16bit_mip_chains_supported(format),
+            wgt::TextureFormat::Bc1RgbaUnorm
+            | wgt::TextureFormat::Bc2RgbaUnorm
+            | wgt::TextureFormat::Bc3RgbaUnorm
+            | wgt::TextureFormat::Bc1RgbaUnormSrgb
+            | wgt::TextureFormat::Bc2RgbaUnormSrgb
+            | wgt::TextureFormat::Bc3RgbaUnormSrgb => self.bc_mip_chains_supported(format),
             _ => false,
         };
         let allowed = wgt::TextureUses::COPY_SRC
@@ -1865,6 +1890,12 @@ impl Capabilities {
                         self.packed_16bit_mip_chains_supported(format)
                     }
                     wgt::TextureFormat::Rgba8Snorm => self.rgba8_snorm_mip_chains_supported(),
+                    wgt::TextureFormat::Bc1RgbaUnorm
+                    | wgt::TextureFormat::Bc2RgbaUnorm
+                    | wgt::TextureFormat::Bc3RgbaUnorm
+                    | wgt::TextureFormat::Bc1RgbaUnormSrgb
+                    | wgt::TextureFormat::Bc2RgbaUnormSrgb
+                    | wgt::TextureFormat::Bc3RgbaUnormSrgb => self.bc_mip_chains_supported(format),
                     _ => false,
                 };
                 if !mip_chains_supported {
@@ -5205,17 +5236,7 @@ mod tests {
             let reported = caps.texture_format_capabilities(format);
             assert!(reported
                 .contains(FormatCaps::SAMPLED | FormatCaps::SAMPLED_LINEAR | FormatCaps::COPY_DST));
-            assert_eq!(
-                reported.contains(FormatCaps::SINGLE_MIP_ONLY),
-                !matches!(
-                    format,
-                    wgt::TextureFormat::R8Unorm
-                        | wgt::TextureFormat::Rg8Unorm
-                        | wgt::TextureFormat::Rg8Snorm
-                        | wgt::TextureFormat::Rg16Snorm
-                        | wgt::TextureFormat::Rgba8Snorm
-                )
-            );
+            assert!(!reported.contains(FormatCaps::SINGLE_MIP_ONLY));
             assert_eq!(
                 reported.contains(FormatCaps::COPY_SRC),
                 matches!(
@@ -7342,7 +7363,7 @@ mod tests {
     }
 
     #[test]
-    fn bc1_is_limited_to_queried_block_aligned_sampled_uploads() {
+    fn bc1_mip_chain_requires_queries_and_valid_block_shapes() {
         use windows::Win32::Graphics::Direct3D11::{
             D3D11_FORMAT_SUPPORT_SHADER_SAMPLE, D3D11_FORMAT_SUPPORT_TEXTURE2D,
         };
@@ -7371,6 +7392,14 @@ mod tests {
             caps.check_private_texture_2d(format, copy_source_usage, [8, 8], 1, 1, 1),
             Ok(())
         );
+        assert!(caps.bc_mip_chains_supported(format));
+        assert_eq!(
+            caps.check_private_texture_2d(format, usage, [8, 8], 1, 4, 1),
+            Ok(())
+        );
+        assert!(!caps
+            .texture_format_capabilities(format)
+            .contains(crate::TextureFormatCapabilities::SINGLE_MIP_ONLY));
         assert!(caps
             .texture_format_capabilities(format)
             .contains(crate::TextureFormatCapabilities::COPY_SRC));
@@ -7404,7 +7433,7 @@ mod tests {
             ([6, 8], 1, 1, 1),
             ([8, 2], 1, 1, 1),
             ([2, 2], 1, 1, 1),
-            ([8, 8], 1, 2, 1),
+            ([8, 8], 1, 5, 1),
             ([8, 8], 2, 1, 1),
             ([8, 8], 1, 1, 4),
         ] {
@@ -7462,6 +7491,114 @@ mod tests {
                 & wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format),
             0
         );
+    }
+
+    #[test]
+    fn bc_mip_chains_require_each_format_query_and_backend_path() {
+        use windows::Win32::Graphics::Direct3D11::{
+            D3D11_FORMAT_SUPPORT_MIP, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
+            D3D11_FORMAT_SUPPORT_TEXTURE2D, D3D11_FORMAT_SUPPORT_TEXTURECUBE,
+        };
+
+        let formats = [
+            wgt::TextureFormat::Bc1RgbaUnorm,
+            wgt::TextureFormat::Bc2RgbaUnorm,
+            wgt::TextureFormat::Bc3RgbaUnorm,
+            wgt::TextureFormat::Bc1RgbaUnormSrgb,
+            wgt::TextureFormat::Bc2RgbaUnormSrgb,
+            wgt::TextureFormat::Bc3RgbaUnormSrgb,
+        ];
+        let mip_support = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+            | D3D11_FORMAT_SUPPORT_MIP.0) as u32;
+        let no_mip_support = mip_support & !(D3D11_FORMAT_SUPPORT_MIP.0 as u32);
+        let set_query = |caps: &mut Capabilities, format, query| match format {
+            wgt::TextureFormat::Bc1RgbaUnorm => caps.driver.bc1_unorm = query,
+            wgt::TextureFormat::Bc2RgbaUnorm => caps.driver.bc2_unorm = query,
+            wgt::TextureFormat::Bc3RgbaUnorm => caps.driver.bc3_unorm = query,
+            wgt::TextureFormat::Bc1RgbaUnormSrgb => caps.driver.bc1_srgb = query,
+            wgt::TextureFormat::Bc2RgbaUnormSrgb => caps.driver.bc2_srgb = query,
+            wgt::TextureFormat::Bc3RgbaUnormSrgb => caps.driver.bc3_srgb = query,
+            _ => unreachable!(),
+        };
+
+        for format in formats {
+            let mut caps = model(FeatureLevel::L9_1);
+            set_query(&mut caps, format, Query::Value(mip_support));
+            assert!(caps.bc_mip_chains_supported(format));
+            assert!(!caps
+                .texture_format_capabilities(format)
+                .contains(crate::TextureFormatCapabilities::SINGLE_MIP_ONLY));
+            assert_eq!(
+                caps.check_private_texture_2d(
+                    format,
+                    wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                    [8, 8],
+                    1,
+                    4,
+                    1,
+                ),
+                Ok(())
+            );
+
+            let mut no_mip = caps;
+            set_query(&mut no_mip, format, Query::Value(no_mip_support));
+            assert!(!no_mip.bc_mip_chains_supported(format));
+            assert!(no_mip
+                .texture_format_capabilities(format)
+                .contains(crate::TextureFormatCapabilities::SINGLE_MIP_ONLY));
+            assert_eq!(
+                no_mip.check_private_texture_2d(
+                    format,
+                    wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                    [8, 8],
+                    1,
+                    4,
+                    1,
+                ),
+                Err(TextureRejection::UnsupportedShape)
+            );
+
+            let mut no_sampling = caps;
+            set_query(
+                &mut no_sampling,
+                format,
+                Query::Value(mip_support & !(D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32)),
+            );
+            assert!(!no_sampling.bc_mip_chains_supported(format));
+
+            let mut unavailable = caps;
+            set_query(&mut unavailable, format, Query::Unavailable(-1));
+            assert!(!unavailable.bc_mip_chains_supported(format));
+            assert!(!unavailable
+                .texture_format_capabilities(format)
+                .contains(crate::TextureFormatCapabilities::SAMPLED));
+        }
+
+        let mut cube = model(FeatureLevel::L9_1);
+        set_query(
+            &mut cube,
+            wgt::TextureFormat::Bc1RgbaUnorm,
+            Query::Value(mip_support | D3D11_FORMAT_SUPPORT_TEXTURECUBE.0 as u32),
+        );
+        assert_eq!(
+            cube.check_private_cube_texture(
+                wgt::TextureFormat::Bc1RgbaUnorm,
+                wgt::TextureUses::RESOURCE,
+                [8, 8],
+                6,
+                4,
+                1,
+            ),
+            Ok(())
+        );
+
+        let mut backend_unavailable = model(FeatureLevel::L9_1);
+        backend_unavailable.backend.bc_sampled_mips = false;
+        assert!(!backend_unavailable.bc_mip_chains_supported(wgt::TextureFormat::Bc1RgbaUnorm));
+        assert!(backend_unavailable
+            .texture_format_capabilities(wgt::TextureFormat::Bc1RgbaUnorm)
+            .contains(crate::TextureFormatCapabilities::SINGLE_MIP_ONLY));
     }
 
     #[test]
@@ -7589,12 +7726,13 @@ mod tests {
                 ),
                 Ok(())
             );
-            assert!(caps.texture_format_capabilities(format).contains(
+            let format_caps = caps.texture_format_capabilities(format);
+            assert!(format_caps.contains(
                 crate::TextureFormatCapabilities::SAMPLED
                     | crate::TextureFormatCapabilities::COPY_DST
                     | crate::TextureFormatCapabilities::COPY_SRC
-                    | crate::TextureFormatCapabilities::SINGLE_MIP_ONLY
             ));
+            assert!(!format_caps.contains(crate::TextureFormatCapabilities::SINGLE_MIP_ONLY));
             let mut no_sampling = caps;
             match format {
                 wgt::TextureFormat::Bc1RgbaUnormSrgb => {

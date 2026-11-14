@@ -2743,10 +2743,12 @@ query or missing `TEXTURE2D` bit is rejected. R8_UNORM, R8G8_SNORM and
 R8G8B8A8_SNORM permit sampled/upload mip chains only when the selected device
 reports `TEXTURE2D | MIP` and the backend path is enabled. NPOT chains also
 require positive unrestricted-NPOT support. `SHADER_SAMPLE` independently
-controls filterability. The other listed sampled/upload formats remain
-single-mip. BC1/BC2/BC3 dimensions and updates
-must be aligned to complete 4×4 blocks, and source offsets/row pitches align to
-the format block byte size.
+controls filterability. Other listed formats retain their documented mip
+gates. BC1/2/3 mip chains additionally require selected-device
+`TEXTURE2D | SHADER_SAMPLE | MIP` plus the backend path; cube chains also
+require `TEXTURECUBE`. BC base dimensions, origins, non-edge update regions,
+source offsets and row pitches follow 4×4 block and block-byte alignment.
+Logical mip tails smaller than 4×4 use one complete physical block.
 Run the synthetic capability checks and strict hardware tests with:
 
 ```powershell
@@ -5476,3 +5478,24 @@ in the capability matrix.
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fl91_combined_rgba8_view_transitions_from_attachment_to_sampling -- --nocapture --test-threads=1
 ```
+
+## Query-gated BC mip chains
+
+The strict public test requires all six BC1/BC2/BC3 UNORM and sRGB mip paths,
+all six corresponding cube mip paths, and BC texture-copy support. It explicitly
+requests and checks FL9_1, uploads four levels, copies every 2D mip to a second
+texture, samples each copied mip, and validates every rendered pixel. It also
+samples all six faces and four mips of each cube format. Logical 2×2 and 1×1
+mips use the complete physical 4×4 compressed block.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_mips public_dx11_bc_mip_chains_and_cube_faces_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+On 2026-11-14, the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`,
+`software=false`) reported all six 2D and cube paths at requested/actual
+FL9_1. Each 2D format copied and sampled all four mips, matching 64/64 pixels;
+each cube format sampled four mips on all six faces, matching 768/768 pixels.
+No required format was skipped. Other adapters may lack these optional query
+bits; normal tests may then skip this hardware test, while strict mode fails.

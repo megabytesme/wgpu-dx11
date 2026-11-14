@@ -163,6 +163,22 @@ fn sample_upload(
             | wgt::TextureFormat::Rg16Snorm
             | wgt::TextureFormat::Rgba8Snorm
     ) && format_support & D3D11_FORMAT_SUPPORT_MIP.0 as u32 != 0;
+    let bc_mip_chain_supported = matches!(
+        format,
+        wgt::TextureFormat::Bc1RgbaUnorm
+            | wgt::TextureFormat::Bc2RgbaUnorm
+            | wgt::TextureFormat::Bc3RgbaUnorm
+            | wgt::TextureFormat::Bc1RgbaUnormSrgb
+            | wgt::TextureFormat::Bc2RgbaUnormSrgb
+            | wgt::TextureFormat::Bc3RgbaUnormSrgb
+    ) && format_support
+        & (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+            | D3D11_FORMAT_SUPPORT_MIP.0) as u32
+        == (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
+            | D3D11_FORMAT_SUPPORT_MIP.0) as u32;
+    let mip_chain_supported = mip_chain_supported || bc_mip_chain_supported;
     assert_eq!(
         mip_texture.is_ok(),
         mip_chain_supported,

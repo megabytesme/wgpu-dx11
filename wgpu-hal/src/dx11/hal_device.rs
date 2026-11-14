@@ -425,7 +425,16 @@ impl crate::Device for Device {
                             ) && capabilities
                                 .packed_16bit_mip_chains_supported(desc.format))
                             || (desc.format == wgt::TextureFormat::Rgba8Snorm
-                                && capabilities.rgba8_snorm_mip_chains_supported())))
+                                && capabilities.rgba8_snorm_mip_chains_supported())
+                            || (matches!(
+                                desc.format,
+                                wgt::TextureFormat::Bc1RgbaUnorm
+                                    | wgt::TextureFormat::Bc2RgbaUnorm
+                                    | wgt::TextureFormat::Bc3RgbaUnorm
+                                    | wgt::TextureFormat::Bc1RgbaUnormSrgb
+                                    | wgt::TextureFormat::Bc2RgbaUnormSrgb
+                                    | wgt::TextureFormat::Bc3RgbaUnormSrgb
+                            ) && capabilities.bc_mip_chains_supported(desc.format))))
                     || !super::capabilities::supported_mip_texture_usage(desc.usage)
                     || ((!desc.size.width.is_power_of_two()
                         || !desc.size.height.is_power_of_two())

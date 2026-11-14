@@ -479,13 +479,23 @@ impl Texture2DShadow {
     ) -> Result<Texture2DShadowRegionLayout> {
         let right = origin[0].checked_add(extent[0]).ok_or_else(invalid)?;
         let bottom = origin[1].checked_add(extent[1]).ok_or_else(invalid)?;
+        let physical_width = self
+            .block
+            .width_blocks(subresource.width)
+            .checked_mul(self.block.width)
+            .ok_or_else(invalid)?;
+        let physical_height = self
+            .block
+            .height_blocks(subresource.height)
+            .checked_mul(self.block.height)
+            .ok_or_else(invalid)?;
         if extent.contains(&0)
-            || right > subresource.width
-            || bottom > subresource.height
+            || right > physical_width
+            || bottom > physical_height
             || !origin[0].is_multiple_of(self.block.width)
             || !origin[1].is_multiple_of(self.block.height)
-            || !extent[0].is_multiple_of(self.block.width)
-            || !extent[1].is_multiple_of(self.block.height)
+            || (!extent[0].is_multiple_of(self.block.width) && right != subresource.width)
+            || (!extent[1].is_multiple_of(self.block.height) && bottom != subresource.height)
         {
             return Err(invalid());
         }
@@ -1558,6 +1568,32 @@ impl NativeDevice {
                     .packed_16bit_mip_chains_supported(wgt::TextureFormat::Rgba4Unorm),
                 _ => false,
             };
+        let bc_wgpu_format = match format {
+            DXGI_FORMAT_BC1_UNORM => Some(wgt::TextureFormat::Bc1RgbaUnorm),
+            DXGI_FORMAT_BC2_UNORM => Some(wgt::TextureFormat::Bc2RgbaUnorm),
+            DXGI_FORMAT_BC3_UNORM => Some(wgt::TextureFormat::Bc3RgbaUnorm),
+            DXGI_FORMAT_BC1_UNORM_SRGB => Some(wgt::TextureFormat::Bc1RgbaUnormSrgb),
+            DXGI_FORMAT_BC2_UNORM_SRGB => Some(wgt::TextureFormat::Bc2RgbaUnormSrgb),
+            DXGI_FORMAT_BC3_UNORM_SRGB => Some(wgt::TextureFormat::Bc3RgbaUnormSrgb),
+            _ => None,
+        };
+        let bc_sampled_mip_chain = mip_levels > 1
+            && bc_wgpu_format.is_some_and(|format| {
+                let caps = super::capabilities::Capabilities::query(self);
+                if cube {
+                    caps.check_private_cube_texture(
+                        format,
+                        wgt::TextureUses::RESOURCE,
+                        [width, height],
+                        layers,
+                        mip_levels,
+                        sample_count,
+                    )
+                    .is_ok()
+                } else {
+                    sampled_mip_shape && caps.bc_mip_chains_supported(format)
+                }
+            });
         let sampled_mip_chain = sampled_mip_shape
             && (matches!(
                 format,
@@ -1595,7 +1631,7 @@ impl NativeDevice {
                 | DXGI_FORMAT_BC3_UNORM_SRGB
         ) && !render_target
             && (layers == 1 || cube)
-            && mip_levels == 1
+            && (mip_levels == 1 || bc_sampled_mip_chain)
             && width >= 4
             && height >= 4
             && width.is_multiple_of(4)
@@ -2380,8 +2416,8 @@ impl NativeDevice {
         let block = format_block_layout(self.texture_desc(texture)?.Format)?;
         if !origin[0].is_multiple_of(block.width)
             || !origin[1].is_multiple_of(block.height)
-            || !extent[0].is_multiple_of(block.width)
-            || !extent[1].is_multiple_of(block.height)
+            || (!extent[0].is_multiple_of(block.width) && right != width)
+            || (!extent[1].is_multiple_of(block.height) && bottom != height)
         {
             return Err(invalid());
         }
@@ -2947,6 +2983,35 @@ mod tests {
             shadow.read_region(1, 0, [0, 0], [8, 4])?.as_slice(),
             &[0; 32]
         );
+        Ok(())
+    }
+
+    #[test]
+    fn bc_shadow_accepts_sub_block_mip_tail_regions() -> Result<()> {
+        let shadow = Texture2DShadow::zeroed(8, 8, 1, 4, DXGI_FORMAT_BC1_UNORM)?;
+        let destination = Texture2DShadow::zeroed(8, 8, 1, 4, DXGI_FORMAT_BC1_UNORM)?;
+        for (mip, extent, value) in [
+            (0, [8, 8], 0x10),
+            (1, [4, 4], 0x20),
+            (2, [2, 2], 0x30),
+            (3, [1, 1], 0x40),
+        ] {
+            let row_bytes = shadow.block.row_bytes(extent[0])? as usize;
+            let row_count = shadow.block.height_blocks(extent[1]) as usize;
+            let expected = vec![value; row_bytes * row_count];
+            shadow.write_region(mip, 0, [0, 0], extent, row_bytes as u32, &expected)?;
+            assert_eq!(shadow.read_region(mip, 0, [0, 0], extent)?, expected);
+        }
+        destination.copy_region_from(&shadow, 2, 0, [0, 0], 2, 0, [0, 0], [2, 2])?;
+        destination.copy_region_from(&shadow, 3, 0, [0, 0], 3, 0, [0, 0], [1, 1])?;
+        assert_eq!(destination.read_region(2, 0, [0, 0], [2, 2])?, [0x30; 8]);
+        assert_eq!(destination.read_region(3, 0, [0, 0], [1, 1])?, [0x40; 8]);
+        assert!(shadow
+            .write_region(2, 0, [1, 0], [1, 2], 8, &[0x50; 8])
+            .is_err());
+        assert!(shadow
+            .write_region(1, 0, [0, 0], [2, 2], 8, &[0x50; 8])
+            .is_err());
         Ok(())
     }
 

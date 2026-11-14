@@ -1,5 +1,25 @@
 # FL9_1 completion plan
 
+## Latest coordinator increment — query-gated BC mip chains — 2026-11-14
+
+BC1/2/3 UNORM and sRGB mip chains now flow through the selected-device
+`TEXTURE2D | SHADER_SAMPLE | MIP` query, the backend mip gate, and the existing
+per-format `SINGLE_MIP_ONLY` projection. Cube chains also require the selected
+format's `TEXTURECUBE` result. Strict RTX 3090 Ti FL9_1 execution required
+`COPY_SRC` for all six formats, copied and sampled four 2D mips per format,
+and sampled all six cube faces across four mips per format. Every output pixel
+matched; the 2×2 and 1×1 logical mip tails were included. Full compressed
+uploads copy mapped staging bytes to owned CPU memory before the null-box
+`UpdateSubresource` call to avoid the FL9_x mapped-staging corruption case.
+This adds one CPU copy on full BC uploads. The result is selected modern-driver
+evidence; historical FL9_1 compatibility remains unverified.
+
+The next audit increment should keep separating selected query exposure from
+operation-level pixel evidence, then test the narrowest remaining public
+workload composition that can be justified by the current Core/HAL contract.
+Do not expand BC4–BC7, attachment, view-reinterpretation or shader support from
+this result.
+
 ## Latest format-evidence increment — packed and BC linear filtering — 2026-11-14
 
 The public packed sampled-upload test verifies nearest and linear filtering

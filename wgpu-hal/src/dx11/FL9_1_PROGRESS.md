@@ -20586,3 +20586,59 @@ format `SKIP` messages inside passing tests; those are not counted as hardware
 coverage. Rust 1.93.1 formatting and `git diff --check` passed. Clippy passed
 for the public target and emitted only the same eight pre-existing D3D11 HAL
 warnings; no warning came from this test.
+
+## Query-gated BC1/BC2/BC3 mip-chain execution — 2026-11-14
+
+The backend now permits BC1, BC2 and BC3 UNORM and sRGB mip chains only when
+the selected format reports `TEXTURE2D | SHADER_SAMPLE | MIP` and the BC mip
+implementation path is enabled. Cube mip chains also require
+`TEXTURECUBE`. The per-format projection retains `SINGLE_MIP_ONLY` when any
+required query or backend path is absent. BC4–BC7, render-target use and
+UNORM/sRGB view reinterpretation remain unavailable.
+
+Strict public GPU test `public_dx11_bc_mip_chains_and_cube_faces_at_fl91`
+requires all six 2D formats, their `COPY_SRC` path, and all six cube mip
+formats. On the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`, `software=false`) it explicitly requested and confirmed
+FL9_1. For each BC1/2/3 UNORM and sRGB format it uploaded four levels, copied
+each mip to a separate texture, sampled each copied mip and matched all 64
+rendered pixels. It also sampled each of six cube faces across all four mips
+for each format and matched 768/768 pixels per format. Both 2×2 and 1×1
+logical tail levels passed. The tested adapter reported the optional copy,
+mip and cube bits for every case; this does not establish those bits or old
+driver behavior on historical FL9_1 hardware.
+
+An independent review flagged the FL9_x staging-to-default null-box hazard.
+Full compressed buffer uploads now detach mapped staging bytes into an owned
+CPU vector before `UpdateSubresource`, so the native update no longer reads
+directly from mapped staging memory. This deliberately adds a CPU copy for
+full compressed uploads. Whole-mip GPU texture copies remain null-box only
+between equal-sized default textures with zero destination offsets. A forced
+FL9_1 RTX run after the change passed every 2D and cube output.
+
+Commands and results for this increment:
+
+```powershell
+cargo +1.93.1 fmt --all
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_mips public_dx11_bc_mip_chains_and_cube_faces_at_fl91 -- --exact --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_subset -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib --tests
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_mips
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
+Strict results after the CPU-owned upload-source adjustment: focused BC mip
+test 1/1 (with every nested format case executed), private D3D11 HAL 537/537,
+existing public BC subset 1/1, and the complete public D3D11 target 158/158
+including zero-normal-adapter exposure isolation. The focused test required
+and reported `COPY_SRC` for all six formats. Clippy completed successfully; the
+new public test introduced no warnings. HAL Clippy retains existing backend
+warnings, including `needless_range_loop` in the unrelated RG8_SNORM shadow
+test. Formatting and `git diff --check` passed.

@@ -75,17 +75,33 @@ fn block_aligned_box(
     base: &crate::TextureCopyBase,
     size: &crate::CopyExtent,
     block: TextureBlockLayout,
+    dimensions: [u32; 2],
 ) -> bool {
+    let Some(physical_width) = block.width_blocks(dimensions[0]).checked_mul(block.width) else {
+        return false;
+    };
+    let Some(physical_height) = block.height_blocks(dimensions[1]).checked_mul(block.height) else {
+        return false;
+    };
+    let Some(right) = base.origin.x.checked_add(size.width) else {
+        return false;
+    };
+    let Some(bottom) = base.origin.y.checked_add(size.height) else {
+        return false;
+    };
     base.origin.x.is_multiple_of(block.width)
         && base.origin.y.is_multiple_of(block.height)
-        && size.width.is_multiple_of(block.width)
-        && size.height.is_multiple_of(block.height)
+        && right <= physical_width
+        && bottom <= physical_height
+        && (size.width.is_multiple_of(block.width) || right == dimensions[0])
+        && (size.height.is_multiple_of(block.height) || bottom == dimensions[1])
 }
 
 fn texture_box(
     base: &crate::TextureCopyBase,
     size: &crate::CopyExtent,
     dimensions: [u32; 2],
+    block: TextureBlockLayout,
 ) -> Result<D3D11_BOX> {
     if base.origin.z != 0
         || base.aspect != crate::FormatAspects::COLOR
@@ -97,14 +113,22 @@ fn texture_box(
     }
     let right = base.origin.x.checked_add(size.width).ok_or_else(invalid)?;
     let bottom = base.origin.y.checked_add(size.height).ok_or_else(invalid)?;
-    if right > dimensions[0] || bottom > dimensions[1] {
+    let physical_width = block
+        .width_blocks(dimensions[0])
+        .checked_mul(block.width)
+        .ok_or_else(invalid)?;
+    let physical_height = block
+        .height_blocks(dimensions[1])
+        .checked_mul(block.height)
+        .ok_or_else(invalid)?;
+    if right > physical_width || bottom > physical_height {
         return Err(invalid());
     }
     Ok(D3D11_BOX {
         left: base.origin.x,
-        right,
+        right: right.min(dimensions[0]),
         top: base.origin.y,
-        bottom,
+        bottom: bottom.min(dimensions[1]),
         front: 0,
         back: 1,
     })
@@ -116,7 +140,7 @@ pub(super) struct TextureToTexture {
     destination: ID3D11Texture2D,
     source_subresource: u32,
     destination_subresource: u32,
-    source_box: D3D11_BOX,
+    source_box: Option<D3D11_BOX>,
     destination_box: D3D11_BOX,
     destination_origin: [u32; 2],
     row_pitch: u32,
@@ -190,7 +214,7 @@ impl TextureToTexture {
                 0,
                 &self.source,
                 self.source_subresource,
-                Some(&self.source_box),
+                self.source_box.as_ref().map(core::ptr::from_ref),
             );
         }
         Ok(())
@@ -206,7 +230,7 @@ pub(super) struct BufferToTexture {
     texture: ID3D11Texture2D,
     destination_subresource: u32,
     source_box: D3D11_BOX,
-    destination_box: D3D11_BOX,
+    destination_box: Option<D3D11_BOX>,
     row_pitch: u32,
     source_size: usize,
     shadow_write: Option<Texture2DShadowWrite>,
@@ -423,7 +447,7 @@ impl NativeDevice {
             return Err(invalid());
         }
         let block = format_block_layout(texture.format)?;
-        if !block_aligned_box(base, size, block) {
+        if !block_aligned_box(base, size, block, [width, height]) {
             return Err(invalid());
         }
         let (offset, pitch, row_bytes, _) = copy_layout(layout, size.width, size.height, block)?;
@@ -511,7 +535,7 @@ impl NativeDevice {
             return Err(invalid());
         }
         let block = format_block_layout(texture.format)?;
-        if !block_aligned_box(base, size, block) {
+        if !block_aligned_box(base, size, block, [mip_width, mip_height]) {
             return Err(invalid());
         }
         let (offset, row_pitch, row_bytes, slice_total) =
@@ -549,6 +573,7 @@ impl NativeDevice {
         if !texture_formats_copy_compatible(source_format, self.texture_desc(destination)?.Format) {
             return Err(invalid());
         }
+        let block = format_block_layout(source_format)?;
         let source_shadow = source.copy_shadow.clone();
         let destination_shadow = destination.copy_shadow.clone();
         let (source, src_size, source_subresource) = self.texture_copy_texture_source(
@@ -567,14 +592,23 @@ impl NativeDevice {
         {
             return Err(invalid());
         }
-        let source_box = texture_box(&region.src_base, &region.size, src_size)?;
-        let destination_box = texture_box(&region.dst_base, &region.size, dst_size)?;
-        let block = format_block_layout(source_format)?;
-        if !block_aligned_box(&region.src_base, &region.size, block)
-            || !block_aligned_box(&region.dst_base, &region.size, block)
+        let source_box = texture_box(&region.src_base, &region.size, src_size, block)?;
+        let destination_box = texture_box(&region.dst_base, &region.size, dst_size, block)?;
+        if !block_aligned_box(&region.src_base, &region.size, block, src_size)
+            || !block_aligned_box(&region.dst_base, &region.size, block, dst_size)
         {
             return Err(invalid());
         }
+        let full_compressed_subresource = block.width > 1
+            && src_size == dst_size
+            && region.src_base.origin.x == 0
+            && region.src_base.origin.y == 0
+            && region.dst_base.origin.x == 0
+            && region.dst_base.origin.y == 0
+            && source_box.right == src_size[0]
+            && source_box.bottom == src_size[1]
+            && destination_box.right == dst_size[0]
+            && destination_box.bottom == dst_size[1];
         let shadow_copy = if source_format == DXGI_FORMAT_R8G8_SNORM {
             Some(Texture2DShadowCopy {
                 source: source_shadow.ok_or_else(invalid)?,
@@ -612,7 +646,7 @@ impl NativeDevice {
             destination,
             source_subresource,
             destination_subresource,
-            source_box,
+            source_box: (!full_compressed_subresource).then_some(source_box),
             destination_box,
             destination_origin: [destination_box.left, destination_box.top],
             row_pitch,
@@ -636,9 +670,9 @@ impl NativeDevice {
         }
         let (source, dimensions, source_subresource) =
             self.texture_copy_texture_source(texture, base.mip_level, base.array_layer)?;
-        let source_box = texture_box(base, size, dimensions)?;
         let block = format_block_layout(self.texture_desc(texture)?.Format)?;
-        if !block_aligned_box(base, size, block) {
+        let source_box = texture_box(base, size, dimensions, block)?;
+        if !block_aligned_box(base, size, block, dimensions) {
             return Err(invalid());
         }
         let (offset, pitch, row_bytes, total) =
@@ -702,12 +736,17 @@ impl NativeDevice {
         let layout = &region.buffer_layout;
         let (destination, dimensions, destination_subresource) =
             self.texture_copy_destination(texture, base.mip_level, base.array_layer)?;
-        let destination_box = texture_box(base, size, dimensions)?;
         let format = self.texture_desc(texture)?.Format;
         let block = format_block_layout(format)?;
-        if !block_aligned_box(base, size, block) {
+        let destination_box = texture_box(base, size, dimensions, block)?;
+        if !block_aligned_box(base, size, block, dimensions) {
             return Err(invalid());
         }
+        let full_compressed_subresource = block.width > 1
+            && base.origin.x == 0
+            && base.origin.y == 0
+            && destination_box.right == dimensions[0]
+            && destination_box.bottom == dimensions[1];
         let (offset, pitch, _row_bytes, total) =
             copy_layout(layout, size.width, size.height, block)?;
         let end = offset.checked_add(total).ok_or_else(invalid)?;
@@ -736,7 +775,7 @@ impl NativeDevice {
                 front: 0,
                 back: 1,
             },
-            destination_box,
+            destination_box: (!full_compressed_subresource).then_some(destination_box),
             row_pitch: pitch,
             source_size: total as usize,
             shadow_write: texture
@@ -946,14 +985,29 @@ impl BufferToTexture {
                     return Err(error);
                 }
             }
-            context.UpdateSubresource(
-                &self.texture,
-                self.destination_subresource,
-                Some(&self.destination_box),
-                mapped.pData,
-                self.row_pitch,
-                0,
-            );
+            if self.destination_box.is_none() {
+                let source = alloc::vec::Vec::from(core::slice::from_raw_parts(
+                    mapped.pData.cast::<u8>(),
+                    self.source_size,
+                ));
+                context.UpdateSubresource(
+                    &self.texture,
+                    self.destination_subresource,
+                    None,
+                    source.as_ptr().cast(),
+                    self.row_pitch,
+                    0,
+                );
+            } else {
+                context.UpdateSubresource(
+                    &self.texture,
+                    self.destination_subresource,
+                    self.destination_box.as_ref().map(core::ptr::from_ref),
+                    mapped.pData,
+                    self.row_pitch,
+                    0,
+                );
+            }
             context.Unmap(&self.staging, 0);
             Ok(())
         }
@@ -1205,7 +1259,7 @@ mod tests {
     }
 
     #[test]
-    fn compressed_upload_boxes_require_complete_aligned_blocks() {
+    fn compressed_upload_boxes_require_aligned_origins_and_complete_edge_blocks() {
         let bc1 = TextureBlockLayout {
             width: 4,
             height: 4,
@@ -1222,12 +1276,16 @@ mod tests {
             height: 4,
             depth: 1,
         };
-        assert!(block_aligned_box(&base, &size, bc1));
+        assert!(block_aligned_box(&base, &size, bc1, [8, 8]));
         size.width = 2;
-        assert!(!block_aligned_box(&base, &size, bc1));
+        assert!(!block_aligned_box(&base, &size, bc1, [8, 8]));
+        base.origin.x = 0;
+        base.origin.y = 0;
+        assert!(block_aligned_box(&base, &size, bc1, [2, 2]));
+        assert!(!block_aligned_box(&base, &size, bc1, [3, 2]));
         size.width = 4;
         base.origin.y = 2;
-        assert!(!block_aligned_box(&base, &size, bc1));
+        assert!(!block_aligned_box(&base, &size, bc1, [8, 8]));
     }
 
     #[test]
@@ -1260,6 +1318,11 @@ mod tests {
 
     #[test]
     fn transfer_texture_boxes_validate_origins_independently_of_subresources() {
+        let rgba = TextureBlockLayout {
+            width: 1,
+            height: 1,
+            bytes: 4,
+        };
         let mut base = crate::TextureCopyBase {
             mip_level: 0,
             array_layer: 0,
@@ -1271,21 +1334,55 @@ mod tests {
             height: 2,
             depth: 1,
         };
-        let valid = texture_box(&base, &size, [6, 4]).unwrap();
+        let valid = texture_box(&base, &size, [6, 4], rgba).unwrap();
         assert_eq!(
             (valid.left, valid.top, valid.right, valid.bottom),
             (2, 1, 5, 3)
         );
-        assert!(texture_box(&base, &size, [4, 4]).is_err());
+        assert!(texture_box(&base, &size, [4, 4], rgba).is_err());
         base.origin.x = u32::MAX;
-        assert!(texture_box(&base, &size, [6, 4]).is_err());
+        assert!(texture_box(&base, &size, [6, 4], rgba).is_err());
         base.origin.x = 2;
         base.mip_level = 1;
-        assert!(texture_box(&base, &size, [6, 4]).is_ok());
-        assert!(texture_box(&base, &size, [3, 2]).is_err());
+        assert!(texture_box(&base, &size, [6, 4], rgba).is_ok());
+        assert!(texture_box(&base, &size, [3, 2], rgba).is_err());
         base.mip_level = 0;
         base.array_layer = 1;
-        assert!(texture_box(&base, &size, [6, 4]).is_ok());
+        assert!(texture_box(&base, &size, [6, 4], rgba).is_ok());
+    }
+
+    #[test]
+    fn compressed_mip_tail_boxes_clip_physical_blocks_to_logical_edges() {
+        let bc1 = TextureBlockLayout {
+            width: 4,
+            height: 4,
+            bytes: 8,
+        };
+        let base = crate::TextureCopyBase {
+            mip_level: 3,
+            array_layer: 0,
+            origin: wgt::Origin3d::ZERO,
+            aspect: crate::FormatAspects::COLOR,
+        };
+        let physical_copy = crate::CopyExtent {
+            width: 4,
+            height: 4,
+            depth: 1,
+        };
+        assert!(block_aligned_box(&base, &physical_copy, bc1, [1, 1]));
+        let native = texture_box(&base, &physical_copy, [1, 1], bc1).unwrap();
+        assert_eq!(
+            (native.left, native.top, native.right, native.bottom),
+            (0, 0, 1, 1)
+        );
+
+        let oversized = crate::CopyExtent {
+            width: 8,
+            height: 4,
+            depth: 1,
+        };
+        assert!(!block_aligned_box(&base, &oversized, bc1, [1, 1]));
+        assert!(texture_box(&base, &oversized, [1, 1], bc1).is_err());
     }
 
     #[test]
