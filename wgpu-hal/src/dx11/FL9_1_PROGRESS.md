@@ -21614,3 +21614,18 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 
 This closes that tested format/mip-tail coverage question on the selected
 adapter; it does not establish behavior on historical FL9_1 drivers.
+
+The complementary optional NPOT mip path also ran in strict mode. The public
+`public_dx11_query_gated_npot_mip_chain_at_fl91` test passed 1/1 on the same
+physical RTX 3090 Ti at requested/actual FL9_1, reporting
+`unrestricted_npot=true` and the corresponding public mip flag. It sampled a
+6x10 four-mip texture at mip 2 and matched all 64 output pixels. Command:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_query_gated_npot_mip_chain_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+This verifies the positive selected-driver branch only; the conservative
+negative and unavailable-query behavior is covered by synthetic capability
+tests, and historical 9_x drivers remain unverified.
