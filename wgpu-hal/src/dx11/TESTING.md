@@ -1282,8 +1282,12 @@ Sampler anisotropy uses both the `ANISOTROPIC_FILTERING` availability flag and
 the numeric `DownlevelLimits::max_sampler_anisotropy` cap. Synthetic tests
 cover capability matching and core's clamp to 1, 2 and 16; the strict core
 fixture requests 2, 3 and 16 on a physical FL9_1 device whose projected cap is
-2. The HAL receives a valid FL9_1 sampler state in each case. This validates
-descriptor translation and clamping, not anisotropic image quality.
+2. The HAL receives a valid FL9_1 sampler state in each case. A separate strict
+HAL render minifies a 64×64 alternating-column texture at 2 texels/pixel along
+U and 0.5 texels/pixel along V. On the RTX 3090 Ti at requested/actual FL9_1,
+mean stripe contrast measured 1 with anisotropy 2 and 128 with anisotropy 1.
+This verifies observable filtering on the selected device, not historical
+drivers or a universal image-quality threshold.
 
 ```powershell
 cargo +1.93 test --offline -j16 -p wgpu-types --lib sampler_anisotropy_is_a_numeric_downlevel_limit
@@ -2231,7 +2235,11 @@ entries against the current pipeline-layout limit of thirteen. The public test
 full six-vertex/six-fragment split using sparse binding numbers and distinct
 dynamic offsets. Two scissored draws select different ranges and validate the
 complete 8×8 readback; the public contract test separately verifies that
-fourteen dynamic entries fail validation.
+fourteen dynamic entries fail validation. The strict public
+`public_dx11_uses_thirteen_uniform_registers_per_stage_at_fl91` test binds
+thirteen fragment ranges with nonzero 256-byte dynamic offsets while thirteen
+static vertex ranges coexist; all 64 pixels matched and a fourteen-entry
+layout was rejected.
 
 The same strict core fixture includes a two-group case: a fragment uniform at
 group 0/binding 17 tints a sampled RGBA8 texture and filtering sampler at
@@ -3456,7 +3464,11 @@ The controlled core fixture passed short bindings of those sizes, including a
 scalar with a dynamic offset, with 64 checked pixels per render. Its synthetic
 downlevel flags enable `BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED`; the initial core
 test without that flag rejected the shader as `UnalignedShader`. This is a
-fixture setting, not a capability in the public projection. Binding materialization uses CPU
+fixture setting, while the production projection sets the flag from the
+backend's zero-padded materialization implementation. The strict public test
+`public_dx11_odd_sized_uniform_binding_renders_at_fl91` exercises that ordinary
+projection using a 4-byte scalar binding at offset 256 and verifies 64 rendered
+pixels on requested/actual FL9_1 hardware. Binding materialization uses CPU
 scratch and a mapped staging buffer, which can stall. An odd-sized native copy
 is not verified on historical FL9_1 drivers.
 The additional strict `fl91_short_uniform_dynamic_copy_and_odd_source_end`
@@ -5580,3 +5592,17 @@ bytes on the physical adapter.
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 & 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_multiple_queue_writes_preserve_disjoint_ranges_at_fl91 -- --exact --nocapture --test-threads=1
 ```
+
+The strict public 2D texture-size boundary test writes and reads the final
+texel at width 2048, then verifies that Core rejects width 2049:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_NET_OFFLINE = 'true'
+$env:CARGO_TARGET_DIR = 'E:\Temp\wgpu-mission-gpu-target'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j32 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_dimension_2d_boundary_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti forced to FL9_1, the maximum-width edge copy returned the
+expected RGBA value and the over-limit texture failed validation. The full
+strict public target passed 169/169 test functions after adding this case.

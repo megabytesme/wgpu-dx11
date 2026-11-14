@@ -1,5 +1,24 @@
 # FL9_1 completion plan
 
+## Coordinator status synthesis — current 2026-11-14
+
+The public path has meaningful FL9_1 rendering coverage but remains a
+constrained opt-in subset. The latest strict test targets passed: public
+D3D11 169/169 and private HAL 538/538 on the physical RTX 3090 Ti at explicitly
+requested and confirmed FL9_1. New boundary evidence covers the 2048 2D
+texture-width limit, eight inter-stage variables (ninth rejected),
+Repeat/MirrorRepeat limit rejection, and anisotropic minification readback.
+Formatting, diff checks and affected Clippy checks passed.
+
+Remaining gaps divide into unfinished capability/validation/CTS evidence and
+workload-led implementation, deliberate FL9_1/profile exclusions (compute,
+UAV/storage, geometry, MRT, indirect draw, occlusion queries, ordinary 1D and
+2D-array textures, vertex texture sampling, and unsupported shader forms),
+and external validation on historical hardware, Lumia/CoreWindow and physical
+device-removal paths. Agents should handle disjoint audits, compiler/spec
+probes and isolated tests; the coordinator owns feature selection and
+cross-crate integration, with one Cargo/GPU run at a time.
+
 ## Latest coordinator increment — multisample-mask execution — 2026-11-14
 
 Strict forced-FL9_1 public rendering now verifies 4x masks `0`, `1`, `3`,

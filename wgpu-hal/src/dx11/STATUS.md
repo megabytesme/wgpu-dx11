@@ -1176,8 +1176,10 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - `DownlevelLimits::max_sampler_anisotropy` carries the private FL9_1 maximum of
   2 separately from the anisotropic-filtering availability flag. Core clamps
   descriptor requests to the reported cap before HAL creation; strict core
-  hardware coverage creates native samplers for requests 2, 3 and 16. The
-  single-mip resource model still cannot establish anisotropic visual quality.
+  hardware coverage creates native samplers for requests 2, 3 and 16. A strict
+  private minification test now measures alternating-column contrast of 1 at
+  anisotropy 2 versus 128 at anisotropy 1 on the RTX 3090 Ti forced to FL9_1.
+  Historical-driver behavior remains unverified.
 - R8_UNORM is supported for single-layer 2D sampled textures with RESOURCE
   and/or COPY_DST usage. Full mip chains require a positive selected-device
   `TEXTURE2D | MIP` query and the implemented backend path; NPOT chains also
@@ -1461,9 +1463,11 @@ all out-of-target rectangles. Other backends keep the default true capability.
   cover stage mapping and selected-entry compiler guards. The baseline rejected
   the combined layout; historical FL9 drivers remain unverified.
 - Short uniform ranges use a zero-padded native constant buffer and preserve the
-  declared byte range, including non-multiples of 16. This stages through a CPU
-  map and can stall; odd-sized GPU copies remain unverified on historical
-  drivers. Runtime integer expressions and integer-containing uniforms or
+  declared byte range, including non-multiples of 16. A strict public test now
+  verifies a 4-byte range at offset 256 through the ordinary wgpu projection,
+  rendering 64 expected pixels at FL9_1. This stages through a CPU map and can
+  stall; odd-sized GPU copies remain unverified on historical drivers. Runtime
+  integer expressions and integer-containing uniforms or
   interfaces are conservatively rejected for selected FL9 entries in both
   checked and unchecked modes, except the separately proved vertex built-ins
   and narrow direct fragment uniform-array indexing documented below. Earlier

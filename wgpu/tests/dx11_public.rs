@@ -409,6 +409,246 @@ fn public_dx11_uniform_gpu_updates_are_ordered_between_draws_at_fl91() {
 }
 
 #[test]
+fn public_dx11_odd_sized_uniform_binding_renders_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=4-byte public uniform binding at buffer offset 256",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 odd-sized uniform binding"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the public FL9_1 projection");
+
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 odd-sized uniform layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 73,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(4),
+            },
+            count: None,
+        }],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 odd-sized uniform pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 scalar uniform shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(73) var<uniform> intensity: f32;\n\
+             @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.0, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(intensity, 0.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 odd-sized uniform pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let uniform = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 odd-sized uniform source"),
+        size: 512,
+        usage: BufferUsages::UNIFORM,
+        mapped_at_creation: true,
+    });
+    let mut uniform_data = vec![0; 512];
+    uniform_data[256..260].copy_from_slice(&0.75f32.to_ne_bytes());
+    uniform
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map odd-sized uniform source")
+        .copy_from_slice(&uniform_data);
+    uniform.unmap();
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 odd-sized uniform binding"),
+        layout: &layout,
+        entries: &[BindGroupEntry {
+            binding: 73,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &uniform,
+                offset: 256,
+                size: NonZeroU64::new(4),
+            }),
+        }],
+    });
+    let vertices = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0];
+    let vertex_bytes = vertices
+        .iter()
+        .flat_map(|value| value.to_ne_bytes())
+        .collect::<Vec<_>>();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 odd-sized uniform triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map odd-sized uniform triangle")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 odd-sized uniform output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 odd-sized uniform readback"),
+        size: 2048,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 odd-sized uniform render and readback"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 odd-sized uniform render pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for odd-sized uniform render");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("odd-sized uniform readback callback")
+        .expect("map odd-sized uniform output");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped odd-sized uniform output");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    [191, 0, 0, 255],
+                    "odd-sized uniform output pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: public 4-byte uniform range at offset 256 rendered 64 expected pixels");
+}
+
+#[test]
 fn public_dx11_nonzero_group_sparse_uniform_renders_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -5523,6 +5763,280 @@ fn public_dx11_fl91_optional_float16_vertex_input() {
 }
 
 #[test]
+fn public_dx11_integer_and_snorm_vertex_formats_render_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapter = match poll_ready(instance.request_adapter(&RequestAdapterOptions {
+        power_preference: PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        ..Default::default()
+    })) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            assert!(
+                !required,
+                "strict mode requires a physical FL9_1 adapter: {error}"
+            );
+            println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+            return;
+        }
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let downlevel = adapter.get_downlevel_capabilities();
+    let formats = [
+        VertexFormat::Sint16x2,
+        VertexFormat::Sint16x4,
+        VertexFormat::Uint8x4,
+        VertexFormat::Snorm16x2,
+        VertexFormat::Snorm16x4,
+    ];
+    let unsupported: Vec<_> = formats
+        .into_iter()
+        .filter(|format| !downlevel.limits.supports_vertex_format(*format))
+        .collect();
+    if !unsupported.is_empty() {
+        println!("SKIP: selected FL9_1 device does not expose IA formats {unsupported:?}");
+        return;
+    }
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; vertex_formats={formats:?}",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 integer and SNORM vertex formats"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("integer and SNORM vertex input shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                struct VertexOut {
+                    @builtin(position) position: vec4f,
+                    @location(0) color: vec4f,
+                }
+                @vertex fn vs(
+                    @location(0) position: vec2i,
+                    @location(1) tint: vec4i,
+                    @location(2) add: vec4u,
+                    @location(3) snorm2: vec2f,
+                    @location(4) snorm4: vec4f,
+                ) -> VertexOut {
+                    let p = vec2f(position) / 32767.0;
+                    let signed_color = vec4f(tint) / 32767.0;
+                    let unsigned_color = vec4f(add) / 255.0;
+                    let normalized_color =
+                        vec4f(snorm2, snorm4.xy) * 0.5 + vec4f(0.5);
+                    let color = signed_color * 0.5
+                        + unsigned_color * 0.25
+                        + normalized_color * 0.25;
+                    return VertexOut(vec4f(p * 2.0 + vec2f(1.0), 0.5, 1.0), color);
+                }
+                @fragment fn fs(input: VertexOut) -> @location(0) vec4f {
+                    return input.color;
+                }
+            "#
+            .into(),
+        ),
+    });
+    let attributes = [
+        VertexAttribute {
+            format: VertexFormat::Sint16x2,
+            offset: 0,
+            shader_location: 0,
+        },
+        VertexAttribute {
+            format: VertexFormat::Sint16x4,
+            offset: 4,
+            shader_location: 1,
+        },
+        VertexAttribute {
+            format: VertexFormat::Uint8x4,
+            offset: 12,
+            shader_location: 2,
+        },
+        VertexAttribute {
+            format: VertexFormat::Snorm16x2,
+            offset: 16,
+            shader_location: 3,
+        },
+        VertexAttribute {
+            format: VertexFormat::Snorm16x4,
+            offset: 20,
+            shader_location: 4,
+        },
+    ];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 28,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 integer and SNORM vertex format pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let positions = [[-32767i16, -32767], [32767, -32767], [-32767, 32767]];
+    let mut vertex_data = Vec::with_capacity(3 * 28);
+    for position in positions {
+        for value in position.into_iter().chain([32767i16, 0, 0, 32767]) {
+            vertex_data.extend_from_slice(&value.to_ne_bytes());
+        }
+        vertex_data.extend_from_slice(&[0, 255, 0, 255]);
+        for value in [-32768i16, 16384] {
+            vertex_data.extend_from_slice(&value.to_ne_bytes());
+        }
+        for value in [0i16, -16384, 16384, 32767] {
+            vertex_data.extend_from_slice(&value.to_ne_bytes());
+        }
+    }
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("integer and SNORM triangle vertices"),
+        size: vertex_data.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .get_mapped_range_mut(..)
+        .expect("map integer and SNORM vertex buffer")
+        .copy_from_slice(&vertex_data);
+    vertex.unmap();
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("integer and SNORM vertex readback target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("integer and SNORM vertex readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("integer and SNORM vertex commands"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("integer and SNORM vertex render pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for integer and SNORM vertex draw");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("integer and SNORM vertex readback callback")
+        .expect("map integer and SNORM vertex readback");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped integer and SNORM pixels");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                let pixel = &pixels[offset..offset + 4];
+                for (channel, expected) in [128u8, 112, 32, 207].into_iter().enumerate() {
+                    assert!(
+                        pixel[channel].abs_diff(expected) <= 1,
+                        "integer/SNORM vertex pixel ({x}, {y}) channel {channel}: {pixel:?}"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!(
+        "PASS: public FL9_1 Sint16x2/Sint16x4/Uint8x4/Snorm16x2/Snorm16x4 input data affected all 64 pixels"
+    );
+}
+
+#[test]
 fn public_dx11_byte_aligned_vertex_attribute_offset_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut instance_descriptor = InstanceDescriptor::new_without_display_handle();
@@ -9280,6 +9794,154 @@ fn public_dx11_vertex_attribute_limit_boundary_at_fl91() {
     });
     println!(
         "PASS: Core rejected vertex attribute location 16 against the advertised 16-slot limit"
+    );
+}
+
+#[test]
+fn public_dx11_texture_dimension_2d_boundary_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters
+        .into_iter()
+        .find(|adapter| adapter.get_info().driver_info.contains("physical"))
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let limits = adapter.limits();
+    assert_eq!(limits.max_texture_dimension_2d, 2048);
+    let max_texture_dimension_2d = limits.max_texture_dimension_2d;
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; max_texture_dimension_2d={}",
+        info.name, info.vendor, info.device, info.driver_info, max_texture_dimension_2d
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 texture dimension boundary test"),
+        required_features: Features::empty(),
+        required_limits: limits,
+        ..Default::default()
+    }))
+    .expect("request the selected physical FL9_1 device");
+
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 maximum-width texture"),
+        size: Extent3d {
+            width: max_texture_dimension_2d,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let mut pixels = vec![0; max_texture_dimension_2d as usize * 4];
+    let expected = [29, 113, 197, 251];
+    let last_pixel_offset = pixels.len() - 4;
+    pixels[last_pixel_offset..].copy_from_slice(&expected);
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &pixels,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(max_texture_dimension_2d * 4),
+            rows_per_image: Some(1),
+        },
+        Extent3d {
+            width: max_texture_dimension_2d,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 maximum-width edge readback"),
+        size: 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 maximum-width edge copy"),
+    });
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: Origin3d {
+                x: max_texture_dimension_2d - 1,
+                y: 0,
+                z: 0,
+            },
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(1),
+            },
+        },
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("complete maximum-width texture edge copy");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("maximum-width readback map callback")
+        .expect("map maximum-width readback");
+    let data = readback.slice(..).get_mapped_range().expect("mapped data");
+    assert_eq!(&data[..4], &expected);
+    drop(data);
+    readback.unmap();
+
+    expect_validation_error_containing(&device, "2D texture width 2049", "LimitExceeded", || {
+        drop(device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 over-limit texture"),
+            size: Extent3d {
+                width: max_texture_dimension_2d + 1,
+                height: 1,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        }));
+    });
+    println!(
+        "PASS: public FL9_1 accepted and copied edge texel at x=2047; Core rejected width 2049"
     );
 }
 
@@ -31530,6 +32192,345 @@ fn public_dx11_render_bundle_preserves_pass_stencil_reference_at_fl91() {
 }
 
 #[test]
+fn public_dx11_inter_stage_varying_limit_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapter = match poll_ready(instance.request_adapter(&RequestAdapterOptions {
+        power_preference: PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        ..Default::default()
+    })) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            assert!(
+                !required,
+                "strict mode requires a physical FL9_1 adapter: {error}"
+            );
+            println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+            return;
+        }
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let limits = adapter.limits();
+    assert_eq!(limits.max_inter_stage_shader_variables, 8);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; inter_stage_variables=8",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public D3D11 FL9_1 eight inter-stage varyings"),
+        required_features: Features::empty(),
+        required_limits: limits,
+        ..Default::default()
+    }))
+    .expect("request a device within the public FL9_1 projection");
+
+    let positive_fields = (0..8)
+        .map(|location| format!("@location({location}) value{location}: vec4f"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let positive_values = (0..8)
+        .map(|_| "vec4f(0.03125, 0.015625, 0.0078125, 0.125)")
+        .collect::<Vec<_>>()
+        .join(", ");
+    let positive_sum = (0..8)
+        .map(|location| format!("input.value{location}"))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let positive_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 eight matched inter-stage vec4 varyings"),
+        source: ShaderSource::Wgsl(
+            format!(
+                "struct VertexOut {{ @builtin(position) position: vec4f, {positive_fields} }}\n\
+                 struct FragmentIn {{ {positive_fields} }}\n\
+                 @vertex fn vs(@location(0) position: vec2f) -> VertexOut {{\n\
+                     return VertexOut(vec4f(position, 0.5, 1.0), {positive_values});\n\
+                 }}\n\
+                 @fragment fn fs(input: FragmentIn) -> @location(0) vec4f {{\n\
+                     return {positive_sum};\n\
+                 }}"
+            )
+            .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 eight varying boundary pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &positive_shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &positive_shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let vertex_bytes: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 eight varying fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map eight varying fullscreen triangle")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 eight varying output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 eight varying readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 eight varying render and readback"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 eight varying render pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for eight varying rendering");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("eight varying readback callback")
+        .expect("map eight varying readback");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped eight varying readback");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &pixels[offset..offset + 4],
+                    [64, 32, 16, 255],
+                    "eight varying output pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+
+    let over_limit_fields = (0..9)
+        .map(|location| format!("@location({location}) value{location}: vec4f"))
+        .collect::<Vec<_>>()
+        .join(", ");
+    let over_limit_values = (0..9)
+        .map(|_| "vec4f(0.015625, 0.0078125, 0.00390625, 0.0625)")
+        .collect::<Vec<_>>()
+        .join(", ");
+    let over_limit_sum = (0..9)
+        .map(|location| format!("input.value{location}"))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let over_limit_wgsl = format!(
+        "struct VertexOut {{ @builtin(position) position: vec4f, {over_limit_fields} }}\n\
+         struct FragmentIn {{ {over_limit_fields} }}\n\
+         @vertex fn vs(@location(0) position: vec2f) -> VertexOut {{\n\
+             return VertexOut(vec4f(position, 0.5, 1.0), {over_limit_values});\n\
+         }}\n\
+         @fragment fn fs(input: FragmentIn) -> @location(0) vec4f {{\n\
+             return {over_limit_sum};\n\
+         }}"
+    );
+    expect_validation_error_containing(
+        &device,
+        "ninth inter-stage varying at location 8",
+        "max_inter_stage_shader_variables",
+        || {
+            let shader = device.create_shader_module(ShaderModuleDescriptor {
+                label: Some("FL9_1 ninth inter-stage varying"),
+                source: ShaderSource::Wgsl(over_limit_wgsl.into()),
+            });
+            let _ = device.create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some("FL9_1 nine varying over-limit pipeline"),
+                layout: None,
+                vertex: VertexState {
+                    module: &shader,
+                    entry_point: Some("vs"),
+                    compilation_options: PipelineCompilationOptions::default(),
+                    buffers: &vertex_buffers,
+                },
+                primitive: PrimitiveState::default(),
+                depth_stencil: None,
+                multisample: MultisampleState::default(),
+                fragment: Some(FragmentState {
+                    module: &shader,
+                    entry_point: Some("fs"),
+                    compilation_options: PipelineCompilationOptions::default(),
+                    targets: &targets,
+                }),
+                multiview_mask: None,
+                cache: None,
+            });
+        },
+    );
+    println!(
+        "PASS: eight matched vec4 varyings at locations 0–7 rendered [64, 32, 16, 255] in 64/64 pixels; Core rejected location 8 against max_inter_stage_shader_variables before HAL"
+    );
+}
+
+#[test]
+fn public_dx11_repeat_sampler_limit_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapter = match poll_ready(instance.request_adapter(&RequestAdapterOptions {
+        power_preference: PowerPreference::HighPerformance,
+        force_fallback_adapter: false,
+        ..Default::default()
+    })) {
+        Ok(adapter) => adapter,
+        Err(error) => {
+            assert!(
+                !required,
+                "strict mode requires a physical FL9_1 adapter: {error}"
+            );
+            println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+            return;
+        }
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let max_repeat = adapter
+        .get_downlevel_capabilities()
+        .limits
+        .max_texture_repeat_per_primitive;
+    assert_eq!(max_repeat, 128);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; max_texture_repeat_per_primitive={max_repeat}",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public D3D11 FL9_1 repeat sampler validation"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the public FL9_1 projection");
+
+    for (name, address_mode) in [
+        ("repeat", AddressMode::Repeat),
+        ("mirror repeat", AddressMode::MirrorRepeat),
+    ] {
+        expect_validation_error_containing(&device, name, "TextureRepeatLimitExceeded", || {
+            drop(device.create_sampler(&SamplerDescriptor {
+                address_mode_u: address_mode,
+                mag_filter: FilterMode::Nearest,
+                min_filter: FilterMode::Nearest,
+                mipmap_filter: MipmapFilterMode::Nearest,
+                ..Default::default()
+            }));
+        });
+    }
+    println!(
+        "PASS: public Core rejected repeat and mirror-repeat sampler creation using the projected FL9_1 limit before HAL"
+    );
+}
+
+#[test]
 fn public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -31964,11 +32965,11 @@ fn public_dx11_uses_thirteen_uniform_registers_per_stage_at_fl91() {
         immediate_size: 0,
     });
 
-    let mut data = vec![0u8; logical_bindings.len() * 256];
+    let mut data = vec![0u8; logical_bindings.len() * 512];
     for index in 0..logical_bindings.len() {
         let mut value = [0.0f32; 4];
         value[index % 4] = (index + 1) as f32 / 64.0;
-        let offset = index * 256;
+        let offset = index * 512 + 256;
         for (component, float) in value.into_iter().enumerate() {
             data[offset + component * 4..offset + component * 4 + 4]
                 .copy_from_slice(&float.to_ne_bytes());
@@ -31988,7 +32989,7 @@ fn public_dx11_uses_thirteen_uniform_registers_per_stage_at_fl91() {
             binding,
             resource: BindingResource::Buffer(BufferBinding {
                 buffer: &uniforms,
-                offset: (index * 256) as u64,
+                offset: (index * 512) as u64,
                 size: NonZeroU64::new(16),
             }),
         })
@@ -32164,7 +33165,7 @@ fn public_dx11_uses_thirteen_uniform_registers_per_stage_at_fl91() {
         });
         pass.set_pipeline(&pipeline);
         pass.set_vertex_buffer(0, vertex.slice(..));
-        pass.set_bind_group(0, &group, &[0; 13]);
+        pass.set_bind_group(0, &group, &[256; 13]);
         pass.set_bind_group(1, &vertex_group, &[]);
         pass.draw(0..3, 0..1);
     }

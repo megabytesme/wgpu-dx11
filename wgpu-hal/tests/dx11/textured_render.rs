@@ -340,6 +340,11 @@ fn sampler_state_anisotropy_two() -> windows::core::Result<()> {
 }
 
 #[test]
+fn sampler_state_anisotropic_minification() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 53)
+}
+
+#[test]
 fn sampler_state_lod_one_minification() -> windows::core::Result<()> {
     sampled_triangle_variant(true, true, false, true, false, 0, None, 44)
 }
@@ -407,7 +412,7 @@ fn sampled_triangle_variant(
     variant: u8,
 ) -> windows::core::Result<()> {
     let sampler_case = (30..=39).contains(&variant)
-        || matches!(variant, 42 | 44 | 45 | 46 | 47 | 48 | 50 | 51 | 52);
+        || matches!(variant, 42 | 44 | 45 | 46 | 47 | 48 | 50 | 51 | 52 | 53);
     let conditional_npot = (20..=24).contains(&variant);
     let sparse = (1..=4).contains(&variant);
     let multi_resource = variant >= 10;
@@ -484,18 +489,30 @@ fn sampled_triangle_variant(
         if sampler_case {
             let (scale, bias) = if variant == 51 {
                 ("0.125", "0.0")
+            } else if variant == 53 {
+                ("vec2f(0.03125, 0.0078125)", "vec2f(0.3671875, 0.375)")
             } else if matches!(variant, 33 | 35 | 44 | 46 | 47) {
                 ("0.5", "-1.75")
             } else {
                 ("0.03125", "0.359375")
             };
-            wgsl.push_str(&alloc::format!("struct Out {{ @builtin(position) pos: vec4f, @location(0) color: vec4f, @location(1) uv: vec2f }}; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out {{ var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; out.uv = vec2f((p.x + 1.0) * 4.0, (1.0 - p.y) * 4.0) * {scale} + vec2f({bias}); return out; }} @fragment fn fs(in: Out) -> @location(0) vec4f {{ "));
+            let scale = if variant == 53 {
+                alloc::string::String::from(scale)
+            } else {
+                alloc::format!("vec2f({scale})")
+            };
+            let bias = if variant == 53 {
+                alloc::string::String::from(bias)
+            } else {
+                alloc::format!("vec2f({bias})")
+            };
+            wgsl.push_str(&alloc::format!("struct Out {{ @builtin(position) pos: vec4f, @location(0) color: vec4f, @location(1) uv: vec2f }}; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out {{ var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; out.uv = vec2f((p.x + 1.0) * 4.0, (1.0 - p.y) * 4.0) * {scale} + {bias}; return out; }} @fragment fn fs(in: Out) -> @location(0) vec4f {{ "));
         } else {
             wgsl.push_str("struct Out { @builtin(position) pos: vec4f, @location(0) color: vec4f }; @vertex fn vs(@location(0) p: vec2f, @location(1) c: vec4f) -> Out { var out: Out; out.pos = vec4f(p, 0.5, 1.0); out.color = c; return out; } @fragment fn fs(in: Out) -> @location(0) vec4f { ");
         }
         if sampler_case {
             let uv = match variant {
-                30 | 31 | 32 | 33 | 34 | 35 | 42 | 44 | 45 | 46 | 47 | 51 => "in.uv",
+                30 | 31 | 32 | 33 | 34 | 35 | 42 | 44 | 45 | 46 | 47 | 51 | 53 => "in.uv",
                 36 | 37 => "vec2f(1.625, 0.125)",
                 48 => "vec2f(1.125, 0.125)",
                 39 => "vec2f(1.625, 1.625)",
@@ -969,11 +986,12 @@ fn sampled_triangle_variant(
         assert_eq!(mapped.textures[1], Some(3));
         assert_eq!(mapped.samplers[1], Some(4));
     }
+    let texture_side = if variant == 53 { 64 } else { 4 };
     let texture_desc = crate::TextureDescriptor {
         label: None,
         size: wgt::Extent3d {
-            width: 4,
-            height: 4,
+            width: texture_side,
+            height: texture_side,
             depth_or_array_layers: 1,
         },
         mip_level_count: 1,
@@ -989,7 +1007,7 @@ fn sampled_triangle_variant(
         view_formats: alloc::vec![],
     };
     let texture = unsafe { device.create_texture(&texture_desc).unwrap() };
-    let mut texels = alloc::vec![0; 64];
+    let mut texels = alloc::vec![0; (texture_side * texture_side * 4) as usize];
     for pixel in texels.chunks_exact_mut(4) {
         pixel.copy_from_slice(if effect == 25 {
             &[16, 64, 224, 255]
@@ -1006,15 +1024,24 @@ fn sampled_triangle_variant(
         });
     }
     if sampler_case {
-        for y in 0..4 {
-            for x in 0..4 {
-                let color = match (x >= 2, y >= 2) {
-                    (false, false) => [255, 0, 0, 255],
-                    (true, false) => [0, 255, 0, 255],
-                    (false, true) => [0, 0, 255, 255],
-                    (true, true) => [255, 255, 255, 255],
+        for y in 0..texture_side as usize {
+            for x in 0..texture_side as usize {
+                let color = if variant == 53 {
+                    if x % 2 == 0 {
+                        [0, 0, 0, 255]
+                    } else {
+                        [255, 255, 255, 255]
+                    }
+                } else {
+                    match (x >= 2, y >= 2) {
+                        (false, false) => [255, 0, 0, 255],
+                        (true, false) => [0, 255, 0, 255],
+                        (false, true) => [0, 0, 255, 255],
+                        (true, true) => [255, 255, 255, 255],
+                    }
                 };
-                texels[(y * 4 + x) * 4..(y * 4 + x + 1) * 4].copy_from_slice(&color);
+                let offset = (y * texture_side as usize + x) * 4;
+                texels[offset..offset + 4].copy_from_slice(&color);
             }
         }
     }
@@ -1213,7 +1240,11 @@ fn sampled_triangle_variant(
     } else {
         [0u8, 255, 0, 255]
     }
-    .repeat(if conditional_npot { 15 } else { 16 });
+    .repeat(if conditional_npot {
+        15
+    } else {
+        (texture_side * texture_side) as usize
+    });
     if variant == 24 {
         for row in 0..5 {
             for column in 1..3 {
@@ -1246,7 +1277,7 @@ fn sampled_triangle_variant(
             } else {
                 [0, 0, 255, 255]
             };
-            let mut data = pixel.repeat(16);
+            let mut data = pixel.repeat((texture_side * texture_side) as usize);
             if variant == 13 || variant == 15 || variant == 18 {
                 for row in 0..4 {
                     for column in 1..4 {
@@ -1285,7 +1316,7 @@ fn sampled_triangle_variant(
         border_color: None,
     };
     match variant {
-        31 | 42 | 47 => {
+        31 | 42 | 47 | 53 => {
             sampler_desc.min_filter = wgt::FilterMode::Linear;
             sampler_desc.mag_filter = wgt::FilterMode::Linear;
         }
@@ -1302,7 +1333,7 @@ fn sampled_triangle_variant(
     if variant == 44 || variant == 45 {
         sampler_desc.lod_clamp.end = 1.0;
     }
-    if variant == 42 {
+    if variant == 42 || variant == 53 {
         sampler_desc.anisotropy_clamp = 2;
         sampler_desc.mipmap_filter = wgt::MipmapFilterMode::Linear;
     }
@@ -1312,10 +1343,14 @@ fn sampled_triangle_variant(
         unsupported.anisotropy_clamp = 3;
         assert!(unsafe { device.create_sampler(&unsupported) }.is_err());
     }
-    let transition_sampler = if variant == 38 {
+    let transition_sampler = if variant == 38 || variant == 53 {
         let mut next = sampler_desc.clone();
-        next.mag_filter = wgt::FilterMode::Linear;
-        next.min_filter = wgt::FilterMode::Linear;
+        if variant == 38 {
+            next.mag_filter = wgt::FilterMode::Linear;
+            next.min_filter = wgt::FilterMode::Linear;
+        } else {
+            next.anisotropy_clamp = 1;
+        }
         Some(unsafe { device.create_sampler(&next).unwrap() })
     } else {
         None
@@ -2344,42 +2379,65 @@ fn sampled_triangle_variant(
         std::println!("FL9_1 variant {variant} readback: {actual:?}");
     }
     if sampler_case {
-        let expected: [u8; 4] = match variant {
-            30 | 33 | 34 | 44 | 46 => [255, 255, 255, 255],
-            31 | 32 | 35 | 38 | 42 | 45 | 47 => [128, 128, 128, 255],
-            36 | 48 => [0, 255, 0, 255],
-            37 => [255, 0, 0, 255],
-            39 => [0, 0, 255, 255],
-            51 => [90, 140, 110, 255],
-            50 => [64, 128, 191, 255],
-            52 => [64, 128, 191, 255],
-            _ => unreachable!(),
-        };
-        for (&observed, &want) in actual.iter().zip(&expected) {
-            assert!(
-                (i16::from(observed) - i16::from(want)).abs() <= 1,
-                "variant {variant}: {actual:?} expected {expected:?}"
-            );
-        }
-        if variant == 51 {
-            for y in 0..8usize {
-                for x in 0..8usize {
-                    let expected = [
-                        10 + (x / 2) as u8 * 40,
-                        20 + (y / 2) as u8 * 60,
-                        30 + (x / 2 + y / 2) as u8 * 20,
-                        255,
-                    ];
-                    assert_eq!(&pixels[(y * 8 + x) * 4..][..4], &expected);
+        if variant == 53 {
+            let mean_contrast = |x_range: core::ops::Range<usize>| {
+                let mut total = 0u32;
+                let mut count = 0u32;
+                for y in 1..7 {
+                    for x in x_range.clone() {
+                        let red = pixels[(y * 8 + x) * 4];
+                        total += u32::from(red.abs_diff(128));
+                        count += 1;
+                    }
                 }
-            }
-            std::println!("FL9_1 padded upload: 64/64 sampled pixels matched");
-        }
-        if variant == 38 {
-            assert_eq!(
-                &pixels[(4 * 8 + 2) * 4..(4 * 8 + 3) * 4],
-                &[255, 255, 255, 255]
+                total / count
+            };
+            let anisotropic_contrast = mean_contrast(0..4);
+            let isotropic_contrast = mean_contrast(4..8);
+            std::println!(
+                "FL9_1 minification contrast: anisotropy=2 {anisotropic_contrast}, anisotropy=1 {isotropic_contrast}"
             );
+            assert!(
+                anisotropic_contrast + 24 < isotropic_contrast,
+                "anisotropic filtering should average the alternating minified columns: {pixels:?}"
+            );
+        } else {
+            let expected: [u8; 4] = match variant {
+                30 | 33 | 34 | 44 | 46 => [255, 255, 255, 255],
+                31 | 32 | 35 | 38 | 42 | 45 | 47 => [128, 128, 128, 255],
+                36 | 48 => [0, 255, 0, 255],
+                37 => [255, 0, 0, 255],
+                39 => [0, 0, 255, 255],
+                51 => [90, 140, 110, 255],
+                50 | 52 => [64, 128, 191, 255],
+                _ => unreachable!(),
+            };
+            for (&observed, &want) in actual.iter().zip(&expected) {
+                assert!(
+                    (i16::from(observed) - i16::from(want)).abs() <= 1,
+                    "variant {variant}: {actual:?} expected {expected:?}"
+                );
+            }
+            if variant == 51 {
+                for y in 0..8usize {
+                    for x in 0..8usize {
+                        let expected = [
+                            10 + (x / 2) as u8 * 40,
+                            20 + (y / 2) as u8 * 60,
+                            30 + (x / 2 + y / 2) as u8 * 20,
+                            255,
+                        ];
+                        assert_eq!(&pixels[(y * 8 + x) * 4..][..4], &expected);
+                    }
+                }
+                std::println!("FL9_1 padded upload: 64/64 sampled pixels matched");
+            }
+            if variant == 38 {
+                assert_eq!(
+                    &pixels[(4 * 8 + 2) * 4..(4 * 8 + 3) * 4],
+                    &[255, 255, 255, 255]
+                );
+            }
         }
     } else if multi_resource {
         if count == 8 {

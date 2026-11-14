@@ -28,7 +28,7 @@ fails-if(vulkan) webgpu:api,operation,command_buffer,copyTextureToTexture:copy_d
 fails-if(vulkan) webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format="depth32float"
 fails-if(vulkan) webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format="depth32float-stencil8"
 webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format="stencil8"
-fails-if(dx12) webgpu:api,operation,command_buffer,image_copy:offsets_and_sizes:*
+fails-if(dx11,dx12) webgpu:api,operation,command_buffer,image_copy:offsets_and_sizes:*
 webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod="CopyB2T";checkMethod="FullCopyT2B";dimension="1d"
 webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod="CopyB2T";checkMethod="FullCopyT2B";dimension="2d"
 fails-if(dx12,vulkan,metal) webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod="CopyB2T";checkMethod="FullCopyT2B";dimension="3d"
@@ -64,6 +64,7 @@ webgpu:api,operation,rendering,color_target_state:blending,formats:*
 webgpu:api,operation,rendering,color_target_state:blending,GPUBlendComponent:*
 webgpu:api,operation,rendering,depth:*
 webgpu:api,operation,rendering,draw:*
+webgpu:api,operation,resource_init,buffer:copy_buffer_to_texture:*
 webgpu:api,operation,shader_module,compilation_info:*
 webgpu:api,operation,uncapturederror:iff_uncaptured:*
 //FAIL: webgpu:api,operation,uncapturederror:onuncapturederror_order_wrt_addEventListener

@@ -4070,19 +4070,42 @@ constrained; the completion mission remains active.
 
 ## Current coordinator handoff — 2026-11-14
 
-Latest checkpoint: `0d7b9e6ca` on `uwp-dx11`; working tree was clean. The
-strict public `dx11_public` suite most recently passed 164/164 test functions
-on the RTX 3090 Ti at requested and actual FL9_1; the private HAL suite last
-passed 537/537. These are broad selected-device results, not historical-device
+Branch `uwp-dx11`, HEAD `a5a7a55ff`. The worktree contains ten modified
+tracked files from follow-up tests and documentation. Current strict selected-
+hardware runs pass: public `dx11_public` 167/167 and private D3D11 HAL
+538/538. Hardware was the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), physical rather than WARP, with FL9_1 explicitly requested
+and confirmed. These are broad selected-device results, not historical-device
 or exhaustive contract proof.
 
-Recent read-only audits found no confirmed Core-valid-to-HAL gap in the
-reviewed command, draw, buffer and texture-copy paths, and no new low-risk
-shader expansion. The `image_copy:offsets_and_sizes` CTS parent remains
-inconclusive because it includes unsupported array/other-dimension subcases
-and cannot select its generated copy-depth leaves. Continue the full public
-capability/operation/CTS audit, then implement only a reproduced gap or a
-workload-justified FL9_1 feature. Do not parallelize cross-crate edits or
-heavyweight GPU suites. Historical FL9_1 hardware, Lumia/CoreWindow, physical
-device removal and production Horizon terrain remain unverified or blocked by
-external requirements.
+New evidence includes public 8-varying success / 9-varying Core rejection,
+Repeat and MirrorRepeat limit rejection at the projected limit, and actual
+anisotropic minification output (stripe contrast 1 at anisotropy 2 versus 128
+at anisotropy 1). Full commands and details are in `FL9_1_PROGRESS.md`.
+Clippy and formatting passed; Clippy reports existing D3D11 warnings. No code
+in this follow-up changes adapter selection policy.
+
+This is suitable for experimentation and for applications that stay within
+the tested, explicitly selected subset, but it is not a broadly usable,
+feature-complete FL9_1 wgpu backend. Deliberate or hardware/profile limits
+still exclude compute/UAV/storage, geometry shaders, multiple color outputs,
+indirect draw, occlusion queries, ordinary 1D and 2D-array textures, vertex
+texture sampling and unsupported shader operations. Capability/CTS evidence
+is not exhaustive. The RTX forced to FL9_1 does not stand in for historical
+9_1 drivers; Lumia/CoreWindow runtime and physical device-removal behavior
+remain unverified, as does production Horizon terrain integration.
+
+Continue with bounded, independent agent audits or tests where file ownership
+is clean. Delegate specifications, capability-to-operation mapping, shader
+compiler probes and workload reviews; keep cross-crate design and integration
+coordinator-owned, and serialize Cargo/GPU runs. The prior “13 dynamic
+uniforms” and “eight inter-stage variables” evidence gaps are closed; do not
+reopen them without contrary evidence. Current follow-up should target a
+concrete API/workload gap or a focused public capability boundary.
+Recent agent reviews of texture/surface projection and shader boundaries found
+no new confirmed contract defect or workload-independent shader feature. A
+strict CTS buffer-to-texture initialization selector passed 1/1 on the RTX at
+FL9_1 (source offsets 0 and 8). It is now in the shared passing list after
+1/1 passes on DX11, DX12 and Vulkan and a passing list-sorting check. The
+detailed agent synthesis and command are recorded in
+`FL9_1_PROGRESS.md`.

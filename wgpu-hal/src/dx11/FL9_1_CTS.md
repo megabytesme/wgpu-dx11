@@ -57,6 +57,21 @@ The `basic:clear` and buffer-copy state-transition commands are in
 blend-constant results are recorded under [`render-state CTS`](FL9_1_PROGRESS.md#public-render-state-cts-slice-2026-11-10)
 and [`blend-constant CTS`](TESTING.md#strict-dynamic-blend-constant-cts-selector).
 
+## Selectors skipped by the shared inventory
+
+`image_copy:offsets_and_sizes:*` is skipped on DX11 by `cts_runner/test.lst`.
+Its inner subcases include unsupported 1D textures and multi-layer 2D array
+textures, and the CTS selector cannot isolate its generated copy-depth
+subcases. [Microsoft's 10Level9 device reference](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
+specifies a non-cube 2D texture array size of one at FL9_1; the backend separately exposes six-layer cube resources
+only when their format is query-supported. A prior strict aggregate probe
+selected the physical RTX 3090 Ti at requested/actual FL9_1, but failed on the
+unsupported multi-layer cases. It did not report a content mismatch for the
+one-layer upload cases, but it cannot count as a one-layer CTS pass. Focused
+public and HAL transfer tests remain the evidence for supported offsets and
+row layouts. This skip does not imply those focused cases failed or that array
+textures are supported.
+
 ## Executed filtered depth selectors
 
 The exact commands below ran on the physical RTX 3090 Ti at requested and

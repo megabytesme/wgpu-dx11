@@ -15613,6 +15613,7 @@ feature while continuing to assert that broad BC support is absent; the full
 Core suite then passed. No public enumeration default or backend priority was
 changed.
 
+
 ## Query-gated BC1/BC2/BC3 sRGB subset — 2026-11-09
 
 Added a separate native-only `TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB` feature.
@@ -20925,3 +20926,109 @@ the same command outside the developer environment failed because
 `link.exe` was not on PATH. The successful build emitted existing wgpu-types
 warnings for unused serde imports and unnecessary qualifications; no behavior
 changed.
+
+## Public odd-sized uniform range and CTS inventory correction — 2026-11-14
+
+Added a strict public wgpu rendering test for the projected
+`BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED` capability. On the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requested/actual FL9_1,
+the test bound a 4-byte fragment scalar from buffer offset 256 and verified all
+64 rendered pixels. This closes the prior projection-to-public-Core evidence
+gap for this selected driver. It does not verify historical FL9_1 hardware or
+odd-sized native GPU buffer copies; constant-buffer materialization still uses
+CPU scratch and a mapped staging resource.
+
+The focused strict test passed 1/1. The full strict public `dx11_public` target
+passed 165/165 test functions (0 failed, 0 ignored). `cargo +1.93.1 fmt -p
+wgpu` and `git diff --check` passed. CTS list sorting passed 1/1 in the earlier
+curation check; no CTS GPU run was made for that selector. The broad
+`image_copy:offsets_and_sizes:*` selector is now excluded for DX11 in the
+shared test inventory because its generated cases include unsupported
+dimensions/layers and the runner cannot isolate the applicable leaves;
+focused transfer tests remain the evidence for supported paths.
+
+The delegated Core/HAL and capability-projection audits found no concrete
+Core-valid request reaching a known HAL rejection or incorrect path in the
+reviewed areas. The capability audit identified secondary evidence gaps rather
+than demonstrated defects: meaningful anisotropic-minification output and
+precise public boundary cases for eight inter-stage variables and several
+maximum dimensions/allocations. A follow-up found the exact 13-dynamic-uniform
+case already covered by a strict public render; all 13 zero offsets are
+accepted, while nonzero offset selection is covered by the twelve-binding
+case. The HAL audit noted one direct-call caveat: `tlas_instance_to_bytes` panics, but current
+Core feature gates and the D3D11 projection make that safe HAL method
+unreachable through wgpu. Continue targeted evidence work and workload-backed
+implementation; broad feature expansion should remain a coordinator decision.
+
+## Coordinator follow-up — sampler and public-limit evidence — 2026-11-14
+
+Closed the two selected-device evidence gaps identified above and added a
+public repeat-limit regression:
+
+- A strict public test exercised eight inter-stage `vec4` variables and
+  confirmed that Core rejects the ninth. All 64 readback pixels matched.
+- A strict public validation test confirmed that the projected repeat limit
+  of 128 rejects both Repeat and MirrorRepeat samplers before HAL. This is
+  validation evidence, not a GPU sampling test.
+- A strict private-HAL test minified a patterned texture and measured stripe
+  contrast 1 with anisotropy 2 versus 128 with anisotropy 1. This verifies an
+  observable filter result on this driver; it does not establish historical
+  FL9_1 quality or behavior.
+
+The RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) was selected as a
+physical adapter and explicitly requested/confirmed at FL9_1. The full strict
+public target passed 167/167 test functions and the full private HAL suite
+passed 538/538. Public `wgpu` Clippy and HAL Clippy completed; the public run
+reported eight existing D3D11 HAL warnings and no warning from the new public
+tests. `cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed.
+The CTS selector-list sorting test passed 1/1; no CTS GPU suite was run in
+this increment. Optional per-format subcases in the full hardware suites may
+log explicit skips and are not counted as executed feature evidence.
+
+The earlier exact-13 dynamic-uniform question was already covered by the
+strict public `public_dx11_uses_thirteen_uniform_registers_per_stage_at_fl91`
+test; it is not an open gap. Current follow-up gaps are boundary evidence for
+maximum dimensions/allocations, historical-device behavior, Lumia/CoreWindow
+execution and physical device removal. Deliberately unavailable FL9_1/profile
+areas remain compute/UAV/storage, geometry shaders, multiple color outputs,
+indirect draws, occlusion queries, ordinary 1D/2D-array textures, vertex
+texture sampling and unsupported shader operations. This remains a useful
+opt-in graphics subset, not a feature-complete or CTS-conformant wgpu backend.
+The current worktree is uncommitted at `a5a7a55ff`.
+Three new read-only agent audits are in progress: a Core/HAL review of texture
+formats, views, samplers, attachments and surfaces; a shader review for one
+workload-backed safe WGSL expansion; and a CTS selector-isolation review.
+Agents own only their separate analysis, with no repository edits or parallel
+Cargo runs. The coordinator will choose and integrate any concrete follow-up.
+## Completed coordinator audits — Core/HAL, shader, CTS — 2026-11-14
+
+Three separate read-only agents completed bounded reviews, with no file edits:
+
+- The texture-format/usage, view-format, sampler, attachment and surface audit
+  found the public Core projection consistent with HAL creation and surface
+  configuration guards in the reviewed paths; no concrete Core-valid-to-HAL
+  mismatch was found. This is scoped review, not a formal proof of all APIs.
+- The shader audit found no justified next WGSL feature without a representative
+  production Horizon shader. General derivatives/gradients, unrestricted
+  dynamic indexing, broad control flow, and general explicit-LOD/gather-compare
+  remain gated by profile constraints or lack a demonstrated workload. The
+  available Horizon probe is not the production renderer and uses 2D arrays,
+  which FL9_1 cannot support.
+- CTS triage identified a clean selector:
+  `webgpu:api,operation,resource_init,buffer:copy_buffer_to_texture:*`. The
+  coordinator reran it in strict DX11 hardware mode. On the physical RTX 3090
+  Ti at explicitly requested/verified FL9_1, both source offsets 0 and 8 ran;
+  result was 1/1 passed, 0 skipped, 0 failed. It checks zero initialization,
+  so the dedicated patterned-texture upload tests remain stronger content
+  evidence. The selector is now in the shared passing list. It also passed on
+  DX12 and Vulkan, each 1/1 with both subcases and no skips or failures. The
+  CTS selector-list sorting test passed after the addition. Vulkan printed an
+  existing loader warning for the absent OBS layer manifest; the test passed.
+
+## Coordinator increment — public 2D texture-size boundary — 2026-11-14
+
+A strict public test now creates an FL9_1 texture at the advertised 2048 width, uploads a row, copies the last texel at x=2047 to CPU memory and validates its RGBA value. It also confirms Core rejects width 2049. The physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) was explicitly requested and confirmed at FL9_1. The focused test passed 1/1; the complete strict public target passed 169/169 and the complete private D3D11 HAL library suite passed 538/538.
+
+The private run emitted 28 existing Clippy warnings. Public and HAL Clippy completed successfully; public Clippy emitted the same eight existing D3D11 HAL warnings and no warnings from the public integration tests. `cargo +1.93.1 fmt --all -- --check` and `git diff --check` passed. The first compile of the new test caught two test-local ownership/borrow issues, both corrected before the passing run.
+
+Three disjoint read-only audits found no confirmed unsupported Core-valid request in the reviewed paths. Uniform support is mature for the tested subset; residual shader forms are deliberately narrow or workload-dependent. Resource review identified only selected-device boundary evidence gaps, including the now-closed 2048 2D dimension case. Application review confirms suitability for explicit FL9_1 experiments, not drop-in compatibility; production Horizon integration and historical FL9_1/Lumia verification remain external gaps.
