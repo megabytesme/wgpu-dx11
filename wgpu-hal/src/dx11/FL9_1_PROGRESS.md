@@ -20796,3 +20796,19 @@ device was explicitly requested and confirmed at FL9_1 with
 `software=false`; all 64 RGBA8 readback pixels matched `[32, 191, 64, 255]`.
 The full strict public target passed 163/163 with no failures or skips. This
 verifies the selected adapter only; historical FL9_1 drivers remain untested.
+
+## Capability evidence-ledger correction — 2026-11-14
+
+The capability table contained two stale coverage statements: RGB565
+multisample blending was described as unverified, and vertex input overlap,
+stream offsets and maximum stride were grouped as unverified. The strict
+public RGB565 test already verifies blending, resolve, sampling and readback
+for each advertised sample count. The private-HAL overlap test verifies
+overlapping attributes with vertex-buffer offset 8 across indexed and
+nonindexed draws and a pipeline transition. Its focused strict FL9_1 rerun
+passed 1/1 on the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`). The strict public suite separately verifies vertex slot 15
+and the 2048-byte maximum stride (checkpoint `ee89f6606d297d726c981037d4d9ed77410fed3f`,
+163/163). Capability wording now distinguishes those selected-device tests
+from the remaining optional-format and historical-driver gaps. No capability
+projection or backend behavior changed.
