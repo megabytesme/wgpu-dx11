@@ -21595,3 +21595,22 @@ The command completed successfully in 43.27 seconds, compiling `wgpu-hal`,
 This verifies compile-time target compatibility only; the Lumia Device Portal
 is still timing out, so no ARM32 device creation, CoreWindow surface or GPU
 rendering result is claimed.
+
+## Compressed texture edge and mip-tail GPU check — 2026-11-14
+
+To close the descriptor audit's least-covered local case, the strict public
+`dx11_bc_mips` test was run at current HEAD `6fadc05ef` with
+`WGPU_DX11_REQUIRE_HARDWARE=1`. It passed 1/1 test function on the physical
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual
+FL9_1. Across BC1/2/3 UNORM and sRGB it uploaded and copied four-mip 2D
+textures, sampled their 2x2 and 1x1 mip tails, and sampled all six faces of
+four-mip cube textures. All six 2D render cases matched 64/64 pixels each;
+all six cube cases matched 768/768 pixels each. The exact command was:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_bc_mips public_dx11_bc_mip_chains_and_cube_faces_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+This closes that tested format/mip-tail coverage question on the selected
+adapter; it does not establish behavior on historical FL9_1 drivers.
