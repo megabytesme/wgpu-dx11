@@ -20362,3 +20362,29 @@ cargo +1.93.1 clippy --offline -j8 -p wgpu --test dx11_public --no-default-featu
 cargo +1.93.1 fmt --all -- --check
 git diff --check
 ```
+
+## Query-gated Rg16Snorm copy CTS probe — 2026-11-14
+
+The previously proposed `Rg16Snorm` 2D-to-2D `copyTextureToTexture` probe
+reached the strict CTS runner on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) with the adapter explicitly requested
+and verified at FL9_1. CTS selected one test case, but all subcases were
+skipped because the format requires `texture-formats-tier1`, which is not in
+the conservative FL9_1 projection. Result: 0 passed, 1 skipped, 0 failed.
+This is neither a successful operation test nor evidence of a backend defect;
+the format/feature mismatch makes this selector unsuitable for this adapter.
+It was not added to `cts_runner/test.lst`. The existing RGBA8 2D texture-copy
+selector remains the verified 1/1 case for that operation family.
+
+The first attempted command through the batch cargo wrapper lost the selector's
+embedded JSON quotes and failed in CTS argument parsing before any test began.
+The corrected PowerShell invocation called Cargo directly after importing the
+Visual Studio x64 environment, preserving the quotes:
+
+```powershell
+$env:CARGO_TARGET_DIR = 'C:\Users\ben\AppData\Local\Temp\wgpu-dx11-completion-target'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rg16snorm";dstFormat="rg16snorm";dimension="2d"'
+```
+
+Do not add this selector to the curated passing inventory. The next candidate
+should be selected from scoped API, resource and shader coverage audits.

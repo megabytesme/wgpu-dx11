@@ -3,21 +3,20 @@
 ## Coordinator status — 2026-11-14
 
 Current support is a constrained opt-in public desktop graphics subset, not a
-general FL9_1-complete wgpu backend. The current uncommitted increment permits
-one existing helper-based fragment `textureSampleLevel(..., 0.0)` result to be
-multiplied by one selected-entry-used `vec4<f32>` tint uniform. Core/HAL accept
-only that exact componentwise product shape and reject addition, scalar
-promotion, extra resources and control flow. FXC accepts the lowered shader;
-the strict RTX 3090 Ti test checked all 64 pixels against two distinct tinted
-texel colors at requested/actual FL9_1. Core DX11, private HAL, public DX11 and
-Core DX12 suites passed 153, 534, 157 and 140 tests respectively.
+general FL9_1-complete wgpu backend. Commit `4193ea447` permits one existing
+helper-based fragment `textureSampleLevel(..., 0.0)` result to be multiplied
+by one selected-entry-used `vec4<f32>` tint uniform. Core/HAL accept only that
+exact componentwise product shape and reject addition, scalar promotion, extra
+resources and control flow. FXC accepts the lowered shader; the strict RTX
+3090 Ti test checked all 64 pixels against two distinct tinted texel colors
+at requested/actual FL9_1. Core DX11, private HAL, public DX11 and Core DX12
+suites passed 153, 534, 157 and 140 tests respectively.
 
 Recent committed coverage also verifies fragment `textureGather` across
 separate groups with a tint uniform (`c2e278703`), the maximum 253-entry
 uniform-indexed vertex palette (`52569af72`), and 13 vertex plus 13 fragment
 uniforms in one group (`a53bb7298`). Each strict draw checked all 64 pixels.
-The current tint change will be checkpointed after its documentation and
-final checks.
+The tint change is committed as `4193ea447`.
 
 ### Remaining support work
 
@@ -41,10 +40,12 @@ final checks.
   such as Horizon. The backend should be used through explicit DX11 selection
   and within the published experimental projection.
 
-The next bounded verification candidate is the query-gated `Rg16Snorm`
-2D-to-2D `copyTextureToTexture` CTS case, filtered to two-dimensional
-non-array resources. Record it as a curated pass only if strict hardware
-execution has zero failures and skips.
+The query-gated `Rg16Snorm` 2D-to-2D CTS probe was attempted on the RTX 3090 Ti
+at forced FL9_1 and skipped because `texture-formats-tier1` is absent from the
+conservative projection. It is not a pass and must not enter the curated test
+inventory. The RGBA8 2D copy selector already passed 1/1 with no skips or
+failures. The next bounded verification target should come from the current
+API, resource and shader coverage audits.
 
 Use agents for bounded read-only audits, compiler/specification probes,
 supported-CTS triage and application requirement reviews. Keep each

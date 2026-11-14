@@ -18,6 +18,15 @@ unsupported dimensional variants do not contaminate the result. Add it to the
 curated passing inventory only if strict hardware execution has zero failures
 and skips. Do not claim that forced FL9_1 on the RTX models older drivers.
 
+The previous next-candidate probe, query-gated `Rg16Snorm` 2D texture copy,
+was not eligible for this adapter projection: the CTS required
+`texture-formats-tier1`, so the single selected CTS case and all of its
+subcases were skipped on the RTX 3090 Ti forced to FL9_1. This is not a pass
+or a backend failure, and it was not added to `cts_runner/test.lst`. The
+RGBA8 2D copy selector is already recorded below as a strict 1/1 pass. Choose
+the next CTS or implementation candidate from the current scoped coverage
+audits rather than repeating either probe.
+
 The long-running gaps remain a broader capability-to-Core-to-HAL audit,
 curated CTS coverage for the selected projection, representative application
 workload validation, historical FL9_1 drivers, Windows 10 Mobile/Lumia runtime,
