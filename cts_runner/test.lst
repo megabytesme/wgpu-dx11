@@ -19,9 +19,12 @@ webgpu:api,operation,command_buffer,copyBufferToBuffer:*
 webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="bgra8unorm";dstFormat="bgra8unorm";dimension="2d"
 webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="bgra8unorm";dstFormat="bgra8unorm-srgb";dimension="2d"
 webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="bgra8unorm-srgb";dstFormat="bgra8unorm";dimension="2d"
+webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="bgra8unorm-srgb";dstFormat="bgra8unorm-srgb";dimension="2d"
 webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="r8unorm";dstFormat="r8unorm";dimension="2d"
+webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rgba8unorm";dstFormat="rgba8unorm";dimension="2d"
 webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rgba8unorm";dstFormat="rgba8unorm-srgb";dimension="2d"
 webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rgba8unorm-srgb";dstFormat="rgba8unorm";dimension="2d"
+webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rgba8unorm-srgb";dstFormat="rgba8unorm-srgb";dimension="2d"
 fails-if(vulkan) webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format="depth16unorm"
 fails-if(vulkan) webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format="depth24plus"
 fails-if(vulkan) webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format="depth24plus-stencil8"
@@ -40,6 +43,10 @@ fails-if(dx12) webgpu:api,operation,command_buffer,image_copy:undefined_params:i
 webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod="WriteTexture";checkMethod="PartialCopyT2B";dimension="3d"
 // https://github.com/gfx-rs/wgpu/issues/8556
 fails-if(dx12) webgpu:api,operation,command_buffer,programmable,immediate:*
+webgpu:api,operation,command_buffer,render,state_tracking:change_pipeline_before_and_after_vertex_buffer:*
+webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_before_non_indexed_draw:*
+webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_without_changing_buffer:*
+webgpu:api,operation,command_buffer,render,state_tracking:set_vertex_buffer_without_changing_buffer:*
 webgpu:api,operation,compute_pipeline,overrides:*
 //FAIL: webgpu:api,operation,compute,basic:large_dispatch:*
 webgpu:api,operation,compute,basic:memcpy:*

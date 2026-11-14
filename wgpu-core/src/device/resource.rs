@@ -5367,7 +5367,8 @@ impl Device {
                     wgt::ColorWrites::RED | wgt::ColorWrites::GREEN | wgt::ColorWrites::BLUE,
                 ) && target.write_mask.contains(wgt::ColorWrites::ALPHA)
                     && target.blend.is_some_and(|blend| {
-                        blend != wgt::BlendState::REPLACE && blend.color != blend.alpha
+                        blend != wgt::BlendState::REPLACE
+                            && !blend.color.is_equivalent_for_alpha(&blend.alpha)
                     })
             }) {
                 self.require_downlevel_flags(wgt::DownlevelFlags::SEPARATE_ALPHA_BLEND)?;

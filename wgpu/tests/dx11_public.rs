@@ -9433,6 +9433,7 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
         source: ShaderSource::Wgsl(
             "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
              @fragment fn blue() -> @location(0) vec4f { return vec4f(0.0, 0.0, 1.0, 1.0); }\n\
+             @fragment fn blue_alpha() -> @location(0) vec4f { return vec4f(0.0, 0.0, 1.0, 0.25); }\n\
              @fragment fn overlay() -> @location(0) vec4f { return vec4f(0.5, 0.0, 0.0, 0.5); }"
                 .into(),
         ),
@@ -9469,7 +9470,7 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
     let target_view = target.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 blend readback"),
-        size: 8 * 256,
+        size: 2 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -9565,6 +9566,24 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
         Some(premultiplied_over),
         TextureFormat::Rgba8Unorm,
     );
+    let alpha_equivalent_blend = BlendState {
+        color: BlendComponent {
+            src_factor: BlendFactor::OneMinusDst,
+            dst_factor: BlendFactor::OneMinusSrc,
+            operation: BlendOperation::Add,
+        },
+        alpha: BlendComponent {
+            src_factor: BlendFactor::OneMinusDstAlpha,
+            dst_factor: BlendFactor::OneMinusSrcAlpha,
+            operation: BlendOperation::Add,
+        },
+    };
+    let alpha_equivalent_base = render_pipeline("blue_alpha", None, TextureFormat::Rgba8Unorm);
+    let alpha_equivalent_overlay = render_pipeline(
+        "overlay",
+        Some(alpha_equivalent_blend),
+        TextureFormat::Rgba8Unorm,
+    );
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 public blend commands"),
     });
@@ -9612,6 +9631,50 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
             depth_or_array_layers: 1,
         },
     );
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 alpha-equivalent blend pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_pipeline(&alpha_equivalent_base);
+        pass.draw(0..3, 0..1);
+        pass.set_pipeline(&alpha_equivalent_overlay);
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 8 * 256,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
@@ -9629,23 +9692,24 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
         .expect("map public blend readback");
     {
         let data = readback.slice(..).get_mapped_range().expect("mapped data");
-        for y in 0..8 {
-            for x in 0..8 {
-                let offset = y * 256 + x * 4;
-                let actual = &data[offset..offset + 4];
-                for (channel, (&observed, expected)) in
-                    actual.iter().zip([128, 0, 128, 255]).enumerate()
-                {
-                    assert!(
-                        observed.abs_diff(expected) <= 1,
-                        "blend pixel ({x}, {y}) channel {channel}: expected {expected}, observed {observed}"
-                    );
+        for (region_offset, expected) in [(0, [128, 0, 128, 255]), (8 * 256, [128, 0, 255, 128])] {
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = region_offset + y * 256 + x * 4;
+                    let actual = &data[offset..offset + 4];
+                    for (channel, (&observed, expected)) in actual.iter().zip(expected).enumerate()
+                    {
+                        assert!(
+                            observed.abs_diff(expected) <= 1,
+                            "blend pixel ({x}, {y}) channel {channel}: expected {expected}, observed {observed}"
+                        );
+                    }
                 }
             }
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 premultiplied blending; all 64 pixels matched [128, 0, 128, 255]");
+    println!("PASS: public FL9_1 premultiplied blend matched [128, 0, 128, 255], and alpha-equivalent inverse-color blend matched [128, 0, 255, 128], all 64 pixels each");
 }
 
 #[test]

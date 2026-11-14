@@ -21209,3 +21209,61 @@ The first run rebuilt the CTS runner using a consistent low-debug, single-job
 profile after prior mixed-profile artifacts had made CTS builds unreliable.
 The temporary selector list was created under the system temporary directory
 and removed after the run.
+
+## Coupled alpha-equivalent blending and draw-state CTS — 2026-11-14
+
+Core previously compared color and alpha blend components structurally, which
+rejected descriptors whose alpha-channel equations are mathematically equal.
+Added a shared `BlendComponent::is_equivalent_for_alpha` projection for color
+factors (`Src`/`SrcAlpha`, destination factors and inverses, saturated alpha,
+and dual-source aliases). Core and HAL now use that proof only when both RGB
+and alpha are written. The public `SEPARATE_ALPHA_BLEND` flag remains unset;
+truly different alpha equations are still rejected. HAL maps the coupled
+color equation to legal alpha-specific D3D blend factor enums. Invalid Min/Max
+factors continue through ordinary Core validation.
+
+The strict public test rendered premultiplied blending and the accepted
+alpha-equivalent inverse-color case on the NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), explicitly requesting and confirming
+physical FL9_1. The descriptor uses color factors `OneMinusDst` and
+`OneMinusSrc`; their alpha projections match `OneMinusDstAlpha` and
+`OneMinusSrcAlpha`. These factors appear in Microsoft's role-specific FL9_1
+minimum caps. All 64 pixels in each render matched `[128, 0, 128, 255]` and
+`[128, 0, 255, 128]`. An initial public assertion used a miscomputed expected
+blue/alpha result; the strict GPU test exposed that test expectation, which was
+corrected and rerun successfully. This was not a backend rendering failure.
+After the final factor and expected-pixel selection, the full strict public
+D3D11 suite passed 169/169 and the full private HAL suite passed 543/543. The
+focused HAL translation test passed 1/1, and the strict Core hardware fixture
+passed 1/1 with 154 unrelated tests filtered; its conditional RG8 mip case was
+explicitly skipped. Core DX12 passed 139/139, and the `wgpu-types` alpha
+projection test passed 1/1. Do not treat the selected RTX as proof for
+historical blend-factor support. Existing warnings and the Visual Studio
+startup banner are unchanged.
+
+The unrecorded strict CTS state transition
+`webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_before_non_indexed_draw:*`
+passed 1/1 with zero skips/failures. It indexed-draws, changes to a
+nonindexed draw in the same pass and verifies all four RGBA8 pixels. It was
+added to `cts_runner/test.lst`. Two additional state selectors then passed
+1/1 each: `change_pipeline_before_and_after_vertex_buffer` and
+`set_vertex_buffer_without_changing_buffer`; both are now in the shared list.
+The earlier strict buffer-state batch also passed
+`set_index_buffer_without_changing_buffer`. The exact selectors and invocation
+details are in `FL9_1_CTS.md`. Same-format sRGB copies passed 2/2 with zero
+skips or failures. The CTS list sorting regression then passed 1/1.
+
+## R8 3D format projection audit — 2026-11-14
+
+Microsoft's required-format table includes `R8_UNORM` `TEXTURE3D` support at
+FL9_1, but the DX11 backend currently projects only the RGBA8 volume format:
+its 3D shadow and transfer byte layout is fixed at four bytes per texel. Core
+checks the projected 3D format mask and rejects R8 3D with
+`UnsupportedTexture3DFormat` before HAL, so this is an implementation-limited
+exposure rather than a public-valid request reaching the RGBA8-only transfer
+path. The strict Core fixture now asserts the R8 bit is absent and explicitly
+requests a valid-usage R8 volume to verify Core's rejection. The fixture passed
+1/1 on the RTX 3090 Ti at requested/actual FL9_1; one unrelated RG8 mip
+capability subcase was explicitly skipped. Generalizing R8 volume shadow,
+upload, copy/readback and sample paths remains a possible capability expansion
+if a workload needs it.

@@ -2,37 +2,39 @@
 
 ## Coordinator status synthesis — current 2026-11-14
 
-The public path has meaningful FL9_1 rendering coverage but remains a
-constrained opt-in subset. The latest strict public D3D11 target passed
-169/169 test functions and the private HAL suite passed 543/543 on the physical
-RTX 3090 Ti at explicitly requested and confirmed FL9_1. New coverage permits
-only direct, unconditional fragment `textureSampleGrad` on single-mip 2D float
-views with matching min/mag filters and anisotropy 1; Core validates the
-selected view and sampler before draw, and HAL lowers the proven operation to
-implicit sampling. Readback verified all 64 output pixels. Helper, derivative,
-control-flow and unsupported sampler/view forms remain rejected. The full
-strict Core fixture passed 1/1 on that device (154 other Core tests were
-filtered), including its capability matrix and GPU-backed resource cases.
-Focused Core, HAL, and wgpu-types unit tests passed; a focused Core DX12 test passed. Clippy
-completed with existing HAL and wgpu-types warnings, and formatting plus diff
-checks passed. Earlier strict runs remain recorded below; they are not results
-for this latest code state.
+The explicit `Backends::DX11` public path is usable for the documented FL9_1
+subset, but it is not a drop-in backend or Core WebGPU implementation. The
+latest full strict public D3D11 suite passed 169/169 and the private HAL suite
+passed 543/543 on the physical RTX 3090 Ti at explicitly requested and
+confirmed FL9_1. This includes public alpha-equivalent coupled blending,
+verified against all 64 pixels, and the prior selected-entry texture-load,
+fixed-LOD and gradient-lowering subsets. The strict Core fixture passed 1/1
+(154 unrelated tests filtered; one optional RG8 mip capability case skipped),
+Core DX12 passed 139/139, and `wgpu-types` blend projection tests passed. The
+curated CTS sorter passed; strict state-transition probes passed, and same-
+format sRGB texture-copy selectors passed 2/2 with zero skips/failures.
 
-Remaining gaps divide into unfinished capability/validation/CTS evidence and
-workload-led implementation, deliberate FL9_1/profile exclusions (compute,
-UAV/storage, geometry, MRT, indirect draw, occlusion queries, ordinary 1D and
-2D-array textures, vertex texture sampling, and unsupported shader forms),
-and external validation on historical hardware, Lumia/CoreWindow and physical
-device-removal paths. Agents should handle disjoint audits, compiler/spec
-probes and isolated tests; the coordinator owns feature selection and
-cross-crate integration, with one Cargo/GPU run at a time.
+Current code gaps are primarily unexhausted capability/validation/CTS matrices
+and concrete workload requests, not a known broad Core-valid-to-HAL failure in
+the audited texture/view/copy and pipeline areas. The format/view audit found
+no concrete mismatch. Microsoft guarantees R8 3D format support at FL9_1, but
+this backend exposes only the RGBA8 3D format bit because its volume shadow
+transfer path is RGBA8-specific; Core rejects R8 3D before HAL. A fixture
+assertion now guards that boundary. Deliberate FL9_1/profile exclusions include
+compute, UAV/storage, geometry, MRT, indirect draw, occlusion queries, ordinary
+1D and 2D-array textures, vertex texture sampling, and shader forms that exceed
+the level-9 profiles. External gates remain historical FL9_1 hardware,
+Lumia/CoreWindow execution and physical device-removal recovery. Agents are
+most useful for independent, read-only audits and CTS triage; the coordinator
+owns cross-crate changes and serializes Cargo/GPU work.
 
-Read-only inspection of the sibling `HorizonWiiU` source found the production
-renderer, but its Windows target currently selects DX12 and its normal terrain
-pipeline requires `texture_2d_array`; the current FL9_1 projection cannot run
-that pipeline. A standalone indexed mesh using a 2D texture is a realistic
-first app integration smoke test. Actual terrain rendering requires a separate
-application-side atlas/shader path, not an FL9_1 capability claim.
+Read-only consumer review confirms the public offscreen and HWND textured-
+cube examples are usable as opt-in samples. The sibling `HorizonWiiU` Windows
+target currently selects DX12 and its normal terrain pipeline requires
+`texture_2d_array`; the current FL9_1 projection cannot run that pipeline. A
+downstream smoke test should select DX11 explicitly and render an existing
+2D-textured indexed mesh to offscreen RGBA8, verify readback, then present it
+in the app's HWND. Terrain would need an application-side atlas/shader route.
 
 ## Latest coordinator increment — fixed integer fragment texture LOD — 2026-11-14
 

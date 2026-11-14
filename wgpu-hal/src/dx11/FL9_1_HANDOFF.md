@@ -2,24 +2,18 @@
 
 ## Coordinator status — 2026-11-14
 
-The latest code checkpoint is `a60a74f1a` (`dx11: lower restricted FL9_1
-textureSampleGrad`). It adds a narrow selected-entry fragment
-`textureSampleGrad` subset. Core and HAL prove it is direct,
-unconditional sampling of non-array 2D float textures with regular samplers;
-draw validation additionally requires a single-mip view, matching min/mag
-filters and anisotropy 1. HAL lowers only this proven case to implicit sampling
-for the FL9_1 profile. Helper, derivative, control-flow, multi-mip and other
-sampler forms remain rejected. The strict public test verified 64/64 pixels
-through a one-mip view and confirmed Core rejects a multi-mip view before HAL.
-
-Latest strict results are public D3D11 169/169, private HAL 543/543, and the
-Core hardware fixture 1/1 (154 other tests filtered) on the physical RTX 3090
-Ti (`0x10de:0x2203`, driver `32.0.16.2101`) with FL9_1
-explicitly requested and confirmed. Focused Core and HAL tests, a Core DX12
-test and the `wgpu-types` limit test passed. Formatting and `git diff --check`
-passed. Clippy completed with existing warnings; HAL `-D warnings` still fails
-on 28 pre-existing warnings. Full commands and details are in
-`FL9_1_PROGRESS.md`.
+Latest code checkpoint before the current work is `8a8bc1e7e` (`dx11: record
+FL9_1 output format CTS coverage`). The working tree contains an alpha-
+equivalent coupled-blend validation change and evidence-backed CTS inventory
+updates. Full strict D3D11 public and private HAL suites on the physical RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) explicitly requested and
+confirmed FL9_1 passed 169/169 and 543/543 after the final blend descriptor and
+readback expectation were selected. The strict Core fixture passed 1/1 (154
+tests filtered; one optional RG8 mip capability subcase skipped). Core DX12
+passed 139/139 and the `wgpu-types` projection test passed. Three new CTS
+state/transition selectors passed 1/1 each; two same-format sRGB copy
+selectors passed 1/1 each; the shared CTS-list sorter passed 1/1. Details are
+in `FL9_1_PROGRESS.md` and `FL9_1_CTS.md`.
 
 The implemented subset covers desktop offscreen and HWND rendering, textured
 depth-tested draws, tested multi-group resource patterns, uniforms and dynamic
@@ -31,10 +25,13 @@ nor Lumia/CoreWindow GPU execution has occurred.
 ### Remaining support work
 
 - **Implementation and validation:** the public capability-to-Core-to-HAL and
-  curated CTS matrices remain incomplete. Scoped audits have found no
-  confirmed public-valid request reaching a known unsupported HAL operation,
-  but this is not exhaustive. Expand only against a concrete API contract or
-  workload, with matching Core/HAL validation and GPU evidence.
+  curated CTS matrices remain incomplete. Scoped audits found no concrete
+  public-valid request reaching a known-unsupported HAL path in texture/view/
+  copy and pipeline descriptor areas, but coverage is not exhaustive. The
+  format audit confirmed R8 3D textures are rejected before HAL because only
+  RGBA8 has a volume shadow-transfer path; a Core fixture now asserts the
+  exclusion. Expand only against a concrete API contract or workload, with
+  matching Core/HAL validation and GPU evidence.
 - **Shader and resource boundaries:** compute/UAV/storage execution, geometry
   shaders, multiple color outputs, indirect drawing, occlusion queries,
   ordinary 1D and 2D-array textures, vertex texture sampling, and broad WGSL

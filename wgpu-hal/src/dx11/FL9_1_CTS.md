@@ -47,6 +47,10 @@ only.
 | `webgpu:api,operation,command_buffer,copyBufferToBuffer:state_transitions:*` | 1/1 passed, no skips or failures | Ordered partial copies and readback. |
 | `webgpu:api,operation,resource_init,buffer:copy_buffer_to_texture:*` | 1/1 passed, no skips or failures | Buffer-to-texture initialization, including source-offset subcases. |
 | `webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rgba8unorm";dstFormat="rgba8unorm";dimension="2d"` | 1/1 passed, no skips or failures | Non-array RGBA8 2D copies, including generated mip/region cases. |
+| `webgpu:api,operation,command_buffer,render,state_tracking:change_pipeline_before_and_after_vertex_buffer:*` | 1/1 passed, no skips or failures | Pipeline and vertex-buffer state transitions across point draws. |
+| `webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_before_non_indexed_draw:*` | 1/1 passed, no skips or failures | Indexed point draw followed by nonindexed draw in the same pass. |
+| `webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_without_changing_buffer:*` | 1/1 passed, no skips or failures | Index-buffer offset/range changes without rebinding the underlying buffer. |
+| `webgpu:api,operation,command_buffer,render,state_tracking:set_vertex_buffer_without_changing_buffer:*` | 1/1 passed, no skips or failures | Vertex-buffer offset/size state changes without rebinding the underlying buffer. |
 | `webgpu:api,operation,rendering,color_target_state:blending,formats:*` | 4 passed, 29 skipped, 6 failed | RGBA8/RG8/R8 linear blend paths passed. Failures are listed below: two sRGB targets hit the documented FL9_1 blend-semantics rejection; four other formats were not renderable in the selected-device projection, but the CTS preflight only uses its generic format table. |
 
 Exact commands and result descriptions are also recorded in
@@ -416,3 +420,42 @@ cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware '
 The build reported the existing unused `level` warning in
 `wgpu-core/src/validation.rs`; Visual Studio also printed its existing
 `vError: Unknown error` startup banner, but all four invocations completed.
+
+## Indexed to nonindexed draw state transition — 2026-11-14
+
+The strict selector below passed 1/1 with no skips or failures on the physical
+RTX 3090 Ti at explicitly requested and verified FL9_1. It performs an indexed
+point draw followed by a nonindexed point draw in one render pass and validates
+all four RGBA8 pixels. This covers the index-buffer state transition; it does
+not broaden any advertised backend capability. The selector is recorded in the
+shared passing CTS inventory.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_before_non_indexed_draw:*'
+```
+
+The runner reported NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver
+`32.0.16.2101`, physical adapter, requested/actual FL9_1 and the verified
+FL9_1 marker. The command used the repository wrapper's Visual Studio x64
+environment and cached Deno runner; the existing `vError: Unknown error`
+startup banner did not affect execution.
+
+## Same-format sRGB texture copies — 2026-11-14
+
+The two same-format sRGB 2D copy selectors passed 2/2 with zero skips or
+failures on the physical NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at requested and verified FL9_1. These complement the recorded
+linear/sRGB cross-format copies and add no format or usage capability claims.
+The selector list was passed via a temporary file to preserve embedded JSON
+quotes through Windows argument parsing; that file was removed after the run.
+
+```text
+webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rgba8unorm-srgb";dstFormat="rgba8unorm-srgb";dimension="2d"
+webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="bgra8unorm-srgb";dstFormat="bgra8unorm-srgb";dimension="2d"
+```
+
+Compact strict invocation (`--print-output-when test-fails`) reported 1/1
+passed, 0 skipped and 0 failed for each selector. The runner printed the
+physical-adapter FL9_1 marker twice, once per selector. The existing Visual
+Studio `vError: Unknown error` banner did not affect the run.

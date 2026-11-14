@@ -593,6 +593,10 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
             .downlevel
             .limits
             .supports_texture_3d_format(wgt::TextureFormat::Rgba8Unorm));
+        assert!(!capabilities
+            .downlevel
+            .limits
+            .supports_texture_3d_format(wgt::TextureFormat::R8Unorm));
     } else {
         assert_eq!(capabilities.limits.max_texture_dimension_3d, 0);
         assert!(
@@ -835,6 +839,18 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
                 Some(crate::resource::CreateTextureError::UnsupportedTexture3DFormat(_))
             ),
             "unqueried volume formats must be rejected in core: {error:?}"
+        );
+        invalid = volume_desc.clone();
+        invalid.format = wgt::TextureFormat::R8Unorm;
+        let (_, error) = global.device_create_texture(device, &invalid, None);
+        assert!(
+            matches!(
+                error,
+                Some(crate::resource::CreateTextureError::UnsupportedTexture3DFormat(
+                    wgt::TextureFormat::R8Unorm
+                ))
+            ),
+            "R8 volume textures must be rejected before HAL while only the RGBA8 shadow path exists: {error:?}"
         );
         invalid = volume_desc.clone();
         invalid.usage |= wgt::TextureUsages::RENDER_ATTACHMENT;
@@ -3730,7 +3746,7 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         );
         global.texture_drop(texture);
     }
-    std::println!("PASS: unsupported 1D and 3D texture shapes rejected by core");
+    std::println!("PASS: unsupported 1D and 3D texture shapes rejected by core, including R8 3D while only RGBA8 volumes are projected");
 
     let mut npot_mip_texture_desc = texture_desc(
         wgt::TextureFormat::Rgba8Unorm,
@@ -7695,6 +7711,57 @@ fn render_triangle(
         global.render_pipeline_drop(alpha_only_pipeline);
 
         alpha_target.write_mask = wgt::ColorWrites::ALL;
+        alpha_target.blend = Some(wgt::BlendState {
+            color: wgt::BlendComponent {
+                src_factor: wgt::BlendFactor::OneMinusDst,
+                dst_factor: wgt::BlendFactor::OneMinusSrc,
+                operation: wgt::BlendOperation::Add,
+            },
+            alpha: wgt::BlendComponent {
+                src_factor: wgt::BlendFactor::OneMinusDstAlpha,
+                dst_factor: wgt::BlendFactor::OneMinusSrcAlpha,
+                operation: wgt::BlendOperation::Add,
+            },
+        });
+        pipeline_descriptor.fragment.as_mut().unwrap().targets =
+            Cow::Owned(vec![Some(alpha_target.clone())]);
+        let (alpha_equivalent_pipeline, alpha_equivalent_error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        assert!(
+            alpha_equivalent_error.is_none(),
+            "alpha-equivalent factors must not require separate-alpha support: {alpha_equivalent_error:?}"
+        );
+        global.render_pipeline_drop(alpha_equivalent_pipeline);
+
+        alpha_target.blend = Some(wgt::BlendState {
+            color: wgt::BlendComponent {
+                src_factor: wgt::BlendFactor::Src,
+                dst_factor: wgt::BlendFactor::One,
+                operation: wgt::BlendOperation::Min,
+            },
+            alpha: wgt::BlendComponent {
+                src_factor: wgt::BlendFactor::SrcAlpha,
+                dst_factor: wgt::BlendFactor::One,
+                operation: wgt::BlendOperation::Min,
+            },
+        });
+        pipeline_descriptor.fragment.as_mut().unwrap().targets =
+            Cow::Owned(vec![Some(alpha_target.clone())]);
+        let (invalid_minmax_pipeline, minmax_error) =
+            global.device_create_render_pipeline(device, &pipeline_descriptor, None);
+        assert!(
+            matches!(
+                minmax_error.as_ref(),
+                Some(pipeline::CreateRenderPipelineError::ColorState(
+                    _,
+                    pipeline::ColorStateError::InvalidMinMaxBlendFactor { .. }
+                ))
+            ),
+            "alpha-equivalence must not bypass min/max factor validation: {minmax_error:?}"
+        );
+        global.render_pipeline_drop(invalid_minmax_pipeline);
+
+        alpha_target.blend = Some(wgt::BlendState::ALPHA_BLENDING);
         pipeline_descriptor.fragment.as_mut().unwrap().targets =
             Cow::Owned(vec![Some(alpha_target)]);
         let (invalid_blend_pipeline, blend_error) =

@@ -46,6 +46,7 @@ Bottom level categories:
 
 #### General
 
+- Treat blend factors with identical alpha-channel projections as coupled on downlevel adapters.
 - Add a downlevel limit for direct fragment `textureSampleGrad` on single-mip 2D float views.
 - Add a distinct downlevel limit for fixed integer fragment `textureSampleLevel` on multi-mip views.
 - Add a downlevel capability limit for direct `vertex_index` reads from float vectors.
@@ -53,6 +54,7 @@ Bottom level categories:
 
 #### Hal
 
+- Accept alpha-equivalent color and alpha blend equations in the opt-in FL9_1 D3D11 backend without enabling separate-alpha blending.
 - Emulate the direct single-mip fragment `textureSampleGrad` subset in the opt-in FL9_1 D3D11 backend.
 - Extend the opt-in FL9_1 D3D11 literal-zero texture-sampling subset to support bounded helper coordinate arithmetic and validate render-bundle view compatibility.
 - Represent each BC1/2/3 UNORM and sRGB cube-texture format independently in downlevel limits.

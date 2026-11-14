@@ -134,6 +134,24 @@ impl BlendComponent {
         operation: BlendOperation::Add,
     };
 
+    /// Returns whether this component and `other` produce the same alpha-channel equation.
+    ///
+    /// This accounts for color factors whose alpha-channel projection is equivalent to an
+    /// alpha-specific factor, such as [`BlendFactor::Src`] and [`BlendFactor::SrcAlpha`].
+    #[must_use]
+    pub fn is_equivalent_for_alpha(&self, other: &Self) -> bool {
+        if self.operation != other.operation {
+            return false;
+        }
+        if matches!(self.operation, BlendOperation::Min | BlendOperation::Max) {
+            return true;
+        }
+        blend_factor_alpha_projection(self.src_factor)
+            == blend_factor_alpha_projection(other.src_factor)
+            && blend_factor_alpha_projection(self.dst_factor)
+                == blend_factor_alpha_projection(other.dst_factor)
+    }
+
     /// Returns true if the state relies on the constant color, which is
     /// set independently on a render command encoder.
     #[must_use]
@@ -148,9 +166,78 @@ impl BlendComponent {
     }
 }
 
+fn blend_factor_alpha_projection(factor: BlendFactor) -> BlendFactor {
+    match factor {
+        BlendFactor::Src => BlendFactor::SrcAlpha,
+        BlendFactor::OneMinusSrc => BlendFactor::OneMinusSrcAlpha,
+        BlendFactor::Dst => BlendFactor::DstAlpha,
+        BlendFactor::OneMinusDst => BlendFactor::OneMinusDstAlpha,
+        BlendFactor::SrcAlphaSaturated => BlendFactor::One,
+        BlendFactor::Src1 => BlendFactor::Src1Alpha,
+        BlendFactor::OneMinusSrc1 => BlendFactor::OneMinusSrc1Alpha,
+        factor => factor,
+    }
+}
+
 impl Default for BlendComponent {
     fn default() -> Self {
         Self::REPLACE
+    }
+}
+
+#[cfg(test)]
+mod blend_component_tests {
+    use super::{BlendComponent, BlendFactor as F, BlendOperation as O};
+
+    #[test]
+    fn alpha_equivalence_projects_color_factors_and_preserves_equations() {
+        let component = |src_factor, dst_factor, operation| BlendComponent {
+            src_factor,
+            dst_factor,
+            operation,
+        };
+        for (color_factor, alpha_factor) in [
+            (F::Src, F::SrcAlpha),
+            (F::OneMinusSrc, F::OneMinusSrcAlpha),
+            (F::Dst, F::DstAlpha),
+            (F::OneMinusDst, F::OneMinusDstAlpha),
+            (F::SrcAlphaSaturated, F::One),
+            (F::Src1, F::Src1Alpha),
+            (F::OneMinusSrc1, F::OneMinusSrc1Alpha),
+        ] {
+            assert!(
+                component(color_factor, F::One, O::Add).is_equivalent_for_alpha(&component(
+                    alpha_factor,
+                    F::One,
+                    O::Add
+                ))
+            );
+        }
+
+        let src_color = component(F::Src, F::OneMinusDst, O::Subtract);
+        let alpha_equivalent = component(F::SrcAlpha, F::OneMinusDstAlpha, O::Subtract);
+        assert!(src_color.is_equivalent_for_alpha(&alpha_equivalent));
+        assert!(!src_color.is_equivalent_for_alpha(&component(
+            F::SrcAlpha,
+            F::OneMinusDstAlpha,
+            O::Add,
+        )));
+        assert!(!src_color.is_equivalent_for_alpha(&component(F::SrcAlpha, F::Zero, O::Subtract,)));
+        assert!(!BlendComponent::REPLACE.is_equivalent_for_alpha(&BlendComponent::OVER));
+        assert!(
+            component(F::Src, F::One, O::Min).is_equivalent_for_alpha(&component(
+                F::Zero,
+                F::Src1,
+                O::Min
+            ))
+        );
+        assert!(
+            component(F::Src, F::One, O::Max).is_equivalent_for_alpha(&component(
+                F::Zero,
+                F::Src1,
+                O::Max
+            ))
+        );
     }
 }
 

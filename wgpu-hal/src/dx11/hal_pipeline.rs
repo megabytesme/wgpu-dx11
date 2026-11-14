@@ -475,7 +475,12 @@ fn blend_target_desc(
     } else {
         wgt::BlendState::REPLACE
     };
-    if enabled && rgb && alpha && !separate_alpha && state.color != state.alpha {
+    if enabled
+        && rgb
+        && alpha
+        && !separate_alpha
+        && !state.color.is_equivalent_for_alpha(&state.alpha)
+    {
         return None;
     }
 
@@ -484,7 +489,9 @@ fn blend_target_desc(
     } else {
         state.alpha
     };
-    let alpha_component = if alpha || !rgb {
+    let alpha_component = if !separate_alpha && rgb && alpha {
+        state.color
+    } else if alpha || !rgb {
         state.alpha
     } else {
         state.color
@@ -830,6 +837,27 @@ mod tests {
             false
         )
         .is_none());
+
+        let alpha_equivalent = wgt::BlendState {
+            color: wgt::BlendComponent {
+                src_factor: wgt::BlendFactor::OneMinusDst,
+                dst_factor: wgt::BlendFactor::OneMinusSrc,
+                operation: wgt::BlendOperation::Add,
+            },
+            alpha: wgt::BlendComponent {
+                src_factor: wgt::BlendFactor::OneMinusDstAlpha,
+                dst_factor: wgt::BlendFactor::OneMinusSrcAlpha,
+                operation: wgt::BlendOperation::Add,
+            },
+        };
+        let target = blend_target_desc(Some(alpha_equivalent), wgt::ColorWrites::ALL, false)
+            .expect("identical effective alpha equation needs no separate-alpha support");
+        assert_eq!(target.SrcBlend, D3D11_BLEND_INV_DEST_COLOR);
+        assert_eq!(target.DestBlend, D3D11_BLEND_INV_SRC_COLOR);
+        assert_eq!(target.SrcBlendAlpha, D3D11_BLEND_INV_DEST_ALPHA);
+        assert_eq!(target.DestBlendAlpha, D3D11_BLEND_INV_SRC_ALPHA);
+        assert_eq!(target.BlendOp, D3D11_BLEND_OP_ADD);
+        assert_eq!(target.BlendOpAlpha, D3D11_BLEND_OP_ADD);
 
         let native = native_blend_desc(target);
         assert!(native.RenderTarget[..4]

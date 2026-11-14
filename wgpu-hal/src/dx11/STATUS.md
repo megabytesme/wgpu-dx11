@@ -1532,11 +1532,13 @@ all out-of-target rectangles. Other backends keep the default true capability.
 - The Microsoft 10Level9 feature table marks Separate Alpha Blend unavailable
   at FL9_1, with no selected-device query to promote it. FL9_1 rejects straight
   alpha, inversion and vignette blending when both RGB and alpha are written.
-  Core now requires
-  `DownlevelFlags::SEPARATE_ALPHA_BLEND` for distinct color/alpha equations when
-  both RGB and alpha are written; RGB-only and alpha-only cases use coupled
-  factors and remain accepted. A test-only opt-in retains nonportable
-  diagnostics.
+  Core requires `DownlevelFlags::SEPARATE_ALPHA_BLEND` only when the effective
+  alpha-channel equations differ and both RGB and alpha are written. Equivalent
+  factor spellings such as `Src` and `SrcAlpha` are accepted and normalized by
+  HAL; RGB-only and alpha-only cases remain accepted. True separate-alpha
+  equations still require the absent flag. A strict public FL9_1 render checks
+  an accepted equivalent form across all 64 pixels. A test-only opt-in retains
+  nonportable separate-alpha diagnostics.
 - Standard blend factors and all five blend operations now translate through
   one path, including per-channel constant blend factors. `SRC_ALPHA_SAT` and
   dual-source factors remain rejected for FL9_1. Command replay retains blend

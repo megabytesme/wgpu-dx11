@@ -2357,10 +2357,12 @@ below verifies the distinct transfer function and channel order; it does not
 validate every blend equation on sRGB targets.
 Microsoft's 10Level9 capability table marks Separate Alpha Blend unavailable
 at FL9_1. There is no selected-device query that promotes this guarantee, so
-the production path rejects differing RGB/alpha equations when both are
-written. Some older full-channel blend tests explicitly opt into a test-only
-RTX diagnostic and do not establish portability or change public capability
-reporting.
+the production path rejects full-channel equations whose effective alpha
+projections differ. It accepts equivalent factor spellings such as `Src` and
+`SrcAlpha`; a strict public FL9_1 test checks the accepted equation on all 64
+pixels while the separate-alpha capability remains unreported. Some older
+full-channel blend tests explicitly opt into a test-only RTX diagnostic and do
+not establish portability or change public capability reporting.
 
 Custom single-target blend factors and operations are translated independently
 of those preset tests. CPU tests verify every ordinary factor's RGB/alpha
@@ -3818,8 +3820,11 @@ a safe general adapter contract. The fixture verifies that core's format-feature
 query preserves the HAL's RGBA8, D24S8, narrow BC1/2/3 and unsupported-BC results. It
 also verifies that core rejects asymmetric stencil state with the missing
 `TWO_SIDED_STENCIL` downlevel flag before invoking the FL9_1 HAL. Full-channel
-straight-alpha blending is rejected with `SEPARATE_ALPHA_BLEND`, while the
-same blend with alpha writes masked creates through the existing HAL path.
+straight-alpha blending is rejected with `SEPARATE_ALPHA_BLEND`; an
+alpha-equivalent inverse-color factor descriptor is accepted, and invalid min/max
+factors still produce the normal Core validation error. The equivalent form
+is also rendered by the public strict test, while the same true separate-alpha
+blend with alpha writes masked creates through the existing HAL path.
 
 ### Public indirect-draw rejection
 
