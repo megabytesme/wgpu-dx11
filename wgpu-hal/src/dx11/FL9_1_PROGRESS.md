@@ -21557,3 +21557,21 @@ The configured Lumia Device Portal `/api/os/devicefamily` request timed out
 again. This is a current connectivity result, not a backend failure; actual
 Lumia/CoreWindow execution remains unverified. No code or other worktree was
 changed in this increment.
+
+The safe `Arc<Window>` winit example was then run in strict mode from the same
+HEAD. It selected the same physical RTX 3090 Ti at requested/actual FL9_1,
+created the surface through `Instance::create_surface(window)`, observed a
+resize from 400x300 to 640x480 physical pixels, reconfigured the surface, and
+presented 60 indexed textured depth-tested frames. Command:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_winit -- --frames=60 --resize-once
+```
+
+A separate read-only audit of production panic/unreachable paths found no
+reviewed path reachable from a valid public FL9_1 request. Compute, pipeline
+cache and acceleration-structure stubs remain behind absent Core features or
+flags. Lifecycle `expect`s rely on Core/HAL ownership invariants, and the
+capability-model `unreachable!` branches follow checked format subsets. This
+review is scoped and does not prove every HAL method safe.
