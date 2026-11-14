@@ -9486,17 +9486,18 @@ fn public_dx11_vertex_buffer_slot_15_draw_at_fl91() {
     });
 
     let positions = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0];
+    let mut vertex_data = vec![0xa5; 8];
+    vertex_data.extend(positions.into_iter().flat_map(f32::to_ne_bytes));
     let vertex_buffer = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 slot 15 vertex data"),
-        size: std::mem::size_of_val(&positions) as u64,
+        size: vertex_data.len() as u64,
         usage: BufferUsages::VERTEX,
         mapped_at_creation: true,
     });
-    let position_bytes = positions.map(f32::to_ne_bytes).concat();
     vertex_buffer
         .get_mapped_range_mut(..)
         .expect("map slot 15 vertex data")
-        .copy_from_slice(&position_bytes);
+        .copy_from_slice(&vertex_data);
     vertex_buffer.unmap();
 
     let target = device.create_texture(&TextureDescriptor {
@@ -9541,7 +9542,7 @@ fn public_dx11_vertex_buffer_slot_15_draw_at_fl91() {
             multiview_mask: None,
         });
         pass.set_pipeline(&pipeline);
-        pass.set_vertex_buffer(15, vertex_buffer.slice(..));
+        pass.set_vertex_buffer(15, vertex_buffer.slice(8..));
         pass.draw(0..3, 0..1);
     }
     encoder.copy_texture_to_buffer(

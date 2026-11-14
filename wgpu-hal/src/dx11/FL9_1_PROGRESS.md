@@ -20790,7 +20790,9 @@ behavior remains unverified.
 ## Coordinator increment — vertex-buffer slot 15 execution — 2026-11-14
 
 Added a strict public GPU test that binds a full-screen triangle through
-vertex-buffer slot 15, the highest slot in the advertised FL9_1 input limit.
+vertex-buffer slot 15 from a buffer slice beginning at byte offset 8. The
+sentinel prefix makes incorrect offset handling visible. This exercises Core
+range binding and the highest slot in the advertised FL9_1 input limit.
 On the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), the
 device was explicitly requested and confirmed at FL9_1 with
 `software=false`; all 64 RGBA8 readback pixels matched `[32, 191, 64, 255]`.

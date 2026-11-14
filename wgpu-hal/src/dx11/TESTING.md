@@ -5538,8 +5538,9 @@ At requested and actual FL9_1 on the RTX 3090 Ti, the 2048-byte stride draw
 matched `[0, 255, 64, 255]` in all 64 pixels; Core rejected 2049 before HAL.
 
 `public_dx11_vertex_buffer_slot_15_draw_at_fl91` binds a full-screen triangle
-through vertex-buffer slot 15, the highest slot in the advertised FL9_1 limit,
-and checks all 64 readback pixels. The strict RTX 3090 Ti run rendered
+through vertex-buffer slot 15 from a buffer slice beginning at byte offset 8.
+An eight-byte sentinel prefix makes an ignored offset observable. The test
+checks all 64 readback pixels; the strict RTX 3090 Ti run rendered
 `[32, 191, 64, 255]` throughout the target.
 
 ```powershell

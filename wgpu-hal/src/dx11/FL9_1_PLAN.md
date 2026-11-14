@@ -2,11 +2,12 @@
 
 ## Latest coordinator increment — vertex input slot 15 — 2026-11-14
 
-The strict public test now draws through vertex-buffer slot 15 at forced
-FL9_1, verifying the highest advertised input slot with all 64 readback
-pixels. The full strict public target passed 163/163. This closes a selected
-hardware evidence gap without changing the 16-slot projection; historical
-FL9_1 driver behavior remains unverified.
+The strict public test now draws through vertex-buffer slot 15 from a
+nonzero-offset slice at forced FL9_1, verifying Core range binding and the
+highest advertised input slot with all 64 readback pixels. The full strict
+public target passed 163/163. This closes a selected hardware evidence gap
+without changing the 16-slot projection; historical FL9_1 driver behavior
+remains unverified.
 
 ## Latest coordinator increment — vertex-stride boundary — 2026-11-14
 
