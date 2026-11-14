@@ -1234,12 +1234,23 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_gather_emulation_at_fl91 -- --nocapture --test-threads=1
 ```
 
-A tenth strict public test uploads both `Rg8Snorm` and `Rgba8Snorm`, samples
-them with one non-filtering sampler, converts signed values to visible
-unorm output and checks all 64 pixels against `[192, 63, 160, 255]` within
-one channel value. Both format projections permit filtering because their
-selected-device `SHADER_SAMPLE` bits are set, though this rendering case uses
-nearest sampling. They remain single-mip-only.
+A strict public sampling test uploads sign-changing horizontal gradients to
+`Rg8Snorm` and `Rgba8Snorm`, binds a filtering sampler, and samples at the
+boundary between opposite texels. Linear filtering produces the expected
+midpoint in all 64 pixels; nearest filtering would produce a visibly different
+result. The test also retains the query-supported point-only `Rg16Snorm` path
+and verifies Core rejects a filtering sampler for it when its `FILTERABLE`
+flag is absent. On the RTX 3090 Ti, RG8 and RGBA8 SNORM report `FILTERABLE`,
+while Rg16Snorm remains point-only.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_snorm_sampled_uploads_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+The strict test used the physical RTX 3090 Ti at explicitly requested and
+actual FL9_1. It checks actual filtered GPU output, not just sampler creation.
+The SNORM views in this test remain single-mip.
 
 An eleventh strict public test draws per-instance offsets and colors from a
 second vertex stream using `draw(0..3, 1..3)`. It verifies that the nonzero
@@ -1362,6 +1373,14 @@ RGB5A1 and RGBA4 reported `0x000213A0`; the RGB565 test sampled its uploaded
 mip 1 through implicit derivatives and verified the packed green word, and all
 sample pixels, raw words, preserved texels, row padding and sentinels matched.
 This does not establish behavior on historical FL9_1 GPUs.
+
+The same padded-upload test also binds nearest and linear samplers to the
+RGB565, RGB5A1 and RGBA4 textures. A constant sample at the center of a
+2×2 red/green/blue/white (or transparent-black) pattern checks bilinear
+interpolation in all 64 output pixels per format. The RTX 3090 Ti forced to
+FL9_1 produced `[128, 128, 128, 255]` for RGB565 and `[64, 64, 64, 191]` for
+RGB5A1 and RGBA4, within one UNORM code value. The existing nearest-sampling
+quadrant checks still run in the same test.
 
 The same strict test now reads both packed textures back into a buffer. It
 checks the source words and destination words after the partial GPU copy,
@@ -2810,6 +2829,18 @@ strict test directly reads each BC1/BC2/BC3 sRGB source and checks the raw
 blocks, nonzero offset, row padding and sentinel bytes, as well as reading
 compatible unorm destinations after cross-family copies.
 
+`dx11_public::public_dx11_bc1_bc2_bc3_linear_filtering_at_fl91` uploads BC1,
+BC2 and BC3 UNORM and sRGB textures containing adjacent black and white blocks.
+Nearest sampling at their boundary selects one endpoint; linear sampling
+returns their midpoint in every output pixel. The strict test checks each
+format family's selected-device feature and per-format filterability query and
+verifies the physical adapter at requested and actual FL9_1.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = "1"
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_bc1_bc2_bc3_linear_filtering_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
 Run the public strict execution test with:
 
 ```powershell
@@ -2829,9 +2860,10 @@ GPU-to-staging reads remain rejected for this SRV-only format. RGB5A1 and RGBA4
 remain non-renderable, but support query-gated same-format GPU copies and
 ordered CPU-shadow texture-to-buffer readback. R8_UNORM,
 R8G8_UNORM and B5G6R5 have a narrower query-gated single-mip render-target,
-copy and readback path described below. RG8_UNORM linear filtering has visual
-execution coverage; R8_UNORM and the SNORM formats have query-backed
-filterability but only nearest-sampling readback coverage.
+copy and readback path described below. Strict pixel-output tests verify
+linear filtering for R8_UNORM, R8G8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM,
+RGB565/RGB5A1/RGBA4, and BC1/BC2/BC3 UNORM and sRGB. R16G16_SNORM remains
+point-sampled because its selected query does not report `FILTERABLE`.
 
 ### Query-gated RGBA8_SNORM GPU texture copies
 

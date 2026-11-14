@@ -1,5 +1,15 @@
 # FL9_1 completion plan
 
+## Latest format-evidence increment — packed and BC linear filtering — 2026-11-14
+
+The public packed sampled-upload test verifies nearest and linear filtering
+for RGB565, RGB5A1 and RGBA4 using distinguishable 2×2 patterns. A public BC
+test verifies nearest versus linear filtering across a compressed block
+boundary for all six BC1/BC2/BC3 UNORM and sRGB formats. Both passed under
+strict requested and actual FL9_1 execution on the RTX 3090 Ti. Re-audit the
+remaining query-backed format paths before treating the format evidence ledger
+as complete; the selected driver does not stand in for historical devices.
+
 ## Latest coordinator increment — helper sample with tint — 2026-11-14
 
 The selected fragment helper-based literal-zero sample may now be multiplied
@@ -34,6 +44,35 @@ limit through nested mip cases, while dedicated GPU tests cover the supported
 single-mip copy path. Continue expanding
 evidence only within advertised capability boundaries, or use a real
 application workload to justify the next vertical slice.
+
+## Coordinator status — 2026-11-14
+
+The strict public `dx11_public` target was rerun from the current clean-code
+checkpoint: 157/157 test functions passed on the physical RTX 3090 Ti with
+requested and actual FL9_1; optional per-format subcases logged explicit
+skips. Focused Core/HAL, render projection and format audits found no
+confirmed public-valid request reaching an unsupported HAL path or a concrete
+misadvertised capability in the reviewed code. The next local task is to make
+an operation-level evidence ledger for selected-device format usages, keeping
+creation/view checks distinct from pixel-tested operations. The broad CTS
+texture-sampling fixture is not suitable for this projection because it
+requires a 50-element runtime-indexed uniform structure and an unsupported
+`rgba32uint` color target.
+
+The SNORM sampling test now closes one concrete operation-evidence gap: it
+linearly filters sign-changing `Rg8Snorm` and `Rgba8Snorm` gradients and checks
+the midpoint in all 64 pixels. Point-only `Rg16Snorm` remains on nearest
+sampling and its filtering rejection is tested. The focused strict test passed
+1/1 and the full strict public target passed 157/157 afterward. Continue the
+format ledger for other query-advertised filterable families, particularly
+packed and BC textures, before proposing any change to their capability
+projection.
+
+CoreWindow/Lumia execution, historical FL9_1 drivers, physical device-removal
+recovery and the actual Horizon renderer workload remain external validation
+gaps. The configured Lumia Device Portal timed out on the latest read-only
+availability check. Keep work moving on desktop capability evidence; do not
+treat those environmental gaps as proof that FL9_1 support is complete.
 
 The long-running gaps remain exhaustive capability-to-Core-to-HAL coverage,
 curated CTS coverage for the full selected projection, representative

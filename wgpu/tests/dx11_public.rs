@@ -12979,7 +12979,8 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     for y in 0..8 {
         for x in 0..8 {
             let offset = y * 256 + x * 2;
-            rg_data[offset..offset + 2].copy_from_slice(&[64, (-64i8) as u8]);
+            let texel = if x < 4 { [64, -64] } else { [-64, 64] };
+            rg_data[offset..offset + 2].copy_from_slice(&texel.map(|value| value as i8 as u8));
         }
     }
     queue.write_texture(
@@ -13019,7 +13020,12 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     for y in 0..8 {
         for x in 0..8 {
             let offset = y * 256 + x * 4;
-            rgba_data[offset..offset + 4].copy_from_slice(&[1, (-2i8) as u8, 32, (-4i8) as u8]);
+            let texel = if x < 4 {
+                [1, -2, -64, -4]
+            } else {
+                [1, -2, 64, -4]
+            };
+            rgba_data[offset..offset + 4].copy_from_slice(&texel.map(|value| value as i8 as u8));
         }
     }
     queue.write_texture(
@@ -13187,6 +13193,12 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
         mipmap_filter: MipmapFilterMode::Nearest,
         ..Default::default()
     });
+    let linear_sampler = device.create_sampler(&SamplerDescriptor {
+        mag_filter: FilterMode::Linear,
+        min_filter: FilterMode::Linear,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
     let mut layout_entries = vec![
         BindGroupLayoutEntry {
             binding: 100,
@@ -13195,10 +13207,16 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             count: None,
         },
         BindGroupLayoutEntry {
+            binding: 101,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Sampler(SamplerBindingType::Filtering),
+            count: None,
+        },
+        BindGroupLayoutEntry {
             binding: 42,
             visibility: ShaderStages::FRAGMENT,
             ty: BindingType::Texture {
-                sample_type: TextureSampleType::Float { filterable: false },
+                sample_type: TextureSampleType::Float { filterable: true },
                 view_dimension: TextureViewDimension::D2,
                 multisampled: false,
             },
@@ -13208,7 +13226,7 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             binding: 7,
             visibility: ShaderStages::FRAGMENT,
             ty: BindingType::Texture {
-                sample_type: TextureSampleType::Float { filterable: false },
+                sample_type: TextureSampleType::Float { filterable: true },
                 view_dimension: TextureViewDimension::D2,
                 multisampled: false,
             },
@@ -13244,6 +13262,10 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             binding: 100,
             resource: BindingResource::Sampler(&sampler),
         },
+        BindGroupEntry {
+            binding: 101,
+            resource: BindingResource::Sampler(&linear_sampler),
+        },
     ];
     if let Some(view) = &rg16_view {
         group_entries.push(BindGroupEntry {
@@ -13263,17 +13285,19 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     });
     let shader_source = if rg16_sampled {
         "@group(0) @binding(100) var nearest_sampler: sampler;\n\
+         @group(0) @binding(101) var linear_sampler: sampler;\n\
          @group(0) @binding(42) var rgba_image: texture_2d<f32>;\n\
          @group(0) @binding(7) var rg_image: texture_2d<f32>;\n\
          @group(0) @binding(13) var rg16_image: texture_2d<f32>;\n\
          @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
-         @fragment fn fs() -> @location(0) vec4f { let rg = textureSample(rg_image, nearest_sampler, vec2f(0.5)).rg; let rgba = textureSample(rgba_image, nearest_sampler, vec2f(0.5)); let copied = textureSample(rg16_image, nearest_sampler, vec2f(0.5)).r; let untouched = textureSample(rg16_image, nearest_sampler, vec2f(0.125)).r; return vec4f(rg * 0.5 + vec2f(0.5), rgba.b * 0.25 + copied * 0.5 + 0.5, untouched * 0.5 + 0.5); }"
+         @fragment fn fs() -> @location(0) vec4f { let rg = textureSample(rg_image, linear_sampler, vec2f(0.5)).rg; let rgba = textureSample(rgba_image, linear_sampler, vec2f(0.5)); let copied = textureSample(rg16_image, nearest_sampler, vec2f(0.5)).r; let untouched = textureSample(rg16_image, nearest_sampler, vec2f(0.125)).r; return vec4f(rg * 0.5 + vec2f(0.5), rgba.b * 0.25 + copied * 0.5 + 0.5, untouched * 0.5 + 0.5); }"
     } else {
         "@group(0) @binding(100) var nearest_sampler: sampler;\n\
+         @group(0) @binding(101) var linear_sampler: sampler;\n\
          @group(0) @binding(42) var rgba_image: texture_2d<f32>;\n\
          @group(0) @binding(7) var rg_image: texture_2d<f32>;\n\
          @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
-         @fragment fn fs() -> @location(0) vec4f { let rg = textureSample(rg_image, nearest_sampler, vec2f(0.5)).rg; let rgba = textureSample(rgba_image, nearest_sampler, vec2f(0.5)); return vec4f(rg * 0.5 + vec2f(0.5), rgba.b * 0.5 + 0.5, 1.0); }"
+         @fragment fn fs() -> @location(0) vec4f { let rg = textureSample(rg_image, linear_sampler, vec2f(0.5)).rg; let rgba = textureSample(rgba_image, linear_sampler, vec2f(0.5)); return vec4f(rg * 0.5 + vec2f(0.5), rgba.b * 0.5 + 0.5, 1.0); }"
     };
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("public FL9_1 SNORM sampled shader"),
@@ -13516,9 +13540,9 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
             for x in 0..8 {
                 let offset = y * 256 + x * 4;
                 let expected = if rg16_sampled {
-                    [192u8, 63, 80, 128]
+                    [128u8, 128, 64, 128]
                 } else {
-                    [192u8, 63, 160, 255]
+                    [128u8, 128, 128, 255]
                 };
                 for (channel, expected) in expected.into_iter().enumerate() {
                     let observed = data[offset + channel];
@@ -13532,7 +13556,7 @@ fn public_dx11_snorm_sampled_uploads_at_fl91() {
     }
     readback.unmap();
     println!(
-        "PASS: public FL9_1 Rg8Snorm and Rgba8Snorm sampled; Rg16Snorm sampled={rg16_sampled}; all 64 pixels matched expected signed normalization"
+        "PASS: public FL9_1 Rg8Snorm and Rgba8Snorm used linear interpolation across a sign-changing texel boundary; Rg16Snorm remains point sampled (sampled={rg16_sampled}); all 64 pixels matched"
     );
 }
 
@@ -14695,6 +14719,12 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
             mipmap_filter: MipmapFilterMode::Nearest,
             ..Default::default()
         });
+        let linear_sampler = device.create_sampler(&SamplerDescriptor {
+            mag_filter: FilterMode::Linear,
+            min_filter: FilterMode::Linear,
+            mipmap_filter: MipmapFilterMode::Nearest,
+            ..Default::default()
+        });
         let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
             label: Some("RGB565 sampled-upload layout"),
             entries: &[
@@ -14702,7 +14732,7 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
                     binding: 7,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Texture {
-                        sample_type: TextureSampleType::Float { filterable: false },
+                        sample_type: TextureSampleType::Float { filterable: true },
                         view_dimension: TextureViewDimension::D2,
                         multisampled: false,
                     },
@@ -14712,6 +14742,12 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
                     binding: 42,
                     visibility: ShaderStages::FRAGMENT,
                     ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                    count: None,
+                },
+                BindGroupLayoutEntry {
+                    binding: 43,
+                    visibility: ShaderStages::FRAGMENT,
+                    ty: BindingType::Sampler(SamplerBindingType::Filtering),
                     count: None,
                 },
             ],
@@ -14728,14 +14764,20 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
                     binding: 42,
                     resource: BindingResource::Sampler(&sampler),
                 },
+                BindGroupEntry {
+                    binding: 43,
+                    resource: BindingResource::Sampler(&linear_sampler),
+                },
             ],
         });
         let shader_source =
             "struct VOut { @builtin(position) position: vec4f, @location(0) uv: vec2f, }\n\
              @group(0) @binding(7) var image: texture_2d<f32>;\n\
              @group(0) @binding(42) var image_sampler: sampler;\n\
+             @group(0) @binding(43) var linear_sampler: sampler;\n\
              @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VOut { var out: VOut; out.position = vec4f(position, 0.5, 1.0); out.uv = uv; return out; }\n\
-             @fragment fn fs(input: VOut) -> @location(0) vec4f { return textureSample(image, image_sampler, input.uv); }";
+             @fragment fn fs(input: VOut) -> @location(0) vec4f { return textureSample(image, image_sampler, input.uv); }\n\
+             @fragment fn fs_linear() -> @location(0) vec4f { return textureSample(image, linear_sampler, vec2f(0.5)); }";
         let shader = device.create_shader_module(ShaderModuleDescriptor {
             label: Some("RGB565 sampled-upload shader"),
             source: ShaderSource::Wgsl(shader_source.into()),
@@ -14757,38 +14799,42 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
                 shader_location: 1,
             },
         ];
-        let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-            label: Some("RGB565 sampled-upload pipeline"),
-            layout: Some(&pipeline_layout),
-            vertex: VertexState {
-                module: &shader,
-                entry_point: Some("vs"),
-                compilation_options: PipelineCompilationOptions::default(),
-                buffers: &[Some(VertexBufferLayout {
-                    array_stride: 16,
-                    step_mode: VertexStepMode::Vertex,
-                    attributes: &attributes,
-                })],
-            },
-            primitive: PrimitiveState {
-                cull_mode: None,
-                ..Default::default()
-            },
-            depth_stencil: None,
-            multisample: MultisampleState::default(),
-            fragment: Some(FragmentState {
-                module: &shader,
-                entry_point: Some("fs"),
-                compilation_options: PipelineCompilationOptions::default(),
-                targets: &[Some(ColorTargetState {
-                    format: TextureFormat::Rgba8Unorm,
-                    blend: None,
-                    write_mask: ColorWrites::ALL,
-                })],
-            }),
-            multiview_mask: None,
-            cache: None,
-        });
+        let create_pipeline = |entry_point| {
+            device.create_render_pipeline(&RenderPipelineDescriptor {
+                label: Some("RGB565 sampled-upload pipeline"),
+                layout: Some(&pipeline_layout),
+                vertex: VertexState {
+                    module: &shader,
+                    entry_point: Some("vs"),
+                    compilation_options: PipelineCompilationOptions::default(),
+                    buffers: &[Some(VertexBufferLayout {
+                        array_stride: 16,
+                        step_mode: VertexStepMode::Vertex,
+                        attributes: &attributes,
+                    })],
+                },
+                primitive: PrimitiveState {
+                    cull_mode: None,
+                    ..Default::default()
+                },
+                depth_stencil: None,
+                multisample: MultisampleState::default(),
+                fragment: Some(FragmentState {
+                    module: &shader,
+                    entry_point: Some(entry_point),
+                    compilation_options: PipelineCompilationOptions::default(),
+                    targets: &[Some(ColorTargetState {
+                        format: TextureFormat::Rgba8Unorm,
+                        blend: None,
+                        write_mask: ColorWrites::ALL,
+                    })],
+                }),
+                multiview_mask: None,
+                cache: None,
+            })
+        };
+        let pipeline = create_pipeline("fs");
+        let linear_pipeline = create_pipeline("fs_linear");
         let target = device.create_texture(&TextureDescriptor {
             label: Some("RGB565 sampled-upload output"),
             size: Extent3d {
@@ -14804,6 +14850,21 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
             view_formats: &[],
         });
         let target_view = target.create_view(&TextureViewDescriptor::default());
+        let linear_target = device.create_texture(&TextureDescriptor {
+            label: Some("RGB565 linear sampled-upload output"),
+            size: Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format: TextureFormat::Rgba8Unorm,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let linear_target_view = linear_target.create_view(&TextureViewDescriptor::default());
         let uv_span = if sample_mip_one { 16.0 } else { 2.0 };
         let vertices: Vec<u8> = [
             -1.0f32, -1.0, 0.0, 1.0, 3.0, -1.0, uv_span, 1.0, -1.0, 3.0, 0.0, -1.0,
@@ -14825,11 +14886,11 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
         vertex_buffer.unmap();
         let readback = device.create_buffer(&BufferDescriptor {
             label: Some("RGB565 sampled-upload readback"),
-            size: 9 * 256,
+            size: 17 * 256,
             usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
             mapped_at_creation: true,
         });
-        let sentinel = vec![0xA5; 9 * 256];
+        let sentinel = vec![0xA5; 17 * 256];
         readback
             .slice(..)
             .get_mapped_range_mut()
@@ -14861,6 +14922,28 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             pass.draw(0..3, 0..1);
         }
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("RGB565 linear sampled-upload pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &linear_target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&linear_pipeline);
+            pass.set_bind_group(0, &group, &[]);
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            pass.draw(0..3, 0..1);
+        }
         encoder.copy_texture_to_buffer(
             TexelCopyTextureInfo {
                 texture: &target,
@@ -14872,6 +14955,27 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
                 buffer: &readback,
                 layout: TexelCopyBufferLayout {
                     offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &linear_target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset: (9 * 256) as u64,
                     bytes_per_row: Some(256),
                     rows_per_image: Some(8),
                 },
@@ -14938,6 +15042,23 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
                     );
                 }
             }
+            let linear_expected = if format == TextureFormat::Rgb5g6b5Unorm {
+                [128u8, 128, 128, 255]
+            } else {
+                [64u8, 64, 64, 191]
+            };
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = 9 * 256 + y * 256 + x * 4;
+                    for (channel, expected) in linear_expected.into_iter().enumerate() {
+                        let observed = data[offset + channel];
+                        assert!(
+                            observed.abs_diff(expected) <= 1,
+                            "{format_name} linear sample pixel ({x}, {y}) channel {channel}: expected {expected}, observed {observed}"
+                        );
+                    }
+                }
+            }
             if sample_mip_one {
                 assert_eq!(
                     &data[8 * 256..8 * 256 + 2],
@@ -14949,8 +15070,420 @@ fn public_dx11_rgb565_sampled_upload_at_fl91() {
         }
         readback.unmap();
         println!(
-            "PASS: FL9_1 {format_name} padded upload, native SRV sampling and RGBA8 readback; mip-1 sampled={}, all 64 pixels matched expected output",
+            "PASS: FL9_1 {format_name} padded upload, nearest and linear native SRV sampling, RGBA8 readback; mip-1 sampled={}, all 128 output pixels matched",
             sample_mip_one
+        );
+    }
+}
+
+#[test]
+fn public_dx11_bc1_bc2_bc3_linear_filtering_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapter = poll_ready(instance.enumerate_adapters(Backends::DX11))
+        .into_iter()
+        .find(|adapter| adapter.get_info().device_type != DeviceType::Cpu);
+    let Some(adapter) = adapter else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=BC1/BC2/BC3 nearest-versus-linear filtering across a compressed block boundary",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+
+    let adapter_features = adapter.features();
+    let formats = [
+        (TextureFormat::Bc1RgbaUnorm, 8usize),
+        (TextureFormat::Bc2RgbaUnorm, 16usize),
+        (TextureFormat::Bc3RgbaUnorm, 16usize),
+        (TextureFormat::Bc1RgbaUnormSrgb, 8usize),
+        (TextureFormat::Bc2RgbaUnormSrgb, 16usize),
+        (TextureFormat::Bc3RgbaUnormSrgb, 16usize),
+    ];
+    let mut supported = Vec::new();
+    let mut required_features = Features::empty();
+    for (format, bytes_per_block) in formats {
+        let format_feature = match format {
+            TextureFormat::Bc1RgbaUnorm
+            | TextureFormat::Bc2RgbaUnorm
+            | TextureFormat::Bc3RgbaUnorm => Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_UNORM,
+            TextureFormat::Bc1RgbaUnormSrgb
+            | TextureFormat::Bc2RgbaUnormSrgb
+            | TextureFormat::Bc3RgbaUnormSrgb => Features::TEXTURE_COMPRESSION_BC1_BC2_BC3_SRGB,
+            _ => unreachable!("only BC1/BC2/BC3 formats are selected"),
+        };
+        if !adapter_features.contains(format_feature) {
+            assert!(
+                !required,
+                "strict FL9_1 hardware lacks {format_feature:?} for {format:?}"
+            );
+            println!("SKIP: {format_feature:?} unavailable for {format:?}");
+            continue;
+        }
+        let features = adapter.get_texture_format_features(format);
+        if !features
+            .allowed_usages
+            .contains(TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST)
+            || !features
+                .flags
+                .contains(TextureFormatFeatureFlags::FILTERABLE)
+        {
+            assert!(
+                !required,
+                "strict FL9_1 hardware lacks filtered sampled-upload support for {format:?}: {features:?}"
+            );
+            println!("SKIP: {format:?} lacks filtered sampled-upload support: {features:?}");
+            continue;
+        }
+        supported.push((format, bytes_per_block));
+        required_features |= format_feature;
+    }
+    if supported.is_empty() {
+        println!("SKIP: no query-supported BC format can exercise filtered sampling");
+        return;
+    }
+    if required {
+        assert_eq!(
+            supported.len(),
+            formats.len(),
+            "strict mode requires all BC UNORM and sRGB formats"
+        );
+    }
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public FL9_1 BC filtering test"),
+        required_features,
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 BC-capable device");
+
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("BC filtering layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 42,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 43,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("BC filtering pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("BC filtering shader"),
+        source: ShaderSource::Wgsl(
+            "@group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @group(0) @binding(42) var nearest_sampler: sampler;\n\
+             @group(0) @binding(43) var linear_sampler: sampler;\n\
+             @vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
+             @fragment fn fs_nearest() -> @location(0) vec4f { return textureSample(image, nearest_sampler, vec2f(0.5, 0.5)); }\n\
+             @fragment fn fs_linear() -> @location(0) vec4f { return textureSample(image, linear_sampler, vec2f(0.5, 0.5)); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_layouts = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let create_pipeline = |entry_point| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("BC filtered sample pipeline"),
+            layout: Some(&pipeline_layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &vertex_layouts,
+            },
+            primitive: PrimitiveState {
+                cull_mode: None,
+                ..Default::default()
+            },
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(entry_point),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(ColorTargetState {
+                    format: TextureFormat::Rgba8Unorm,
+                    blend: None,
+                    write_mask: ColorWrites::ALL,
+                })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let nearest_pipeline = create_pipeline("fs_nearest");
+    let linear_pipeline = create_pipeline("fs_linear");
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("BC filtering output"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let vertices: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("BC filtering fullscreen triangle"),
+        size: vertices.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map BC filtering vertices")
+        .copy_from_slice(&vertices);
+    vertex.unmap();
+    let nearest_sampler = device.create_sampler(&SamplerDescriptor {
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let linear_sampler = device.create_sampler(&SamplerDescriptor {
+        mag_filter: FilterMode::Linear,
+        min_filter: FilterMode::Linear,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("BC filtered samples readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+
+    for (format, bytes_per_block) in supported {
+        let texture = device.create_texture(&TextureDescriptor {
+            label: Some("BC filtering source"),
+            size: Extent3d {
+                width: 8,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            view_formats: &[],
+        });
+        let mut upload = vec![0u8; 256];
+        for block in 0..2 {
+            let white = block == 1;
+            let color_block = if white {
+                [0xff, 0xff, 0x00, 0x00, 0, 0, 0, 0]
+            } else {
+                [0; 8]
+            };
+            let encoded = match format {
+                TextureFormat::Bc1RgbaUnorm | TextureFormat::Bc1RgbaUnormSrgb => {
+                    color_block.to_vec()
+                }
+                TextureFormat::Bc2RgbaUnorm | TextureFormat::Bc2RgbaUnormSrgb => {
+                    let mut block = vec![0xff; 8];
+                    block.extend_from_slice(&color_block);
+                    block
+                }
+                TextureFormat::Bc3RgbaUnorm | TextureFormat::Bc3RgbaUnormSrgb => {
+                    let mut block = vec![0xff, 0xff, 0, 0, 0, 0, 0, 0];
+                    block.extend_from_slice(&color_block);
+                    block
+                }
+                _ => unreachable!("only BC1/BC2/BC3 formats are selected"),
+            };
+            assert_eq!(encoded.len(), bytes_per_block);
+            let offset = block * bytes_per_block;
+            upload[offset..offset + bytes_per_block].copy_from_slice(&encoded);
+        }
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                texture: &texture,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            &upload,
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(1),
+            },
+            Extent3d {
+                width: 8,
+                height: 4,
+                depth_or_array_layers: 1,
+            },
+        );
+        let view = texture.create_view(&TextureViewDescriptor::default());
+        let group = device.create_bind_group(&BindGroupDescriptor {
+            label: Some("BC filtered sampled resources"),
+            layout: &layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 7,
+                    resource: BindingResource::TextureView(&view),
+                },
+                BindGroupEntry {
+                    binding: 42,
+                    resource: BindingResource::Sampler(&nearest_sampler),
+                },
+                BindGroupEntry {
+                    binding: 43,
+                    resource: BindingResource::Sampler(&linear_sampler),
+                },
+            ],
+        });
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+            label: Some("BC nearest and linear sample commands"),
+        });
+        for (pipeline, offset) in [(&nearest_pipeline, 0u64), (&linear_pipeline, 4 * 256)] {
+            {
+                let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                    label: Some("BC nearest or linear sample pass"),
+                    color_attachments: &[Some(RenderPassColorAttachment {
+                        view: &target_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::BLACK),
+                            store: StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, &group, &[]);
+                pass.set_vertex_buffer(0, vertex.slice(..));
+                pass.draw(0..3, 0..1);
+            }
+            encoder.copy_texture_to_buffer(
+                TexelCopyTextureInfo {
+                    texture: &target,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyBufferInfo {
+                    buffer: &readback,
+                    layout: TexelCopyBufferLayout {
+                        offset,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(4),
+                    },
+                },
+                Extent3d {
+                    width: 4,
+                    height: 4,
+                    depth_or_array_layers: 1,
+                },
+            );
+        }
+        let submission = queue.submit([encoder.finish()]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        readback
+            .slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .expect("wait for BC filtered samples");
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("BC filtered readback callback")
+            .expect("map BC filtered output");
+        {
+            let pixels = readback
+                .slice(..)
+                .get_mapped_range()
+                .expect("mapped BC output");
+            let first_nearest = &pixels[..4];
+            assert!(
+                first_nearest == [0, 0, 0, 255] || first_nearest == [255, 255, 255, 255],
+                "{format:?} nearest boundary sample was {first_nearest:?}"
+            );
+            for y in 0..4usize {
+                for x in 0..4usize {
+                    let nearest_offset = y * 256 + x * 4;
+                    assert_eq!(
+                        &pixels[nearest_offset..nearest_offset + 4],
+                        first_nearest,
+                        "{format:?} nearest sample ({x}, {y})"
+                    );
+                    let linear_offset = 4 * 256 + y * 256 + x * 4;
+                    for (channel, expected) in [128u8, 128, 128, 255].into_iter().enumerate() {
+                        let observed = pixels[linear_offset + channel];
+                        assert!(
+                            observed.abs_diff(expected) <= 2,
+                            "{format:?} linear boundary sample ({x}, {y}) channel {channel}: expected {expected}, observed {observed}"
+                        );
+                    }
+                }
+            }
+            assert_ne!(
+                first_nearest[0], 128,
+                "{format:?} nearest and linear results must distinguish the two filters"
+            );
+        }
+        readback.unmap();
+        println!(
+            "PASS: {format:?} nearest sampling selected one side of a BC block boundary; linear sampling interpolated black and white to [128, 128, 128, 255] in all 16 pixels"
         );
     }
 }

@@ -1,5 +1,15 @@
 # D3D11 capability and public-adapter contract
 
+## Query-backed linear-filter output evidence — 2026-11-14
+
+Strict public FL9_1 pixel tests verify linear filtering for R8_UNORM,
+R8G8_UNORM, R8G8_SNORM, R8G8B8A8_SNORM, RGB565, RGB5A1, RGBA4, and all BC1/2/3
+UNORM and sRGB formats. The packed tests check center interpolation of four
+distinguishable texels; the BC test samples across adjacent black and white
+compressed blocks. R16G16_SNORM remains point-sampled because its
+selected-device query lacks `FILTERABLE`. These are selected-device execution
+results, not historical FL9_1 guarantees.
+
 ## Helper-based fragment LOD-zero sampling with a tint
 
 The restricted fragment `textureSampleLevel(..., 0.0)` proof accepts a selected
@@ -556,6 +566,14 @@ source region and full destination mip into padded buffers, then sample a
 single-mip view. All checked words, borders, padding, sentinels and
 sampled pixels matched. The modern RTX result verifies the query-selected
 path, not behavior of historical FL9_1 drivers.
+
+The strict sampled-upload test also verifies query-advertised linear filtering
+for all three packed formats. It checks the bilinear midpoint of a 2×2
+red/green/blue/white pattern (transparent black in the lower-right texel for
+RGB5A1/RGBA4), while retaining the nearest-filter quadrant assertions. All 64
+linear output pixels per format matched the expected normalized midpoint
+within one RGBA8 code value on the RTX 3090 Ti forced to FL9_1. This is
+selected-device output evidence, not historical-driver coverage.
 
 The same adapter returned R8G8B8A8_SNORM support mask `0x000213a0` at
 requested and selected FL9_1. This includes `TEXTURE2D | MIP | SHADER_SAMPLE`.
@@ -1140,6 +1158,11 @@ additionally reports `FILTERABLE`. D3D11 permits point-only sampling without
 that bit, and the backend now supports that case for query-backed resources.
 On FL9_1, public R16G16_SNORM use also requires `TEXTURE_FORMAT_16BIT_NORM`;
 core uses the selected device's format flags to reject filtering layouts.
+Strict forced-FL9_1 output testing samples sign-changing `Rg8Snorm` and
+`Rgba8Snorm` gradients with a linear sampler and verifies the interpolated
+midpoint across all 64 target pixels. The same test keeps `Rg16Snorm`
+point-sampled and confirms Core rejects its filtering layout when the query
+does not set `FILTERABLE`.
 R8G8_UNORM is not a required FL9_1 sampled format and is exposed only after
 its selected-device query reports `TEXTURE2D`. The forced-FL9_1 RTX reported
 `0x0002c320`; strict public readback verified nearest sampling and the two-byte

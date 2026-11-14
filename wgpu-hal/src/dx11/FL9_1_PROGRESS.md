@@ -20459,3 +20459,130 @@ committed as `d660664b7`. The six-selector inventory passed
 $env:CARGO_TARGET_DIR = 'C:\Users\ben\AppData\Local\Temp\wgpu-dx11-completion-target'
 cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="bgra8unorm";dstFormat="bgra8unorm";dimension="2d"'
 ```
+
+## Current-tree public scene recheck — 2026-11-14
+
+The public textured, perspective-transformed cube test was rerun from the
+clean `7293811ae` checkpoint. The first attempt used plain PowerShell and
+stopped before linking because `link.exe` was not on `PATH`; retrying through
+the existing Visual Studio Cargo wrapper built and ran the test. The physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) was
+explicitly opened at requested and actual FL9_1 (`software=false`). Opposite
+face orders produced identical depth-tested images across all 1,024 pixels;
+the painter-order controls differed at 223 pixels. Result: 1/1 test passed,
+with no hardware skip.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_BUILD_JOBS = '8'
+$env:CARGO_NET_OFFLINE = 'true'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_scene -- --nocapture --test-threads=1
+```
+
+The Visual Studio wrapper printed its existing `vError: Unknown error`
+startup banner, but the build and GPU test completed successfully. This is a
+recheck of an existing render path, not evidence for historical FL9_1 drivers
+or broader shader/API support.
+
+## Coordinator contract-audit and public-suite recheck — 2026-11-14
+
+Three focused read-only reviews covered Core-to-HAL call reachability, render
+projection and format/transfer paths. None found a confirmed valid public
+request that reaches an unsupported or panicking HAL operation, nor a concrete
+misadvertised format or render-state capability in the reviewed paths. The
+remaining local assurance gap is an operation-evidence ledger: format usage
+and view-creation matrices need to be distinguished from per-operation pixel
+execution evidence. A fourth source review found the broad CTS texture-sampling
+fixture is not a valid FL9_1 probe: it uses a 50-element runtime-indexed
+uniform structure and an `rgba32uint` output target outside this projection.
+Do not curate those selectors without changing the shared test fixture.
+
+The complete public `dx11_public` integration target was rerun with strict
+hardware required. All 157 Rust test functions passed with zero failed or
+ignored; optional device-dependent subcases logged explicit `SKIP` messages
+and are not counted as feature evidence. GPU tests selected the physical RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) and asserted requested and
+actual FL9_1. The separately rerun 3D scene checked all 1,024 readback pixels.
+The adapter remains an explicitly selected experimental backend, not a
+default backend or a WebGPU-conformance claim.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_BUILD_JOBS = '8'
+$env:CARGO_NET_OFFLINE = 'true'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+The public suite built and ran through the existing Visual Studio Cargo
+wrapper. Its `vError: Unknown error` startup banner was non-fatal. A CoreWindow
+public lifecycle/render/readback test remains unverified because the current
+desktop run cannot exercise the UWP runtime; the Lumia Device Portal query
+timed out again. Historical FL9_1 driver behavior, physical device removal,
+and the actual Horizon production renderer workload also remain external
+verification requirements. Continue the operation-evidence audit without
+loosening the selected capability projection.
+
+## Query-backed SNORM linear-filter execution — 2026-11-14
+
+The format audit found that `Rg8Snorm` and `Rgba8Snorm` advertise filtering
+when the selected device reports `SHADER_SAMPLE`, but the existing sampled
+upload test used uniform texels and a nearest sampler. The test now uploads
+sign-changing horizontal gradients and uses a linear sampler at the boundary
+between opposite texels, so nearest and linear filtering produce distinguishable
+results. It checks all 64 output pixels against `[128, 128, 64, 128]` on this
+device. `Rg16Snorm` remains point-sampled because the selected query has no
+`FILTERABLE` flag; the same test confirms Core rejects its filtering layout.
+
+Strict execution used NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), requested and confirmed FL9_1, `software=false`. The focused
+test passed 1/1, and the full strict public target passed 157/157 test
+functions with zero failures or ignored tests. Optional unsupported format
+subcases reported `SKIP` inside passing test functions and are not counted as
+feature evidence. `cargo +1.93.1 fmt --all -- --check` and
+`cargo +1.93.1 clippy --offline -j8 -p wgpu --test dx11_public
+--no-default-features --features dx11,wgsl,std` passed. Clippy emitted only the
+eight existing D3D11 HAL warnings; the changed test introduced no lint warning.
+`git diff --check` passed. Commands and the filtering output assertion are in
+`TESTING.md` and `dx11_public.rs::public_dx11_snorm_sampled_uploads_at_fl91`.
+
+The full format-operation evidence ledger is still in progress. The remaining
+specific question from this audit is whether query-advertised linear filtering
+for packed and BC formats has equivalent pixel-level evidence; their current
+sample tests use nearest. Historical-driver behavior remains unverified.
+## Packed-format linear-filter evidence — 2026-11-14
+
+Extended `public_dx11_rgb565_sampled_upload_at_fl91` to preserve its nearest
+quadrant checks and additionally render a constant center sample through a
+linear sampler for RGB565, RGB5A1 and RGBA4. The inputs distinguish all four
+corners, including a transparent texel for the alpha formats, so the linear
+output proves interpolation rather than successful sampler creation. On the
+physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`,
+requested and actual FL9_1, `software=false`, all three formats passed: 64
+pixels each matched `[128, 128, 128, 255]` for RGB565 or
+`[64, 64, 64, 191]` for RGB5A1/RGBA4 within one RGBA8 code value. All existing
+nearest-sampling output and RGB565 mip-1 raw-word checks in that test also
+passed. The focused strict result was 1/1 test functions; this is not
+historical FL9_1 hardware evidence.
+
+## BC linear-filter evidence — 2026-11-14
+
+Extended `public_dx11_bc1_bc2_bc3_linear_filtering_at_fl91` to cover BC1, BC2
+and BC3 in both UNORM and sRGB forms. Each query-supported texture contains
+adjacent black and white compressed blocks. At their boundary, nearest
+sampling selected one endpoint; linear sampling produced
+`[128, 128, 128, 255]` in every 4×4 output. Strict mode required both BC feature families and
+all six per-format query results.
+
+The physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) ran with requested and actual FL9_1 and `software=false`. All
+six formats passed the nearest and linear output checks; the focused test
+passed 1/1, with no skipped format. This closes this device's BC linear
+filtering evidence gap, not historical-driver validation.
+
+After the change, the full strict public D3D11 target passed 158/158 test
+functions with zero failures or ignored tests; the new BC case executed all
+six formats without a skip. The full output still contains explicit optional
+format `SKIP` messages inside passing tests; those are not counted as hardware
+coverage. Rust 1.93.1 formatting and `git diff --check` passed. Clippy passed
+for the public target and emitted only the same eight pre-existing D3D11 HAL
+warnings; no warning came from this test.
