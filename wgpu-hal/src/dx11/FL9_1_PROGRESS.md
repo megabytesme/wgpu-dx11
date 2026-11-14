@@ -46,6 +46,35 @@ cargo +1.93.1 fmt --all -- --check
 git diff --check
 ```
 
+## Near-limit vertex uniform-array GPU execution — 2026-11-14
+
+Extended the direct uniform-indexed vertex-array test to execute the maximum
+253-entry `vec4f` palette, not just compile it with FXC. The uniform buffer is
+4,064 bytes, starts the array at byte 16, selects entry 252, and gives that
+last legal entry a unique magenta value. The selected value controls the
+covering triangle's fragment color. The earlier 254-entry FXC X4507 rejection
+and Core/HAL limit checks remain unchanged.
+
+The focused strict test passed on the physical RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), explicitly requesting and confirming FL9_1 with
+`software=false`. It checked all 64 output pixels as `[255, 0, 255, 255]`;
+the four-entry baseline still checked 64 pixels for each of its four colors.
+The full strict public D3D11 target passed 157/157 test functions with 0
+failures and 0 ignored tests. Public-test Clippy completed with the same eight
+pre-existing D3D11 HAL warnings; Rust 1.93.1 formatting and `git diff
+--check` passed. This verifies a legal near-limit access on this modern GPU
+under forced FL9_1, not on historical hardware and not out-of-bounds index
+behavior.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cmd /c call "%TEMP%\wgpu-mission-cargo-c-target.bat" test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_direct_vertex_uniform_array_indexing_at_fl91 -- --exact --nocapture --test-threads=1
+cmd /c call "%TEMP%\wgpu-mission-cargo-c-target.bat" test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cmd /c call "%TEMP%\wgpu-mission-cargo-c-target.bat" clippy --offline -j8 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
 ## Split-group fragment `textureGather` with a uniform — 2026-11-14
 
 The selected fragment `textureGather` path was exercised with its texture,

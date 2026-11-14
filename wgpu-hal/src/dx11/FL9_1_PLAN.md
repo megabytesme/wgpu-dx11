@@ -3714,3 +3714,16 @@ mission focus remains systematic supported-contract/CTS coverage and a real
 application workload; historical hardware, Lumia/CoreWindow execution and
 physical device-removal recovery require external devices and cannot be
 closed by code agents.
+
+## Coordinator increment — near-limit vertex uniform-array execution — 2026-11-14
+
+The selected direct vertex-uniform array path has now executed its maximum
+allowed 253-entry `vec4f` buffer at forced FL9_1. The shader selected entry
+252 and all 64 readback pixels matched a unique color; the 254-entry FXC/Core
+rejection remains in place. This closes near-limit hardware execution for
+this exact canonical layout, but not every WGSL uniform layout, out-of-range
+index behavior or historical device. The next high-value coverage item is
+the advertised 13 vertex plus 13 fragment static uniform slots in a single
+bind group: current hardware output covers the same per-stage counts across
+two groups, while same-group coverage has layout/allocation tests but no
+public draw/readback yet.

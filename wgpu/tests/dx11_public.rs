@@ -36692,6 +36692,200 @@ fn public_dx11_direct_vertex_uniform_array_indexing_at_fl91() {
         readback.unmap();
     }
     println!("PASS: direct FL9_1 vertex uniform-array indices 0..4 rendered and all 64 pixels per index matched the selected palette entry");
+
+    let max_palette_length = 253u32;
+    let max_palette_size = 16 + max_palette_length as u64 * 16;
+    let max_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 maximum-size direct vertex uniform-array shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                struct Palette { index: u32, values: array<vec4f, 253> }
+                struct VertexOutput {
+                    @builtin(position) position: vec4f,
+                    @location(0) color: vec4f,
+                }
+                @group(0) @binding(7) var<uniform> palette: Palette;
+
+                @vertex fn vs(@location(0) position: vec2f) -> VertexOutput {
+                    return VertexOutput(vec4f(position, 0.5, 1.0), palette.values[palette.index]);
+                }
+
+                @fragment fn fs(@location(0) color: vec4f) -> @location(0) vec4f {
+                    return color;
+                }
+            "#
+            .into(),
+        ),
+    });
+    let max_bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 maximum-size vertex uniform-array layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::VERTEX,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(max_palette_size),
+            },
+            count: None,
+        }],
+    });
+    let max_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 maximum-size vertex uniform-array pipeline layout"),
+        bind_group_layouts: &[Some(&max_bind_group_layout)],
+        immediate_size: 0,
+    });
+    let max_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 maximum-size direct vertex uniform-array pipeline"),
+        layout: Some(&max_pipeline_layout),
+        vertex: VertexState {
+            module: &max_shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 8,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &attributes,
+            })],
+        },
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &max_shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let mut max_palette_words = Vec::with_capacity((max_palette_size / 4) as usize);
+    max_palette_words.push(max_palette_length - 1);
+    max_palette_words.extend([0u32; 3]);
+    for index in 0..max_palette_length {
+        let color = if index == max_palette_length - 1 {
+            [1.0f32, 0.0, 1.0, 1.0]
+        } else {
+            [index as f32 / max_palette_length as f32, 0.25, 0.5, 1.0]
+        };
+        max_palette_words.extend(color.map(f32::to_bits));
+    }
+    assert_eq!(max_palette_words.len() * 4, max_palette_size as usize);
+    let max_palette_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 maximum-size vertex uniform-array data"),
+        size: max_palette_size,
+        usage: BufferUsages::UNIFORM,
+        mapped_at_creation: true,
+    });
+    max_palette_buffer
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map maximum-size uniform palette")
+        .copy_from_slice(bytemuck::cast_slice(&max_palette_words));
+    max_palette_buffer.unmap();
+    let max_bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 maximum-size direct uniform-array bind group"),
+        layout: &max_bind_group_layout,
+        entries: &[BindGroupEntry {
+            binding: 7,
+            resource: max_palette_buffer.as_entire_binding(),
+        }],
+    });
+    let max_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 maximum-size uniform-array readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut max_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 maximum-size uniform-array render and readback"),
+    });
+    {
+        let mut pass = max_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 maximum-size uniform-array pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&max_pipeline);
+        pass.set_bind_group(0, &max_bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    max_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &max_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let max_submission = queue.submit([max_encoder.finish()]);
+    let (max_sender, max_receiver) = std::sync::mpsc::channel();
+    max_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| {
+            max_sender.send(result).unwrap()
+        });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(max_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for maximum-size uniform-array rendering");
+    max_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("maximum-size uniform-array readback callback")
+        .expect("map maximum-size uniform-array pixels");
+    {
+        let data = max_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped maximum-size uniform-array readback");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    [255, 0, 255, 255],
+                    "maximum uniform-array entry pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    max_readback.unmap();
+    println!("PASS: forced FL9_1 directly indexed entry 252 of the maximum 253-entry vec4 uniform array; all 64 pixels were magenta");
 }
 
 #[test]

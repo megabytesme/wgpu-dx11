@@ -11,6 +11,14 @@ texture in group 1, sampler in group 2 and tint uniform in group 3, with group
 FL9_1. The complete strict public suite passed 157/157. That test-only
 increment adds coverage without changing backend capability projection.
 
+The direct uniform-indexed vertex palette also now has near-limit GPU
+evidence: the maximum 253-entry `vec4f` buffer selected entry 252 and produced
+the expected magenta output in all 64 pixels at forced FL9_1. FXC/Core still
+reject length 254. The next gap selected for coordinator work is public
+render/readback of 13 vertex-only plus 13 fragment-only static uniforms in
+one bind group; existing GPU coverage places those stage-specific counts in
+separate groups.
+
 ### Remaining support work
 
 - **Implementation and validation:** finish a capability-to-Core-to-HAL
