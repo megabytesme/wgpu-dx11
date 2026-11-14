@@ -49,6 +49,7 @@ git diff --check
 ## Coordinator increment — direct fragment textureGather with one uniform — 2026-11-14
 
 Implementation checkpoint: `e52cb32ea` (`dx11: allow a uniform with direct FL9_1 texture gather`).
+Handoff status refresh: `31ebb966e` (`dx11: refresh FL9_1 completion handoff status`).
 
 Extended only the direct selected fragment `textureGather` proof to allow one
 used, bound `vec4f` uniform. Helper gathers, extra used resources, a second or
