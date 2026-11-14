@@ -38591,6 +38591,15 @@ fn public_dx11_fragment_8bit_snorm_texture_load_emulation_at_fl91() {
 
 #[test]
 fn public_dx11_texture_load_and_dimensions_share_one_fl91_texture() {
+    run_public_dx11_texture_load_and_dimensions(false);
+}
+
+#[test]
+fn public_dx11_texture_load_dimensions_with_uniform_at_fl91() {
+    run_public_dx11_texture_load_and_dimensions(true);
+}
+
+fn run_public_dx11_texture_load_and_dimensions(use_uniform: bool) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -38612,8 +38621,12 @@ fn public_dx11_texture_load_and_dimensions_share_one_fl91_texture() {
     assert!(downlevel.limits.texture_load_2d_float_fragment);
     assert!(downlevel.limits.texture_dimensions_2d_float_fragment);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=one direct fragment textureLoad plus textureDimensions on the same 2D float texture",
-        info.name, info.vendor, info.device, info.driver_info
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=one direct fragment textureLoad plus textureDimensions on the same 2D float texture{}",
+        info.name,
+        info.vendor,
+        info.device,
+        info.driver_info,
+        if use_uniform { " plus one vec4 uniform" } else { "" }
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public FL9_1 textureLoad and dimensions device"),
@@ -38623,18 +38636,28 @@ fn public_dx11_texture_load_and_dimensions_share_one_fl91_texture() {
     }))
     .expect("request device within the FL9_1 capability projection");
 
+    let shader_source = r#"
+        @group(0) @binding(42) var image: texture_2d<f32>;
+        __UNIFORM_DECL__
+        @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }
+        @fragment fn fs() -> @location(0) vec4f {
+            let dimensions = vec2f(textureDimensions(image));
+            let value = textureLoad(image, vec2i(1, 0), 0);
+            return vec4f(value.r * dimensions.x / 8.0, value.g * dimensions.y / 4.0, value.b, value.a) * __TINT__;
+        }
+    "#
+    .replace(
+        "__UNIFORM_DECL__",
+        if use_uniform {
+            "@group(0) @binding(91) var<uniform> tint: vec4f;"
+        } else {
+            ""
+        },
+    )
+    .replace("__TINT__", if use_uniform { "tint" } else { "vec4f(1.0)" });
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 combined textureLoad and dimensions shader"),
-        source: ShaderSource::Wgsl(
-            "@group(0) @binding(42) var image: texture_2d<f32>;\n\
-             @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }\n\
-             @fragment fn fs() -> @location(0) vec4f {\n\
-                 let dimensions = vec2f(textureDimensions(image));\n\
-                 let value = textureLoad(image, vec2i(1, 0), 0);\n\
-                 return vec4f(value.r * dimensions.x / 8.0, value.g * dimensions.y / 4.0, value.b, value.a);\n\
-             }"
-                .into(),
-        ),
+        source: ShaderSource::Wgsl(shader_source.into()),
     });
     let vertices = [[-1.0_f32, -1.0], [3.0, -1.0], [-1.0, 3.0]];
     let mut vertex_bytes = Vec::with_capacity(6 * std::mem::size_of::<f32>());
@@ -38732,13 +38755,35 @@ fn public_dx11_texture_load_and_dimensions_share_one_fl91_texture() {
             depth_or_array_layers: 1,
         },
     );
+    let uniform_tint = [0.5_f32, 0.5, 0.25, 1.0];
+    let uniform_buffer = use_uniform.then(|| {
+        let bytes = uniform_tint
+            .into_iter()
+            .flat_map(f32::to_ne_bytes)
+            .collect::<Vec<_>>();
+        let buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("FL9_1 combined texture operation tint uniform"),
+            size: bytes.len() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&buffer, 0, &bytes);
+        buffer
+    });
+    let mut bind_group_entries = vec![BindGroupEntry {
+        binding: 42,
+        resource: BindingResource::TextureView(&input_view),
+    }];
+    if let Some(uniform) = &uniform_buffer {
+        bind_group_entries.push(BindGroupEntry {
+            binding: 91,
+            resource: uniform.as_entire_binding(),
+        });
+    }
     let bind_group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("FL9_1 combined texture operation bind group"),
         layout: &pipeline.get_bind_group_layout(0),
-        entries: &[BindGroupEntry {
-            binding: 42,
-            resource: BindingResource::TextureView(&input_view),
-        }],
+        entries: &bind_group_entries,
     });
     let target = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 combined texture operation output"),
@@ -38831,7 +38876,12 @@ fn public_dx11_texture_load_and_dimensions_share_one_fl91_texture() {
             for x in 0..8 {
                 let offset = y * 256 + x * 4;
                 let pixel = &mapped[offset..offset + 4];
-                for (channel, expected) in [100u8, 60, 80, 255].into_iter().enumerate() {
+                let expected = if use_uniform {
+                    [50u8, 30, 20, 255]
+                } else {
+                    [100u8, 60, 80, 255]
+                };
+                for (channel, expected) in expected.into_iter().enumerate() {
                     assert!(
                         pixel[channel].abs_diff(expected) <= 1,
                         "combined texture operation pixel ({x}, {y}) channel {channel}: actual={} expected={expected}",
@@ -38842,7 +38892,10 @@ fn public_dx11_texture_load_and_dimensions_share_one_fl91_texture() {
         }
     }
     readback.unmap();
-    println!("PASS: forced FL9_1 textureLoad and textureDimensions used the same bound texture; all 64 pixels matched [100, 60, 80, 255]");
+    println!(
+        "PASS: forced FL9_1 textureLoad and textureDimensions used the same bound texture{}; all 64 pixels matched",
+        if use_uniform { " with one vec4 uniform" } else { "" }
+    );
 }
 
 #[cfg(feature = "glsl")]

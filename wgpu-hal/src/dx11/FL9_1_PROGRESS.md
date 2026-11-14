@@ -1,3 +1,51 @@
+## Combined FL9_1 `textureLoad`, `textureDimensions` and one uniform — 2026-11-14
+
+The exact direct fragment 2D float composition of one constant-coordinate
+`textureLoad` and one level-less `textureDimensions` query now also accepts
+one selected-entry-used `vec4<f32>` uniform. Core, HAL and Naga retain the
+existing same-image proof and reject multiple or differently shaped uniforms,
+extra used resources, helper calls, control flow and additional image
+operations. The uniform uses the normal compact user register (`b0` in the
+test); texel-load/dimensions emulation remains at `t0`, `s15` and `b13`. No
+downlevel limit or capability flag changed.
+
+The CPU proofs passed for Naga output, Core validation and HAL shader
+validation. The writer output checks `b0`, `b13`, `t0` and `s15`; Core/HAL/Naga
+reject two uniforms or the wrong uniform shape. Core and HAL also confirm that
+resources used only by a sibling entry point do not affect the selected entry.
+The original strict no-uniform GPU test still passed. A second test ran on the
+physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), explicitly requested and confirmed FL9_1 with
+`software=false`; all 64 output pixels matched `[50, 30, 20, 255]` after
+applying the tint to the dimensions-scaled loaded texel. This verifies the
+modern NVIDIA adapter, not historical FL9_1 driver behavior.
+
+Regression results after this change: Naga 174/174, Core DX11 fixture 151/151,
+private strict HAL 532/532, strict public D3D11 156/156 and Core DX12 135/135.
+The public suite had no Rust-test failures, ignored tests or skips; optional
+per-format subcases logged their expected capability skips. Strict mode
+required the physical GPU for hardware fixtures. Clippy completed for Naga,
+Core and the public target; the new code has no remaining lint warnings.
+Existing diagnostics are one Naga GLSL parser pattern warning, three Core
+fixture style warnings and eight D3D11 HAL warnings. Formatting and
+`git diff --check` passed. Cargo was invoked from a Visual Studio x64 developer
+environment; the wrapper still prints its existing `vError: Unknown error`
+banner.
+
+```powershell
+cargo +1.93.1 test --offline -j8 -p naga --lib
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib -- --test-threads=1
+cargo +1.93.1 clippy --offline -j8 -p naga --tests
+cargo +1.93.1 clippy --offline -j8 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,wgsl,std
+cargo +1.93.1 clippy --offline -j8 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
 ## Computed coordinates inside the fragment `textureGather` helper — 2026-11-13
 
 The existing selected-entry gather subset now accepts the unchanged

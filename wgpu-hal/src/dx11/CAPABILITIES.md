@@ -2075,16 +2075,18 @@ The existing `texture_load_2d_float_fragment` and
 selected fragment entry point that directly loads one texel and queries the
 level-less dimensions of the same group-zero `texture_2d<f32>`. The load
 coordinate must be a constant `vec2i`; the query must be directly converted
-from `vec2u` to `vec2f`. Helpers, control flow, sampling, extra used resources,
-other image operations and nonconstant integer operations remain unavailable.
-The bound view must satisfy the existing single-mip RGBA8 texture-load path.
-Core, Naga and HAL share the selected-entry and resource-identity proof. The
-query value and load dimensions reuse the existing `b13` host constant and
-`s15` point-sampling emulation; FXC compiles the combined pixel shader at
+from `vec2u` to `vec2f`. The selected entry may also use one bound `vec4<f32>`
+uniform. Helpers, control flow, additional used resources, other image
+operations and nonconstant integer operations remain unavailable. The bound
+view must satisfy the existing single-mip RGBA8 texture-load path. Core, Naga
+and HAL share the selected-entry and resource-identity proof. The query value
+and load dimensions reuse the existing `b13` host constant and `s15`
+point-sampling emulation; the uniform uses the ordinary user constant-buffer
+mapping (`b0` in the tested layout). FXC compiles the combined pixel shader at
 `ps_4_0_level_9_1`. Strict public GPU readback on the RTX 3090 Ti matched all
-64 pixels. This is an intersection of two existing narrow emulations, not a
-new general texture-query capability, and historical FL9_1 driver behavior is
-unverified.
+64 pixels both without a uniform and with the tint result `[50, 30, 20, 255]`.
+This is an intersection of two existing narrow emulations, not a new general
+texture-query capability, and historical FL9_1 driver behavior is unverified.
 
 ## Zero-input draw ranges
 

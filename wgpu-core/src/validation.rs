@@ -5986,6 +5986,34 @@ fn entry_point_supports_fl9_texture_load_dimensions(
         return false;
     }
 
+    let used_uniforms = module
+        .global_variables
+        .iter()
+        .filter_map(|(handle, global)| {
+            (global.space == naga::AddressSpace::Uniform
+                && global.binding.is_some()
+                && !entry_point_info[handle].is_empty())
+            .then_some(handle)
+        })
+        .collect::<Vec<_>>();
+    let allowed_uniform = match used_uniforms.as_slice() {
+        [handle]
+            if matches!(
+                module.types[module.global_variables[*handle].ty].inner,
+                naga::TypeInner::Vector {
+                    size: naga::VectorSize::Quad,
+                    scalar: naga::Scalar {
+                        kind: naga::ScalarKind::Float,
+                        width: 4
+                    }
+                }
+            ) =>
+        {
+            Some(*handle)
+        }
+        _ => None,
+    };
+
     let image = &module.global_variables[image_binding];
     image.space == naga::AddressSpace::Handle
         && image.binding.is_some()
@@ -6003,6 +6031,7 @@ fn entry_point_supports_fl9_texture_load_dimensions(
         && !module.global_variables.iter().any(|(handle, global)| {
             global.binding.is_some()
                 && handle != image_binding
+                && Some(handle) != allowed_uniform
                 && !entry_point_info[handle].is_empty()
         })
 }
@@ -11142,6 +11171,10 @@ mod tests {
             r#"
             @group(0) @binding(0) var image: texture_2d<f32>;
             @group(0) @binding(1) var other: texture_2d<f32>;
+            @group(1) @binding(7) var<uniform> tint: vec4f;
+            @group(1) @binding(8) var<uniform> extra: vec4f;
+            @group(1) @binding(9) var<uniform> wrong_shape: vec3f;
+            @group(2) @binding(10) var<uniform> sibling_tint: vec4f;
 
             @fragment fn combined() -> @location(0) vec4f {
                 let dimensions = vec2f(textureDimensions(image));
@@ -11153,6 +11186,28 @@ mod tests {
                 let dimensions = vec2f(textureDimensions(other));
                 return textureLoad(image, vec2i(0, 0), 0)
                     + vec4f(dimensions / vec2f(8.0), 0.0, 0.0);
+            }
+
+            @fragment fn combined_uniform_selected_entry() -> @location(0) vec4f {
+                let dimensions = vec2f(textureDimensions(image));
+                return textureLoad(image, vec2i(0, 0), 0) * tint
+                    + vec4f(dimensions / vec2f(8.0), 0.0, 0.0);
+            }
+
+            @fragment fn combined_two_uniforms() -> @location(0) vec4f {
+                let dimensions = vec2f(textureDimensions(image));
+                return textureLoad(image, vec2i(0, 0), 0) * tint + extra
+                    + vec4f(dimensions / vec2f(8.0), 0.0, 0.0);
+            }
+
+            @fragment fn combined_wrong_uniform_type() -> @location(0) vec4f {
+                let dimensions = vec2f(textureDimensions(image));
+                return textureLoad(image, vec2i(0, 0), 0) * vec4f(wrong_shape, 1.0)
+                    + vec4f(dimensions / vec2f(8.0), 0.0, 0.0);
+            }
+
+            @fragment fn sibling_uniform_only() -> @location(0) vec4f {
+                return sibling_tint;
             }
             "#,
         )
@@ -11182,6 +11237,34 @@ mod tests {
             .entry_point_uses_unsupported_texture_query(
                 naga::ShaderStage::Fragment,
                 "combined",
+                &both_limits,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_fl9_texture_load(
+                naga::ShaderStage::Fragment,
+                "combined_uniform_selected_entry",
+                &both_limits,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "combined_uniform_selected_entry",
+                &both_limits,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_fl9_texture_load(
+                naga::ShaderStage::Fragment,
+                "combined_two_uniforms",
+                &both_limits,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_fl9_texture_load(
+                naga::ShaderStage::Fragment,
+                "combined_wrong_uniform_type",
                 &both_limits,
             )
             .unwrap());

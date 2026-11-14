@@ -1732,6 +1732,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             fl9_texel_load_reachable_functions,
             fl9_texel_load_used_globals,
             fl9_dimensions_uniform_global,
+            fl9_load_dimensions_uniform_global,
         ) = if self.options.fl9_texel_load_proof.is_some()
             || self.options.fl9_texture_base_clamp_proof.is_some()
             || self.options.fl9_texture_dimensions_proof.is_some()
@@ -1937,10 +1938,31 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 } else {
                     None
                 };
+            let load_dimensions_uniform_global =
+                if combined_texel_load_dimensions_proof && used_uniform_count == 1 {
+                    used_globals.iter().copied().find(|global| {
+                        let variable = &module.global_variables[*global];
+                        variable.space == crate::AddressSpace::Uniform
+                            && variable.binding.is_some()
+                            && matches!(
+                                module.types[variable.ty].inner,
+                                TypeInner::Vector {
+                                    size: crate::VectorSize::Quad,
+                                    scalar: Scalar {
+                                        kind: ScalarKind::Float,
+                                        width: 4
+                                    }
+                                }
+                            )
+                    })
+                } else {
+                    None
+                };
             if used_uniform_count > FL9_TEXEL_LOAD_MAX_UNIFORM_BUFFERS
                 || (used_uniform_count > 0
                     && !allows_texel_load_uniform
-                    && dimensions_uniform_global.is_none())
+                    && dimensions_uniform_global.is_none()
+                    && load_dimensions_uniform_global.is_none())
             {
                 return Err(Error::Custom(
                     "FL9 texel-load proof supports at most six uniform buffers with a 2D or 3D load"
@@ -1951,9 +1973,10 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 Some(reachable_functions),
                 Some(used_globals),
                 dimensions_uniform_global,
+                load_dimensions_uniform_global,
             )
         } else {
-            (None, None, None)
+            (None, None, None, None)
         };
 
         if self.options.fl9_instance_index_input {
@@ -2593,6 +2616,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                             .contains(&candidate)
                 }) && !(allows_texel_load_uniform && global.space == crate::AddressSpace::Uniform)
                     && Some(handle) != fl9_dimensions_uniform_global
+                    && Some(handle) != fl9_load_dimensions_uniform_global
                     && (!(self.options.fl9_texel_load_proof.is_some()
                         || self.options.fl9_texture_base_clamp_proof.is_some()
                         || self.options.fl9_texture_dimensions_proof.is_some()
@@ -10914,6 +10938,58 @@ mod fl9_viewport_tests {
         );
         assert!(!output.contains("GetDimensions"), "{output}");
         assert!(!output.contains("image.Load("), "{output}");
+
+        let uniform_binding = crate::ResourceBinding {
+            group: 1,
+            binding: 91,
+        };
+        let with_uniform = source
+            .replace(
+                "@fragment fn main",
+                "@group(1) @binding(91) var<uniform> tint: vec4f;\n            @fragment fn main",
+            )
+            .replace(
+                "return value * vec4f(dimensions / vec2f(8.0, 4.0), 1.0, 1.0);",
+                "return value * tint * vec4f(dimensions / vec2f(8.0, 4.0), 1.0, 1.0);",
+            );
+        let mut uniform_options = options.clone();
+        uniform_options.binding_map.insert(
+            uniform_binding,
+            super::super::BindTarget {
+                register: 0,
+                ..Default::default()
+            },
+        );
+        let uniform_output =
+            translate(&with_uniform, &uniform_options, ShaderStage::Fragment).unwrap();
+        assert!(uniform_output.contains("register(t0)"), "{uniform_output}");
+        assert!(uniform_output.contains("register(s15)"), "{uniform_output}");
+        assert!(uniform_output.contains("register(b0)"), "{uniform_output}");
+        assert!(uniform_output.contains("register(b13)"), "{uniform_output}");
+
+        let two_uniforms = with_uniform
+            .replace(
+                "@fragment fn main",
+                "@group(1) @binding(93) var<uniform> extra: vec4f;\n            @fragment fn main",
+            )
+            .replace("value * tint * vec4f", "value * tint + extra * vec4f");
+        let mut two_uniform_options = uniform_options.clone();
+        two_uniform_options.binding_map.insert(
+            crate::ResourceBinding {
+                group: 1,
+                binding: 93,
+            },
+            super::super::BindTarget {
+                register: 1,
+                ..Default::default()
+            },
+        );
+        assert!(translate(&two_uniforms, &two_uniform_options, ShaderStage::Fragment).is_err());
+
+        let wrong_uniform = with_uniform
+            .replace("tint: vec4f", "tint: vec3f")
+            .replace("value * tint * vec4f", "value * vec4f(tint, 1.0) * vec4f");
+        assert!(translate(&wrong_uniform, &uniform_options, ShaderStage::Fragment).is_err());
 
         let mismatched = crate::ResourceBinding {
             group: 0,

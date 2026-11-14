@@ -33,9 +33,10 @@ The existing selected-entry, single-image, single-mip fragment 3D
 `textureLoad` proof permits up to six used uniform buffers. Core, Naga and HAL
 retain the 3D capability gate and reserve `b13` for volume dimensions. A strict
 public test binds a sparse tint at group 1/binding 42 and verifies the full
-8x8 readback is `[127, 0, 64, 255]` on forced FL9_1. Seven uniforms, other
-used resource classes and combined load/dimensions with uniforms remain
-unsupported.
+8x8 readback is `[127, 0, 64, 255]` on forced FL9_1. Seven uniforms and other
+used resource classes remain unsupported. Uniform coexistence with 3D
+load/dimensions remains unsupported; the separate combined 2D
+load/dimensions proof permits exactly one used `vec4<f32>` uniform.
 
 ```powershell
 & 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-core --no-default-features --features dx11,wgsl,glsl,std --lib restricted_fl9_texture_load_proof_is_entry_point_specific
@@ -4943,6 +4944,7 @@ cargo +1.93.1 test --offline -j2 -p wgpu-core --no-default-features --features d
 cargo +1.93.1 test --offline -j2 -p wgpu-hal --no-default-features --features dx11 --lib texture_load_and_dimensions -- --nocapture
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_load_and_dimensions_share_one_fl91_texture -- --exact --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_texture_load_dimensions_with_uniform_at_fl91 -- --exact --nocapture --test-threads=1
 ```
 
 The selected entry must use one constant-coordinate `textureLoad` and one
@@ -4954,7 +4956,10 @@ reported `0x10de:0x2203`, driver `32.0.16.2101`, and matched
 `[100, 60, 80, 255]` for all 64 pixels. The focused test is included in the
 strict public `dx11_public` suite. This does not enable general
 `texture_query`, dynamic texture-load coordinates in the combined proof,
-helper calls or other image-operation compositions.
+helper calls or other image-operation compositions. The second strict test
+binds one sparse `vec4<f32>` uniform and checks `[50, 30, 20, 255]` for all
+64 pixels; the original test remains as the no-uniform baseline and checks
+`[100, 60, 80, 255]`.
 
 ### Dynamic 2D `textureLoad` coordinate through one helper
 

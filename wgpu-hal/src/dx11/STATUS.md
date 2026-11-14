@@ -1891,10 +1891,13 @@ The separate 2D fragment `textureLoad` and `textureDimensions` emulations may
 also be combined when both existing downlevel limits are enabled. Core, Naga
 and HAL require one direct level-less query and one load from the same
 group-0, single-sample `texture_2d<f32>`, with a constant integer coordinate,
-no helper/control flow, no sampling and no extra used resources. HAL reuses the
-RGBA8 single-mip point-sampling load path and supplies dimensions through the
-same reserved `b13` constants. Strict public forced-FL9_1 rendering verified
-64/64 output pixels as `[100, 60, 80, 255]`. This composition adds no new
+no helper/control flow, no sampling and at most one used `vec4<f32>` uniform.
+Other used resources and additional or differently shaped uniforms remain
+rejected. HAL reuses the RGBA8 single-mip point-sampling load path and supplies
+dimensions through the same reserved `b13` constants; the user uniform uses
+the ordinary `b0` register in the tested layout. Strict public forced-FL9_1
+rendering verified 64/64 output pixels as `[100, 60, 80, 255]` without a
+uniform and `[50, 30, 20, 255]` with one. This composition adds no new
 capability flag and general `texture_query` remains disabled.
 
 ## Narrow FL9_1 fragment `textureNumLevels`
@@ -2202,8 +2205,9 @@ uniform registers. Strict public execution on the RTX 3090 Ti at requested and
 actual FL9_1 used a sparse group-1/binding-42 tint uniform; the loaded voxel
 rendered `[127, 0, 64, 255]` across all 64 pixels. Synthetic tests reject seven
 uniforms, and Core still rejects this path when its 3D load limit is disabled.
-Multiple images, unrelated used resources and combined load/dimensions with
-uniforms remain unsupported.
+Multiple images, unrelated used resources, 3D load/dimensions with uniforms,
+and multi-uniform or wrong-type uniforms in the combined 2D path remain
+unsupported.
 ## Computed coordinates in one fragment 2D `textureLoad` helper — 2026-11-12
 
 The narrow selected-entry fragment 2D float `textureLoad` path accepts one

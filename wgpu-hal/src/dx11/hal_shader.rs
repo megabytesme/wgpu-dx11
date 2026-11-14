@@ -2326,6 +2326,78 @@ mod tests {
         ));
         assert!(!proof.has_implicit_sample);
 
+        let with_uniform = naga::front::wgsl::parse_str(
+            r#"
+                @group(0) @binding(7) var image: texture_2d<f32>;
+                @group(1) @binding(91) var<uniform> tint: vec4f;
+                @group(2) @binding(92) var<uniform> sibling_tint: vec4f;
+                @fragment fn combined() -> @location(0) vec4f {
+                    let dimensions = vec2f(textureDimensions(image));
+                    return textureLoad(image, vec2i(1, 0), 0) * tint
+                        + vec4f(dimensions / vec2f(8.0), 0.0, 0.0);
+                }
+                @fragment fn sibling_only() -> @location(0) vec4f {
+                    return sibling_tint;
+                }
+            "#,
+        )
+        .unwrap();
+        let with_uniform_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&with_uniform)
+        .unwrap();
+        let uniform_proof = fl9_texture_emulation_binding(
+            &with_uniform,
+            &with_uniform_info,
+            naga::ShaderStage::Fragment,
+            "combined",
+        )
+        .unwrap()
+        .expect("combined 2D load/dimensions accepts one selected vec4 uniform");
+        assert!(matches!(
+            uniform_proof.kind,
+            Fl9TextureEmulationKind::LoadDimensions
+        ));
+
+        for invalid_source in [
+            r#"
+                @group(0) @binding(7) var image: texture_2d<f32>;
+                @group(1) @binding(91) var<uniform> tint: vec4f;
+                @group(1) @binding(93) var<uniform> extra: vec4f;
+                @fragment fn combined() -> @location(0) vec4f {
+                    let dimensions = vec2f(textureDimensions(image));
+                    return textureLoad(image, vec2i(1, 0), 0) * tint + extra
+                        + vec4f(dimensions / vec2f(8.0), 0.0, 0.0);
+                }
+            "#,
+            r#"
+                @group(0) @binding(7) var image: texture_2d<f32>;
+                @group(1) @binding(91) var<uniform> tint: vec3f;
+                @fragment fn combined() -> @location(0) vec4f {
+                    let dimensions = vec2f(textureDimensions(image));
+                    return textureLoad(image, vec2i(1, 0), 0) * vec4f(tint, 1.0)
+                        + vec4f(dimensions / vec2f(8.0), 0.0, 0.0);
+                }
+            "#,
+        ] {
+            let invalid_module = naga::front::wgsl::parse_str(invalid_source).unwrap();
+            let invalid_info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&invalid_module)
+            .unwrap();
+            assert!(fl9_texture_emulation_binding(
+                &invalid_module,
+                &invalid_info,
+                naga::ShaderStage::Fragment,
+                "combined",
+            )
+            .is_err());
+        }
+
         let mismatched = naga::front::wgsl::parse_str(
             r#"
                 @group(0) @binding(7) var image: texture_2d<f32>;
@@ -9275,6 +9347,31 @@ fn fl9_texture_emulation_binding(
             "D3D11 FL9 combined textureLoad and textureDimensions requires exactly one of each operation".into(),
         ));
     }
+    let used_uniforms = module
+        .global_variables
+        .iter()
+        .filter_map(|(global, variable)| {
+            (variable.space == naga::AddressSpace::Uniform
+                && variable.binding.is_some()
+                && (!function_info[global].is_empty()
+                    || reachable_functions
+                        .iter()
+                        .any(|function| !info[*function][global].is_empty())))
+            .then_some(global)
+        })
+        .collect::<Vec<_>>();
+    let allowed_load_dimensions_uniform =
+        if matches!(kind, Fl9TextureEmulationKind::LoadDimensions) && used_uniforms.len() == 1 {
+            let uniform = used_uniforms[0];
+            fl9_is_float_vector(
+                module,
+                module.global_variables[uniform].ty,
+                naga::VectorSize::Quad,
+            )
+            .then_some(uniform)
+        } else {
+            None
+        };
     if matches!(
         kind,
         Fl9TextureEmulationKind::Load
@@ -9293,11 +9390,15 @@ fn fl9_texture_emulation_binding(
                             .any(|function| !info[*function][*global].is_empty()))
             })
             .count();
-        if used_uniform_count > 0
-            && (!matches!(
-                kind,
-                Fl9TextureEmulationKind::Load | Fl9TextureEmulationKind::Load3D
-            ) || used_uniform_count > 6)
+        if used_uniform_count > 6
+            || (used_uniform_count > 0
+                && match kind {
+                    Fl9TextureEmulationKind::Load | Fl9TextureEmulationKind::Load3D => false,
+                    Fl9TextureEmulationKind::LoadDimensions => {
+                        allowed_load_dimensions_uniform.is_none()
+                    }
+                    _ => true,
+                })
         {
             return Err(crate::PipelineError::Linkage(
                 stages,
@@ -9306,19 +9407,6 @@ fn fl9_texture_emulation_binding(
             ));
         }
     }
-    let used_uniforms = module
-        .global_variables
-        .iter()
-        .filter_map(|(global, variable)| {
-            (variable.space == naga::AddressSpace::Uniform
-                && variable.binding.is_some()
-                && (!function_info[global].is_empty()
-                    || reachable_functions
-                        .iter()
-                        .any(|function| !info[*function][global].is_empty())))
-            .then_some(global)
-        })
-        .collect::<Vec<_>>();
     let allowed_dimensions_uniform = if matches!(kind, Fl9TextureEmulationKind::Dimensions)
         && dimensions_query_count == 1
         && sample_count == 1
@@ -9374,10 +9462,11 @@ fn fl9_texture_emulation_binding(
             && (matches!(kind, Fl9TextureEmulationKind::Load) || Some(global) != image_identity)
             && variable.binding.is_some()
             && (variable.space != naga::AddressSpace::Uniform
-                || !matches!(
+                || !(matches!(
                     kind,
                     Fl9TextureEmulationKind::Load | Fl9TextureEmulationKind::Load3D
-                ))
+                ) || (matches!(kind, Fl9TextureEmulationKind::LoadDimensions)
+                    && Some(global) == allowed_load_dimensions_uniform)))
             && (!function_info[global].is_empty()
                 || reachable_functions
                     .iter()

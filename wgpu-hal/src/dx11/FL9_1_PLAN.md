@@ -3608,15 +3608,12 @@ shared validation changes and final regression integration coordinator-owned.
 One exact-view role-transition gap is now covered for the selected RGBA8
 format. The remaining public capability/operation matrix is still not
 exhaustive, and formats or usages with existing pixel tests should not be
-duplicated. A separate Core/HAL audit identified a plausible narrow shader
-composition candidate: one fragment uniform together with 2D
-`textureDimensions` and one implicit sample of that same image. Each component
-is implemented separately, but both selected-entry proofs currently reject
-the additional uniform. Verify Naga/FXC and add matching Core/HAL allowlists
-only if a strict GPU test can prove the uniform, dimensions and sampled data
-all affect output; keep unrelated resources rejected. Preserve the
-uniform-indexed vertex array rejection until its current compiler-only probe
-is supplemented by matching selected-entry proofs and in-range hardware
+duplicated. A separate Core/HAL audit identified a narrow shader composition
+candidate: one fragment uniform together with 2D `textureDimensions` and one
+implicit sample of that same image. The matching Core/HAL/Naga proofs and
+strict readback were completed in the coordinator increment below. Preserve
+the uniform-indexed vertex array rejection until its current compiler-only
+probe is supplemented by matching selected-entry proofs and in-range hardware
 readback.
 
 ## Coordinator increment — dimensions, sampling and one fragment uniform — 2026-11-14
@@ -3632,9 +3629,20 @@ sampled data and the tint. Existing dimension limits and public capability
 projection did not change.
 
 Continue with bounded shader-composition slices rather than broad agent
-implementation tasks. The next candidate is one selected fragment `vec4f`
+implementation tasks. The next candidate was one selected fragment `vec4f`
 uniform alongside the existing direct 2D `textureLoad` plus
-`textureDimensions` proof. Keep it separate from helper paths and other
-resources, and require compiler output plus strict pixel readback before
-accepting it. Independent agents can audit the Core/HAL/Naga gates and review
-the proof; cross-crate edits and integration remain coordinator-owned.
+`textureDimensions` proof; it is now implemented and verified in the following
+coordinator increment. Independent agents can audit Core/HAL/Naga gates and
+review proofs; cross-crate edits and integration remain coordinator-owned.
+
+## Coordinator increment — combined load/dimensions with one uniform — 2026-11-14
+
+The direct selected fragment `textureLoad` plus level-less `textureDimensions`
+composition now permits exactly one used `vec4f` uniform. Core, HAL and Naga
+retain the existing same-image, constant-coordinate, one-operation, no-helper
+proof and reject multiple or differently shaped uniforms. The ordinary user
+uniform register (`b0` in the tested layout) coexists with the emulation
+constant at `b13`; no downlevel capability was broadened. The next work should
+come from a scoped Core/HAL contract or application-workload audit, with
+independent agents reviewing or probing a candidate and the coordinator
+owning its cross-crate implementation and end-to-end test.
