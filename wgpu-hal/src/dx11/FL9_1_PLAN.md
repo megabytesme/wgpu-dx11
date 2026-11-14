@@ -1,5 +1,13 @@
 # FL9_1 completion plan
 
+## Latest coordinator increment — vertex-stride boundary — 2026-11-14
+
+The selected adapter reports the FL9_1 maximum vertex-buffer array stride of
+2048 bytes. A strict public draw at that stride rendered the expected color in
+all 64 pixels, and Core rejected stride 2049. The full strict public test
+target passed 162/162; no capability changed. Historical-driver behavior
+remains unverified.
+
 ## Latest coordinator increment — format and vertex-limit evidence — 2026-11-14
 
 Strict public test coverage now verifies BGRA8Unorm blending when the selected

@@ -5524,3 +5524,15 @@ requested and confirmed FL9_1. BGRA8 reported `BLENDABLE`; all 64 pixels
 matched BGRA `[135, 104, 88, 159]`. Vertex location 15 pipeline creation
 passed and location 16 was rejected by Core. These results verify the selected
 adapter only, not historical FL9_1 driver behavior.
+
+`public_dx11_vertex_buffer_stride_limit_boundary_at_fl91` checks the advertised
+2048-byte maximum stride, renders using that stride and verifies that Core
+rejects stride 2049.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_vertex_buffer_stride_limit_boundary_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+At requested and actual FL9_1 on the RTX 3090 Ti, the 2048-byte stride draw
+matched `[0, 255, 64, 255]` in all 64 pixels; Core rejected 2049 before HAL.

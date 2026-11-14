@@ -20771,3 +20771,18 @@ generic format table rather than this adapter's Rust `getTextureFormatFeatures`
 projection, so those unsupported cases reach Core and are rejected there.
 This is not a valid-request-to-HAL failure; the selector remains unsuitable as
 a full pass criterion for this downlevel adapter. No CTS curation changed.
+
+## Coordinator increment — vertex-buffer stride boundary — 2026-11-14
+
+Added a strict public test for the projected FL9_1 vertex-buffer stride
+maximum. It asserts `max_vertex_buffer_array_stride == 2048`, creates a
+pipeline with stride 2048, and verifies Core rejects 2049. The accepted path
+draws a full-screen triangle using 2048-byte-spaced positions; all 64 RGBA8
+pixels matched `[0, 255, 64, 255]` on the physical RTX 3090 Ti at requested
+and actual FL9_1.
+
+The focused hardware test passed 1/1. The full strict public DX11 target
+passed 162/162 with no ignored or failed test. Public-target Clippy passed
+with only the same eight pre-existing D3D11 HAL warnings; formatting and
+`git diff --check` passed. No advertised limit changed, and historical FL9_1
+behavior remains unverified.
