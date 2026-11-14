@@ -3646,3 +3646,29 @@ constant at `b13`; no downlevel capability was broadened. The next work should
 come from a scoped Core/HAL contract or application-workload audit, with
 independent agents reviewing or probing a candidate and the coordinator
 owning its cross-crate implementation and end-to-end test.
+
+## Current coordinator status — 2026-11-14
+
+The direct fragment `textureGather` proof now also supports exactly one used
+bound `vec4f` uniform; it keeps the `b13` gather-emulation reservation intact
+and is covered by a strict RTX 3090 Ti FL9_1 public readback test. The complete
+strict public D3D11 suite is 156/156, private HAL is 533/533, Core's D3D11
+fixture suite is 152/152, Naga is 175/175, and the targeted Core DX12 suite is
+136/136. Explicit DX11 selection remains experimental while default backend
+selection remains isolated.
+
+This is still a partial FL9_1 API implementation. The immediate work is to
+close demonstrated Core-valid-to-HAL gaps and verify realistic rendering
+compositions, not to claim feature-complete WebGPU support. Keep feature-level
+hardware limits distinct from implementation gaps: compute/UAV/storage,
+geometry shaders, multiple color outputs, indirect drawing and fragment
+derivatives remain unavailable at FL9_1; public API paths that depend on them
+must continue to be withheld or rejected. Historical FL9_1 adapters and the
+Lumia ARM32/CoreWindow runtime remain external verification requirements.
+
+Use agents for independent audits, specification research, FXC probes and
+application-workload reviews, with the coordinator owning cross-crate edits,
+validation design, strict GPU execution and checkpoint integration. The
+next candidate should be selected from a concrete workload or proven
+Core/HAL mismatch. Do not broaden shader shapes solely because one modern
+adapter accepts the generated FL9_1 profile.

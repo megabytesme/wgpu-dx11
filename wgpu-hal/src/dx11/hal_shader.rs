@@ -1097,6 +1097,60 @@ mod tests {
     }
 
     #[test]
+    fn fl9_texture_gather_allows_one_selected_direct_vec4_uniform() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @group(0) @binding(99) var<uniform> tint: vec4f;
+            @group(0) @binding(100) var<uniform> sibling_only: vec4f;
+            @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv) * tint;
+            }
+            @fragment fn sibling(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv) * sibling_only;
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        for entry in ["direct", "sibling"] {
+            let proof =
+                fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, entry)
+                    .unwrap()
+                    .expect("one selected direct vec4f uniform should preserve gather lowering");
+            assert!(matches!(proof.kind, Fl9TextureEmulationKind::Gather));
+            assert!(!proof.has_helper);
+        }
+
+        let rejected_sources = [
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(99) var<uniform> tint: vec4f; @group(0) @binding(100) var<uniform> tint2: vec4f; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(2, image, smp, uv) * tint + tint2; }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(99) var<uniform> tint: vec2f; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(2, image, smp, uv) * vec4f(tint, 0.0, 1.0); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(99) var<uniform> tint: vec4f; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(2, image, smp, uv) * select(tint, vec4f(1.0), uv.x > 0.5); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(0) @binding(99) var<uniform> tint: vec4f; fn gather_image(uv: vec2f) -> vec4f { return textureGather(2, image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv) * tint; }"#,
+        ];
+        for source in rejected_sources {
+            let module = naga::front::wgsl::parse_str(source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            assert!(
+                fl9_texture_emulation_binding(&module, &info, naga::ShaderStage::Fragment, "main",)
+                    .is_err(),
+                "accepted unsupported gather uniform source: {source}"
+            );
+        }
+    }
+
+    #[test]
     fn fl9_texture_gather_computed_coordinate_is_proven_and_bounded() {
         let module = naga::front::wgsl::parse_str(
             r#"
@@ -9372,6 +9426,33 @@ fn fl9_texture_emulation_binding(
         } else {
             None
         };
+    let allowed_gather_uniform = if matches!(kind, Fl9TextureEmulationKind::Gather)
+        && reachable_functions.is_empty()
+        && used_uniforms.len() == 1
+        && !function
+            .expressions
+            .iter()
+            .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
+    {
+        let uniform = used_uniforms[0];
+        fl9_is_float_vector(
+            module,
+            module.global_variables[uniform].ty,
+            naga::VectorSize::Quad,
+        )
+        .then_some(uniform)
+    } else {
+        None
+    };
+    if matches!(kind, Fl9TextureEmulationKind::Gather)
+        && !used_uniforms.is_empty()
+        && allowed_gather_uniform.is_none()
+    {
+        return Err(crate::PipelineError::Linkage(
+            stages,
+            "D3D11 FL9 direct textureGather permits one used vec4f uniform; helper gathers do not permit uniforms".into(),
+        ));
+    }
     if matches!(
         kind,
         Fl9TextureEmulationKind::Load
@@ -9475,6 +9556,24 @@ fn fl9_texture_emulation_binding(
         return Err(crate::PipelineError::Linkage(
             stages,
             "D3D11 FL9 textureLoad supports only one selected texture resource".into(),
+        ));
+    }
+    if matches!(kind, Fl9TextureEmulationKind::Gather)
+        && module.global_variables.iter().any(|(global, variable)| {
+            let selected = !function_info[global].is_empty()
+                || reachable_functions
+                    .iter()
+                    .any(|function| !info[*function][global].is_empty());
+            selected
+                && variable.binding.is_some()
+                && Some(global) != image_identity
+                && variable.binding != sampler_binding
+                && Some(global) != allowed_gather_uniform
+        })
+    {
+        return Err(crate::PipelineError::Linkage(
+            stages,
+            "D3D11 FL9 textureGather supports only its selected texture, sampler, and optional direct vec4f uniform".into(),
         ));
     }
     let allow_unselected_bound_resources = matches!(

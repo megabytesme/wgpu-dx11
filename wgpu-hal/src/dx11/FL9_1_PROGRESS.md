@@ -46,6 +46,56 @@ cargo +1.93.1 fmt --all -- --check
 git diff --check
 ```
 
+## Coordinator increment — direct fragment textureGather with one uniform — 2026-11-14
+
+Extended only the direct selected fragment `textureGather` proof to allow one
+used, bound `vec4f` uniform. Helper gathers, extra used resources, a second or
+other-shaped uniform, and `select` remain rejected. Core, HAL and Naga each
+enforce the narrow selected-entry shape; Naga maps the user uniform through
+the ordinary `b0` register while preserving gather emulation's reserved
+`b13` and `s15` assignments. A strict public test tinted the gathered result
+and validated all 64 readback pixels (`[76, 83, 53, 91]` within one UNORM
+step) on the physical RTX 3090 Ti at requested and actual FL9_1.
+
+The complete strict public D3D11 target passed 156/156 Rust test functions;
+optional capability subcases may still log explicit SKIP messages. The full
+private HAL target passed 533/533, the Core DX11 fixture target passed
+152/152, and Naga passed 175/175. The targeted Core DX12 unit suite passed
+136/136. Naga, HAL, Core and public-test Clippy checks completed; the new
+increment introduced no Clippy warning. Existing HAL and Core test warnings
+remain. `cargo fmt --all -- --check` and `git diff --check` passed.
+
+The physical run reported NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`),
+driver `32.0.16.2101`, physical adapter (`software=false`), requested and
+actual FL9_1. This is evidence for that GPU/driver/profile only. No public
+capability flag was broadened. Explicit public DX11 selection remains
+experimental; the full public suite includes the test that DX11 is still not
+enabled by default.
+
+Commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p naga --lib
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cmd /c call "%TEMP%\wgpu-mission-cargo-c-target.bat" test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,std --lib -- --test-threads=1
+cargo +1.93.1 clippy --offline -j8 -p naga --lib
+cargo +1.93.1 clippy --offline -j8 -p wgpu-hal --tests --no-default-features --features dx11
+cargo +1.93.1 clippy --offline -j8 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,wgsl,std
+cargo +1.93.1 clippy --offline -j8 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
+The direct Core DX12 invocation first lacked `link.exe`; rerunning through the
+repository's Visual Studio helper succeeded. Strict GPU tests used the
+installed Visual Studio x64 environment and the isolated temporary target
+directory. Continue with small, validated selected-entry shader compositions
+or a narrowly scoped public operation-matrix gap; do not broadly relax FL9_1
+shader restrictions.
+
 ## Computed coordinates inside the fragment `textureGather` helper — 2026-11-13
 
 The existing selected-entry gather subset now accepts the unchanged

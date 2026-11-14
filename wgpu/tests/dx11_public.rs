@@ -44441,6 +44441,16 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
                 ty: BindingType::Sampler(SamplerBindingType::Filtering),
                 count: None,
             },
+            BindGroupLayoutEntry {
+                binding: 63,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(16),
+                },
+                count: None,
+            },
         ],
     });
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
@@ -44453,6 +44463,7 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
         source: ShaderSource::Wgsl(
             "@group(0) @binding(7) var image: texture_2d<f32>;\n\
              @group(0) @binding(42) var smp: sampler;\n\
+             @group(0) @binding(63) var<uniform> tint: vec4f;\n\
              struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
              @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(vec4f(position, 0.0, 1.0), uv); }\n\
              fn gather_helper(uv: vec2f) -> vec4f { return textureGather(2, image, smp, uv); }
@@ -44460,7 +44471,8 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
              @fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(2, image, smp, uv); }
              @fragment fn fs_computed(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(2, image, smp, uv * 0.5); }
              @fragment fn fs_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_helper(uv); }
-             @fragment fn fs_helper_computed(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_computed_helper(uv); }"
+             @fragment fn fs_helper_computed(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_computed_helper(uv); }\n\
+             @fragment fn fs_uniform(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(2, image, smp, uv) * tint; }"
                 .into(),
         ),
     });
@@ -44514,6 +44526,7 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
     let computed_pipeline = create_pipeline("fs_computed");
     let helper_pipeline = create_pipeline("fs_helper");
     let computed_helper_pipeline = create_pipeline("fs_helper_computed");
+    let uniform_pipeline = create_pipeline("fs_uniform");
 
     let input = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 textureGather patterned input"),
@@ -44567,6 +44580,17 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
         address_mode_v: AddressMode::ClampToEdge,
         ..Default::default()
     });
+    let tint_data: Vec<u8> = [0.5f32, 0.5, 0.5, 1.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let tint = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 textureGather uniform tint"),
+        size: tint_data.len() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(&tint, 0, &tint_data);
     let group = device.create_bind_group(&BindGroupDescriptor {
         label: Some("FL9_1 textureGather resources"),
         layout: &layout,
@@ -44578,6 +44602,14 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
             BindGroupEntry {
                 binding: 42,
                 resource: BindingResource::Sampler(&sampler),
+            },
+            BindGroupEntry {
+                binding: 63,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &tint,
+                    offset: 0,
+                    size: NonZeroU64::new(tint_data.len() as u64),
+                }),
             },
         ],
     });
@@ -44611,7 +44643,7 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
     let target_view = target.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 textureGather readback"),
-        size: 4 * 8 * 256,
+        size: 5 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -44790,6 +44822,49 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
             depth_or_array_layers: 1,
         },
     );
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 textureGather with uniform tint pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&uniform_pipeline);
+        pass.set_bind_group(0, &group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 32 * 256,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
@@ -44807,6 +44882,7 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
         .expect("map textureGather readback");
     let expected = [151, 166, 106, 91];
     let computed_expected = [76, 91, 31, 16];
+    let uniform_expected = [76, 83, 53, 91];
     {
         let data = readback
             .slice(..)
@@ -44817,6 +44893,7 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
             ("helper", 8 * 256, expected),
             ("computed", 16 * 256, computed_expected),
             ("computed helper", 24 * 256, computed_expected),
+            ("uniform", 32 * 256, uniform_expected),
         ] {
             for y in 0..8 {
                 for x in 0..8 {
@@ -44835,7 +44912,7 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
     }
     readback.unmap();
     println!(
-        "PASS: physical FL9_1 direct, computed-coordinate, forwarding-helper, and computed-coordinate-helper textureGather sampled expected texels; direct/helper output {expected:?}, computed output {computed_expected:?}, 64/64 pixels each within one UNORM step"
+        "PASS: physical FL9_1 direct, computed-coordinate, forwarding-helper, computed-coordinate-helper, and uniform-backed textureGather sampled expected texels; direct/helper output {expected:?}, computed output {computed_expected:?}, uniform output {uniform_expected:?}, 64/64 pixels each within one UNORM step"
     );
 
     let srgb_features = adapter.get_texture_format_features(TextureFormat::Rgba8UnormSrgb);
@@ -44892,6 +44969,14 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
                 BindGroupEntry {
                     binding: 42,
                     resource: BindingResource::Sampler(&sampler),
+                },
+                BindGroupEntry {
+                    binding: 63,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &tint,
+                        offset: 0,
+                        size: NonZeroU64::new(tint_data.len() as u64),
+                    }),
                 },
             ],
         });
@@ -45021,6 +45106,14 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
                     binding: 42,
                     resource: BindingResource::Sampler(&sampler),
                 },
+                BindGroupEntry {
+                    binding: 63,
+                    resource: BindingResource::Buffer(BufferBinding {
+                        buffer: &tint,
+                        offset: 0,
+                        size: NonZeroU64::new(tint_data.len() as u64),
+                    }),
+                },
             ],
         });
         expect_validation_error_containing(
@@ -45088,6 +45181,14 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
             BindGroupEntry {
                 binding: 42,
                 resource: BindingResource::Sampler(&sampler),
+            },
+            BindGroupEntry {
+                binding: 63,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &tint,
+                    offset: 0,
+                    size: NonZeroU64::new(tint_data.len() as u64),
+                }),
             },
         ],
     });

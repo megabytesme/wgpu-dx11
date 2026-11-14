@@ -1733,6 +1733,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             fl9_texel_load_used_globals,
             fl9_dimensions_uniform_global,
             fl9_load_dimensions_uniform_global,
+            fl9_gather_uniform_global,
         ) = if self.options.fl9_texel_load_proof.is_some()
             || self.options.fl9_texture_base_clamp_proof.is_some()
             || self.options.fl9_texture_dimensions_proof.is_some()
@@ -1958,15 +1959,52 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 } else {
                     None
                 };
+            let gather_uniform_global =
+                if self.options.fl9_texture_gather_proof.is_some()
+                    && reachable_functions.is_empty()
+                    && used_uniform_count == 1
+                    && entry.function.body.iter().all(|statement| {
+                        matches!(
+                            statement,
+                            crate::Statement::Emit(_) | crate::Statement::Return { .. }
+                        )
+                    })
+                    && !entry.function.expressions.iter().any(|(_, expression)| {
+                        matches!(expression, crate::Expression::Select { .. })
+                    })
+                {
+                    used_globals.iter().copied().find(|global| {
+                        let variable = &module.global_variables[*global];
+                        variable.space == crate::AddressSpace::Uniform
+                            && variable.binding.is_some()
+                            && matches!(
+                                module.types[variable.ty].inner,
+                                TypeInner::Vector {
+                                    size: crate::VectorSize::Quad,
+                                    scalar: Scalar {
+                                        kind: ScalarKind::Float,
+                                        width: 4
+                                    }
+                                }
+                            )
+                    })
+                } else {
+                    None
+                };
             if used_uniform_count > FL9_TEXEL_LOAD_MAX_UNIFORM_BUFFERS
                 || (used_uniform_count > 0
                     && !allows_texel_load_uniform
                     && dimensions_uniform_global.is_none()
-                    && load_dimensions_uniform_global.is_none())
+                    && load_dimensions_uniform_global.is_none()
+                    && gather_uniform_global.is_none())
             {
                 return Err(Error::Custom(
-                    "FL9 texel-load proof supports at most six uniform buffers with a 2D or 3D load"
-                        .into(),
+                    if self.options.fl9_texture_gather_proof.is_some() {
+                        "FL9 textureGather permits one selected direct vec4f uniform only"
+                    } else {
+                        "FL9 texel-load proof supports at most six uniform buffers with a 2D or 3D load"
+                    }
+                    .into(),
                 ));
             }
             (
@@ -1974,9 +2012,10 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 Some(used_globals),
                 dimensions_uniform_global,
                 load_dimensions_uniform_global,
+                gather_uniform_global,
             )
         } else {
-            (None, None, None, None)
+            (None, None, None, None, None)
         };
 
         if self.options.fl9_instance_index_input {
@@ -2617,6 +2656,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                 }) && !(allows_texel_load_uniform && global.space == crate::AddressSpace::Uniform)
                     && Some(handle) != fl9_dimensions_uniform_global
                     && Some(handle) != fl9_load_dimensions_uniform_global
+                    && Some(handle) != fl9_gather_uniform_global
                     && (!(self.options.fl9_texel_load_proof.is_some()
                         || self.options.fl9_texture_base_clamp_proof.is_some()
                         || self.options.fl9_texture_dimensions_proof.is_some()
@@ -9328,6 +9368,75 @@ mod fl9_viewport_tests {
                 component_output.matches(&format!(").{channel}")).count(),
                 4,
                 "{component_output}"
+            );
+        }
+    }
+
+    #[test]
+    fn fl9_direct_texture_gather_maps_one_vec4_uniform_around_reserved_registers() {
+        let texture_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let uniform_binding = crate::ResourceBinding {
+            group: 1,
+            binding: 99,
+        };
+        let source = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @group(1) @binding(99) var<uniform> tint: vec4f;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv) * tint;
+            }
+        "#;
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_gather_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        for (binding, register) in [
+            (texture_binding, 0),
+            (sampler_binding, 3),
+            (uniform_binding, 0),
+        ] {
+            options.binding_map.insert(
+                binding,
+                super::super::BindTarget {
+                    register,
+                    ..Default::default()
+                },
+            );
+        }
+
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("cbuffer tint : register(b0)"), "{output}");
+        assert!(output.contains("register(b13)"), "{output}");
+        assert!(
+            output.contains("SamplerState naga_fl9_load_sampler : register(s15)"),
+            "{output}"
+        );
+        assert!(output.contains("tint"), "{output}");
+        assert_eq!(
+            output.matches(".Sample(naga_fl9_load_sampler").count(),
+            4,
+            "{output}"
+        );
+
+        let rejected_sources = [
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(1) @binding(99) var<uniform> tint: vec4f; @group(1) @binding(100) var<uniform> tint2: vec4f; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(2, image, smp, uv) * tint + tint2; }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(1) @binding(99) var<uniform> tint: vec2f; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(2, image, smp, uv) * vec4f(tint, 0.0, 1.0); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(1) @binding(99) var<uniform> tint: vec4f; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(2, image, smp, uv) * select(tint, vec4f(1.0), uv.x > 0.5); }"#,
+            r#"@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @group(1) @binding(99) var<uniform> tint: vec4f; fn gather_image(uv: vec2f) -> vec4f { return textureGather(2, image, smp, uv); } @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { return gather_image(uv) * tint; }"#,
+        ];
+        for source in rejected_sources {
+            assert!(
+                translate(source, &options, ShaderStage::Fragment).is_err(),
+                "accepted unsupported gather uniform source: {source}"
             );
         }
     }

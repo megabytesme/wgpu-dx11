@@ -4475,6 +4475,45 @@ fn entry_point_fl9_texture_gather_pair(
 
     let image_binding = image_global.binding.as_ref()?;
     let sampler_binding = sampler_global.binding.as_ref()?;
+    let used_uniforms = module
+        .global_variables
+        .iter()
+        .filter_map(|(global, variable)| {
+            (variable.space == naga::AddressSpace::Uniform && !entry_point_info[global].is_empty())
+                .then_some(global)
+        })
+        .collect::<Vec<_>>();
+    let allowed_uniform = match used_uniforms.as_slice() {
+        [] => None,
+        [uniform]
+            if module.global_variables[*uniform].binding.is_some()
+                && !entry_point
+                    .function
+                    .expressions
+                    .iter()
+                    .any(|(_, expression)| {
+                        matches!(expression, naga::Expression::Select { .. })
+                    })
+                && fl9_is_float_vector(
+                    module,
+                    module.global_variables[*uniform].ty,
+                    naga::VectorSize::Quad,
+                ) =>
+        {
+            Some(*uniform)
+        }
+        _ => return None,
+    };
+    for (global, variable) in module.global_variables.iter() {
+        if variable.binding.is_some()
+            && !entry_point_info[global].is_empty()
+            && Some(global) != Some(image)
+            && Some(global) != Some(sampler)
+            && Some(global) != allowed_uniform
+        {
+            return None;
+        }
+    }
     Some(SamplingPair {
         texture_group: image_binding.group,
         texture_binding: image_binding.binding,
@@ -12979,6 +13018,87 @@ mod tests {
                 &restricted,
             )
             .unwrap());
+    }
+
+    #[test]
+    fn restricted_fl9_texture_gather_allows_one_selected_vec4_uniform() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @group(0) @binding(99) var<uniform> tint: vec4f;
+            @group(0) @binding(100) var<uniform> sibling_only: vec4f;
+            @group(0) @binding(101) var<uniform> wrong_type: vec2f;
+
+            @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv) * tint;
+            }
+            @fragment fn sibling(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv) * sibling_only;
+            }
+            @fragment fn two_uniforms(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv) * tint + sibling_only;
+            }
+            @fragment fn wrong_uniform_type(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv)
+                    * vec4f(wrong_type, 0.0, 1.0);
+            }
+            @fragment fn select_uniform(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureGather(2, image, smp, uv)
+                    * select(tint, vec4f(1.0), uv.x > 0.5);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let restricted = wgt::DownlevelLimits {
+            texture_gather: false,
+            texture_gather_2d_float_fragment: true,
+            ..Default::default()
+        };
+        let expected = Some(SamplingPair {
+            texture_group: 0,
+            texture_binding: 7,
+            sampler_group: 0,
+            sampler_binding: 42,
+        });
+
+        for entry in ["direct", "sibling"] {
+            assert_eq!(
+                interface
+                    .entry_point_fl9_texture_gather_pair(naga::ShaderStage::Fragment, entry)
+                    .unwrap(),
+                expected,
+                "selected entry {entry} should count only its used uniform"
+            );
+            assert!(!interface
+                .entry_point_uses_unsupported_texture_gather(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &restricted,
+                )
+                .unwrap());
+        }
+
+        for entry in ["two_uniforms", "wrong_uniform_type", "select_uniform"] {
+            assert!(interface
+                .entry_point_fl9_texture_gather_pair(naga::ShaderStage::Fragment, entry)
+                .unwrap()
+                .is_none());
+            assert!(interface
+                .entry_point_uses_unsupported_texture_gather(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &restricted,
+                )
+                .unwrap());
+        }
     }
 
     #[test]
