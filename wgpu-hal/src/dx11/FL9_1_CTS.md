@@ -205,10 +205,11 @@ it does not cover the known separate-alpha portability issue.
 
 ## Additional strict texture-copy selector — 2026-11-14
 
-Five selected 2D-to-2D copy selectors passed without skips or failures on the
+Six selected 2D-to-2D copy selectors passed without skips or failures on the
 physical RTX 3090 Ti at requested and actual FL9_1: same-format BGRA8 UNORM,
 plus linear-to-sRGB and sRGB-to-linear pairs for both RGBA8 and BGRA8. The
-copies preserve stored bits; they do not perform color-space conversion. The
+same-format R8 UNORM copy also passed. The copies preserve stored bits; they do
+not perform color-space conversion. The
 corresponding `Rg16Snorm` selector was also attempted, but all subcases skipped
 because `texture-formats-tier1` is not in this adapter's conservative
 projection; it is not a passing selector and is not in the curated pass
@@ -219,21 +220,36 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="bgra8unorm";dstFormat="bgra8unorm";dimension="2d"'
 cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="bgra8unorm";dstFormat="bgra8unorm-srgb";dimension="2d"'
 cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="bgra8unorm-srgb";dstFormat="bgra8unorm";dimension="2d"'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="r8unorm";dstFormat="r8unorm";dimension="2d"'
 cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rgba8unorm";dstFormat="rgba8unorm-srgb";dimension="2d"'
 cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rgba8unorm-srgb";dstFormat="rgba8unorm";dimension="2d"'
 cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rg16snorm";dstFormat="rg16snorm";dimension="2d"'
 ```
 
 The strict runs selected NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
-driver `32.0.16.2101`), requested and confirmed FL9_1. Each of the five
-supported selectors reported 1 pass, 0 skips and 0 failures (5/5 total).
+driver `32.0.16.2101`), requested and confirmed FL9_1. Each of the six
+supported selectors reported 1 pass, 0 skips and 0 failures (6/6 total).
 The Rg16Snorm run selected the same adapter and reported 0 passes, 1 skipped
 test case and 0 failures; each subcase required the unexposed
 `texture-formats-tier1` feature.
 
-The same five supported selectors passed 5/5 on both DX12 and Vulkan. Vulkan
+The same six supported selectors passed 6/6 on both DX12 and Vulkan. Vulkan
 logged that an optional OBS layer manifest was unavailable, but all selected
 test cases completed without skips or failures.
+
+The analogous 2D `Rg8Unorm` selector failed 0/1 with no skips on forced
+FL9_1. The CTS case includes nested four-mip copies, while this adapter reports
+`SINGLE_MIP_ONLY` for Rg8Unorm because its format query lacks MIP support. The
+resulting mip-3 validation errors produce secondary readback mismatches; they
+are outside the public projection and do not test the supported single-mip
+copy path. The selector cannot isolate the no-mip nested subcase, so it was
+not added to `cts_runner/test.lst`. Dedicated public tests do verify strict
+single-mip RG8 upload, partial copy and readback.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rg8unorm";dstFormat="rg8unorm";dimension="2d"'
+```
 
 An attempted narrowly filtered RGBA8 texture-zero-initialization selector
 matched no cases. Its requested aspect, mip, sample-count, layer and related

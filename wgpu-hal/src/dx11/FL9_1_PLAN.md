@@ -25,11 +25,13 @@ audits rather than repeating either probe.
 
 Scoped Core/HAL, resource/transfer and shader audits found no confirmed
 Core-valid-to-unimplemented-HAL mismatch in the reviewed paths, and no
-workload-independent shader operation that is safe to enable next. Five
-BGRA8/RGBA8 2D texture-copy CTS cases now pass 5/5 on DX11, DX12 and Vulkan,
+workload-independent shader operation that is safe to enable next. Six
+R8/BGRA8/RGBA8 2D texture-copy CTS cases now pass 6/6 on DX11, DX12 and Vulkan,
 including supported linear/sRGB format pairs in both directions. The
 attempted Rg16Snorm case skips because its required format tier is not
-projected. Continue expanding
+projected. The RG8 same-format CTS selector crosses the device's single-mip
+limit through nested mip cases, while dedicated GPU tests cover the supported
+single-mip copy path. Continue expanding
 evidence only within advertised capability boundaries, or use a real
 application workload to justify the next vertical slice.
 

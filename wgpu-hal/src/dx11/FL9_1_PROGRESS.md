@@ -20389,23 +20389,32 @@ cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware '
 Do not add this selector to the curated passing inventory. The next candidate
 should be selected from scoped API, resource and shader coverage audits.
 
-## BGRA8 2D copy CTS and scoped support audits — 2026-11-14
+## 8-bit and linear/sRGB copy CTS plus scoped support audits — 2026-11-14
 
-Five strict `copyTextureToTexture` selectors ran on the physical NVIDIA
+Six strict `copyTextureToTexture` selectors ran on the physical NVIDIA
 GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at explicitly
-requested and verified FL9_1. BGRA8 UNORM same-format copy passed 1/1, and
-RGBA8 and BGRA8 each passed both linear-to-sRGB and sRGB-to-linear copy,
-giving 5/5 passed with zero skips or failures. The same five cases passed 5/5
-on DX12 and 5/5 on Vulkan. The Vulkan loader reported one unavailable optional
-OBS layer manifest; it did not affect test execution. These CTS tests validate
-copying stored texel bits; the backend performs no color-space conversion.
-The results and exact selectors are recorded in `FL9_1_CTS.md`. All five
-selectors were added to `cts_runner/test.lst`; the `lst_files_are_sorted`
-integration test passed 1/1. The test-list and report update was checkpointed
-in `66bd63fc6`; its test evidence and sorter result are recorded in
-`4c18a2f8d`. The preceding CTS evidence checkpoints are `2394d39fe`
+requested and verified FL9_1. BGRA8 UNORM and R8 UNORM same-format copies
+passed 1/1 each, and RGBA8 and BGRA8 each passed both linear-to-sRGB and
+sRGB-to-linear copy, giving 6/6 passed with zero skips or failures. The same
+six cases passed 6/6 on DX12 and 6/6 on Vulkan. The Vulkan loader reported
+one unavailable optional OBS layer manifest; it did not affect test execution.
+These CTS tests validate copying stored texel bits; the backend performs no
+color-space conversion. The results and exact selectors are recorded in
+`FL9_1_CTS.md`. All six selectors are now in `cts_runner/test.lst`; the
+`lst_files_are_sorted` integration test passed 1/1 after the addition. The
+first five selectors were checkpointed in `66bd63fc6`; their sorter result is
+in `4c18a2f8d`. The preceding CTS evidence checkpoints are `2394d39fe`
 (Rg16Snorm skip), `7f209d353` (BGRA8 baseline copy) and `62e7b7c0d`
 (sRGB-compatible copies).
+
+An R8 UNORM 2D copy selector also passed 1/1 on forced FL9_1 and 1/1 each on
+DX12 and Vulkan, with no skips/failures. It was added to the six-selector
+curated set. In contrast, the analogous RG8 UNORM CTS selector failed 0/1
+because its nested subcases request four-mip copies and the selected device's
+RG8 format is correctly marked `SINGLE_MIP_ONLY`. The selector cannot isolate
+the single-mip nested subcases; this does not invalidate the existing strict
+public test for single-mip RG8 upload, partial copy and readback. The RG8 CTS
+failure was not curated.
 
 Three read-only audits examined the public Core/HAL command contract, texture
 and transfer coverage, and the selected shader/profile subset. None found a
@@ -20425,6 +20434,26 @@ No implementation change was justified by these audits. Continue with
 projection-constrained operation coverage or a representative application
 workload; do not treat the amount of prior implementation as proof of full
 FL9_1 support.
+
+## Horizon client workload review — 2026-11-14
+
+A read-only review of `C:\dev\personal\Codex\work\MCHorizonUWP-client-oracle`
+found integration probes but not the production `horizon-client` or
+`horizon-client-render` crates. Its `uwp/game-bridge` selects GLES/ANGLE or
+optional DX12 and does not enable DX11. The screen/terrain probes exercise
+sampled 2D resources, samplers, uniforms and mixed vertex formats; the terrain
+probe also declares `D2Array`, which is unavailable at FL9_1. Its
+`uwp/native-terrain` prototype documents a CPU-side 2D atlas alternative, and
+the separate native D3D11 renderer does not yet load game data. Therefore this
+tree cannot establish the real Horizon shader/resource contract or count as
+an end-to-end application run. The review made no changes to the oracle tree
+or its existing untracked deployment data. A representative app validation
+still needs the actual client/render source or a backend-neutral extracted
+scene/shader workload.
+
+The R8 selector and documentation are part of this coordinator increment. The
+six-selector inventory passed `lst_files_are_sorted` after the R8 addition;
+its commit hash will be recorded in the subsequent checkpoint entry.
 
 ```powershell
 $env:CARGO_TARGET_DIR = 'C:\Users\ben\AppData\Local\Temp\wgpu-dx11-completion-target'

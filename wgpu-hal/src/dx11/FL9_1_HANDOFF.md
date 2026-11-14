@@ -37,20 +37,28 @@ The tint change is committed as `4193ea447`.
   FL9_1 is not a substitute for those systems.
 - **Usability evidence:** desktop offscreen and HWND rendering are tested, but
   the repository has not yet passed a representative application workload
-  such as Horizon. The backend should be used through explicit DX11 selection
-  and within the published experimental projection.
+  such as Horizon. A read-only review of the local Horizon client-oracle found
+  only integration probes; the production client/render crates are absent and
+  the current game bridge does not select DX11. Its terrain probe uses a
+  `D2Array`, with an app-side atlas prototype as a possible FL9_1 alternative.
+  The backend should be used through explicit DX11 selection and within the
+  published experimental projection.
 
 The query-gated `Rg16Snorm` 2D-to-2D CTS probe was attempted on the RTX 3090 Ti
 at forced FL9_1 and skipped because `texture-formats-tier1` is absent from the
 conservative projection. It is not a pass and must not enter the curated test
 inventory. The RGBA8 2D copy selector already passed 1/1 with no skips or
-failures. Five BGRA8/RGBA8 2D copy selectors now pass 5/5 on DX11, DX12 and
+failures. Six R8/BGRA8/RGBA8 2D copy selectors now pass 6/6 on DX11, DX12 and
 Vulkan, including their linear/sRGB pairs in both directions. Scoped API,
 resource/transfer and shader audits found no confirmed public-valid request
 reaching an unimplemented HAL operation in the reviewed paths, and no
 workload-independent shader expansion ready to implement. Continue
 projection-constrained CTS coverage or obtain a representative application
 workload before selecting another feature slice.
+
+The broad RG8 same-format CTS selector is not curated: its nested four-mip
+cases exceed the device's reported `SINGLE_MIP_ONLY` boundary. The supported
+single-mip RG8 upload/copy/readback path has separate strict public GPU tests.
 
 Use agents for bounded read-only audits, compiler/specification probes,
 supported-CTS triage and application requirement reviews. Keep each
