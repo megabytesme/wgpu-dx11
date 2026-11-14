@@ -20642,3 +20642,99 @@ and reported `COPY_SRC` for all six formats. Clippy completed successfully; the
 new public test introduced no warnings. HAL Clippy retains existing backend
 warnings, including `needless_range_loop` in the unrelated RG8_SNORM shadow
 test. Formatting and `git diff --check` passed.
+
+## FL9_1 support review and WriteTexture CTS probe — 2026-11-14
+
+Independent read-only reviews of graphics/depth-stencil, shader/FXC, and
+Core/HAL/CTS scope agree that this is a constrained, usable public graphics
+subset, not feature-complete wgpu support. Reviewed paths already include
+multiple bind groups and dynamic uniform ranges, substantial depth/stencil and
+raster state, selected texture formats and transfers, query-gated 3D/cube
+sampling, and desktop HWND presentation. The audits found no new confirmed
+Core-valid-to-unimplemented-HAL mismatch in their scoped reviews. Remaining
+software work is a broader capability-to-operation/CTS matrix and additional
+shader, resource and pipeline compositions justified by a concrete workload.
+Do not treat agent audits as an exhaustive contract proof.
+
+Strict CTS probe command:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_NET_OFFLINE = 'true'
+$env:CARGO_TARGET_DIR = 'E:\Temp\wgpu-mission-gpu-target'
+& 'E:\Temp\wgpu_mission_cargo.bat' xtask cts --backend dx11 --require-dx11-hardware -f E:\Temp\wgpu_fl91_rgba8_write_texture_cts.lst
+```
+
+The selected parent was `image_copy:offsets_and_sizes` with
+`WriteTexture` -> `FullCopyT2B`, `rgba8unorm`, `2d`. Strict selection chose
+the physical NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) and
+verified requested/actual FL9_1. The parent expands into `copyDepth=1,2,6`
+subcases. One-layer cases, including the nonzero offset plus padded row
+parameter, ran without a logged texture-content mismatch; the runner does not
+offer an isolated subcase selector, so this is not a standalone pass. The
+depth-greater-than-one cases reported content mismatches and an unexpected
+`TEXTURE_2D_ARRAYS` validation error, which is outside the advertised FL9_1
+contract. Aggregate result: 0 passed, 0 skipped, 1 failed. This is an
+inapplicable aggregate CTS selector for the FL9_1 projection, not evidence to
+enable arrays or count the intended one-layer subcase as a CTS pass. No CTS
+curation list was changed. Focused HAL/public transfer tests remain the
+authoritative supported-path evidence.
+
+The separate alpha-to-coverage question is resolved by Microsoft's 10Level9
+device contract: `AlphaToCoverageEnable` must be false at FL9_1. The existing
+false public projection is correct and remains unchanged.
+
+Native boundaries to preserve include compute/UAV/storage execution,
+geometry shaders, MRT, indirect drawing, occlusion queries, ordinary 1D and
+array textures, and fragment derivatives / `SampleGrad`. External verification
+still needs historical FL9_1 hardware, Lumia ARM32/CoreWindow runtime, physical
+TDR/device removal, and a production Horizon workload. Desktop HWND rendering
+and a representative textured depth-tested scene already have selected-device
+evidence; this does not close those external gaps.
+
+## Coordinator increment — public padded `write_texture` source layout — 2026-11-14
+
+Added a public strict-hardware regression for a 4x4 RGBA8 upload with a
+nonzero source offset, 256-byte source row pitch, trailing source padding and
+a nonzero destination origin. It follows the write with a GPU texture-to-buffer
+copy at a nonzero destination offset, validates all 16 texels, and verifies
+the row and buffer sentinels. On the NVIDIA RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), requested and actual FL9_1, the focused test passed;
+the complete strict public DX11 test target passed 159/159. The public test
+target Clippy check and `cargo +1.93.1 fmt --all -- --check` also passed.
+Clippy reports existing D3D11 HAL warnings; the new test itself is warning-free.
+
+The aggregate `image_copy:offsets_and_sizes` CTS probe still cannot count as a
+pass because its parent includes unsupported multi-layer cases; the focused
+public test is the evidence for the supported one-layer source-layout case.
+No CTS curation was changed.
+
+The read-only Horizon audit found that the current app cannot select this fork
+through its dependencies and that its production terrain shader exceeds the
+FL9_1 subset in several independent ways: 2D-array resources, derivatives and
+`textureSampleGrad`, vertex-stage texture sampling, runtime-dependent loops,
+a roughly 234-vector shared globals block used by fragment stages, and
+Depth32Float attachments. Other paths also use compute, storage and indirect
+operations. A compact, opt-in solid-triangle or simple-line smoke path is
+plausible after dependency wiring, but it would not provide terrain parity.
+The Horizon tree was inspected read-only and has pre-existing local changes;
+it was not modified. Backend completeness and Horizon application compatibility
+must therefore be tracked as separate goals.
+
+## Coordinator review — public HAL panic reachability — 2026-11-14
+
+A read-only reachability audit confirmed that this checkout registers DX11
+with Core when an application explicitly requests `Backends::DX11`; DX11 is
+still absent from default backend selection. The audit found no confirmed
+Core-valid route through the current projection to the compute, ray-tracing,
+pipeline-cache, timestamp-query or acceleration-structure panic stubs. Core
+feature/capability checks reject those requests first, while unsupported
+encoder operations use the HAL's fail-closed error path. No UB path was found.
+
+One boundary remains for direct HAL users: the safe
+`Device::tlas_instance_to_bytes` trait method panics for this unsupported
+backend and has no fallible return type. Core cannot call it without the
+unexposed ray-query feature. Treat this as a HAL-interface limitation to
+resolve before describing direct HAL use as panic-free; it does not block the
+current public `wgpu` request path. Existing surface/map/capability `expect`s
+were judged internal invariants with no valid public trigger in the audit.

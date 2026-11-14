@@ -1,5 +1,38 @@
 # FL9_1 completion plan
 
+## Coordinator check-in — 2026-11-14
+
+Independent graphics, shader and Core/HAL/CTS reviews agree that the backend
+is a useful but constrained opt-in public graphics subset, not a complete
+FL9_1 wgpu implementation. Multi-group bindings, dynamic uniform ranges,
+depth/stencil, common raster and blend state, transfers, selected formats,
+3D/cube sampling and desktop HWND rendering already have substantial public
+GPU coverage. Remaining software work is evidence-led: close demonstrated
+Core-to-HAL gaps, broaden only workload-justified shader/resource compositions,
+and finish capability-to-operation and curated CTS coverage. No audit found a
+confirmed new public-valid request reaching an unimplemented HAL operation in
+its reviewed scope.
+
+The strict `image_copy:offsets_and_sizes` WriteTexture CTS probe selected the
+physical RTX 3090 Ti at requested/actual FL9_1. Its parent selector expands to
+array-depth subcases that are outside the FL9_1 projection; those cases report
+content mismatches and an unexpected missing `TEXTURE_2D_ARRAYS` validation
+error. The one-layer subcases produced no reported content mismatch, but were
+not isolated by the runner, so this aggregate is inconclusive and is not a
+pass. Do not add the selector to the passing CTS list. Existing focused
+transfer tests remain the valid evidence for supported single-layer upload,
+padding and offsets.
+
+Alpha-to-coverage is a native FL9_1 exclusion, not a missing implementation:
+Microsoft's 10Level9 `CreateBlendState` contract requires
+`AlphaToCoverageEnable` to be false at 9_1. Keep the public projection false.
+
+Use agents for disjoint source/spec audits, compiler probes and CTS triage.
+Keep cross-crate changes, strict GPU tests and integration coordinator-owned;
+serialize heavyweight hardware runs. Historical FL9_1 hardware, Lumia /
+CoreWindow execution, physical device-removal behavior and a production
+Horizon workload still require external verification or application access.
+
 ## Latest coordinator increment — query-gated BC mip chains — 2026-11-14
 
 BC1/2/3 UNORM and sRGB mip chains now flow through the selected-device

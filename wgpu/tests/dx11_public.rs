@@ -10586,6 +10586,214 @@ fn public_dx11_partial_texture_transfer_roundtrip_at_fl91() {
 }
 
 #[test]
+fn public_dx11_write_texture_nonzero_offset_padded_rows_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 writeTexture offset test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected FL9_1 device");
+
+    const WIDTH: u32 = 4;
+    const HEIGHT: u32 = 4;
+    const ROW_PITCH: u32 = 256;
+    const BASE: [u8; 4] = [17, 29, 43, 255];
+    const PATCH: [[[u8; 4]; 3]; 3] = [
+        [[255, 0, 0, 255], [0, 255, 0, 255], [0, 0, 255, 255]],
+        [[255, 255, 0, 255], [255, 0, 255, 255], [0, 255, 255, 255]],
+        [[16, 32, 48, 255], [64, 80, 96, 255], [112, 128, 144, 255]],
+    ];
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 nonzero-offset writeTexture target"),
+        size: Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+
+    let mut initial = vec![0xA7; (ROW_PITCH * HEIGHT) as usize];
+    for y in 0..HEIGHT {
+        for x in 0..WIDTH {
+            let offset = (y * ROW_PITCH + x * 4) as usize;
+            initial[offset..offset + 4].copy_from_slice(&BASE);
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &initial,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(ROW_PITCH),
+            rows_per_image: Some(HEIGHT),
+        },
+        Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
+    );
+
+    let patch_offset = 4usize;
+    let patch_width = 3u32;
+    let patch_height = 3u32;
+    let trailing_padding = 8usize;
+    let patch_len = patch_offset
+        + ROW_PITCH as usize * (patch_height as usize - 1)
+        + patch_width as usize * 4
+        + trailing_padding;
+    let mut patch_data = vec![0xCD; patch_len];
+    for (y, row) in PATCH.iter().enumerate().take(patch_height as usize) {
+        for (x, texel) in row.iter().enumerate().take(patch_width as usize) {
+            let offset = patch_offset + y * ROW_PITCH as usize + x * 4;
+            patch_data[offset..offset + 4].copy_from_slice(texel);
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: Origin3d { x: 1, y: 1, z: 0 },
+            aspect: TextureAspect::All,
+        },
+        &patch_data,
+        TexelCopyBufferLayout {
+            offset: patch_offset as u64,
+            bytes_per_row: Some(ROW_PITCH),
+            rows_per_image: Some(patch_height),
+        },
+        Extent3d {
+            width: patch_width,
+            height: patch_height,
+            depth_or_array_layers: 1,
+        },
+    );
+
+    let readback_offset = 8u64;
+    let readback_size = readback_offset + ROW_PITCH as u64 * HEIGHT as u64 + 12;
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 writeTexture padded-row readback"),
+        size: readback_size,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: true,
+    });
+    readback
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map padded-row readback initialization")
+        .copy_from_slice(&vec![0x5A; readback_size as usize]);
+    readback.unmap();
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 writeTexture readback commands"),
+    });
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: readback_offset,
+                bytes_per_row: Some(ROW_PITCH),
+                rows_per_image: Some(HEIGHT),
+            },
+        },
+        Extent3d {
+            width: WIDTH,
+            height: HEIGHT,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for writeTexture readback");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("writeTexture readback callback")
+        .expect("map writeTexture readback");
+
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        assert!(data[..readback_offset as usize]
+            .iter()
+            .all(|&byte| byte == 0x5A));
+        for y in 0..HEIGHT as usize {
+            for x in 0..WIDTH as usize {
+                let expected = if (1..4).contains(&x) && (1..4).contains(&y) {
+                    PATCH[y - 1][x - 1]
+                } else {
+                    BASE
+                };
+                let offset = readback_offset as usize + y * ROW_PITCH as usize + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "writeTexture pixel ({x}, {y})"
+                );
+            }
+            let row_padding =
+                readback_offset as usize + y * ROW_PITCH as usize + WIDTH as usize * 4;
+            assert!(
+                data[row_padding..readback_offset as usize + (y + 1) * ROW_PITCH as usize]
+                    .iter()
+                    .all(|&byte| byte == 0x5A)
+            );
+        }
+        let written_end = readback_offset as usize
+            + (HEIGHT as usize - 1) * ROW_PITCH as usize
+            + WIDTH as usize * 4;
+        assert!(data[written_end..].iter().all(|&byte| byte == 0x5A));
+    }
+    readback.unmap();
+    println!("PASS: public FL9_1 queue.write_texture used a 4-byte source offset, 256-byte padded rows, trailing source padding and a nonzero destination origin; all 16 texels and readback sentinels matched");
+}
+
+#[test]
 fn public_dx11_sampled_mip_chain_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
