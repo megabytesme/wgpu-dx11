@@ -21649,3 +21649,12 @@ are rejected; it performed no render or timestamp execution. The command was:
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 & 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_timestamp_queries_are_not_advertised_at_fl91 -- --exact --nocapture --test-threads=1
 ```
+
+## Lumia connectivity check — 2026-11-14
+
+The Device Portal request to `/api/os/devicefamily` timed out. A follow-up
+network probe from the development desktop (`192.168.1.121`) to the configured
+Lumia endpoint (`192.168.1.157`) found both TCP port 443 and ICMP unreachable.
+This confirms the current environment cannot provide a device-runtime result;
+it does not establish whether the phone is powered off or on another network.
+No network, router or device settings were changed.
