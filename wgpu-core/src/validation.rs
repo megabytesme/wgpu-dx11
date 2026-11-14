@@ -4018,7 +4018,7 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
         let naga::Expression::ImageSample {
             image,
             sampler,
-            level: naga::SampleLevel::Exact(level),
+            level: naga::SampleLevel::Exact(_),
             ..
         } = helper_function.expressions[sample_result]
         else {
@@ -6292,6 +6292,40 @@ fn entry_point_supports_fl9_texture_dimensions(
         return false;
     }
 
+    let used_vec4_uniform =
+        if dimension == naga::ImageDimension::D2 && sample_image.is_some() && query_level.is_none()
+        {
+            let used_uniforms = module
+                .global_variables
+                .iter()
+                .filter_map(|(handle, global)| {
+                    (global.space == naga::AddressSpace::Uniform
+                        && global.binding.is_some()
+                        && !function_info[handle].is_empty())
+                    .then_some(handle)
+                })
+                .collect::<Vec<_>>();
+            match used_uniforms.as_slice() {
+                [handle]
+                    if matches!(
+                        module.types[module.global_variables[*handle].ty].inner,
+                        naga::TypeInner::Vector {
+                            size: naga::VectorSize::Quad,
+                            scalar: naga::Scalar {
+                                kind: naga::ScalarKind::Float,
+                                width: 4
+                            }
+                        }
+                    ) =>
+                {
+                    Some(*handle)
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+
     if (matches!(
         dimension,
         naga::ImageDimension::D3 | naga::ImageDimension::Cube
@@ -6302,6 +6336,7 @@ fn entry_point_supports_fl9_texture_dimensions(
             global.binding.is_some()
                 && handle != image_binding
                 && Some(handle) != sample_sampler
+                && Some(handle) != used_vec4_uniform
                 && !function_info[handle].is_empty()
         })
     {
@@ -13324,6 +13359,107 @@ mod tests {
                     .unwrap(),
                 "{name} should not qualify for the restricted FL9 textureDimensions capability"
             );
+        }
+    }
+
+    #[test]
+    fn fl9_texture_dimensions_sample_allows_one_selected_vec4_uniform() {
+        fn make_interface(source: &str) -> Interface {
+            let module = naga::front::wgsl::parse_str(source).unwrap();
+            let info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&module)
+            .unwrap();
+            Interface::new(&module, &info, wgt::Limits::defaults())
+        }
+
+        let limits = wgt::DownlevelLimits {
+            texture_query: false,
+            texture_dimensions_2d_float_fragment: true,
+            ..Default::default()
+        };
+        let accepted = make_interface(
+            r#"
+            @group(1) @binding(7) var image: texture_2d<f32>;
+            @group(2) @binding(42) var smp: sampler;
+            @group(3) @binding(99) var<uniform> tint: vec4f;
+            @group(4) @binding(100) var<uniform> sibling_only: vec4f;
+            @fragment fn selected(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let dimensions = vec2f(textureDimensions(image));
+                return textureSample(image, smp, uv) * tint
+                    * vec4f(dimensions / vec2f(8.0), 1.0, 1.0);
+            }
+            @fragment fn sibling() -> @location(0) vec4f {
+                return sibling_only;
+            }
+            "#,
+        );
+        assert!(!accepted
+            .entry_point_uses_unsupported_texture_query(
+                naga::ShaderStage::Fragment,
+                "selected",
+                &limits,
+            )
+            .unwrap());
+        assert!(!accepted
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Fragment,
+                "selected",
+                &limits,
+            )
+            .unwrap());
+
+        for source in [
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var smp: sampler;
+            @group(0) @binding(2) var<uniform> tint: vec4f;
+            @group(0) @binding(3) var<uniform> extra: vec4f;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSample(image, smp, uv) * tint + extra
+                    + vec4f(vec2f(textureDimensions(image)), 0.0, 0.0);
+            }
+            "#,
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var smp: sampler;
+            @group(0) @binding(2) var<uniform> tint: vec2f;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSample(image, smp, uv) + vec4f(tint, 0.0, 0.0)
+                    + vec4f(vec2f(textureDimensions(image)), 0.0, 0.0);
+            }
+            "#,
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var other: texture_2d<f32>;
+            @group(0) @binding(2) var smp: sampler;
+            @group(0) @binding(3) var<uniform> tint: vec4f;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSample(other, smp, uv) * tint
+                    + vec4f(vec2f(textureDimensions(image)), 0.0, 0.0);
+            }
+            "#,
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var smp: sampler;
+            @group(0) @binding(2) var<uniform> tint: vec4f;
+            fn helper(uv: vec2f) -> vec4f { return textureSample(image, smp, uv) * tint; }
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return helper(uv)
+                    + vec4f(vec2f(textureDimensions(image)), 0.0, 0.0);
+            }
+            "#,
+        ] {
+            let interface = make_interface(source);
+            assert!(interface
+                .entry_point_uses_unsupported_texture_query(
+                    naga::ShaderStage::Fragment,
+                    "main",
+                    &limits,
+                )
+                .unwrap());
         }
     }
 

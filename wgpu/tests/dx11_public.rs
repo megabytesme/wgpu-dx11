@@ -39379,27 +39379,33 @@ fn run_public_dx11_fragment_texture_dimensions_emulation_at_fl91(
 
 #[test]
 fn public_dx11_fragment_texture_dimensions_and_sample_at_fl91() {
-    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(false, false);
+    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(false, false, false);
 }
 
 #[test]
 fn public_dx11_fragment_texture_dimensions_helper_and_sample_at_fl91() {
-    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(true, false);
+    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(true, false, false);
 }
 
 #[test]
 fn public_dx11_fragment_texture_dimensions_and_sample_split_groups_at_fl91() {
-    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(false, true);
+    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(false, true, false);
 }
 
 #[test]
 fn public_dx11_fragment_texture_dimensions_helper_and_sample_split_groups_at_fl91() {
-    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(true, true);
+    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(true, true, false);
+}
+
+#[test]
+fn public_dx11_fragment_texture_dimensions_sample_with_uniform_at_fl91() {
+    run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(false, false, true);
 }
 
 fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(
     use_helper: bool,
     split_groups: bool,
+    use_uniform: bool,
 ) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -39427,6 +39433,11 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(
         "fragment textureDimensions helper plus implicit textureSample"
     } else {
         "fragment textureDimensions plus implicit textureSample"
+    };
+    let operation = if use_uniform {
+        format!("{operation} plus one fragment vec4 uniform")
+    } else {
+        operation.to_string()
     };
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation={operation}",
@@ -39465,28 +39476,39 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(
         r#"
             @group(__IMAGE_GROUP__) @binding(7) var image: texture_2d<f32>;
             @group(__SAMPLER_GROUP__) @binding(42) var smp: sampler;
+            __UNIFORM_DECL__
             fn query_dimensions() -> vec2u {
                 return textureDimensions(image);
             }
             @fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
                 let dimensions = vec2f(query_dimensions());
                 let sampled = textureSample(image, smp, uv);
-                return sampled * vec4f(dimensions / vec2f(16.0, 8.0), 1.0, 1.0);
+                return sampled * __TINT__ * vec4f(dimensions / vec2f(16.0, 8.0), 1.0, 1.0);
             }
         "#
     } else {
         r#"
             @group(__IMAGE_GROUP__) @binding(7) var image: texture_2d<f32>;
             @group(__SAMPLER_GROUP__) @binding(42) var smp: sampler;
+            __UNIFORM_DECL__
             @fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f {
                 let dimensions = vec2f(textureDimensions(image));
                 let sampled = textureSample(image, smp, uv);
-                return sampled * vec4f(dimensions / vec2f(16.0, 8.0), 1.0, 1.0);
+                return sampled * __TINT__ * vec4f(dimensions / vec2f(16.0, 8.0), 1.0, 1.0);
             }
         "#
     }
     .replace("__IMAGE_GROUP__", &image_group.to_string())
-    .replace("__SAMPLER_GROUP__", &sampler_group.to_string());
+    .replace("__SAMPLER_GROUP__", &sampler_group.to_string())
+    .replace(
+        "__UNIFORM_DECL__",
+        if use_uniform {
+            "@group(0) @binding(99) var<uniform> tint: vec4f;"
+        } else {
+            ""
+        },
+    )
+    .replace("__TINT__", if use_uniform { "tint" } else { "vec4f(1.0)" });
     let fragment_shader = device.create_shader_module(ShaderModuleDescriptor {
         label: Some("FL9_1 dimensions and sample fragment shader"),
         source: ShaderSource::Wgsl(fragment_source.into()),
@@ -39507,6 +39529,16 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(
         ty: BindingType::Sampler(SamplerBindingType::Filtering),
         count: None,
     };
+    let uniform_entry = BindGroupLayoutEntry {
+        binding: 99,
+        visibility: ShaderStages::FRAGMENT,
+        ty: BindingType::Buffer {
+            ty: BufferBindingType::Uniform,
+            has_dynamic_offset: false,
+            min_binding_size: NonZeroU64::new(16),
+        },
+        count: None,
+    };
     let texture_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 dimensions sampled texture layout"),
         entries: &[texture_entry],
@@ -39515,9 +39547,13 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(
         label: Some("FL9_1 dimensions sampler layout"),
         entries: &[sampler_entry],
     });
+    let mut combined_entries = vec![texture_entry, sampler_entry];
+    if use_uniform {
+        combined_entries.push(uniform_entry);
+    }
     let combined_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
         label: Some("FL9_1 dimensions combined binding layout"),
-        entries: &[texture_entry, sampler_entry],
+        entries: &combined_entries,
     });
     let bind_group_layouts = if split_groups {
         vec![None, Some(&texture_layout), Some(&sampler_layout)]
@@ -39578,6 +39614,21 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(
         min_filter: FilterMode::Nearest,
         mipmap_filter: MipmapFilterMode::Nearest,
         ..Default::default()
+    });
+    let uniform_tint = [0.5_f32, 0.75, 0.5, 1.0];
+    let uniform_buffer = use_uniform.then(|| {
+        let bytes = uniform_tint
+            .into_iter()
+            .flat_map(f32::to_ne_bytes)
+            .collect::<Vec<_>>();
+        let buffer = device.create_buffer(&BufferDescriptor {
+            label: Some("FL9_1 dimensions fragment tint uniform"),
+            size: bytes.len() as u64,
+            usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        queue.write_buffer(&buffer, 0, &bytes);
+        buffer
     });
     let target = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 dimensions and sample output"),
@@ -39670,33 +39721,45 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(
             Some(sampler_group),
         )
     } else {
+        let mut group_a_entries = vec![
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&view_a),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ];
+        let mut group_b_entries = vec![
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&view_b),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ];
+        if let Some(uniform) = &uniform_buffer {
+            group_a_entries.push(BindGroupEntry {
+                binding: 99,
+                resource: uniform.as_entire_binding(),
+            });
+            group_b_entries.push(BindGroupEntry {
+                binding: 99,
+                resource: uniform.as_entire_binding(),
+            });
+        }
         let group_a = device.create_bind_group(&BindGroupDescriptor {
             label: Some("FL9_1 4x2 dimensions and sample bindings"),
             layout: &combined_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 7,
-                    resource: BindingResource::TextureView(&view_a),
-                },
-                BindGroupEntry {
-                    binding: 42,
-                    resource: BindingResource::Sampler(&sampler),
-                },
-            ],
+            entries: &group_a_entries,
         });
         let group_b = device.create_bind_group(&BindGroupDescriptor {
             label: Some("FL9_1 8x4 dimensions and sample bindings"),
             layout: &combined_layout,
-            entries: &[
-                BindGroupEntry {
-                    binding: 7,
-                    resource: BindingResource::TextureView(&view_b),
-                },
-                BindGroupEntry {
-                    binding: 42,
-                    resource: BindingResource::Sampler(&sampler),
-                },
-            ],
+            entries: &group_b_entries,
         });
         (Some(group_a), Some(group_b), None, None, None)
     };
@@ -39811,6 +39874,16 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(
                 } else {
                     [40_u8, 60, 160, 255]
                 };
+                let expected = if use_uniform {
+                    [
+                        ((expected[0] as f32) * uniform_tint[0]).round() as u8,
+                        ((expected[1] as f32) * uniform_tint[1]).round() as u8,
+                        ((expected[2] as f32) * uniform_tint[2]).round() as u8,
+                        expected[3],
+                    ]
+                } else {
+                    expected
+                };
                 for channel in 0..4 {
                     let actual = pixels[offset + channel] as i16;
                     let expected = expected[channel] as i16;
@@ -39822,7 +39895,7 @@ fn run_public_dx11_fragment_texture_dimensions_and_sample_at_fl91(
             }
         }
         println!(
-            "PASS: textureDimensions and implicit textureSample co-use followed a bind-group transition; all 64 pixels matched"
+            "PASS: {operation} co-use followed a bind-group transition; all 64 pixels matched"
         );
     }
     readback.unmap();

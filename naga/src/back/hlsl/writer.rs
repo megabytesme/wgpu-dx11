@@ -1728,10 +1728,11 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     .options
                     .fl9_texture_sample_compare_offset_proof
                     .is_none();
-        let (fl9_texel_load_reachable_functions, fl9_texel_load_used_globals) = if self
-            .options
-            .fl9_texel_load_proof
-            .is_some()
+        let (
+            fl9_texel_load_reachable_functions,
+            fl9_texel_load_used_globals,
+            fl9_dimensions_uniform_global,
+        ) = if self.options.fl9_texel_load_proof.is_some()
             || self.options.fl9_texture_base_clamp_proof.is_some()
             || self.options.fl9_texture_dimensions_proof.is_some()
             || self.options.fl9_texture_dimensions_3d_proof.is_some()
@@ -1839,17 +1840,120 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                     variable.space == crate::AddressSpace::Uniform && variable.binding.is_some()
                 })
                 .count();
+            let dimensions_uniform_global =
+                if self.options.fl9_texture_dimensions_proof.is_some()
+                    && self.options.fl9_texture_dimensions_3d_proof.is_none()
+                    && self.options.fl9_texture_num_levels_proof.is_none()
+                    && self.options.fl9_texture_base_clamp_proof.is_none()
+                    && self.options.fl9_texture_gather_proof.is_none()
+                    && self.options.fl9_texture_sample_bias_offset_proof.is_none()
+                    && self
+                        .options
+                        .fl9_texture_sample_compare_offset_proof
+                        .is_none()
+                    && reachable_functions.is_empty()
+                    && entry.function.body.iter().all(|statement| {
+                        matches!(
+                            statement,
+                            crate::Statement::Emit(_) | crate::Statement::Return { .. }
+                        )
+                    })
+                    && !entry.function.expressions.iter().any(|(_, expression)| {
+                        matches!(expression, crate::Expression::Select { .. })
+                    })
+                    && used_uniform_count == 1
+                    && module
+                        .global_variables
+                        .iter()
+                        .find(|&(_, global)| {
+                            global.binding == self.options.fl9_texture_dimensions_proof
+                        })
+                        .is_some_and(|(_, global)| {
+                            matches!(
+                                module.types[global.ty].inner,
+                                TypeInner::Image {
+                                    dim: crate::ImageDimension::D2,
+                                    arrayed: false,
+                                    class: crate::ImageClass::Sampled {
+                                        kind: ScalarKind::Float,
+                                        multi: false
+                                    }
+                                }
+                            )
+                        })
+                    && entry
+                        .function
+                        .expressions
+                        .iter()
+                        .filter(|&(handle, expression)| {
+                            info[handle].ref_count != 0
+                                && matches!(
+                                    expression,
+                                    crate::Expression::ImageQuery {
+                                        query: crate::ImageQuery::Size { level: None },
+                                        ..
+                                    }
+                                )
+                        })
+                        .count()
+                        == 1
+                    && entry
+                        .function
+                        .expressions
+                        .iter()
+                        .filter(|&(handle, expression)| {
+                            info[handle].ref_count != 0
+                                && matches!(
+                                    expression,
+                                    crate::Expression::ImageSample {
+                                        gather: None,
+                                        array_index: None,
+                                        offset: None,
+                                        level: crate::SampleLevel::Auto,
+                                        depth_ref: None,
+                                        clamp_to_edge: false,
+                                        ..
+                                    }
+                                )
+                        })
+                        .count()
+                        == 1
+                {
+                    used_globals.iter().copied().find(|global| {
+                        let variable = &module.global_variables[*global];
+                        variable.space == crate::AddressSpace::Uniform
+                            && variable.binding.is_some()
+                            && matches!(
+                                module.types[variable.ty].inner,
+                                TypeInner::Vector {
+                                    size: crate::VectorSize::Quad,
+                                    scalar: Scalar {
+                                        kind: ScalarKind::Float,
+                                        width: 4
+                                    }
+                                }
+                            )
+                    })
+                } else {
+                    None
+                };
             if used_uniform_count > FL9_TEXEL_LOAD_MAX_UNIFORM_BUFFERS
-                || (used_uniform_count > 0 && !allows_texel_load_uniform)
+                || (used_uniform_count > 0
+                    && !allows_texel_load_uniform
+                    && dimensions_uniform_global.is_none())
             {
                 return Err(Error::Custom(
                     "FL9 texel-load proof supports at most six uniform buffers with a 2D or 3D load"
                         .into(),
                 ));
             }
-            (Some(reachable_functions), Some(used_globals))
+            (
+                Some(reachable_functions),
+                Some(used_globals),
+                dimensions_uniform_global,
+            )
         } else {
-            (None, None)
+            (None, None, None)
         };
 
         if self.options.fl9_instance_index_input {
@@ -2488,6 +2592,7 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
                             .fl9_texel_load_additional_proofs
                             .contains(&candidate)
                 }) && !(allows_texel_load_uniform && global.space == crate::AddressSpace::Uniform)
+                    && Some(handle) != fl9_dimensions_uniform_global
                     && (!(self.options.fl9_texel_load_proof.is_some()
                         || self.options.fl9_texture_base_clamp_proof.is_some()
                         || self.options.fl9_texture_dimensions_proof.is_some()
@@ -9714,6 +9819,82 @@ mod fl9_viewport_tests {
 
         let explicit_level = "@group(0) @binding(7) var image: texture_2d<f32>; @group(0) @binding(42) var smp: sampler; @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f { let dimensions = vec2f(textureDimensions(image)); return textureSampleLevel(image, smp, uv, 0.0) * vec4f(dimensions / vec2f(4.0, 2.0), 1.0, 1.0); }";
         assert!(translate(explicit_level, &options, ShaderStage::Fragment).is_err());
+    }
+
+    #[test]
+    fn fl9_texture_dimensions_sample_emits_one_vec4_uniform() {
+        let texture_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 7,
+        };
+        let sampler_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 42,
+        };
+        let uniform_binding = crate::ResourceBinding {
+            group: 0,
+            binding: 99,
+        };
+        let source = r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(42) var smp: sampler;
+            @group(0) @binding(99) var<uniform> tint: vec4f;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let dimensions = vec2f(textureDimensions(image));
+                return textureSample(image, smp, uv) * tint
+                    * vec4f(dimensions / vec2f(4.0, 2.0), 1.0, 1.0);
+            }
+        "#;
+        let mut options = Options {
+            direct_sampler_bindings: true,
+            fl9_texture_dimensions_proof: Some(texture_binding),
+            ..Options::default()
+        };
+        for (binding, register) in [
+            (texture_binding, 0),
+            (sampler_binding, 3),
+            (uniform_binding, 0),
+        ] {
+            options.binding_map.insert(
+                binding,
+                super::super::BindTarget {
+                    register,
+                    ..Default::default()
+                },
+            );
+        }
+
+        let output = translate(source, &options, ShaderStage::Fragment).unwrap();
+        assert!(output.contains("register(t0)"), "{output}");
+        assert!(output.contains("register(s3)"), "{output}");
+        assert!(output.contains("register(b0)"), "{output}");
+        assert!(output.contains("register(b13)"), "{output}");
+        assert!(output.contains("image.Sample(smp, uv)"), "{output}");
+        assert!(output.contains("= tint;"), "{output}");
+
+        let two_uniforms = source
+            .replace(
+                "@fragment fn main",
+                "@group(0) @binding(100) var<uniform> extra: vec4f;\n            @fragment fn main",
+            )
+            .replace("* tint\n", "* tint + extra\n");
+        options.binding_map.insert(
+            crate::ResourceBinding {
+                group: 0,
+                binding: 100,
+            },
+            super::super::BindTarget {
+                register: 1,
+                ..Default::default()
+            },
+        );
+        assert!(translate(&two_uniforms, &options, ShaderStage::Fragment).is_err());
+
+        let invalid_uniform = source.replace("tint: vec4f", "tint: vec2f").replace(
+            "textureSample(image, smp, uv) * tint",
+            "textureSample(image, smp, uv) * vec4f(tint, 0.0, 0.0)",
+        );
+        assert!(translate(&invalid_uniform, &options, ShaderStage::Fragment).is_err());
     }
 
     #[test]

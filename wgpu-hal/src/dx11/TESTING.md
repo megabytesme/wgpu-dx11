@@ -4720,6 +4720,31 @@ and 8x4 views with different texel colors, and matched all 64 readback pixels:
 passed 116/116; its optional query-gated subcases are not counted as hardware
 evidence. General texture queries remain disabled.
 
+### One fragment uniform with 2D dimensions and sampling
+
+The direct selected fragment entry may additionally use one `vec4f` uniform
+with its level-less 2D dimensions query and one implicit sample of that same
+image. More than one used uniform, another uniform type, helpers, unrelated
+used resources, mismatched images or extra image operations remain rejected.
+Core tests the selected-entry resource set, HAL applies the same gate, and the
+Naga writer emits the user uniform at `b0` while retaining the dimensions
+emulation at `b13`.
+
+```powershell
+cargo +1.93.1 test --offline -j8 -p naga --lib fl9_texture_dimensions_sample_emits_one_vec4_uniform
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_texture_dimensions_sample_allows_one_selected_vec4_uniform
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_dimensions_sample_allows_one_direct_vec4_uniform
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_sample_with_uniform_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), the strict
+public test explicitly requested and confirmed FL9_1 and validated all 64
+output pixels after switching from a 4x2 to an 8x4 texture. Both expected
+colors changed from the baseline due to the bound tint: `[25,30,40,255]` and
+`[20,45,80,255]`. This is direct-entry 2D evidence only; it does not extend
+uniform coexistence to helper, 3D/cube or explicit-mip query forms.
+
 ### Narrow FL9_1 fragment 3D `textureDimensions`
 
 ```powershell

@@ -2255,3 +2255,16 @@ stores remain blocked. Strict public GPU readback on the RTX 3090 Ti at
 requested and actual FL9_1 matched all 64 pixels within two LSB per color
 channel. This does not enable general runtime integer operations or the
 downlevel matrix aggregate-store flag.
+
+## One fragment uniform with 2D dimensions and sampling — 2026-11-14
+
+The selected direct FL9_1 fragment entry may combine one `vec4f` uniform
+with a level-less `textureDimensions` query and one implicit sample of the
+same non-array 2D float image. Core, HAL and Naga enforce the selected-entry
+shape and reject multiple or differently shaped uniforms, helpers, mismatched
+images, other selected resources and extra image operations. User and
+emulation constants use separate registers (`b0` and `b13`). A strict public
+test on the RTX 3090 Ti explicitly forced FL9_1 and verified all 64 pixels
+after switching between 4x2 and 8x4 textures; the tint, dimensions and texel
+values all affected the result. Uniform coexistence remains unsupported for
+helper, 3D/cube and explicit-mip query paths.

@@ -159,6 +159,73 @@ cargo +1.93.1 fmt --all -- --check
 git diff --check
 ```
 
+## Direct 2D `textureDimensions`, sampling and one fragment uniform — 2026-11-14
+
+Added a narrow uniform composition to the existing direct selected-entry
+fragment query proof. One used `vec4f` uniform may participate alongside one
+level-less `textureDimensions(image)` query and one implicit
+`textureSample(image, sampler, uv)` of the same non-array D2 float image.
+The path remains helper-free and does not accept another used resource,
+another uniform, a different uniform type, mismatched query/sample images or
+additional image operations. The separate dimensions emulation stays at
+`b13`; the logical uniform mapping supplies `b0`. No capability projection
+or downlevel flag changed.
+
+The Core proof test accepts the selected uniform while ignoring a uniform
+used only by a sibling entry point. HAL tests the same selected-entry shape
+and rejects multiple uniforms, a `vec2f` uniform, a different sampled image
+and a helper. The Naga writer test verifies HLSL declares the user buffer at
+`b0`, retains the emulation buffer at `b13`, and samples through the expected
+texture/sampler registers. It rejects two or wrong-shaped uniforms. The
+strict public test binds one uniform and switches between 4x2 and 8x4
+textures; on the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) the explicitly requested/actual FL9_1 draw matched all 64
+pixels. Expected output was `[25,30,40,255]` for the first half and
+`[20,45,80,255]` for the second, proving the texture sample, dimensions and
+uniform all affect the result.
+
+Verification used Rust 1.93.1 and Visual Studio's x64 developer environment.
+The first standalone Cargo invocation lacked `link.exe`; retrying through the
+repository's MSVC developer setup resolved the environment issue. Focused
+tests passed:
+
+```powershell
+cargo +1.93.1 test --offline -j8 -p naga --lib fl9_texture_dimensions_sample_emits_one_vec4_uniform
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_texture_dimensions_sample_allows_one_selected_vec4_uniform
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl9_texture_dimensions_sample_allows_one_direct_vec4_uniform -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_dimensions_sample_with_uniform_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+The three proof tests passed 1/1 each; the public strict hardware test passed
+1/1 with no skip. The HAL test build emitted seven existing
+`unused_qualifications` warnings in queue/shader test code. The first Naga
+test run exposed a test assertion that expected a different emitted HLSL
+expression spelling; the generated source showed the intended bindings and
+the corrected assertion then passed.
+
+### Regression follow-up — 2026-11-14
+
+The full strict public D3D11 target passed 155/155 test functions (zero
+failures or ignored tests); this count is not a count of GPU renders. Its
+hardware-dependent paths required the physical adapter in strict mode, while
+some optional per-format subcases logged explicit skips. The private D3D11
+HAL suite passed 532/532, the Core DX11 fixture suite passed 151/151, and the
+Naga library suite passed 174/174. These suites include CPU tests as well as
+hardware fixture/render cases. A targeted Core DX12 regression suite passed
+135/135.
+
+Affected-crate Clippy completed for Naga, Core and the public test target.
+The new code introduced no remaining Clippy warnings. Existing warnings were
+one Naga GLSL parser test pattern warning, three Core fixture warnings and
+eight D3D11 HAL warnings (including existing argument-count and transfer
+warnings). The first Clippy pass identified three new iterator-pattern
+warnings in the Naga proof; the patterns were made explicit and the rerun
+reported only the pre-existing warning. `cargo +1.93.1 fmt --all -- --check`
+and `git diff --check` passed. An initial DX12 invocation outside the Visual
+Studio developer environment could not find `link.exe`; rerunning through the
+same VS x64 developer wrapper as the Windows D3D11 tests succeeded.
+
 ## Combined-use RGBA8 view transition — 2026-11-14
 
 Added a strict public rendering test for an explicit

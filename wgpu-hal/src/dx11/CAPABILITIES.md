@@ -1706,6 +1706,17 @@ requested/actual FL9_1. Naga, Core and HAL reject helper sampling, explicit LOD,
 extra resources and additional image operations. This narrow limit does not
 imply general WebGPU texture-query support.
 
+The direct D2 query-plus-sample proof also permits one selected, used
+`vec4<f32>` fragment uniform. That value, the queried dimensions and the
+sampled texel must be used by the selected entry point; the queried and
+sampled image must be the same, with one level-less query and one implicit
+sample. Core, HAL and Naga reject additional or non-`vec4<f32>` uniforms,
+helpers in this combined form, other selected resources and other image
+operations. HAL user uniforms occupy their existing compact `b0`–`b12`
+registers while dimension emulation remains at `b13`. Strict FL9_1 readback
+verified this composition on the RTX 3090 Ti. This does not enable uniform
+co-use for helper, 3D/cube, explicit-mip or general texture-query shaders.
+
 A separate `texture_dimensions_3d_float_fragment` limit covers one direct
 fragment `textureDimensions` query on a non-array `texture_3d<f32>` in any
 supported bind group, directly converted to `vec3f`. Its optional mip argument

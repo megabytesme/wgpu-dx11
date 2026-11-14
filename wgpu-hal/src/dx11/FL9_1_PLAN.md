@@ -3618,3 +3618,23 @@ all affect output; keep unrelated resources rejected. Preserve the
 uniform-indexed vertex array rejection until its current compiler-only probe
 is supplemented by matching selected-entry proofs and in-range hardware
 readback.
+
+## Coordinator increment — dimensions, sampling and one fragment uniform — 2026-11-14
+
+The direct selected fragment `textureDimensions` plus one implicit sample of
+the same D2 float texture now permits exactly one used `vec4f` uniform. Core,
+HAL and Naga use matching direct-entry restrictions; helpers, extra used
+resources, another uniform type or count, other image operations, explicit
+mip combinations and 3D/cube query compositions remain rejected. A strict
+public FL9_1 RTX 3090 Ti test verified all 64 readback pixels after a texture
+bind-group transition, with distinct output contributions from dimensions,
+sampled data and the tint. Existing dimension limits and public capability
+projection did not change.
+
+Continue with bounded shader-composition slices rather than broad agent
+implementation tasks. The next candidate is one selected fragment `vec4f`
+uniform alongside the existing direct 2D `textureLoad` plus
+`textureDimensions` proof. Keep it separate from helper paths and other
+resources, and require compiler output plus strict pixel readback before
+accepting it. Independent agents can audit the Core/HAL/Naga gates and review
+the proof; cross-crate edits and integration remain coordinator-owned.
