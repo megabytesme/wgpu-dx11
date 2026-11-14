@@ -1,3 +1,14 @@
+## ARM32 UWP cross-compilation — 2026-11-14
+
+The Rust 1.93.1 toolchain has no prebuilt `thumbv7a-uwp-windows-msvc`
+standard library. A separate Rust 1.95.0-nightly source build with
+`-Z build-std=std,panic_abort` compiled `wgpu` and the D3D11 dependency graph
+for that target using the Visual Studio ARM environment. The first attempt
+used the nearly full `E:` volume and stopped with `no space on device`; the
+same command succeeded with a temporary target directory on `C:`. This is
+compile evidence only. Lumia deployment, CoreWindow creation and presentation
+remain unverified because Device Portal is unreachable.
+
 ## Multi-mip literal-zero sampling views — 2026-11-13
 
 The restricted fragment `textureSampleLevel(..., 0.0)` path now supports

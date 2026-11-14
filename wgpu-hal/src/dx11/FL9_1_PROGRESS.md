@@ -19838,3 +19838,33 @@ The configured Lumia Device Portal helper timed out on the read-only
 were changed. Actual ARM32/CoreWindow execution remains blocked on the phone
 being reachable with Device Portal enabled; software-side validation can
 continue independently.
+
+## ARM32 UWP cross-build and contract-audit follow-up — 2026-11-14
+
+Rust 1.93.1 has no prebuilt standard library for
+`thumbv7a-uwp-windows-msvc`. Using the installed Rust 1.95.0-nightly source,
+the D3D11-enabled `wgpu` crate compiled successfully for that target with
+`-Z build-std=std,panic_abort`, Visual Studio's `-arch=arm -host_arch=x64`
+environment, one Cargo job, and an isolated temporary target directory. The
+first attempt on `E:` failed only because that volume had 0.04 GB free; retry
+on `C:` completed in 3m14s. This does not prove deployment or runtime behavior.
+
+Fresh texture, buffer, and shader source audits found no confirmed
+Core-accepted request that bypasses the FL9_1 projection and then fails or is
+mishandled by the HAL. The reviewed texture projection is query- and
+implementation-gated, buffer mapping/copy/uniform paths repeat Core bounds and
+usage checks, and shader allowlists have selected-entry Core and HAL guards.
+These scoped source reviews do not close the full format/usage/shader matrix.
+The remaining actionable software assurance gap is keeping duplicated Core
+and HAL shader-shape proofs synchronized; a shared positive and negative
+shader-shape corpus is the next bounded test task. Historical-driver behavior
+and physical device removal remain unverified.
+
+The source-build command, from a batch file, was:
+
+```bat
+call "C:\Program Files\Microsoft Visual Studio\18\Community\Common7\Tools\VsDevCmd.bat" -arch=arm -host_arch=x64
+set CARGO_BUILD_JOBS=1
+set CARGO_TARGET_DIR=C:\Users\ben\AppData\Local\Temp\wgpu-dx11-arm32-target
+cargo +nightly -Z build-std=std,panic_abort build --offline -p wgpu --no-default-features --features dx11,wgsl,std --target thumbv7a-uwp-windows-msvc
+```
