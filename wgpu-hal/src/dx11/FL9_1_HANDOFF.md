@@ -14,10 +14,12 @@ increment adds coverage without changing backend capability projection.
 The direct uniform-indexed vertex palette also now has near-limit GPU
 evidence: the maximum 253-entry `vec4f` buffer selected entry 252 and produced
 the expected magenta output in all 64 pixels at forced FL9_1. FXC/Core still
-reject length 254. The next gap selected for coordinator work is public
-render/readback of 13 vertex-only plus 13 fragment-only static uniforms in
-one bind group; existing GPU coverage places those stage-specific counts in
-separate groups.
+reject length 254. The 13+13 static uniform configuration now also renders
+through one public bind group and one source buffer; all 64 pixels match the
+existing two-group result. The next implementation candidate is a caller-side
+tint uniform on the existing helper-based literal-zero LOD sample, a common
+material composition that must remain within the selected-entry FL9_1 shader
+proof.
 
 ### Remaining support work
 

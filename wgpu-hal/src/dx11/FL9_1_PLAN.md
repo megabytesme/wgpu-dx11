@@ -3724,6 +3724,10 @@ rejection remains in place. This closes near-limit hardware execution for
 this exact canonical layout, but not every WGSL uniform layout, out-of-range
 index behavior or historical device. The next high-value coverage item is
 the advertised 13 vertex plus 13 fragment static uniform slots in a single
-bind group: current hardware output covers the same per-stage counts across
-two groups, while same-group coverage has layout/allocation tests but no
-public draw/readback yet.
+bind group. This is now covered through public GPU execution: one sparse
+26-entry group uses distinct ranges from one buffer, both stages affect the
+result, and all 64 pixels match at forced FL9_1. The next shader candidate is
+one tint uniform applied in the caller to the existing helper-based
+`textureSampleLevel(..., 0.0)` path; it is a common material composition that
+can be kept within the current selected-entry proof, but must be checked
+against the actual Core, HAL and Naga restrictions before implementation.

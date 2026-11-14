@@ -75,6 +75,36 @@ cargo +1.93.1 fmt --all -- --check
 git diff --check
 ```
 
+## Single-group 13+13 static uniform GPU coverage — 2026-11-14
+
+Extended the existing stage-register test with an end-to-end public pipeline
+and bind group containing 26 static uniform bindings: thirteen vertex-only
+and thirteen fragment-only, using sparse distinct logical bindings and
+different aligned ranges from one source buffer. Both shader stages sum all
+thirteen values. On the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) with explicitly requested and confirmed FL9_1,
+`WGPU_DX11_REQUIRE_HARDWARE=1` verified all 64 output pixels as
+`[139, 90, 105, 120]`. The previous separate-group 13+13 draw remains and
+also passed in the same test. Core's existing fixture rejects fourteen
+fragment uniforms; no projection or feature limit changed.
+
+The first test attempt used binding number 1000 and Core correctly rejected it
+against `max_bindings_per_bind_group=1000`; the final vertex slot was changed
+to unique binding 998. This was a test-descriptor correction, not a backend
+failure. The full strict public target passed 157/157 functions, 0 failed and
+0 ignored. The focused test passed 1/1. Public-test Clippy completed with the
+same eight pre-existing D3D11 HAL warnings, and formatting plus
+`git diff --check` passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cmd /c call "%TEMP%\wgpu-mission-cargo-c-target.bat" test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_uses_thirteen_uniform_registers_per_stage_at_fl91 -- --exact --nocapture --test-threads=1
+cmd /c call "%TEMP%\wgpu-mission-cargo-c-target.bat" test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cmd /c call "%TEMP%\wgpu-mission-cargo-c-target.bat" clippy --offline -j8 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
 ## Split-group fragment `textureGather` with a uniform — 2026-11-14
 
 The selected fragment `textureGather` path was exercised with its texture,

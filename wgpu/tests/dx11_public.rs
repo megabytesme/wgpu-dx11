@@ -30438,6 +30438,217 @@ fn public_dx11_uses_thirteen_uniform_registers_per_stage_at_fl91() {
     println!(
         "PASS: thirteen sparse vertex and thirteen fragment uniforms independently occupied b0-b12 at forced FL9_1; both stages affected all 64 pixels"
     );
+
+    let vertex_binding = |binding| if binding == 999 { 998 } else { binding + 1 };
+    let mut same_group_entries = Vec::with_capacity(26);
+    for &binding in &logical_bindings {
+        same_group_entries.push(BindGroupLayoutEntry {
+            binding,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(16),
+            },
+            count: None,
+        });
+        same_group_entries.push(BindGroupLayoutEntry {
+            binding: vertex_binding(binding),
+            visibility: ShaderStages::VERTEX,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(16),
+            },
+            count: None,
+        });
+    }
+    same_group_entries.sort_by_key(|entry| entry.binding);
+    let same_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("one group with thirteen sparse uniforms per stage"),
+        entries: &same_group_entries,
+    });
+    let same_group_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("one group with thirteen uniforms per stage pipeline layout"),
+        bind_group_layouts: &[Some(&same_group_layout)],
+        immediate_size: 0,
+    });
+    let mut same_group_wgsl = String::from("struct UniformData { value: vec4f, }\n");
+    for (index, &binding) in logical_bindings.iter().enumerate() {
+        same_group_wgsl.push_str(&format!(
+            "@group(0) @binding({binding}) var<uniform> u{index}: UniformData;\n\
+             @group(0) @binding({}) var<uniform> v{index}: UniformData;\n",
+            vertex_binding(binding)
+        ));
+    }
+    let same_group_fragment_sum = (0..logical_bindings.len())
+        .map(|index| format!("u{index}.value"))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    let same_group_vertex_sum = (0..logical_bindings.len())
+        .map(|index| format!("v{index}.value"))
+        .collect::<Vec<_>>()
+        .join(" + ");
+    same_group_wgsl.push_str(&format!(
+        "struct VertexOut {{ @builtin(position) position: vec4f, @location(0) vertex_value: vec4f, }}\n\
+         @vertex fn vs(@location(0) p: vec2f) -> VertexOut {{ return VertexOut(vec4f(p, 0.5, 1.0), {same_group_vertex_sum}); }}\n\
+         @fragment fn fs(@location(0) vertex_value: vec4f) -> @location(0) vec4f {{ return vertex_value + {same_group_fragment_sum}; }}"
+    ));
+    let same_group_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("one group with thirteen uniforms per stage shader"),
+        source: ShaderSource::Wgsl(same_group_wgsl.into()),
+    });
+    let same_group_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("one group with thirteen uniforms per stage pipeline"),
+        layout: Some(&same_group_pipeline_layout),
+        vertex: VertexState {
+            module: &same_group_shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &same_group_shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let mut same_group_data = vec![0u8; logical_bindings.len() * 2 * 256];
+    let same_group_uniforms = device.create_buffer(&BufferDescriptor {
+        label: Some("one buffer backing twenty-six uniform ranges"),
+        size: same_group_data.len() as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut same_group_bind_entries = Vec::with_capacity(26);
+    for (index, &binding) in logical_bindings.iter().enumerate() {
+        let mut fragment_value = [0.0f32; 4];
+        fragment_value[index % 4] = (index + 1) as f32 / 64.0;
+        let fragment_offset = index * 256;
+        for (component, value) in fragment_value.into_iter().enumerate() {
+            same_group_data[fragment_offset + component * 4..fragment_offset + component * 4 + 4]
+                .copy_from_slice(&value.to_ne_bytes());
+        }
+        same_group_bind_entries.push(BindGroupEntry {
+            binding,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &same_group_uniforms,
+                offset: fragment_offset as u64,
+                size: NonZeroU64::new(16),
+            }),
+        });
+
+        let mut vertex_value = [0.0f32; 4];
+        vertex_value[index % 4] = (index + 1) as f32 / 256.0;
+        let vertex_offset = (logical_bindings.len() + index) * 256;
+        for (component, value) in vertex_value.into_iter().enumerate() {
+            same_group_data[vertex_offset + component * 4..vertex_offset + component * 4 + 4]
+                .copy_from_slice(&value.to_ne_bytes());
+        }
+        same_group_bind_entries.push(BindGroupEntry {
+            binding: vertex_binding(binding),
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &same_group_uniforms,
+                offset: vertex_offset as u64,
+                size: NonZeroU64::new(16),
+            }),
+        });
+    }
+    queue.write_buffer(&same_group_uniforms, 0, &same_group_data);
+    let same_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("one group with thirteen vertex and fragment uniform ranges"),
+        layout: &same_group_layout,
+        entries: &same_group_bind_entries,
+    });
+    let mut same_group_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("one group with thirteen uniforms per stage commands"),
+    });
+    {
+        let mut pass = same_group_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("one group with thirteen uniforms per stage render pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&same_group_pipeline);
+        pass.set_bind_group(0, &same_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    same_group_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let same_group_submission = queue.submit([same_group_encoder.finish()]);
+    let (same_group_sender, same_group_receiver) = std::sync::mpsc::channel();
+    readback.slice(..).map_async(MapMode::Read, move |result| {
+        same_group_sender.send(result).unwrap()
+    });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(same_group_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for same-group thirteen-uniform draw");
+    same_group_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("same-group uniform readback callback")
+        .expect("map same-group uniform readback");
+    {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped same-group uniform data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    &[139, 90, 105, 120],
+                    "same-group thirteen uniforms per stage pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: one bind group with 13 vertex-only and 13 fragment-only sparse uniforms used independent b0-b12 stage slots; all 64 pixels matched");
 }
 
 #[test]
