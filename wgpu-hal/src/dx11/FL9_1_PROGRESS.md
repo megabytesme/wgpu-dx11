@@ -20754,3 +20754,20 @@ target then passed 161/161 with no failures or ignored tests. Public-target
 Clippy passed; only the eight existing D3D11 HAL warnings remained, and neither
 new test added a warning. Formatting and `git diff --check` passed. This is
 selected-adapter evidence, not historical FL9_1 validation.
+
+The filtered CTS format case for BGRA8Unorm blending also passed 1/1 under
+strict physical-hardware selection:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,rendering,color_target_state:blending,formats:format=\"bgra8unorm\";*'
+```
+
+The complete 39-format blending selector reproduced the recorded result:
+4 passed, 29 skipped and 6 failed. Those failures remain the two sRGB formats,
+which FL9_1 deliberately does not advertise as blendable, and four formats
+that the selected device does not expose as renderable. The CTS helper uses a
+generic format table rather than this adapter's Rust `getTextureFormatFeatures`
+projection, so those unsupported cases reach Core and are rejected there.
+This is not a valid-request-to-HAL failure; the selector remains unsuitable as
+a full pass criterion for this downlevel adapter. No CTS curation changed.
