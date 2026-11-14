@@ -12,8 +12,9 @@ for the FL9_1 profile. Helper, derivative, control-flow, multi-mip and other
 sampler forms remain rejected. The strict public test verified 64/64 pixels
 through a one-mip view and confirmed Core rejects a multi-mip view before HAL.
 
-Latest strict results are public D3D11 169/169 and private HAL 543/543 on the
-physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) with FL9_1
+Latest strict results are public D3D11 169/169, private HAL 543/543, and the
+Core hardware fixture 1/1 (154 other tests filtered) on the physical RTX 3090
+Ti (`0x10de:0x2203`, driver `32.0.16.2101`) with FL9_1
 explicitly requested and confirmed. Focused Core and HAL tests, a Core DX12
 test and the `wgpu-types` limit test passed. Formatting and `git diff --check`
 passed. Clippy completed with existing warnings; HAL `-D warnings` still fails

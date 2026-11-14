@@ -10,8 +10,10 @@ only direct, unconditional fragment `textureSampleGrad` on single-mip 2D float
 views with matching min/mag filters and anisotropy 1; Core validates the
 selected view and sampler before draw, and HAL lowers the proven operation to
 implicit sampling. Readback verified all 64 output pixels. Helper, derivative,
-control-flow and unsupported sampler/view forms remain rejected. Focused Core,
-HAL, and wgpu-types unit tests passed; a focused Core DX12 test passed. Clippy
+control-flow and unsupported sampler/view forms remain rejected. The full
+strict Core fixture passed 1/1 on that device (154 other Core tests were
+filtered), including its capability matrix and GPU-backed resource cases.
+Focused Core, HAL, and wgpu-types unit tests passed; a focused Core DX12 test passed. Clippy
 completed with existing HAL and wgpu-types warnings, and formatting plus diff
 checks passed. Earlier strict runs remain recorded below; they are not results
 for this latest code state.

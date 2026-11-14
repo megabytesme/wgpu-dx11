@@ -21176,3 +21176,20 @@ call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu-core --features d
 ```
 
 Verified code checkpoint: commit `a60a74f1a` (`dx11: lower restricted FL9_1 textureSampleGrad`).
+
+Post-checkpoint strict Core integration: `dx11_fixture_tests` is enabled through
+the `dx11-test-fixture` feature, not the ordinary `dx11` feature. The initial
+ordinary Core-library fixture filter ran zero tests and was not counted. The
+corrected command below passed one hardware fixture (154 other tests filtered)
+on the physical RTX 3090 Ti at requested and actual FL9_1. It reported 21
+formats, 191 advertised usage combinations and 199 views in its Core-to-HAL
+matrix; exercised real copy/readback and depth/textured rendering paths; and
+reported an explicit skip for RG8_UNORM mip creation because the selected
+device does not advertise `TEXTURE2D | MIP` for that format. The broader Core
+unit library also passed 140/140 tests, but that run did not include the
+`dx11-test-fixture` feature and is CPU-side validation evidence.
+
+```powershell
+set WGPU_DX11_REQUIRE_HARDWARE=1&& call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+set WGPU_DX11_REQUIRE_HARDWARE=1&& call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu-core --features dx11,wgsl --lib -- --nocapture --test-threads=1
+```
