@@ -20796,8 +20796,10 @@ range binding and the highest slot in the advertised FL9_1 input limit.
 On the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), the
 device was explicitly requested and confirmed at FL9_1 with
 `software=false`; all 64 RGBA8 readback pixels matched `[32, 191, 64, 255]`.
-The full strict public target passed 163/163 with no failures or skips. This
-verifies the selected adapter only; historical FL9_1 drivers remain untested.
+The full strict public target passed 163/163 test functions (0 failed, 0
+ignored). Optional capability-specific subcases still logged explicit skips.
+This verifies the selected adapter only; historical FL9_1 drivers remain
+untested.
 
 ## Capability evidence-ledger correction — 2026-11-14
 
@@ -20814,3 +20816,41 @@ and the 2048-byte maximum stride (checkpoint `ee89f6606d297d726c981037d4d9ed7741
 163/163). Capability wording now distinguishes those selected-device tests
 from the remaining optional-format and historical-driver gaps. No capability
 projection or backend behavior changed.
+
+## Full strict private-HAL regression — 2026-11-14
+
+After checkpoint `24aa57628efa37f89ee8683c0239b356ffa1c060`, the complete
+private D3D11 HAL library suite passed 537/537 test functions with strict
+hardware mode enabled. GPU tests selected the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) and explicitly requested FL9_1.
+The suite mixes CPU-only validation and real GPU rendering/transfer cases;
+some intentionally rejected shader cases log a skipped GPU subcase after
+verifying the expected rejection. No test functions failed or were ignored.
+Compilation emitted existing unnecessary-qualification warnings; no new
+compiler failures occurred.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_NET_OFFLINE = 'true'
+$env:CARGO_TARGET_DIR = 'E:\Temp\wgpu-mission-gpu-target'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+```
+
+## Multiple public queue writes before submission — 2026-11-14
+
+Added a strict public regression that initializes a 48-byte buffer with a
+sentinel, issues two disjoint eight-byte `Queue::write_buffer` calls at
+offsets 8 and 32, then copies the whole buffer to a mapped readback buffer.
+The RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) ran the device at
+explicitly requested and confirmed FL9_1 with `software=false`; both payloads
+and all untouched bytes matched.
+
+- Focused strict public test: 1/1 passed.
+- Complete strict public target: 164/164 test functions passed (0 failed,
+  0 ignored; optional capability-specific subcases logged explicit skips).
+- Complete strict private D3D11 HAL suite: 537/537 passed.
+- Public-target Clippy passed with the same eight pre-existing D3D11 HAL
+  warnings. `cargo +1.93.1 fmt --all` completed successfully.
+
+No implementation or capability changed. This closes a public-path evidence
+gap for multiple pending partial queue writes and copy/readback ordering.

@@ -5547,3 +5547,27 @@ checks all 64 readback pixels; the strict RTX 3090 Ti run rendered
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 & 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_vertex_buffer_slot_15_draw_at_fl91 -- --exact --nocapture --test-threads=1
 ```
+
+The complete strict private HAL regression command is:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_NET_OFFLINE = 'true'
+$env:CARGO_TARGET_DIR = 'E:\Temp\wgpu-mission-gpu-target'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu-hal --no-default-features --features dx11 --lib -- --nocapture --test-threads=1
+```
+
+At checkpoint `24aa57628efa37f89ee8683c0239b356ffa1c060`, it passed 537/537
+test functions. This includes CPU-only validation and strict FL9_1 GPU cases;
+expected rejection tests may log skipped rendering subcases after verifying
+that the shader is rejected.
+
+`public_dx11_multiple_queue_writes_preserve_disjoint_ranges_at_fl91` issues
+two public queue writes to disjoint offsets before submitting a full GPU copy
+to a readback buffer. It validates both payloads and all untouched sentinel
+bytes on the physical adapter.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_multiple_queue_writes_preserve_disjoint_ranges_at_fl91 -- --exact --nocapture --test-threads=1
+```

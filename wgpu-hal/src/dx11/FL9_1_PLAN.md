@@ -1,5 +1,13 @@
 # FL9_1 completion plan
 
+## Latest coordinator increment — disjoint public queue writes — 2026-11-14
+
+Two `Queue::write_buffer` calls to distinct offsets are now verified through
+the public API before a GPU copy and complete mapped readback. Both payloads
+and every untouched sentinel byte matched on the physical RTX 3090 Ti at
+requested and actual FL9_1. The strict public suite passed 164/164 test
+functions; the private HAL suite passed 537/537. No capability changed.
+
 ## Latest coordinator increment — vertex input slot 15 — 2026-11-14
 
 The strict public test now draws through vertex-buffer slot 15 from a

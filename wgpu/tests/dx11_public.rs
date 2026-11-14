@@ -1134,6 +1134,101 @@ fn public_dx11_async_write_map_updates_nonzero_slice_at_fl91() {
 }
 
 #[test]
+fn public_dx11_multiple_queue_writes_preserve_disjoint_ranges_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters
+        .into_iter()
+        .find(|adapter| adapter.get_info().driver_info.contains("physical"))
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=two pending queue writes, copy and full readback",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 disjoint queue writes"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the public FL9_1 projection");
+
+    let initial = [0x5a; 48];
+    let buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 disjoint queue-write buffer"),
+        size: initial.len() as u64,
+        usage: BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        mapped_at_creation: true,
+    });
+    buffer
+        .get_mapped_range_mut(..)
+        .expect("map initial queue-write buffer")
+        .copy_from_slice(&initial);
+    buffer.unmap();
+
+    let first_update = [0x10, 0x21, 0x32, 0x43, 0x54, 0x65, 0x76, 0x87];
+    let second_update = [0x98, 0xa9, 0xba, 0xcb, 0xdc, 0xed, 0xfe, 0x0f];
+    queue.write_buffer(&buffer, 8, &first_update);
+    queue.write_buffer(&buffer, 32, &second_update);
+
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 disjoint queue-write readback"),
+        size: initial.len() as u64,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public FL9_1 disjoint queue-write copy"),
+    });
+    encoder.copy_buffer_to_buffer(&buffer, 0, &readback, 0, initial.len() as u64);
+    let submission = queue.submit([encoder.finish()]);
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for disjoint queue writes and readback");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("disjoint queue-write readback callback")
+        .expect("map disjoint queue-write readback");
+
+    let mut expected = initial;
+    expected[8..16].copy_from_slice(&first_update);
+    expected[32..40].copy_from_slice(&second_update);
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        assert_eq!(
+            &data[..],
+            &expected,
+            "queued writes lost order or changed untouched bytes"
+        );
+    }
+    readback.unmap();
+    println!(
+        "PASS: two disjoint queue.write_buffer calls were visible to the following GPU copy; all 48 bytes matched, including untouched sentinel ranges"
+    );
+}
+
+#[test]
 fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
     use windows::{
         core::w,
