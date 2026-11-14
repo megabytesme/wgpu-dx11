@@ -3979,3 +3979,24 @@ coverage. The full strict suites now pass: private HAL 525/525, Core DX11
 skips, and Core DX12 135/135. The public suite includes query-gated RGB565
 multisample blending at 2x/4x/8x. Previous nearby handoff counts predate these
 tests. See `FL9_1_PROGRESS.md` for commands and details.
+
+## Direct uniform-indexed vertex palette — 2026-11-14
+
+Core and HAL now accept one narrow canonical vertex uniform-array access:
+`palette.values[palette.index]`, where the uniform has a `u32` at byte offset
+0 and a fixed `array<vec4f, N>` at byte offset 16 (`2 <= N <= 253`, exact
+structure span). FXC accepts length 253 and rejects 254 with X4507 at
+constant register index 256. The selected vertex entry must be straight-line
+and perform only that one direct dynamic access. Computed indices, helpers, control flow,
+selects, other array element types and additional dynamic accesses remain
+rejected. The existing downlevel vertex-uniform-indexing limit is unchanged.
+
+The strict public test ran on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) with requested and actual FL9_1 and `software=false`. Four
+in-range palette indices selected distinct colors; all 64 pixels matched in
+each readback. Current complete local runs: private D3D11 HAL 533/533, Core
+DX11 153/153, strict public DX11 157/157, Core DX12 140/140. See
+`FL9_1_PROGRESS.md` for exact commands. This does not verify historical
+FL9_1 drivers, out-of-range palette indices, Lumia/CoreWindow execution, or
+physical device-removal recovery. Public DX11 remains explicitly opt-in and
+constrained; the completion mission remains active.

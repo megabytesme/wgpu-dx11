@@ -36405,6 +36405,296 @@ fn public_dx11_vertex_uniform_array_indexing_at_fl91() {
 }
 
 #[test]
+fn public_dx11_direct_vertex_uniform_array_indexing_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    assert!(
+        adapter
+            .get_downlevel_capabilities()
+            .limits
+            .vertex_uniform_array_indexing
+    );
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=direct u32-indexed vertex uniform vec4 array",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 direct vertex uniform-array indexing"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request device within the selected FL9_1 projection");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 direct vertex uniform-array shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+                struct Palette { index: u32, values: array<vec4f, 4> }
+                struct VertexOutput {
+                    @builtin(position) position: vec4f,
+                    @location(0) color: vec4f,
+                }
+                @group(0) @binding(7) var<uniform> palette: Palette;
+
+                @vertex fn vs(@location(0) position: vec2f) -> VertexOutput {
+                    let color = palette.values[palette.index];
+                    return VertexOutput(vec4f(position, 0.5, 1.0), color);
+                }
+
+                @fragment fn fs(@location(0) color: vec4f) -> @location(0) vec4f {
+                    return color;
+                }
+            "#
+            .into(),
+        ),
+    });
+    let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 direct vertex uniform-array layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::VERTEX,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(80),
+            },
+            count: None,
+        }],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 direct vertex uniform-array pipeline layout"),
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        immediate_size: 0,
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 direct vertex uniform-array pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 8,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &attributes,
+            })],
+        },
+        primitive: PrimitiveState {
+            topology: PrimitiveTopology::TriangleList,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let colors = [
+        [1.0f32, 0.0, 0.0, 1.0],
+        [0.0, 1.0, 0.0, 1.0],
+        [0.0, 0.0, 1.0, 1.0],
+        [1.0, 1.0, 0.0, 1.0],
+    ];
+    let bind_groups = colors
+        .iter()
+        .enumerate()
+        .map(|(index, _)| {
+            let mut uniform_values = Vec::with_capacity(20);
+            uniform_values.push(index as u32);
+            uniform_values.extend([0u32; 3]);
+            uniform_values.extend(
+                colors
+                    .iter()
+                    .flat_map(|color| color.iter().copied().map(f32::to_bits)),
+            );
+            let uniform = device.create_buffer(&BufferDescriptor {
+                label: Some("FL9_1 direct vertex uniform-array data"),
+                size: 80,
+                usage: BufferUsages::UNIFORM,
+                mapped_at_creation: true,
+            });
+            uniform
+                .slice(..)
+                .get_mapped_range_mut()
+                .expect("map direct vertex uniform-array data")
+                .copy_from_slice(bytemuck::cast_slice(&uniform_values));
+            uniform.unmap();
+            device.create_bind_group(&BindGroupDescriptor {
+                label: Some("FL9_1 direct vertex uniform-array bind group"),
+                layout: &bind_group_layout,
+                entries: &[BindGroupEntry {
+                    binding: 7,
+                    resource: uniform.as_entire_binding(),
+                }],
+            })
+        })
+        .collect::<Vec<_>>();
+    let vertices = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0];
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 direct uniform-array covering triangle"),
+        size: std::mem::size_of_val(&vertices) as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map direct uniform-array triangle")
+        .copy_from_slice(bytemuck::cast_slice(&vertices));
+    vertex.unmap();
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 direct vertex uniform-array target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readbacks = (0..colors.len())
+        .map(|_| {
+            device.create_buffer(&BufferDescriptor {
+                label: Some("FL9_1 direct vertex uniform-array readback"),
+                size: 8 * 256,
+                usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+                mapped_at_creation: false,
+            })
+        })
+        .collect::<Vec<_>>();
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 direct vertex uniform-array rendering"),
+    });
+    for (bind_group, readback) in bind_groups.iter().zip(&readbacks) {
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 direct vertex uniform-array pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &target_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_pipeline(&pipeline);
+            pass.set_bind_group(0, bind_group, &[]);
+            pass.set_vertex_buffer(0, vertex.slice(..));
+            pass.draw(0..3, 0..1);
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: &target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
+            },
+            TexelCopyBufferInfo {
+                buffer: readback,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
+                },
+            },
+            Extent3d {
+                width: 8,
+                height: 8,
+                depth_or_array_layers: 1,
+            },
+        );
+    }
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    for (index, readback) in readbacks.iter().enumerate() {
+        let sender = sender.clone();
+        readback.slice(..).map_async(MapMode::Read, move |result| {
+            sender.send((index, result)).unwrap()
+        });
+    }
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for direct vertex uniform-array rendering");
+    for _ in &readbacks {
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("direct vertex uniform-array readback callback")
+            .1
+            .expect("map direct vertex uniform-array pixels");
+    }
+    let expected = [
+        [255, 0, 0, 255],
+        [0, 255, 0, 255],
+        [0, 0, 255, 255],
+        [255, 255, 0, 255],
+    ];
+    for (index, (readback, expected)) in readbacks.iter().zip(expected).enumerate() {
+        let data = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped direct uniform-array readback");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    expected,
+                    "uniform array index {index}, pixel ({x}, {y})"
+                );
+            }
+        }
+        drop(data);
+        readback.unmap();
+    }
+    println!("PASS: direct FL9_1 vertex uniform-array indices 0..4 rendered and all 64 pixels per index matched the selected palette entry");
+}
+
+#[test]
 fn public_dx11_instance_indexed_matrix_uniform_array_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

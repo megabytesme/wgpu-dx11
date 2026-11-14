@@ -1445,7 +1445,20 @@ vertex-stage indexing of fixed-size `vec3` and `vec4` uniform arrays using
 non-square matrices and larger arrays remain rejected. The matrix bound is
 252 float4 slots for that array, and FXC remains responsible for rejecting a
 shader whose aggregate referenced constants exceed the profile budget. Other
-runtime integer indexing remains rejected. A separate
+runtime integer indexing remains rejected except for one additional canonical
+form: a straight-line vertex entry may load `palette.values[palette.index]`
+from one two-member uniform structure with a `u32` index at byte offset zero
+and a fixed `array<vec4f, N>` at offset 16, where `2 <= N <= 253` and the
+structure span is exactly `16 + 16*N`. FXC compiles length 253 and rejects
+length 254 with X4507 (constant register index 256). The access must be direct,
+the selected uniform must be bound, and the entry may not use helper calls, control flow,
+selects, computed indices, or another dynamic access. Core and HAL apply the
+same selected-entry shape restriction; unrelated vertex built-in indexing
+continues to use its existing validation. Strict RTX 3090 Ti FL9_1 readback
+verified in-range indices 0 through 3 selecting four distinct colors across
+all 64 pixels. Out-of-range uniform indices and historical drivers have not
+been verified. This is a narrowly implemented shader form, not general
+runtime-integer support. A separate
 `DownlevelLimits::fragment_uniform_array_indexing`
 exception permits one or two direct fragment-stage reads from separate
 `array<vec4<f32>, N>` uniform bindings for `2 <= N <= 24`. Each uniform uses
@@ -1574,7 +1587,7 @@ Computed indices, helper-mediated indexing, fragment-stage indexing outside
 the exact 2–24 element vec4 subset above, integer or nested array elements and other
 general dynamic uniform indexing remain unsupported.
 `DownlevelLimits::vertex_uniform_array_indexing` enables only the direct vertex
-builtin subset described above. The RTX 3090 Ti at
+builtin and canonical uniform-index forms described above. The RTX 3090 Ti at
 requested/actual FL9_1 rendered all four array elements and verified that an
 index equal to the array length selects the last element. This is selected
 device/compiler evidence, not a historical-driver guarantee. Broad public

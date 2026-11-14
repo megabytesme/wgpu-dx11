@@ -4028,7 +4028,7 @@ mod tests {
     }
 
     #[test]
-    fn fl91_uniform_indexed_vertex_array_compiles_but_remains_rejected() {
+    fn fl91_direct_uniform_indexed_vertex_array_is_narrow_and_compiles_with_fxc() {
         let module = naga::front::wgsl::parse_str(
             r#"
             struct Palette {
@@ -4053,7 +4053,7 @@ mod tests {
         let function_info = info.get_entry_point(0);
         let input_options = Fl9ShaderInputOptions::default();
         assert!(
-            has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+            !has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
                 &module,
                 &info,
                 function,
@@ -4063,7 +4063,7 @@ mod tests {
                 &[],
             )
         );
-        assert!(has_unsupported_dynamic_access(
+        assert!(!has_unsupported_dynamic_access(
             &module,
             &info,
             function,
@@ -4103,6 +4103,120 @@ mod tests {
                 .is_ok_and(|code| code.starts_with(b"DXBC")),
             "FXC rejected the dynamic vertex uniform-index probe: {bytecode:?}"
         );
+
+        let maximum_module = naga::front::wgsl::parse_str(
+            "struct Palette { index: u32, values: array<vec4f, 253> } @group(0) @binding(7) var<uniform> palette: Palette; @vertex fn main() -> @builtin(position) vec4f { return palette.values[palette.index]; }",
+        )
+        .expect("parse the FL9_1 vertex uniform constant boundary");
+        let maximum_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&maximum_module)
+        .expect("validate the FL9_1 vertex uniform constant boundary");
+        let maximum_function = &maximum_module.entry_points[0].function;
+        let maximum_function_info = maximum_info.get_entry_point(0);
+        assert!(
+            !has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+                &maximum_module,
+                &maximum_info,
+                maximum_function,
+                maximum_function_info,
+                ShaderProfile::VertexLevel9_1,
+                Fl9ShaderInputOptions::default(),
+                &[],
+            )
+        );
+        assert!(!has_unsupported_dynamic_access(
+            &maximum_module,
+            &maximum_info,
+            maximum_function,
+            maximum_function_info,
+            DynamicAccessMode::new(
+                naga::ShaderStage::Vertex,
+                Fl9ShaderInputOptions::default(),
+                true,
+                true,
+            ),
+        ));
+        let maximum_bytecode = compile_naga_with_bindings(
+            &maximum_module,
+            &maximum_info,
+            naga::ShaderStage::Vertex,
+            "main",
+            ShaderProfile::VertexLevel9_1,
+            &bindings,
+        );
+        assert!(
+            maximum_bytecode
+                .as_ref()
+                .is_ok_and(|code| code.starts_with(b"DXBC")),
+            "FXC rejected the near-limit vertex uniform-index probe: {maximum_bytecode:?}"
+        );
+        let oversized_module = naga::front::wgsl::parse_str(
+            "struct Palette { index: u32, values: array<vec4f, 254> } @group(0) @binding(7) var<uniform> palette: Palette; @vertex fn main() -> @builtin(position) vec4f { return palette.values[palette.index]; }",
+        )
+        .expect("parse the over-limit FL9_1 vertex uniform-index probe");
+        let oversized_info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&oversized_module)
+        .expect("validate the over-limit FL9_1 vertex uniform-index probe");
+        let oversized_bytecode = compile_naga_with_bindings(
+            &oversized_module,
+            &oversized_info,
+            naga::ShaderStage::Vertex,
+            "main",
+            ShaderProfile::VertexLevel9_1,
+            &bindings,
+        );
+        assert!(
+            oversized_bytecode
+                .as_ref()
+                .is_err_and(|error| format!("{error:?}").contains("X4507")),
+            "expected FXC to reject the 254-element uniform palette at its constant limit: {oversized_bytecode:?}"
+        );
+
+        for source in [
+            "struct Palette { index: u32, values: array<vec4f, 4> } @group(0) @binding(7) var<uniform> palette: Palette; @vertex fn main(@location(0) position: vec2f) -> @builtin(position) vec4f { let selected = palette.values[palette.index + 1u]; return vec4f(position * selected.xy, selected.z, selected.w); }",
+            "struct Palette { index: u32, values: array<vec4f, 4> } @group(0) @binding(7) var<uniform> palette: Palette; fn select_value() -> vec4f { return palette.values[palette.index]; } @vertex fn main(@location(0) position: vec2f) -> @builtin(position) vec4f { let selected = select_value(); return vec4f(position * selected.xy, selected.z, selected.w); }",
+            "struct Slot { @align(16) @size(16) value: vec2f } struct Palette { index: u32, @align(16) values: array<Slot, 4> } @group(0) @binding(7) var<uniform> palette: Palette; @vertex fn main(@location(0) position: vec2f) -> @builtin(position) vec4f { let selected = palette.values[palette.index].value; return vec4f(position * selected, 0.0, 1.0); }",
+            "struct Palette { index: u32, values: array<vec4f, 1> } @group(0) @binding(7) var<uniform> palette: Palette; @vertex fn main() -> @builtin(position) vec4f { return palette.values[palette.index]; }",
+            "struct Palette { index: u32, values: array<vec4f, 254> } @group(0) @binding(7) var<uniform> palette: Palette; @vertex fn main() -> @builtin(position) vec4f { return palette.values[palette.index]; }",
+        ] {
+            let rejected_module = naga::front::wgsl::parse_str(source)
+                .expect("parse an unsupported direct vertex uniform-index shape");
+            let rejected_info = naga::valid::Validator::new(
+                naga::valid::ValidationFlags::all(),
+                naga::valid::Capabilities::empty(),
+            )
+            .validate(&rejected_module)
+            .expect("validate an unsupported direct vertex uniform-index shape");
+            let rejected_function = &rejected_module.entry_points[0].function;
+            let rejected_function_info = rejected_info.get_entry_point(0);
+            assert!(has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+                &rejected_module,
+                &rejected_info,
+                rejected_function,
+                rejected_function_info,
+                ShaderProfile::VertexLevel9_1,
+                Fl9ShaderInputOptions::default(),
+                &[],
+            ));
+            assert!(has_unsupported_dynamic_access(
+                &rejected_module,
+                &rejected_info,
+                rejected_function,
+                rejected_function_info,
+                DynamicAccessMode::new(
+                    naga::ShaderStage::Vertex,
+                    Fl9ShaderInputOptions::default(),
+                    true,
+                    true,
+                ),
+            ));
+        }
     }
 
     #[test]
@@ -10481,6 +10595,11 @@ fn has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices_and_sample_o
     } else {
         None
     };
+    let vertex_index_proof = if matches!(profile, ShaderProfile::VertexLevel9_1) {
+        supported_vertex_uniform_array_indexing(module, function, function_info)
+    } else {
+        None
+    };
     let frexp_fraction_only_result = if matches!(profile, ShaderProfile::PixelLevel9_1) {
         supported_fragment_frexp_fraction_only_result(
             module,
@@ -10501,6 +10620,7 @@ fn has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices_and_sample_o
         input_options,
         uniform_index_arguments,
         fragment_index_proof.as_ref(),
+        vertex_index_proof.as_ref(),
         frexp_fraction_only_result,
         supported_fragment_sample_bias_offset,
     )
@@ -10528,6 +10648,7 @@ fn has_unsafe_integer_semantics_with_options(
         None,
         None,
         None,
+        None,
     )
 }
 
@@ -10542,6 +10663,7 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
     input_options: Fl9ShaderInputOptions,
     uniform_index_arguments: &[(u32, u32)],
     fragment_index_proof: Option<&Fl9FragmentUniformArrayIndexingProof>,
+    vertex_index_proof: Option<&Fl9VertexUniformArrayIndexingProof>,
     frexp_fraction_only_result: Option<naga::Handle<naga::Expression>>,
     supported_fragment_sample_bias_offset: Option<(
         Option<naga::Handle<naga::Function>>,
@@ -10594,6 +10716,7 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
             if global.space == naga::AddressSpace::Uniform
                 && type_may_contain_integer(module, &module.types[global.ty].inner, &budget)
                 && fragment_index_proof.is_none_or(|proof| !proof.uniforms.contains(&handle))
+                && vertex_index_proof.is_none_or(|proof| proof.uniform != handle)
             {
                 return true;
             }
@@ -10893,6 +11016,9 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                             }));
                 let supported_fragment_integer_expression = fragment_index_proof
                     .is_some_and(|proof| proof.allows_integer_expression(function_handle, handle));
+                let supported_vertex_uniform_integer_expression = function_handle.is_none()
+                    && vertex_index_proof
+                        .is_some_and(|proof| proof.integer_expressions.contains(&handle));
                 let supported_texture_dimensions_query = texture_dimensions_helper_function
                     && matches!(
                         expression,
@@ -11033,6 +11159,7 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                         && !supported_texture_dimensions_query
                         && !supported_texture_num_levels_query
                         && !supported_fragment_integer_expression
+                        && !supported_vertex_uniform_integer_expression
                         && !(function_handle.is_none()
                             && frexp_fraction_only_result == Some(handle)))
             })
@@ -11534,7 +11661,7 @@ struct DynamicAccessFunctionMode<'a> {
     supported_builtin_arguments: &'a [bool],
     allowed_local_access: Option<naga::Handle<naga::Expression>>,
     allowed_vector_indexing: bool,
-    allowed_fragment_access:
+    allowed_uniform_access:
         Option<&'a alloc::collections::BTreeSet<naga::Handle<naga::Expression>>>,
 }
 
@@ -11579,6 +11706,11 @@ fn has_unsupported_dynamic_access(
     } else {
         None
     };
+    let allowed_vertex_access = if stage == naga::ShaderStage::Vertex {
+        supported_vertex_uniform_array_indexing(module, function, function_info)
+    } else {
+        None
+    };
     let allowed_vector_indexing = input_options.vertex_index_vector_indexing
         && supported_vertex_index_vector_indexing(module, function, function_info, input_options);
     let mut pending = alloc::vec![(None, Vec::new())];
@@ -11615,9 +11747,20 @@ fn has_unsupported_dynamic_access(
                     None
                 },
                 allowed_vector_indexing: function_handle.is_none() && allowed_vector_indexing,
-                allowed_fragment_access: allowed_fragment_access
-                    .as_ref()
-                    .and_then(|proof| proof.accesses_for(function_handle)),
+                allowed_uniform_access: if function_handle.is_none() {
+                    allowed_vertex_access
+                        .as_ref()
+                        .map(|proof| &proof.accesses)
+                        .or_else(|| {
+                            allowed_fragment_access
+                                .as_ref()
+                                .and_then(|proof| proof.accesses_for(function_handle))
+                        })
+                } else {
+                    allowed_fragment_access
+                        .as_ref()
+                        .and_then(|proof| proof.accesses_for(function_handle))
+                },
             },
         ) {
             return true;
@@ -11711,7 +11854,7 @@ fn fl9_uniform_index_helper_arguments(
                 supported_builtin_arguments: &parameter_origins,
                 allowed_local_access,
                 allowed_vector_indexing,
-                allowed_fragment_access: None,
+                allowed_uniform_access: None,
             },
         ) {
             return None;
@@ -12151,7 +12294,7 @@ fn function_has_unsupported_dynamic_access(
         supported_builtin_arguments,
         allowed_local_access,
         allowed_vector_indexing,
-        allowed_fragment_access,
+        allowed_uniform_access,
     } = function_mode;
     let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
     function.expressions.iter().any(|(handle, expression)| {
@@ -12162,7 +12305,7 @@ fn function_has_unsupported_dynamic_access(
             || (allowed_vector_indexing
                 && dynamic_access_base_is_float_vector(module, function_info, base)
                 && is_vertex_index_expression(module, function, index))
-            || allowed_fragment_access.is_some_and(|accesses| accesses.contains(&handle))
+            || allowed_uniform_access.is_some_and(|accesses| accesses.contains(&handle))
         {
             return false;
         }
@@ -12519,6 +12662,12 @@ struct Fl9FragmentUniformArrayIndexingProof {
     accesses: alloc::collections::BTreeSet<naga::Handle<naga::Expression>>,
     integer_expressions: alloc::collections::BTreeSet<naga::Handle<naga::Expression>>,
     helper: Option<Fl9FragmentUniformArrayHelperProof>,
+}
+
+struct Fl9VertexUniformArrayIndexingProof {
+    uniform: naga::Handle<naga::GlobalVariable>,
+    accesses: alloc::collections::BTreeSet<naga::Handle<naga::Expression>>,
+    integer_expressions: alloc::collections::BTreeSet<naga::Handle<naga::Expression>>,
 }
 
 struct Fl9FragmentUniformArrayHelperProof {
@@ -13019,6 +13168,145 @@ fn is_canonical_fragment_uniform_array(
                 && fragment_uniform_vec4_array_length(module, members[1].ty)
                     .is_some_and(|length| span == 16 + length * 16)
         )
+}
+
+fn supported_vertex_uniform_array_indexing(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+) -> Option<Fl9VertexUniformArrayIndexingProof> {
+    if function.body.iter().any(|statement| {
+        !matches!(
+            statement,
+            naga::Statement::Emit(_) | naga::Statement::Return { .. }
+        )
+    }) || !collect_dynamic_call_sites(&function.body)?.is_empty()
+        || function
+            .expressions
+            .iter()
+            .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
+    {
+        return None;
+    }
+
+    let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+    let mut dynamic_accesses = function
+        .expressions
+        .iter()
+        .filter_map(|(handle, expression)| {
+            matches!(
+                expression,
+                naga::Expression::Access { index, .. }
+                    if function_info[handle].ref_count != 0 && !kinds.is_const(*index)
+            )
+            .then_some(handle)
+        });
+    let access = dynamic_accesses.next()?;
+    if dynamic_accesses.next().is_some() {
+        return None;
+    }
+    let naga::Expression::Access { base, index } = function.expressions[access] else {
+        return None;
+    };
+    let (array_uniform, array_member, array_global) =
+        direct_uniform_member_pointer(function, base)?;
+    let naga::Expression::Load {
+        pointer: index_pointer,
+    } = function.expressions[index]
+    else {
+        return None;
+    };
+    let (index_uniform, index_member, index_global) =
+        direct_uniform_member_pointer(function, index_pointer)?;
+    let naga::TypeInner::Struct {
+        ref members, span, ..
+    } = module.types[module.global_variables[array_uniform].ty].inner
+    else {
+        return None;
+    };
+    let [index_member_ty, array_member_ty] = members.as_slice() else {
+        return None;
+    };
+    let naga::TypeInner::Array {
+        base: element,
+        size: naga::ArraySize::Constant(length),
+        stride: 16,
+    } = module.types[array_member_ty.ty].inner
+    else {
+        return None;
+    };
+    let length = length.get();
+    if array_uniform != index_uniform
+        || array_member != 1
+        || index_member != 0
+        || index_member_ty.offset != 0
+        || array_member_ty.offset != 16
+        || !(2..=253).contains(&length)
+        || span != 16 + length * 16
+        || module.global_variables[array_uniform].binding.is_none()
+        || !is_u32_scalar(module, index_member_ty.ty)
+        || !matches!(
+            module.types[element].inner,
+            naga::TypeInner::Vector {
+                size: naga::VectorSize::Quad,
+                scalar: naga::Scalar {
+                    kind: naga::ScalarKind::Float,
+                    width: 4,
+                },
+            }
+        )
+        || !matches!(
+            function_info[index].ty.inner_with(&module.types),
+            naga::TypeInner::Scalar(naga::Scalar {
+                kind: naga::ScalarKind::Uint,
+                width: 4,
+            })
+        )
+        || !matches!(
+            function_info[base].ty.inner_with(&module.types),
+            naga::TypeInner::Pointer {
+                base: array_ty,
+                space: naga::AddressSpace::Uniform,
+            } if *array_ty == array_member_ty.ty
+        )
+        || function_info[index].ref_count != 1
+        || function_info[index_pointer].ref_count != 1
+        || function_info[array_global].ref_count != 1
+        || function_info[index_global].ref_count != 1
+        || block_uses_dynamic_access_as_pointer(
+            module,
+            function,
+            function_info,
+            &function.body,
+            access,
+        )
+    {
+        return None;
+    }
+
+    let load_count = function
+        .expressions
+        .iter()
+        .filter(|(_, expression)| {
+            matches!(
+                expression,
+                naga::Expression::Load { pointer }
+                    if pointer_path_contains(function, *pointer, access)
+            )
+        })
+        .count();
+    if load_count != 1 {
+        return None;
+    }
+
+    let integer_expressions = [access, index, index_pointer, array_global, index_global]
+        .into_iter()
+        .collect();
+    Some(Fl9VertexUniformArrayIndexingProof {
+        uniform: array_uniform,
+        accesses: [access].into_iter().collect(),
+        integer_expressions,
+    })
 }
 
 #[derive(Clone, Copy)]

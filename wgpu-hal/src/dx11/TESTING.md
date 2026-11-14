@@ -4270,6 +4270,20 @@ opts in; other HLSL backends retain the existing unsigned output. Tests cover
 both emitted forms, FXC compilation for `vs_4_0_level_9_1`, and rejection of
 unsupported shapes in core and HAL.
 
+A second strict test covers a direct dynamic index loaded from the same
+uniform structure as a `vec4f` array. It uses the exact canonical layout
+`{ index: u32, values: array<vec4f, 4> }`, sparse binding 7, and four separate
+bind groups with index values 0 through 3. Every one of the 64 target pixels
+must equal the selected palette color. Computed indices, helper access, other
+element types and additional dynamic accesses remain rejected. This new path
+does not broaden `runtime_integer_shader_operations` or test out-of-range
+uniform indices.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_direct_vertex_uniform_array_indexing_at_fl91 -- --nocapture --test-threads=1
+```
+
 Direct `instance_index` access to a fixed `array<mat4x4<f32>, N>` is also
 supported for `N <= 63`. The strict test renders two instances using distinct
 translation matrices and reads back both separated triangles plus the clear

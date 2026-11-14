@@ -284,6 +284,23 @@ strict private HAL suite passed 490/490. Naga passed 163/163, Core passed
 139/139, the DX12 HAL check passed, and affected Clippy and formatting checks
 passed. See `FL9_1_PROGRESS.md` for exact commands and hardware evidence.
 
+## Direct uniform-indexed vertex palette — 2026-11-14
+
+Core and HAL accept one additional selected FL9_1 vertex-shader form:
+`palette.values[palette.index]`, where the same bound uniform contains a `u32`
+at offset zero and a fixed `array<vec4f, N>` at offset 16 (`2 <= N <= 253`,
+exact span). FXC accepts length 253 and rejects length 254 with X4507 at
+constant register index 256. The entry must be straight-line, use exactly one
+direct dynamic array access, and have no helpers, control flow, `select`, computed index or
+other dynamic indexing. The existing `vertex_uniform_array_indexing` limit is
+unchanged; general runtime integer operations remain disabled.
+
+Core and HAL synthetic tests reject computed, helper-mediated and wrong
+element shapes. FXC compiles the level-9 vertex shader. Strict public execution
+on the physical RTX 3090 Ti at requested/actual FL9_1 used four bind groups to
+select four palette values and verified every pixel in each 8x8 readback.
+Out-of-range uniform indices and historical FL9_1 drivers remain unverified.
+
 ## RG8_SNORM shadow copy and raw readback — 2026-11-11
 
 RG8_SNORM `COPY_SRC` is now projected only when the selected device reports

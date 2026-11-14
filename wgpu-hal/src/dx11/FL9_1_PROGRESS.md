@@ -46,6 +46,54 @@ cargo +1.93.1 fmt --all -- --check
 git diff --check
 ```
 
+## Direct uniform-indexed vertex palette — 2026-11-14
+
+Added a narrowly proved selected-entry form for a vertex uniform containing a
+`u32` at byte offset 0 and `array<vec4f, N>` at byte offset 16, with exact
+structure span and `2 <= N <= 253`. The straight-line vertex entry must perform
+exactly one direct `palette.values[palette.index]` access, with no helper,
+control flow, select, computed index, pointer escape, or additional dynamic
+access. Core's selected-entry validation and the HAL compiler checks enforce
+the same shape. `vertex_uniform_array_indexing` remains the relevant existing
+downlevel limit; no general runtime-integer capability was enabled.
+
+Synthetic Core and HAL tests accept the canonical form and reject computed,
+helper-mediated and padded-`vec2f` variants. FXC compiles the shader for
+`vs_4_0_level_9_1`. Strict public execution on the physical NVIDIA GeForce RTX
+3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) requested and confirmed
+FL9_1 with `software=false`. Four bind groups selected the red, green, blue
+and yellow palette values; each produced an 8x8 image with all 64 pixels
+matching its selected color. A length-253 palette compiled with FXC; length 254
+failed with X4507 at constant register index 256 and is rejected by Core and
+HAL. Out-of-range values and historical FL9_1 drivers remain unverified.
+
+Commands and results:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cmd /c call "$env:TEMP\wgpu-mission-cargo-c-target.bat" test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_direct_uniform_indexed_vertex_array_is_narrow_and_compiles_with_fxc -- --nocapture --test-threads=1
+cmd /c call "$env:TEMP\wgpu-mission-cargo-c-target.bat" test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib restricted_vertex_uniform_selected_array_indexing_is_narrow -- --nocapture --test-threads=1
+cmd /c call "$env:TEMP\wgpu-mission-c-target.bat" test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_direct_vertex_uniform_array_indexing_at_fl91 -- --nocapture --test-threads=1
+cmd /c call "$env:TEMP\wgpu-mission-c-target.bat" test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib -- --test-threads=1
+cmd /c call "$env:TEMP\wgpu-mission-c-target.bat" test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --test-threads=1
+cmd /c call "$env:TEMP\wgpu-mission-c-target.bat" test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cmd /c call "$env:TEMP\wgpu-mission-c-target.bat" test --offline -j8 -p wgpu-core --no-default-features --features dx12,wgsl,glsl,std --lib -- --test-threads=1
+```
+
+Results: focused HAL 1/1; focused Core 1/1; strict public GPU test 1/1;
+strict private HAL 533/533; Core DX11 fixture/unit target 153/153; strict
+public D3D11 target 157/157 (0 failed, 0 ignored); Core DX12 140/140. HAL and
+Core Clippy completed successfully with existing warnings; the new single-item
+test loop warning was removed before final checks. Public Clippy completed
+successfully with existing HAL warnings. The strict public suite includes the
+default-backend isolation test; explicit DX11 remains opt-in.
+
+The original completion mission remains open. This change does not close the
+broader advertised-capability/validation/CTS matrix, establish compatibility
+with historical FL9_1 drivers, verify Lumia/CoreWindow runtime behavior, or
+simulate physical device removal. See `CAPABILITIES.md` and
+`FL9_1_HANDOFF.md` for current feature boundaries.
+
 ## Coordinator increment — direct fragment textureGather with one uniform — 2026-11-14
 
 Implementation checkpoint: `e52cb32ea` (`dx11: allow a uniform with direct FL9_1 texture gather`).

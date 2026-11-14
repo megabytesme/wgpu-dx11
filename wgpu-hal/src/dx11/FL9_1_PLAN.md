@@ -3672,3 +3672,24 @@ validation design, strict GPU execution and checkpoint integration. The
 next candidate should be selected from a concrete workload or proven
 Core/HAL mismatch. Do not broaden shader shapes solely because one modern
 adapter accepts the generated FL9_1 profile.
+
+## Coordinator increment — direct uniform-indexed vertex palette — 2026-11-14
+
+Core, the private HAL and FXC now accept one selected FL9_1 vertex-entry form:
+a straight-line load of `palette.values[palette.index]` from the canonical
+two-member uniform shape (`u32` at byte 0; fixed `vec4f` array at byte 16;
+array length 2 through 253; exact span). FXC accepts length 253 and rejects
+254 with X4507 at constant register index 256. Computed indices, helpers,
+control flow, selects, other element types and additional dynamic accesses
+remain rejected. No capability flag changed. On the RTX 3090 Ti, explicitly requested
+and confirmed FL9_1 execution selected four distinct in-range palette values
+through four bind groups; all 64 pixels matched on each readback.
+
+Current local regressions: strict private HAL 533/533, Core DX11 153/153,
+strict public DX11 157/157, and Core DX12 140/140. Full results and commands
+are in `FL9_1_PROGRESS.md`. Completion is still partial: the public
+capability/validation/CTS matrix is not exhaustive, historical FL9_1 hardware
+and Lumia/CoreWindow remain unverified, and physical device-removal recovery
+has not been simulated. Use agents for non-overlapping read-only contract,
+shader, and workload audits or bounded compiler probes; keep cross-crate
+changes, hardware tests, and checkpoint integration with the coordinator.

@@ -1141,6 +1141,11 @@ struct FragmentUniformArrayIndexingProof {
     integer_expressions: FastHashSet<naga::Handle<naga::Expression>>,
 }
 
+struct VertexUniformArrayIndexingProof {
+    uniform: naga::Handle<naga::GlobalVariable>,
+    integer_expressions: FastHashSet<naga::Handle<naga::Expression>>,
+}
+
 #[derive(Clone, Debug)]
 struct FragmentUniformArrayHelperIndexingProof {
     uniform: naga::Handle<naga::GlobalVariable>,
@@ -1321,6 +1326,154 @@ fn fragment_uniform_array_indexing_proof(
     Some(FragmentUniformArrayIndexingProof {
         uniforms,
         accesses,
+        integer_expressions,
+    })
+}
+
+fn vertex_uniform_array_indexing_proof(
+    module: &naga::Module,
+    entry_point: &naga::EntryPoint,
+    entry_point_info: &naga::valid::FunctionInfo,
+) -> Option<VertexUniformArrayIndexingProof> {
+    let function = &entry_point.function;
+    if entry_point.stage != naga::ShaderStage::Vertex
+        || !collect_function_call_sites(&function.body)?.is_empty()
+        || function.body.iter().any(|statement| {
+            !matches!(
+                statement,
+                naga::Statement::Emit(_) | naga::Statement::Return { .. }
+            )
+        })
+        || function
+            .expressions
+            .iter()
+            .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
+    {
+        return None;
+    }
+
+    let kinds = naga::proc::ExpressionKindTracker::from_arena(&function.expressions);
+    let mut accesses = function
+        .expressions
+        .iter()
+        .filter_map(|(handle, expression)| {
+            matches!(
+                expression,
+                naga::Expression::Access { index, .. }
+                    if entry_point_info[handle].ref_count != 0 && !kinds.is_const(*index)
+            )
+            .then_some(handle)
+        });
+    let access = accesses.next()?;
+    if accesses.next().is_some() {
+        return None;
+    }
+    let naga::Expression::Access { base, index } = function.expressions[access] else {
+        return None;
+    };
+    let (array_uniform, array_member, array_global) =
+        direct_uniform_member_pointer(function, base)?;
+    let naga::Expression::Load {
+        pointer: index_pointer,
+    } = function.expressions[index]
+    else {
+        return None;
+    };
+    let (index_uniform, index_member, index_global) =
+        direct_uniform_member_pointer(function, index_pointer)?;
+    let naga::TypeInner::Struct { ref members, span } =
+        module.types[module.global_variables[array_uniform].ty].inner
+    else {
+        return None;
+    };
+    let [index_member_ty, array_member_ty] = members.as_slice() else {
+        return None;
+    };
+    let naga::TypeInner::Array {
+        base: element,
+        size: naga::ArraySize::Constant(length),
+        stride: 16,
+    } = module.types[array_member_ty.ty].inner
+    else {
+        return None;
+    };
+    let length = length.get();
+    if array_uniform != index_uniform
+        || array_member != 1
+        || index_member != 0
+        || index_member_ty.offset != 0
+        || array_member_ty.offset != 16
+        || !(2..=253).contains(&length)
+        || span != 16 + length * 16
+        || module.global_variables[array_uniform].binding.is_none()
+        || !matches!(
+            module.types[index_member_ty.ty].inner,
+            naga::TypeInner::Scalar(naga::Scalar {
+                kind: naga::ScalarKind::Uint,
+                width: 4,
+            })
+        )
+        || !matches!(
+            module.types[element].inner,
+            naga::TypeInner::Vector {
+                size: naga::VectorSize::Quad,
+                scalar: naga::Scalar {
+                    kind: naga::ScalarKind::Float,
+                    width: 4,
+                },
+            }
+        )
+        || !matches!(
+            entry_point_info[index].ty.inner_with(&module.types),
+            naga::TypeInner::Scalar(naga::Scalar {
+                kind: naga::ScalarKind::Uint,
+                width: 4,
+            })
+        )
+        || !matches!(
+            entry_point_info[base].ty.inner_with(&module.types),
+            naga::TypeInner::Pointer {
+                base: array_ty,
+                space: naga::AddressSpace::Uniform,
+            } if *array_ty == array_member_ty.ty
+        )
+        || entry_point_info[index].ref_count != 1
+        || entry_point_info[index_pointer].ref_count != 1
+        || entry_point_info[array_global].ref_count != 1
+        || entry_point_info[index_global].ref_count != 1
+        || block_uses_dynamic_access_as_pointer(
+            module,
+            function,
+            entry_point_info,
+            &function.body,
+            access,
+        )
+    {
+        return None;
+    }
+    let load_count = function
+        .expressions
+        .iter()
+        .filter(|(_, expression)| {
+            matches!(
+                expression,
+                naga::Expression::Load { pointer }
+                    if pointer_path_contains(function, *pointer, access)
+            )
+        })
+        .count();
+    if load_count != 1 {
+        return None;
+    }
+
+    let mut integer_expressions = FastHashSet::default();
+    integer_expressions.insert(access);
+    integer_expressions.insert(index);
+    integer_expressions.insert(index_pointer);
+    integer_expressions.insert(array_global);
+    integer_expressions.insert(index_global);
+    Some(VertexUniformArrayIndexingProof {
+        uniform: array_uniform,
         integer_expressions,
     })
 }
@@ -1791,6 +1944,12 @@ fn entry_point_dynamic_uniform_array_indexing_analysis(
     entry_point: &naga::EntryPoint,
     entry_point_info: &naga::valid::FunctionInfo,
 ) -> DynamicUniformArrayIndexingAnalysis {
+    if vertex_uniform_array_indexing_proof(module, entry_point, entry_point_info).is_some() {
+        return DynamicUniformArrayIndexingAnalysis {
+            unsupported: false,
+            used: true,
+        };
+    }
     if entry_point.stage == naga::ShaderStage::Fragment
         && fragment_uniform_array_helper_indexing_proof(
             module,
@@ -2904,7 +3063,7 @@ fn function_uses_unsupported_integer_semantics(
     vertex_entry: bool,
     supported_vector_indexing: bool,
     supported_index_parameters: &[bool],
-    supported_fragment_index_expressions: Option<&FastHashSet<naga::Handle<naga::Expression>>>,
+    supported_uniform_index_expressions: Option<&FastHashSet<naga::Handle<naga::Expression>>>,
     supported_fragment_frexp_result: Option<naga::Handle<naga::Expression>>,
     supported_fragment_sample_bias_offset: Option<naga::Handle<naga::Expression>>,
     budget: &mut usize,
@@ -3032,7 +3191,7 @@ fn function_uses_unsupported_integer_semantics(
                         || expression_is_supported_vertex_index_argument(
                             module, function, handle,
                         )))
-                && !supported_fragment_index_expressions
+                && !supported_uniform_index_expressions
                     .is_some_and(|expressions| expressions.contains(&handle))
                 && supported_fragment_frexp_result != Some(handle))
     })
@@ -3101,6 +3260,8 @@ fn entry_point_uses_unsupported_integer_semantics(
         entry_point.stage,
         &entry_point.function,
     );
+    let vertex_index_proof =
+        vertex_uniform_array_indexing_proof(module, entry_point, entry_point_info);
     let mut budget = 65_536usize;
     if module.global_variables.iter().any(|(handle, global)| {
         !entry_point_info[handle].is_empty()
@@ -3109,6 +3270,9 @@ fn entry_point_uses_unsupported_integer_semantics(
             && fragment_index_proof
                 .as_ref()
                 .is_none_or(|proof| !proof.uniforms.contains(&handle))
+            && vertex_index_proof
+                .as_ref()
+                .is_none_or(|proof| proof.uniform != handle)
     }) || function_uses_unsupported_integer_semantics(
         module,
         &entry_point.function,
@@ -3116,9 +3280,14 @@ fn entry_point_uses_unsupported_integer_semantics(
         vertex_entry,
         supported_vector_indexing,
         &[],
-        fragment_index_proof
+        vertex_index_proof
             .as_ref()
-            .map(|proof| &proof.integer_expressions),
+            .map(|proof| &proof.integer_expressions)
+            .or_else(|| {
+                fragment_index_proof
+                    .as_ref()
+                    .map(|proof| &proof.integer_expressions)
+            }),
         supported_fragment_frexp_result,
         supported_fragment_sample_bias_offset
             .and_then(|(owner, expression)| owner.is_none().then_some(expression)),
@@ -16881,6 +17050,103 @@ mod tests {
                 &fl91,
             )
             .unwrap());
+    }
+
+    #[test]
+    fn restricted_vertex_uniform_selected_array_indexing_is_narrow() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct Palette { index: u32, values: array<vec4f, 4> }
+            struct OneValuePalette { index: u32, values: array<vec4f, 1> }
+            struct FullPalette { index: u32, values: array<vec4f, 254> }
+            struct Vec2Slot { @align(16) @size(16) value: vec2f }
+            struct WrongPalette { index: u32, @align(16) values: array<Vec2Slot, 4> }
+            @group(0) @binding(0) var<uniform> palette: Palette;
+            @group(0) @binding(1) var<uniform> wrong_palette: WrongPalette;
+            @group(0) @binding(2) var<uniform> one_value_palette: OneValuePalette;
+            @group(0) @binding(3) var<uniform> full_palette: FullPalette;
+
+            fn read_palette() -> vec4f {
+                return palette.values[palette.index];
+            }
+            @vertex fn direct() -> @builtin(position) vec4f {
+                return palette.values[palette.index];
+            }
+            @vertex fn computed() -> @builtin(position) vec4f {
+                return palette.values[palette.index + 1u];
+            }
+            @vertex fn helper() -> @builtin(position) vec4f {
+                return read_palette();
+            }
+            @vertex fn wrong_shape() -> @builtin(position) vec4f {
+                return vec4f(wrong_palette.values[wrong_palette.index].value, 0.0, 1.0);
+            }
+            @vertex fn too_small() -> @builtin(position) vec4f {
+                return one_value_palette.values[one_value_palette.index];
+            }
+            @vertex fn too_large() -> @builtin(position) vec4f {
+                return full_palette.values[full_palette.index];
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let restricted = wgt::DownlevelLimits {
+            vertex_uniform_array_indexing: true,
+            runtime_integer_shader_operations: false,
+            ..Default::default()
+        };
+
+        assert!(!interface
+            .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                naga::ShaderStage::Vertex,
+                "direct",
+                &restricted,
+                false,
+            )
+            .unwrap());
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Vertex,
+                "direct",
+                &restricted,
+            )
+            .unwrap());
+
+        for (stage, entry) in [
+            (naga::ShaderStage::Vertex, "computed"),
+            (naga::ShaderStage::Vertex, "helper"),
+            (naga::ShaderStage::Vertex, "wrong_shape"),
+            (naga::ShaderStage::Vertex, "too_small"),
+            (naga::ShaderStage::Vertex, "too_large"),
+        ] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_dynamic_uniform_array_indexing(
+                        stage,
+                        entry,
+                        &restricted,
+                        false,
+                    )
+                    .unwrap(),
+                "{stage:?} {entry}"
+            );
+            if stage == naga::ShaderStage::Vertex {
+                assert!(interface
+                    .entry_point_uses_unsupported_runtime_integer_semantics(
+                        stage,
+                        entry,
+                        &restricted,
+                    )
+                    .unwrap());
+            }
+        }
     }
 
     #[test]
