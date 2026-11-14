@@ -3,8 +3,8 @@ use super::{
     buffer::NativeBuffer,
     device::NativeDevice,
     texture::{
-        format_block_layout, texture_formats_copy_compatible, NativeTexture, Texture2DShadow,
-        Texture3DShadow, TextureBlockLayout,
+        format_block_layout, texture_3d_dxgi_format, texture_formats_copy_compatible,
+        NativeTexture, Texture2DShadow, Texture3DShadow, TextureBlockLayout,
     },
 };
 use windows::{
@@ -17,14 +17,15 @@ use windows::{
                 D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
                 D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
             },
-            Dxgi::Common::{DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8_SNORM, DXGI_SAMPLE_DESC},
+            Dxgi::Common::{DXGI_FORMAT_R8G8_SNORM, DXGI_SAMPLE_DESC},
         },
     },
 };
 
 #[cfg(test)]
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+    DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_R8G8B8A8_UNORM,
+    DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
 };
 
 fn invalid() -> Error {
@@ -324,12 +325,12 @@ impl NativeDevice {
         destination: &NativeTexture,
         region: &crate::TextureCopy,
     ) -> Result<Texture3DToTexture3D> {
+        let format = source.logical_format.ok_or_else(invalid)?;
         if source.dimension != wgt::TextureDimension::D3
             || destination.dimension != wgt::TextureDimension::D3
-            || source.logical_format != Some(wgt::TextureFormat::Rgba8Unorm)
-            || destination.logical_format != Some(wgt::TextureFormat::Rgba8Unorm)
-            || source.format != DXGI_FORMAT_R8G8B8A8_UNORM
-            || destination.format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || destination.logical_format != Some(format)
+            || texture_3d_dxgi_format(format) != Some(source.format)
+            || source.format != destination.format
             || !source.usage.contains(wgt::TextureUses::COPY_SRC)
             || !destination.usage.contains(wgt::TextureUses::COPY_DST)
             || region.src_base.array_layer != 0
@@ -391,7 +392,11 @@ impl NativeDevice {
         }
 
         let source_shadow = source.cpu_shadow.clone().ok_or_else(invalid)?;
-        let row_pitch = region.size.width.checked_mul(4).ok_or_else(invalid)?;
+        let block = format_block_layout(source.format)?;
+        if block.width != 1 || block.height != 1 {
+            return Err(invalid());
+        }
+        let row_pitch = block.row_bytes(region.size.width)?;
         let depth_pitch = row_pitch
             .checked_mul(region.size.height)
             .ok_or_else(invalid)?;
@@ -430,7 +435,8 @@ impl NativeDevice {
         if texture.dimension != wgt::TextureDimension::D3
             || base.array_layer != 0
             || base.aspect != crate::FormatAspects::COLOR
-            || texture.format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || texture_3d_dxgi_format(texture.logical_format.ok_or_else(invalid)?)
+                != Some(texture.format)
             || !texture.usage.contains(wgt::TextureUses::COPY_DST)
             || size.width == 0
             || size.height == 0
@@ -511,7 +517,8 @@ impl NativeDevice {
         let layout = &region.buffer_layout;
         let shadow = texture.cpu_shadow.clone().ok_or_else(invalid)?;
         if texture.dimension != wgt::TextureDimension::D3
-            || texture.format != DXGI_FORMAT_R8G8B8A8_UNORM
+            || texture_3d_dxgi_format(texture.logical_format.ok_or_else(invalid)?)
+                != Some(texture.format)
             || !texture.usage.contains(wgt::TextureUses::COPY_SRC)
             || base.array_layer != 0
             || base.aspect != crate::FormatAspects::COLOR

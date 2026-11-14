@@ -1824,8 +1824,8 @@ fragment `textureDimensions` query on a non-array `texture_3d<f32>` in any
 supported bind group, directly converted to `vec3f`. Its optional mip argument
 must be a nonnegative literal or module constant. A query with an explicit
 mip cannot be combined with sampling in the same entry point. The feature is
-exposed only when the selected FL9_1 device passes the existing RGBA8 3D
-sampled-texture format query and the backend path is enabled; multi-mip
+exposed only when the selected FL9_1 device has at least one projected 3D
+sampled format and the backend path is enabled; multi-mip
 resources additionally require the selected device's `MIP` format query and
 the separate `texture_3d_mipmaps` limit. Core, Naga and HAL keep this proof
 distinct from the 2D path and from 2D texel-load emulation. It permits one
@@ -1863,9 +1863,10 @@ entry point. The helper must directly return the query and remains query-only.
 The selected entry may also sample the same image once directly through one
 non-comparison sampler using implicit LOD and coordinates matching the image
 dimension. For 2D images, texture and sampler may use different supported bind
-groups; 3D and cube texture/sampler groups may also differ. The 3D and cube limits are enabled only when the selected
-device reports the corresponding RGBA8 sampled-texture support; mipmap support is not required
-to query a single-mip view. The HAL supplies the currently bound view's mip
+groups; 3D and cube texture/sampler groups may also differ. The 3D limit is
+enabled when the selected device has a nonempty projected volume-format mask;
+the cube limit requires the corresponding RGBA8 sampled-texture support.
+Mipmap support is not required to query a single-mip view. The HAL supplies the currently bound view's mip
 count through the same `b13` emulation resource, including the view's suffix
 mip range. The query remains a single direct `u32` to `f32` conversion. Other
 helper shapes, control flow,
@@ -1993,21 +1994,20 @@ table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics
 explicitly marks the method unsupported on every 9.x feature level. The
 numeric `Limits::max_texture_dimension_1d` value therefore does not imply that
 the D3D11 FL9_1 API can create such a resource. Three-dimensional resources
-are exposed only when
-the selected device's RGBA8 query includes `TEXTURE3D | SHADER_SAMPLE` and the
-sampled-upload backend path is present. This narrow path supports POT RGBA8,
-single-sample volumes up to the FL9_1 dimension limit of 256, with
-`TEXTURE_BINDING | COPY_DST` usages. `COPY_SRC` is also accepted when requested
+are exposed per format only when the selected device query includes
+`TEXTURE3D | SHADER_SAMPLE`, the FL9_1 format guarantee applies and the
+sampled-upload backend path is present. The current format mask supports POT
+RGBA8 and R8_UNORM, single-sample volumes up to the FL9_1 dimension limit of
+256, with `TEXTURE_BINDING | COPY_DST` usages. `COPY_SRC` is also accepted when requested
 for an execution-ordered CPU shadow used for texture-to-buffer readback and
 the 3D-to-3D copy fallback;
-it does not enable native 3D GPU copies. Although Microsoft's FL9_1
-required-format table includes
-R8_UNORM with `TEXTURE3D`, this backend does not expose R8 3D: volume shadow
-transfers currently assume four-byte RGBA8 texels, and Core rejects an R8
-volume before HAL. Mip chains are exposed only when the selected RGBA8 query
-also includes `D3D11_FORMAT_SUPPORT_MIP` and the backend mip path is enabled.
-Each mip is initialized and uploaded separately; shader
-resource views must include the resource's lowest mip, as required by the
+it does not enable native 3D GPU copies. R8 uses the same format-aware volume
+upload, shadow, copy and readback paths with one-byte texels. Mip chains are
+exposed only when every format in the projected 3D format mask reports
+`D3D11_FORMAT_SUPPORT_MIP` and the backend mip path is enabled, because the
+downlevel mip limit is global rather than per format.
+Each mip is initialized and uploaded separately; shader resource views must
+include the resource's lowest mip, as required by the
 10Level9 FL9_1 view contract. A new downlevel limit lets core reject
 non-suffix 3D views before HAL. Buffer-to-volume uploads use a source buffer
 copy to a CPU-readable staging buffer followed by `Map` and `UpdateSubresource`,
@@ -2024,16 +2024,20 @@ exists, then calls `UpdateSubresource` with a non-null 3D destination box.
 This avoids native 3D `CopyResource`/`CopySubresourceRegion` operations that
 the 10Level9 FL9_1 context does not support. It does not support GPU-written
 3D sources, 3D render attachments or storage. `COPY_SRC` retains one full
-RGBA8 volume shadow; each copy also allocates a packed region buffer and costs
-a CPU copy before the native upload. Buffer-to-volume upload still stages
+format-sized volume shadow; each copy also allocates a packed region buffer
+and costs a CPU copy before the native upload. Buffer-to-volume upload still stages
 through a mapped buffer followed by `UpdateSubresource`. 3D texture-to-buffer
 readback copies the requested region from the shadow into the destination
 buffer, preserving row padding and submission ordering. If the selected
 format query lacks MIP support, the public descriptor remains single-mip.
 A strict private test also uploads a padded, nonzero-offset 2×2×2 region to a
-4×4×4 volume at (1,1,1), samples every slice, and checks all 64 pixels,
-including initialized untouched voxels. The RTX 3090 Ti passed at
-requested/actual FL9_1. A separate strict public test checks ordered upload
+4×4×4 RGBA8 volume at (1,1,1), samples every slice, and checks all 64 pixels,
+including initialized untouched voxels. A parallel R8_UNORM test validates
+the one-byte shadow layout and sampled `r,0,0,1` expansion for all 64 output
+pixels. Both passed on the RTX 3090 Ti at requested/actual FL9_1. A strict
+public wgpu test also uploads R8 volume data, copies a partial 2x2x2 region,
+and reads back all 64 voxels through a padded layout with sentinels intact. A
+separate strict public test checks ordered upload
 followed by full-volume and partial-region CPU-shadow readback, including
 nonzero buffer offsets and padded row/depth layouts; all 64 volume texels and
 all bytes in the partial destination buffer were validated. The strict public

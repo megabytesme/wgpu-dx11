@@ -2,26 +2,22 @@
 
 ## Coordinator status — 2026-11-14
 
-Latest code checkpoint is `0f9fed45a` (`dx11: allow alpha-equivalent coupled
-blend states`). It normalizes color factors to their alpha-channel equations
-before deciding whether the FL9_1 separate-alpha gate is needed; genuinely
-different equations remain rejected. Core and HAL validate the same projection
-and the HAL uses the color equation's alpha-native factor forms. The Core
-fixture tests a valid equivalent pipeline and keeps invalid Min/Max and true
-separate-alpha requests rejected. Strict public readback checks the accepted
-inverse-color case and the premultiplied baseline over all 64 pixels. The
-checkpoint also adds an explicit Core rejection test for R8 3D textures, which
-the RGBA8-only volume shadow path cannot handle, and records verified CTS cases.
+The latest verified worktree increment (pending commit) adds query-gated R8
+3D textures alongside RGBA8. Format-sized storage now covers volume creation,
+views, zero initialization, upload, ordered CPU-shadow copies/readback and
+sampling. R8 remains excluded from the RGBA8-only 3D `textureLoad` emulation.
+The previous committed base is `0f9fed45a` (`dx11: allow alpha-equivalent
+coupled blend states`), which preserves rejection of genuinely separate-alpha
+equations and validates accepted alpha-equivalent factors in both Core and HAL.
 
-Full strict D3D11 public and private HAL suites on the physical RTX 3090 Ti
-(`0x10de:0x2203`, driver `32.0.16.2101`) explicitly requested and confirmed
-FL9_1 passed 169/169 and 543/543. The strict Core fixture passed 1/1 (154
-tests filtered; one optional RG8 mip capability subcase skipped). Core DX12
-passed 139/139 and the `wgpu-types` projection test passed. Three state or
-transition CTS selectors passed 1/1 each; two same-format sRGB copy selectors
-passed 1/1 each; the shared CTS-list sorter passed 1/1. HAL, Core and public
-Clippy passed with existing warnings; workspace formatting passed. Details are
-in `FL9_1_PROGRESS.md` and `FL9_1_CTS.md`.
+Full strict suites on the NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) explicitly requested and confirmed FL9_1 passed: public
+`dx11_public` 170/170, private HAL 545/545, and Core fixture-enabled tests
+155/155. The new public R8 transfer test and the Core R8 format/view fixture
+ran within those suites. The focused `wgpu-types` volume-shape test passed
+1/1. Selected-device optional format cases may still log a prerequisite skip;
+they are not counted as independent hardware successes. See
+`FL9_1_PROGRESS.md` and `FL9_1_CTS.md` for prior check results.
 
 The implemented subset covers desktop offscreen and HWND rendering, textured
 depth-tested draws, tested multi-group resource patterns, uniforms and dynamic
@@ -35,11 +31,18 @@ nor Lumia/CoreWindow GPU execution has occurred.
 - **Implementation and validation:** the public capability-to-Core-to-HAL and
   curated CTS matrices remain incomplete. Scoped audits found no concrete
   public-valid request reaching a known-unsupported HAL path in texture/view/
-  copy and pipeline descriptor areas, but coverage is not exhaustive. The
-  format audit confirmed R8 3D textures are rejected before HAL because only
-  RGBA8 has a volume shadow-transfer path; a Core fixture now asserts the
-  exclusion. Expand only against a concrete API contract or workload, with
-  matching Core/HAL validation and GPU evidence.
+  copy and pipeline descriptor areas, but coverage is not exhaustive. The R8
+  3D path is now projected only when the selected format query and backend
+  implementation both permit it; a public strict test verifies upload, copy
+  and padded readback. Expand only against a concrete API contract or workload,
+  with matching Core/HAL validation and GPU evidence. The separate-alpha
+  concern is already guarded by Core/HAL validation and public regression
+  tests. The D3D11 10Level9 `CreateBlendState` table lists FL9_1 restrictions
+  without restricting ordinary blend operations; that method contract is
+  relevant to D3D11 level-9 use, while the legacy D3D9 minimum-cap table's
+  optional `D3DPMISCCAPS_BLENDOP` bit is not a D3D11 blend-state query. RTX
+  execution covers all five operations; historical-driver execution remains
+  external.
 - **Shader and resource boundaries:** compute/UAV/storage execution, geometry
   shaders, multiple color outputs, indirect drawing, occlusion queries,
   ordinary 1D and 2D-array textures, vertex texture sampling, and broad WGSL

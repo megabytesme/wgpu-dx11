@@ -963,8 +963,12 @@ fn fl91_bgra_render_and_partial_copy() -> windows::core::Result<()> {
     Ok(())
 }
 
-#[test]
-fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Result<()> {
+fn run_fl91_padded_partial_3d_upload(
+    format: wgt::TextureFormat,
+    native_format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
+    bytes_per_texel: usize,
+    label: &str,
+) -> windows::core::Result<()> {
     use alloc::borrow::Cow;
     use windows::Win32::Graphics::{
         Direct3D11::{
@@ -987,27 +991,32 @@ fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Resu
     let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
     assert_eq!(native.feature_level(), FeatureLevel::L9_1);
 
-    let support = unsafe {
-        native
-            .raw_device()
-            .CheckFormatSupport(DXGI_FORMAT_R8G8B8A8_UNORM)?
-    };
+    let support = unsafe { native.raw_device().CheckFormatSupport(native_format)? };
     let texture_requirements =
         (D3D11_FORMAT_SUPPORT_TEXTURE3D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
     if support & texture_requirements != texture_requirements {
         std::println!(
-            "SKIP: selected physical FL9_1 device lacks RGBA8 3D sampling support ({support:#010x})"
+            "selected physical FL9_1 device lacks {format:?} 3D sampling support ({support:#010x})"
         );
-        return Ok(());
+        return Err(windows::core::Error::from_hresult(
+            windows::Win32::Foundation::E_FAIL,
+        ));
     }
-    if support & D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32 == 0 {
+    let target_support = unsafe {
+        native
+            .raw_device()
+            .CheckFormatSupport(DXGI_FORMAT_R8G8B8A8_UNORM)?
+    };
+    if target_support & D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32 == 0 {
         std::println!(
-            "SKIP: selected physical FL9_1 device lacks RGBA8 render-target support ({support:#010x})"
+            "selected physical FL9_1 device lacks RGBA8 render-target support ({target_support:#010x})"
         );
-        return Ok(());
+        return Err(windows::core::Error::from_hresult(
+            windows::Win32::Foundation::E_FAIL,
+        ));
     }
     std::println!(
-        "Hardware: {:?} ({:#06x}:{:#06x}), driver={driver:?}, software={}; requested/actual FL9_1; RGBA8 format support={support:#010x}",
+        "Hardware: {:?} ({:#06x}:{:#06x}), driver={driver:?}, software={}; requested/actual FL9_1; {format:?} format support={support:#010x}",
         identity.name, identity.vendor_id, identity.device_id, identity.software,
     );
 
@@ -1025,12 +1034,43 @@ fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Resu
                 mip_level_count: 1,
                 sample_count: 1,
                 dimension: wgt::TextureDimension::D3,
-                format: wgt::TextureFormat::Rgba8Unorm,
-                usage: wgt::TextureUses::RESOURCE | wgt::TextureUses::COPY_DST,
+                format,
+                usage: wgt::TextureUses::RESOURCE
+                    | wgt::TextureUses::COPY_DST
+                    | if bytes_per_texel == 1 {
+                        wgt::TextureUses::COPY_SRC
+                    } else {
+                        wgt::TextureUses::empty()
+                    },
                 memory_flags: MemoryFlags::empty(),
                 view_formats: vec![],
             })
             .unwrap()
+    };
+    let copy_target = if bytes_per_texel == 1 {
+        Some(unsafe {
+            device
+                .create_texture(&TextureDescriptor {
+                    label: None,
+                    size: wgt::Extent3d {
+                        width: 4,
+                        height: 4,
+                        depth_or_array_layers: 4,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgt::TextureDimension::D3,
+                    format,
+                    usage: wgt::TextureUses::RESOURCE
+                        | wgt::TextureUses::COPY_SRC
+                        | wgt::TextureUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                    view_formats: vec![],
+                })
+                .unwrap()
+        })
+    } else {
+        None
     };
 
     let source_offset = 16usize;
@@ -1060,13 +1100,20 @@ fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Resu
     for z in 0..2usize {
         for y in 0..2usize {
             for x in 0..2usize {
-                let offset = source_offset + z * source_image_pitch + y * source_row_pitch + x * 4;
-                upload_data[offset..offset + 4].copy_from_slice(&[
-                    40 + x as u8 * 80,
-                    20 + y as u8 * 90,
-                    30 + z as u8 * 70,
-                    255,
-                ]);
+                let offset = source_offset
+                    + z * source_image_pitch
+                    + y * source_row_pitch
+                    + x * bytes_per_texel;
+                if bytes_per_texel == 1 {
+                    upload_data[offset] = 40 + x as u8 * 80 + y as u8 * 40 + z as u8 * 20;
+                } else {
+                    upload_data[offset..offset + 4].copy_from_slice(&[
+                        40 + x as u8 * 80,
+                        20 + y as u8 * 90,
+                        30 + z as u8 * 70,
+                        255,
+                    ]);
+                }
             }
         }
     }
@@ -1082,13 +1129,31 @@ fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Resu
     };
     native.write_byte_buffer(&input, 0, &upload_data)?;
 
+    let volume_readback = if bytes_per_texel == 1 {
+        let buffer = unsafe {
+            device
+                .create_buffer(&BufferDescriptor {
+                    label: None,
+                    size: 3860,
+                    usage: wgt::BufferUses::COPY_SRC | wgt::BufferUses::COPY_DST,
+                    memory_flags: MemoryFlags::empty(),
+                })
+                .unwrap()
+        };
+        native.write_byte_buffer(&buffer, 0, &vec![0x5a; 3860])?;
+        Some(buffer)
+    } else {
+        None
+    };
+
+    let sampled_volume = copy_target.as_ref().unwrap_or(&volume);
     let volume_view = unsafe {
         device
             .create_texture_view(
-                &volume,
+                sampled_volume,
                 &TextureViewDescriptor {
                     label: None,
-                    format: wgt::TextureFormat::Rgba8Unorm,
+                    format,
                     dimension: wgt::TextureViewDimension::D3,
                     usage: wgt::TextureUses::RESOURCE,
                     range: wgt::ImageSubresourceRange {
@@ -1122,7 +1187,7 @@ fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Resu
             binding: 7,
             visibility: wgt::ShaderStages::FRAGMENT,
             ty: wgt::BindingType::Texture {
-                sample_type: wgt::TextureSampleType::Float { filterable: true },
+                sample_type: wgt::TextureSampleType::Float { filterable: false },
                 view_dimension: wgt::TextureViewDimension::D3,
                 multisampled: false,
             },
@@ -1131,7 +1196,7 @@ fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Resu
         wgt::BindGroupLayoutEntry {
             binding: 42,
             visibility: wgt::ShaderStages::FRAGMENT,
-            ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::Filtering),
+            ty: wgt::BindingType::Sampler(wgt::SamplerBindingType::NonFiltering),
             count: None,
         },
     ];
@@ -1387,6 +1452,59 @@ fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Resu
     let commands = unsafe {
         encoder.begin_encoding(None).unwrap();
         encoder.copy_buffer_to_texture(&input, &volume, [upload].into_iter());
+        if let (Some(copy_target), Some(readback)) =
+            (copy_target.as_ref(), volume_readback.as_ref())
+        {
+            let copy_region = TextureCopy {
+                src_base: TextureCopyBase {
+                    mip_level: 0,
+                    array_layer: 0,
+                    origin: wgt::Origin3d { x: 1, y: 1, z: 1 },
+                    aspect: FormatAspects::COLOR,
+                },
+                dst_base: TextureCopyBase {
+                    mip_level: 0,
+                    array_layer: 0,
+                    origin: wgt::Origin3d { x: 1, y: 1, z: 1 },
+                    aspect: FormatAspects::COLOR,
+                },
+                size: CopyExtent {
+                    width: 2,
+                    height: 2,
+                    depth: 2,
+                },
+            };
+            let readback_region = BufferTextureCopy {
+                buffer_layout: wgt::TexelCopyBufferLayout {
+                    offset: 16,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(4),
+                },
+                texture_base: TextureCopyBase {
+                    mip_level: 0,
+                    array_layer: 0,
+                    origin: wgt::Origin3d { x: 0, y: 0, z: 0 },
+                    aspect: FormatAspects::COLOR,
+                },
+                size: CopyExtent {
+                    width: 4,
+                    height: 4,
+                    depth: 4,
+                },
+            };
+            encoder.copy_texture_to_texture(
+                &volume,
+                wgt::TextureUses::COPY_SRC,
+                copy_target,
+                [copy_region].into_iter(),
+            );
+            encoder.copy_texture_to_buffer(
+                copy_target,
+                wgt::TextureUses::COPY_SRC,
+                readback,
+                [readback_region].into_iter(),
+            );
+        }
         encoder.begin_render_pass(&pass).unwrap();
         encoder.set_render_pipeline(&pipeline);
         encoder.set_bind_group(&pipeline_layout, 0, &group, &[]);
@@ -1409,6 +1527,30 @@ fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Resu
     assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(10)))?);
 
     let actual = native.read_byte_buffer(&output, 0, output_size)?;
+    if let Some(readback) = volume_readback.as_ref() {
+        let actual_volume = native.read_byte_buffer(readback, 0, 3860)?;
+        let mut expected_volume = vec![0x5a; 3860];
+        for z in 0..4usize {
+            for y in 0..4usize {
+                for x in 0..4usize {
+                    let value =
+                        if (1..=2).contains(&x) && (1..=2).contains(&y) && (1..=2).contains(&z) {
+                            40 + (x - 1) as u8 * 80 + (y - 1) as u8 * 40 + (z - 1) as u8 * 20
+                        } else {
+                            0
+                        };
+                    expected_volume[16 + z * 1024 + y * 256 + x] = value;
+                }
+            }
+        }
+        assert_eq!(
+            actual_volume, expected_volume,
+            "R8 3D copy or padded texture-to-buffer readback differed"
+        );
+        std::println!(
+            "PASS: R8 3D texture copy and readback; 64 texels, partial-copy zero preservation, offset, padded rows/depth and sentinel bytes matched"
+        );
+    }
     let mut expected = vec![0x5a; output_size];
     for y in 0..8usize {
         for x in 0..8usize {
@@ -1418,14 +1560,25 @@ fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Resu
             let pixel =
                 if (1..=2).contains(&voxel_x) && (1..=2).contains(&voxel_y) && (1..=2).contains(&z)
                 {
-                    [
-                        40 + (voxel_x - 1) as u8 * 80,
-                        20 + (voxel_y - 1) as u8 * 90,
-                        30 + (z - 1) as u8 * 70,
-                        255,
-                    ]
+                    if bytes_per_texel == 1 {
+                        [
+                            40 + (voxel_x - 1) as u8 * 80
+                                + (voxel_y - 1) as u8 * 40
+                                + (z - 1) as u8 * 20,
+                            0,
+                            0,
+                            255,
+                        ]
+                    } else {
+                        [
+                            40 + (voxel_x - 1) as u8 * 80,
+                            20 + (voxel_y - 1) as u8 * 90,
+                            30 + (z - 1) as u8 * 70,
+                            255,
+                        ]
+                    }
                 } else {
-                    [0, 0, 0, 0]
+                    [0, 0, 0, if bytes_per_texel == 1 { 255 } else { 0 }]
                 };
             let offset = output_offset + y * output_row_pitch + x * 4;
             expected[offset..offset + 4].copy_from_slice(&pixel);
@@ -1436,12 +1589,15 @@ fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Resu
         "padded 3D upload sample or untouched voxel differed"
     );
     std::println!(
-        "PASS: FL9_1 padded partial 3D upload; 8 uploaded voxels and 56 initialized untouched voxels sampled correctly, with row/depth padding preserved"
+        "PASS: FL9_1 padded partial {label} 3D upload; 8 uploaded voxels and 56 initialized untouched voxels sampled correctly, with row/depth padding preserved"
     );
 
     unsafe {
         encoder.reset_all([commands].into_iter());
         device.destroy_buffer(input);
+        if let Some(readback) = volume_readback {
+            device.destroy_buffer(readback);
+        }
         device.destroy_buffer(vertex_buffer);
         device.destroy_buffer(output);
         device.destroy_bind_group(group);
@@ -1451,9 +1607,32 @@ fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Resu
         device.destroy_texture_view(volume_view);
         device.destroy_texture_view(target_view);
         device.destroy_texture(volume);
+        if let Some(copy_target) = copy_target {
+            device.destroy_texture(copy_target);
+        }
         device.destroy_texture(target);
         device.destroy_render_pipeline(pipeline);
         device.destroy_shader_module(shader);
     }
     Ok(())
+}
+
+#[test]
+fn fl91_padded_partial_3d_upload_preserves_other_voxels() -> windows::core::Result<()> {
+    run_fl91_padded_partial_3d_upload(
+        wgt::TextureFormat::Rgba8Unorm,
+        windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
+        4,
+        "RGBA8",
+    )
+}
+
+#[test]
+fn fl91_r8_3d_upload_and_sampling_preserve_other_voxels() -> windows::core::Result<()> {
+    run_fl91_padded_partial_3d_upload(
+        wgt::TextureFormat::R8Unorm,
+        windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM,
+        1,
+        "R8",
+    )
 }

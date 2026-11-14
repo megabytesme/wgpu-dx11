@@ -629,18 +629,21 @@ selected native format. A strict RTX 3090 Ti FL9_1 BGRA8 clear/resolve test
 checks 64 readback pixels; this optional result does not establish historical
 device support.
 
-The selected FL9_1 projection exposes sampled RGBA8 3D textures only when the
-device reports `TEXTURE3D | SHADER_SAMPLE`. The tested subset is POT,
-single-mip, single-sample volumes up to 256³ with texture-binding and upload
-usages. Forced-FL9_1 public readback on the RTX 3090 Ti verified four distinct
-slices, a nonzero-offset partial voxel update and zero initialization for
-untouched voxels across 128 pixels. Buffer-to-volume upload currently stages
+The selected FL9_1 projection exposes sampled RGBA8 and R8_UNORM 3D textures
+when each format has the required feature-level guarantee, the selected
+device reports `TEXTURE3D | SHADER_SAMPLE`, and the shared sampled-upload path
+is enabled. Volumes are POT, single-sample and up to 256³ with texture-binding
+and upload usages. Forced-FL9_1 public readback on the RTX 3090 Ti verified
+four distinct RGBA8 slices, a nonzero-offset partial voxel update and zero
+initialization for untouched voxels across 128 pixels. A strict private R8
+3D upload-and-sample test verifies all 64 output pixels, including the
+format's one-byte texel layout and zero initialization. Buffer-to-volume upload currently stages
 through a mapped buffer and `UpdateSubresource`. `COPY_SRC` uses an
 execution-ordered CPU shadow because 10Level9 does not provide a safe native
 3D texture-to-buffer copy path; buffer-to-volume uploads update both the GPU
 resource and shadow from the staged source. Same-format 3D-to-3D copies are
-now exposed through a CPU-shadow fallback when the selected RGBA8 volume path
-is available. The source requires `COPY_SRC` and the destination requires
+now exposed through a CPU-shadow fallback when the selected format has a
+projected volume path. The source requires `COPY_SRC` and the destination requires
 `COPY_DST`; same-mip self-copy and mixed dimensions are rejected. Replay copies
 the requested region from the source shadow, updates the destination shadow if
 present, and uploads the packed region with `UpdateSubresource` and a non-null
@@ -2380,6 +2383,24 @@ zero and bits outside the four-sample range preserved all 64 blue pixels.
 The test exercises sample-mask state changes, FL9_1's zero-mask translation,
 64-bit-to-native mask truncation, resolve and readback. This is selected modern
 driver evidence only.
+
+## Query-gated R8 3D textures
+
+The selected FL9_1 projection now includes R8_UNORM 3D textures only when its
+format guarantee, device `TEXTURE3D | SHADER_SAMPLE` query and backend path all
+agree. Format-sized shadow storage supports initialization, padded upload,
+3D-to-3D CPU-shadow copy, texture-to-buffer readback, views and sampling.
+Because the public mip limit is global, multi-mip 3D support requires every
+projected 3D format to report `MIP`. The 3D `textureLoad` emulation remains
+RGBA8-only.
+
+On the RTX 3090 Ti explicitly forced to FL9_1, strict private HAL execution
+verified 64 R8 voxels after upload/copy/readback and sampled every slice into
+64 matching RGBA8 pixels. A strict public wgpu test verified upload, partial
+3D copy and padded readback for 64 voxels; the Core fixture verified the R8
+format projection and D3 view. R8 volumes still cannot be render attachments
+or GPU-written sources for the CPU-shadow copy fallback. The selected RTX
+does not establish behavior on historical FL9_1 drivers.
 
 ## Restricted FL9_1 fragment `textureSampleGrad`
 

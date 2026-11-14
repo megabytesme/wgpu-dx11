@@ -38244,6 +38244,223 @@ fn public_dx11_texture_3d_cpu_shadow_readback_at_fl91() {
 }
 
 #[test]
+fn public_dx11_r8_3d_upload_copy_and_readback_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().find(|adapter| {
+        let info = adapter.get_info();
+        info.backend == Backend::Dx11
+            && info.driver_info.contains("FL9_1")
+            && info.driver_info.contains("physical")
+    }) else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical FL9_1 D3D11 adapter for R8 3D transfers");
+        return;
+    };
+    let info = adapter.get_info();
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert!(downlevel.limits.texture_3d);
+    if !downlevel
+        .limits
+        .supports_texture_3d_format(TextureFormat::R8Unorm)
+        || !downlevel
+            .limits
+            .supports_texture_to_buffer_copy(TextureFormat::R8Unorm)
+        || !downlevel
+            .limits
+            .supports_texture_3d_usage(TextureUsages::COPY_SRC | TextureUsages::COPY_DST)
+    {
+        assert!(
+            !required,
+            "strict mode requires queried FL9_1 R8 3D transfer support"
+        );
+        println!("SKIP: selected FL9_1 device did not report R8 3D transfer support");
+        return;
+    }
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=public R8 3D upload, partial copy and padded readback",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 R8 3D transfer test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the public FL9_1 projection");
+
+    let source = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 R8 3D transfer source"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::R8Unorm,
+        usage: TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let destination = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 R8 3D transfer destination"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::R8Unorm,
+        usage: TextureUsages::COPY_DST | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let row_pitch = 256usize;
+    let depth_pitch = row_pitch * 4;
+    let mut upload = vec![0xA5; depth_pitch * 4];
+    for z in 0..4usize {
+        for y in 0..4usize {
+            for x in 0..4usize {
+                upload[z * depth_pitch + y * row_pitch + x] = (17 + z * 41 + y * 13 + x * 7) as u8;
+            }
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &upload,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(row_pitch as u32),
+            rows_per_image: Some(4),
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+    );
+
+    let readback_size = 16 + depth_pitch * 4;
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 R8 3D padded readback"),
+        size: readback_size as u64,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: true,
+    });
+    let padding = vec![0xCD; readback_size];
+    readback
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("initialize readback padding")
+        .copy_from_slice(&padding);
+    readback.unmap();
+
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 R8 3D copy and readback"),
+    });
+    encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &source,
+            mip_level: 0,
+            origin: Origin3d { x: 1, y: 1, z: 1 },
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d { x: 2, y: 1, z: 1 },
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+    );
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &destination,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 16,
+                bytes_per_row: Some(row_pitch as u32),
+                rows_per_image: Some(4),
+            },
+        },
+        Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for R8 3D copy and readback");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("R8 3D readback map callback")
+        .expect("map R8 3D readback");
+    let pixels = readback
+        .slice(..)
+        .get_mapped_range()
+        .expect("mapped R8 3D readback");
+    let mut checked = 0;
+    for z in 0..4usize {
+        for y in 0..4usize {
+            for x in 0..4usize {
+                let copied = (2..4).contains(&x) && (1..3).contains(&y) && (1..3).contains(&z);
+                let expected = if copied {
+                    let source_x = x - 1;
+                    (17 + z * 41 + y * 13 + source_x * 7) as u8
+                } else {
+                    0
+                };
+                let offset = 16 + z * depth_pitch + y * row_pitch + x;
+                assert_eq!(pixels[offset], expected, "voxel ({x}, {y}, {z})");
+                checked += 1;
+            }
+            let padding_start = 16 + z * depth_pitch + y * row_pitch + 4;
+            assert!(
+                pixels[padding_start..16 + z * depth_pitch + (y + 1) * row_pitch]
+                    .iter()
+                    .all(|&byte| byte == 0xCD)
+            );
+        }
+    }
+    assert_eq!(checked, 64);
+    assert!(pixels[..16].iter().all(|&byte| byte == 0xCD));
+    drop(pixels);
+    readback.unmap();
+    println!("PASS: public R8 3D upload, partial 3D copy and padded readback; {checked}/64 texels matched with untouched texels and padding preserved");
+}
+
+#[test]
 fn public_dx11_query_gated_fl91_d16_depth_comparison_sampling() {
     run_public_fl91_depth_comparison_sampling(
         TextureFormat::Depth16Unorm,

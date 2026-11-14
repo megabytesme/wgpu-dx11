@@ -4762,6 +4762,31 @@ the query through one selected parameterless helper for both dimensions. Each
 helper itself remains fragment-only and query-only; extra resources and
 unrelated queries remain rejected.
 
+### R8_UNORM 3D volume path
+
+The strict private HAL test creates a physical device at FL9_1, checks the
+selected device's `R8_UNORM` `TEXTURE3D | SHADER_SAMPLE` support, uploads a
+padded nonzero-offset partial region into a zero-initialized 4x4x4 volume,
+copies a 2x2x2 region to another volume, checks all 64 copied/untouched
+voxels through CPU readback, then samples every slice and verifies the full
+8x8 image. It confirms the one-channel sample expands to `r,0,0,1`. Run it
+with:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu-hal --features dx11 --lib fl91_r8_3d_upload_and_sampling_preserve_other_voxels -- --nocapture --test-threads=1
+```
+
+Core's `fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware`
+fixture verifies the projected R8 format bit, texture and D3 view when the
+query is positive. The broader fixture deliberately disables 3D and confirms
+Core rejects the request under that synthetic projection. The RGBA8-only
+3D `textureLoad` emulation remains unchanged; R8 is not admitted to that
+shader operation. The public `dx11_public` target also has
+`public_dx11_r8_3d_upload_copy_and_readback_at_fl91`, which verifies an R8
+volume upload, a partial 3D-to-3D copy, padded readback rows and untouched
+destination texels through the ordinary public wgpu API.
+
 ### `textureNumLevels` image and sampler in separate groups
 
 The strict 2D test puts the queried texture at group 2/binding 42 and tests a

@@ -110,6 +110,7 @@ pub struct NativeTexture {
 #[derive(Debug)]
 pub(super) struct Texture3DShadow {
     mips: Mutex<Vec<Texture3DShadowMip>>,
+    bytes_per_texel: u32,
 }
 
 #[derive(Debug)]
@@ -125,8 +126,13 @@ impl Texture3DShadow {
         width: u32,
         height: u32,
         depth: u32,
+        format: DXGI_FORMAT,
         mip_bytes: Vec<Vec<u8>>,
     ) -> Result<Arc<Self>> {
+        let block = format_block_layout(format)?;
+        if block.width != 1 || block.height != 1 {
+            return Err(invalid());
+        }
         let max_dimension = width.max(height).max(depth);
         if width == 0
             || height == 0
@@ -144,7 +150,7 @@ impl Texture3DShadow {
             let width = (width >> mip).max(1);
             let height = (height >> mip).max(1);
             let depth = (depth >> mip).max(1);
-            if bytes.len() != volume_byte_count(width, height, depth)? {
+            if bytes.len() != volume_byte_count(width, height, depth, block.bytes)? {
                 return Err(invalid());
             }
             mips.push(Texture3DShadowMip {
@@ -156,6 +162,7 @@ impl Texture3DShadow {
         }
         Ok(Arc::new(Self {
             mips: Mutex::new(mips),
+            bytes_per_texel: block.bytes,
         }))
     }
 
@@ -190,7 +197,9 @@ impl Texture3DShadow {
         {
             return Err(invalid());
         }
-        let row_bytes = extent[0].checked_mul(4).ok_or_else(invalid)?;
+        let row_bytes = extent[0]
+            .checked_mul(self.bytes_per_texel)
+            .ok_or_else(invalid)?;
         let minimum_depth_pitch = row_pitch.checked_mul(extent[1]).ok_or_else(invalid)?;
         if row_pitch < row_bytes || depth_pitch < minimum_depth_pitch {
             return Err(invalid());
@@ -203,7 +212,10 @@ impl Texture3DShadow {
         if source.len() < source_size {
             return Err(invalid());
         }
-        let target_row_pitch = target.width.checked_mul(4).ok_or_else(invalid)? as usize;
+        let target_row_pitch = target
+            .width
+            .checked_mul(self.bytes_per_texel)
+            .ok_or_else(invalid)? as usize;
         let target_depth_pitch = target_row_pitch
             .checked_mul(target.height as usize)
             .ok_or_else(invalid)?;
@@ -215,7 +227,7 @@ impl Texture3DShadow {
                 let source_start = z * source_depth_pitch + y * source_row_pitch;
                 let target_start = (origin[2] as usize + z) * target_depth_pitch
                     + (origin[1] as usize + y) * target_row_pitch
-                    + origin[0] as usize * 4;
+                    + origin[0] as usize * self.bytes_per_texel as usize;
                 target.bytes[target_start..target_start + row_bytes]
                     .copy_from_slice(&source[source_start..source_start + row_bytes]);
             }
@@ -241,8 +253,13 @@ impl Texture3DShadow {
         {
             return Err(invalid());
         }
-        let row_bytes = extent[0].checked_mul(4).ok_or_else(invalid)? as usize;
-        let row_pitch = (source.width.checked_mul(4).ok_or_else(invalid)?) as usize;
+        let row_bytes = extent[0]
+            .checked_mul(self.bytes_per_texel)
+            .ok_or_else(invalid)? as usize;
+        let row_pitch = source
+            .width
+            .checked_mul(self.bytes_per_texel)
+            .ok_or_else(invalid)? as usize;
         let depth_pitch = row_pitch
             .checked_mul(source.height as usize)
             .ok_or_else(invalid)?;
@@ -259,7 +276,7 @@ impl Texture3DShadow {
             for y in 0..extent[1] as usize {
                 let source_start = (origin[2] as usize + z) * depth_pitch
                     + (origin[1] as usize + y) * row_pitch
-                    + origin[0] as usize * 4;
+                    + origin[0] as usize * self.bytes_per_texel as usize;
                 let target_start = (z * extent[1] as usize + y) * row_bytes;
                 output[target_start..target_start + row_bytes]
                     .copy_from_slice(&source.bytes[source_start..source_start + row_bytes]);
@@ -540,12 +557,25 @@ struct Texture2DShadowRegionLayout {
     target_offset: u32,
 }
 
-fn volume_byte_count(width: u32, height: u32, depth: u32) -> Result<usize> {
+pub(super) fn volume_byte_count(
+    width: u32,
+    height: u32,
+    depth: u32,
+    bytes_per_texel: u32,
+) -> Result<usize> {
     (width as usize)
         .checked_mul(height as usize)
         .and_then(|size| size.checked_mul(depth as usize))
-        .and_then(|size| size.checked_mul(4))
+        .and_then(|size| size.checked_mul(bytes_per_texel as usize))
         .ok_or_else(invalid)
+}
+
+pub(super) fn texture_3d_dxgi_format(format: wgt::TextureFormat) -> Option<DXGI_FORMAT> {
+    match format {
+        wgt::TextureFormat::R8Unorm => Some(DXGI_FORMAT_R8_UNORM),
+        wgt::TextureFormat::Rgba8Unorm => Some(DXGI_FORMAT_R8G8B8A8_UNORM),
+        _ => None,
+    }
 }
 
 impl NativeTexture {
@@ -883,12 +913,13 @@ impl NativeDevice {
         }
     }
 
-    pub(super) fn create_rgba_texture_3d_inner(
+    pub(super) fn create_texture_3d_inner(
         &self,
         width: u32,
         height: u32,
         depth: u32,
         mip_levels: u32,
+        format: DXGI_FORMAT,
     ) -> Result<NativeTexture> {
         let maximum = super::capabilities::HardwareGuarantees::for_level(self.feature_level())
             .texture_3d_dimension;
@@ -903,6 +934,10 @@ impl NativeDevice {
             || !width.is_power_of_two()
             || !height.is_power_of_two()
             || !depth.is_power_of_two()
+            || !matches!(
+                format_block_layout(format),
+                Ok(block) if block.width == 1 && block.height == 1
+            )
         {
             return Err(invalid());
         }
@@ -911,7 +946,7 @@ impl NativeDevice {
             Height: height,
             Depth: depth,
             MipLevels: mip_levels,
-            Format: DXGI_FORMAT_R8G8B8A8_UNORM,
+            Format: format,
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
             ..Default::default()
@@ -1194,6 +1229,9 @@ impl NativeDevice {
         }
         let resource = view.resource.as_ref().ok_or_else(invalid)?;
         if let NativeTextureResource::Texture3D(texture) = &view.texture {
+            let logical_format = view.logical_format.ok_or_else(invalid)?;
+            let expected_native_format =
+                texture_3d_dxgi_format(logical_format).ok_or_else(invalid)?;
             let mut desc = D3D11_TEXTURE3D_DESC::default();
             let mut view_desc = D3D11_SHADER_RESOURCE_VIEW_DESC::default();
             unsafe {
@@ -1209,7 +1247,7 @@ impl NativeDevice {
                 || !desc.Width.is_power_of_two()
                 || !desc.Height.is_power_of_two()
                 || !desc.Depth.is_power_of_two()
-                || desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
+                || desc.Format != expected_native_format
                 || (desc.MipLevels > 1
                     && (view.usage != wgt::TextureUses::RESOURCE
                         || !super::capabilities::Capabilities::query(self).texture_3d_mipmaps()))
@@ -1230,7 +1268,9 @@ impl NativeDevice {
                     (desc.Depth >> view.mip_base).max(1),
                 ],
                 view.mip_count,
-                true,
+                super::capabilities::Capabilities::query(self)
+                    .texture_format_capabilities(logical_format)
+                    .contains(crate::TextureFormatCapabilities::SAMPLED_LINEAR),
             ));
         }
         let mut desc = D3D11_TEXTURE2D_DESC::default();
@@ -1947,7 +1987,7 @@ impl NativeDevice {
             let texture_3d = texture.raw.as_3d()?;
             let mut desc = D3D11_TEXTURE3D_DESC::default();
             unsafe { texture_3d.GetDesc(&mut desc) };
-            if desc.Format != DXGI_FORMAT_R8G8B8A8_UNORM
+            if texture.logical_format.and_then(texture_3d_dxgi_format) != Some(desc.Format)
                 || mip_base.checked_add(mip_count) != Some(desc.MipLevels)
                 || desc.Width == 0
                 || desc.Height == 0
@@ -2814,7 +2854,13 @@ mod tests {
 
     #[test]
     fn texture_3d_shadow_preserves_partial_padded_updates() -> Result<()> {
-        let shadow = Texture3DShadow::from_mips(4, 4, 4, alloc::vec![alloc::vec![0; 256]])?;
+        let shadow = Texture3DShadow::from_mips(
+            4,
+            4,
+            4,
+            DXGI_FORMAT_R8G8B8A8_UNORM,
+            alloc::vec![alloc::vec![0; 256]],
+        )?;
         let row_pitch = 16usize;
         let depth_pitch = 32usize;
         let mut source = alloc::vec![0xA5; depth_pitch + row_pitch + 8];
@@ -2852,6 +2898,52 @@ mod tests {
             .write_region(0, [3, 0, 0], [2, 1, 1], 8, 8, &[0; 8])
             .is_err());
         assert!(shadow.read_region(0, [0, 0, 3], [1, 1, 2]).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn r8_3d_shadow_preserves_partial_padded_updates() -> Result<()> {
+        let shadow = Texture3DShadow::from_mips(
+            4,
+            4,
+            4,
+            DXGI_FORMAT_R8_UNORM,
+            alloc::vec![alloc::vec![0; 64]],
+        )?;
+        let mut source = alloc::vec![0xee; 24];
+        for z in 0..2usize {
+            for y in 0..2usize {
+                for x in 0..2usize {
+                    source[z * 12 + y * 5 + x] = 30 + (z * 80 + y * 40 + x * 10) as u8;
+                }
+            }
+        }
+        shadow.write_region(0, [1, 1, 1], [2, 2, 2], 5, 12, &source)?;
+        let result = shadow.read_region(0, [0, 0, 0], [4, 4, 4])?;
+        for z in 0..4usize {
+            for y in 0..4usize {
+                for x in 0..4usize {
+                    let expected =
+                        if (1..=2).contains(&x) && (1..=2).contains(&y) && (1..=2).contains(&z) {
+                            30 + ((z - 1) * 80 + (y - 1) * 40 + (x - 1) * 10) as u8
+                        } else {
+                            0
+                        };
+                    assert_eq!(result[(z * 4 + y) * 4 + x], expected);
+                }
+            }
+        }
+        assert!(shadow
+            .write_region(0, [0, 0, 0], [2, 1, 1], 1, 1, &[0; 2])
+            .is_err());
+        assert!(Texture3DShadow::from_mips(
+            4,
+            4,
+            4,
+            DXGI_FORMAT_R8_UNORM,
+            alloc::vec![alloc::vec![0; 256]],
+        )
+        .is_err());
         Ok(())
     }
 

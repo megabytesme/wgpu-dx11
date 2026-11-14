@@ -4,8 +4,8 @@
 
 The explicit `Backends::DX11` public path is usable for the documented FL9_1
 subset, but it is not a drop-in backend or Core WebGPU implementation. The
-latest full strict public D3D11 suite passed 169/169 and the private HAL suite
-passed 543/543 on the physical RTX 3090 Ti at explicitly requested and
+latest full strict public D3D11 suite passed 170/170 and the private HAL suite
+passed 545/545 on the physical RTX 3090 Ti at explicitly requested and
 confirmed FL9_1. This includes public alpha-equivalent coupled blending,
 verified against all 64 pixels, and the prior selected-entry texture-load,
 fixed-LOD and gradient-lowering subsets. The strict Core fixture passed 1/1
@@ -17,16 +17,24 @@ format sRGB texture-copy selectors passed 2/2 with zero skips/failures.
 Current code gaps are primarily unexhausted capability/validation/CTS matrices
 and concrete workload requests, not a known broad Core-valid-to-HAL failure in
 the audited texture/view/copy and pipeline areas. The format/view audit found
-no concrete mismatch. Microsoft guarantees R8 3D format support at FL9_1, but
-this backend exposes only the RGBA8 3D format bit because its volume shadow
-transfer path is RGBA8-specific; Core rejects R8 3D before HAL. A fixture
-assertion now guards that boundary. Deliberate FL9_1/profile exclusions include
+no concrete mismatch. A new query-gated R8 3D volume path now complements
+RGBA8: uploads, CPU-shadow copies/readback, views and sampled rendering are
+exercised through private HAL, Core fixtures and public wgpu. 3D textureLoad
+emulation remains explicitly RGBA8-only. Deliberate FL9_1/profile exclusions include
 compute, UAV/storage, geometry, MRT, indirect draw, occlusion queries, ordinary
 1D and 2D-array textures, vertex texture sampling, and shader forms that exceed
 the level-9 profiles. External gates remain historical FL9_1 hardware,
 Lumia/CoreWindow execution and physical device-removal recovery. Agents are
 most useful for independent, read-only audits and CTS triage; the coordinator
-owns cross-crate changes and serializes Cargo/GPU work.
+owns cross-crate changes and serializes Cargo/GPU work. The blend audit's
+separate-alpha concern is already closed by matching Core/HAL gates and public
+rejection/readback tests. For ordinary operations, the D3D11 10Level9
+`CreateBlendState` method table enumerates FL9_1 restrictions (including
+`SRC_ALPHASAT` and dual-source factors) but does not restrict `BlendOp`; this
+D3D11 method contract is the relevant contract, rather than the legacy D3D9
+minimum-cap table's optional `BLENDOP` bit. The selected RTX has strict
+five-operation readback coverage. Historical FL9_1 driver execution remains
+external verification.
 
 Read-only consumer review confirms the public offscreen and HWND textured-
 cube examples are usable as opt-in samples. The sibling `HorizonWiiU` Windows
@@ -35,6 +43,34 @@ target currently selects DX12 and its normal terrain pipeline requires
 downstream smoke test should select DX11 explicitly and render an existing
 2D-textured indexed mesh to offscreen RGBA8, verify readback, then present it
 in the app's HWND. Terrain would need an application-side atlas/shader route.
+
+## Latest coordinator increment — query-gated R8 FL9_1 3D textures — 2026-11-14
+
+The 3D format projection now separates static FL9_1 format guarantees from
+selected-device `TEXTURE3D | SHADER_SAMPLE` queries for RGBA8 and R8_UNORM.
+Existing 3D resource, view, initialization, upload, CPU-shadow copy and
+readback paths now use format-sized texels. R8 remains excluded from the
+RGBA8-specific 3D `textureLoad` emulation. Since wgpu represents volume mip
+support with one shared downlevel limit, mip support is exposed only if every
+projected 3D format reports `MIP`.
+
+Strict validation used the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at explicitly requested and selected FL9_1 with
+`software=false`. The private R8 test uploaded a padded nonzero-offset partial
+volume, copied a subregion into another volume, read back all 64 voxels, and
+sampled all slices into an 8x8 render target; expected data and untouched
+zeroes matched. A public wgpu test uploaded R8 3D data, performed a partial
+3D-to-3D copy, and read back a padded buffer with 64/64 texels and all
+sentinels validated. The Core fixture verified the selected R8 format mask
+and D3 view. Full strict suites passed: public wgpu 170/170, private HAL
+545/545, Core fixture-enabled unit target 155/155, and the focused
+`wgpu-types` 3D shape-contract test 1/1. A public D3D11 adapter remains opt-in
+and excluded from default backend selection.
+
+The public-Core audit still finds no confirmed accepted request reaching a
+known unsupported HAL path in its reviewed areas; audit coverage is not
+exhaustive. Next, continue category-by-category Core/HAL contract audit and
+add focused rejection or execution coverage only for evidence-backed gaps.
 
 ## Latest coordinator increment — fixed integer fragment texture LOD — 2026-11-14
 

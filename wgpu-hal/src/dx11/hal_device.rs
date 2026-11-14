@@ -232,11 +232,12 @@ impl crate::Device for Device {
         };
         if desc.dimension == wgt::TextureDimension::D3 {
             let capabilities = super::capabilities::Capabilities::query(&self.native);
+            let native_format = super::texture::texture_3d_dxgi_format(desc.format)
+                .ok_or(DeviceError::Unexpected)?;
             let format_bit = wgt::DownlevelLimits::texture_3d_format_bit(desc.format);
             let format_supported =
                 format_bit != 0 && capabilities.texture_3d_format_mask() & format_bit != 0;
             if !format_supported
-                || desc.format != wgt::TextureFormat::Rgba8Unorm
                 || desc.usage.is_empty()
                 || !(wgt::TextureUses::COPY_DST
                     | wgt::TextureUses::COPY_SRC
@@ -259,14 +260,18 @@ impl crate::Device for Device {
             }
             let mut texture = self
                 .native
-                .create_rgba_texture_3d_inner(
+                .create_texture_3d_inner(
                     desc.size.width,
                     desc.size.height,
                     desc.size.depth_or_array_layers,
                     desc.mip_level_count,
+                    native_format,
                 )
                 .map_err(device_error)?;
             texture.logical_format = Some(desc.format);
+            let bytes_per_texel = super::texture::format_block_layout(native_format)
+                .map_err(device_error)?
+                .bytes;
             let mut shadow_mips = if desc.usage.contains(wgt::TextureUses::COPY_SRC) {
                 let mut mips = Vec::new();
                 mips.try_reserve_exact(desc.mip_level_count as usize)
@@ -279,11 +284,9 @@ impl crate::Device for Device {
                 let width = (desc.size.width >> mip).max(1);
                 let height = (desc.size.height >> mip).max(1);
                 let depth = (desc.size.depth_or_array_layers >> mip).max(1);
-                let byte_count = (width as usize)
-                    .checked_mul(height as usize)
-                    .and_then(|value| value.checked_mul(depth as usize))
-                    .and_then(|value| value.checked_mul(4))
-                    .ok_or(DeviceError::OutOfMemory)?;
+                let byte_count =
+                    super::texture::volume_byte_count(width, height, depth, bytes_per_texel)
+                        .map_err(device_error)?;
                 let mut zeroes = Vec::new();
                 zeroes
                     .try_reserve_exact(byte_count)
@@ -302,6 +305,7 @@ impl crate::Device for Device {
                         desc.size.width,
                         desc.size.height,
                         desc.size.depth_or_array_layers,
+                        native_format,
                         mips,
                     )
                     .map_err(device_error)?,
@@ -783,24 +787,20 @@ impl crate::Device for Device {
         };
         if texture.dimension == wgt::TextureDimension::D3 {
             let native = self.native.texture_3d_desc(texture).map_err(device_error)?;
+            let expected_native_format = super::texture::texture_3d_dxgi_format(desc.format)
+                .ok_or(DeviceError::Unexpected)?;
             let mip_base = desc.range.base_mip_level;
             let mip_count = desc
                 .range
                 .mip_level_count
                 .unwrap_or(native.MipLevels.saturating_sub(mip_base));
-            if desc.format != wgt::TextureFormat::Rgba8Unorm
-                || desc.dimension != wgt::TextureViewDimension::D3
+            if desc.dimension != wgt::TextureViewDimension::D3
                 || desc.usage != wgt::TextureUses::RESOURCE
-                || !metadata_view_range_valid(
-                    &desc.range,
-                    wgt::TextureFormat::Rgba8Unorm,
-                    native.MipLevels,
-                    1,
-                )
+                || !metadata_view_range_valid(&desc.range, desc.format, native.MipLevels, 1)
                 || mip_base.checked_add(mip_count) != Some(native.MipLevels)
                 || desc.range.base_array_layer != 0
                 || desc.range.array_layer_count != Some(1)
-                || native.Format != DXGI_FORMAT_R8G8B8A8_UNORM
+                || native.Format != expected_native_format
                 || !texture.supports_usage(desc.usage)
             {
                 return Err(DeviceError::Unexpected);

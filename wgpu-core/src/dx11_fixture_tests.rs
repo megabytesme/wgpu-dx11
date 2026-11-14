@@ -589,14 +589,15 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     );
     if capabilities.downlevel.limits.texture_3d {
         assert_eq!(capabilities.limits.max_texture_dimension_3d, 256);
-        assert!(capabilities
+        let rgba8_3d = capabilities
             .downlevel
             .limits
-            .supports_texture_3d_format(wgt::TextureFormat::Rgba8Unorm));
-        assert!(!capabilities
+            .supports_texture_3d_format(wgt::TextureFormat::Rgba8Unorm);
+        let r8_3d = capabilities
             .downlevel
             .limits
-            .supports_texture_3d_format(wgt::TextureFormat::R8Unorm));
+            .supports_texture_3d_format(wgt::TextureFormat::R8Unorm);
+        assert!(rgba8_3d || r8_3d);
     } else {
         assert_eq!(capabilities.limits.max_texture_dimension_3d, 0);
         assert!(
@@ -842,16 +843,39 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
         );
         invalid = volume_desc.clone();
         invalid.format = wgt::TextureFormat::R8Unorm;
-        let (_, error) = global.device_create_texture(device, &invalid, None);
-        assert!(
-            matches!(
-                error,
-                Some(crate::resource::CreateTextureError::UnsupportedTexture3DFormat(
-                    wgt::TextureFormat::R8Unorm
-                ))
-            ),
-            "R8 volume textures must be rejected before HAL while only the RGBA8 shadow path exists: {error:?}"
-        );
+        let (r8_volume, error) = global.device_create_texture(device, &invalid, None);
+        if capabilities
+            .downlevel
+            .limits
+            .supports_texture_3d_format(wgt::TextureFormat::R8Unorm)
+        {
+            assert!(error.is_none(), "queried FL9_1 R8 3D creation: {error:?}");
+            let (view, error) = global.texture_create_view(
+                r8_volume,
+                &crate::resource::TextureViewDescriptor {
+                    format: Some(wgt::TextureFormat::R8Unorm),
+                    dimension: Some(wgt::TextureViewDimension::D3),
+                    usage: Some(wgt::TextureUsages::TEXTURE_BINDING),
+                    ..Default::default()
+                },
+                None,
+            );
+            assert!(error.is_none(), "queried FL9_1 R8 3D view: {error:?}");
+            global.texture_view_drop(view);
+        } else {
+            assert!(
+                matches!(
+                    error,
+                    Some(
+                        crate::resource::CreateTextureError::UnsupportedTexture3DFormat(
+                            wgt::TextureFormat::R8Unorm
+                        )
+                    )
+                ),
+                "unprojected R8 volume formats must be rejected before HAL: {error:?}"
+            );
+        }
+        global.texture_drop(r8_volume);
         invalid = volume_desc.clone();
         invalid.usage |= wgt::TextureUsages::RENDER_ATTACHMENT;
         let (_, error) = global.device_create_texture(device, &invalid, None);
@@ -3730,23 +3754,42 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         "PASS: Core-to-HAL format/usage/view matrix: {} formats, {created_usage_combinations} advertised usage combinations, {created_views} views; {unadvertised_formats} formats unadvertised on this device",
         matrix_formats.len()
     );
-    for dimension in [wgt::TextureDimension::D1, wgt::TextureDimension::D3] {
-        let mut unsupported =
-            texture_desc(wgt::TextureFormat::Rgba8Unorm, wgt::TextureUsages::COPY_DST);
-        unsupported.dimension = dimension;
-        let (texture, error) = global.device_create_texture(device, &unsupported, None);
-        assert!(
-            matches!(
-                error.as_ref(),
-                Some(crate::resource::CreateTextureError::InvalidDimension(
-                    crate::resource::TextureDimensionError::UnsupportedDimension(found)
-                )) if *found == dimension
-            ),
-            "unsupported {dimension:?} resources must fail core validation before HAL: {error:?}"
-        );
-        global.texture_drop(texture);
-    }
-    std::println!("PASS: unsupported 1D and 3D texture shapes rejected by core, including R8 3D while only RGBA8 volumes are projected");
+    let mut unsupported_1d =
+        texture_desc(wgt::TextureFormat::Rgba8Unorm, wgt::TextureUsages::COPY_DST);
+    unsupported_1d.dimension = wgt::TextureDimension::D1;
+    let (texture, error) = global.device_create_texture(device, &unsupported_1d, None);
+    assert!(
+        matches!(
+            error.as_ref(),
+            Some(crate::resource::CreateTextureError::InvalidDimension(
+                crate::resource::TextureDimensionError::UnsupportedDimension(
+                    wgt::TextureDimension::D1
+                )
+            ))
+        ),
+        "1D resources must fail core validation before HAL: {error:?}"
+    );
+    global.texture_drop(texture);
+
+    let mut unsupported_3d = texture_desc(
+        wgt::TextureFormat::R8Unorm,
+        wgt::TextureUsages::TEXTURE_BINDING,
+    );
+    unsupported_3d.dimension = wgt::TextureDimension::D3;
+    let (unsupported_texture, error) = global.device_create_texture(device, &unsupported_3d, None);
+    assert!(
+        matches!(
+            error,
+            Some(crate::resource::CreateTextureError::InvalidDimension(
+                crate::resource::TextureDimensionError::UnsupportedDimension(
+                    wgt::TextureDimension::D3
+                )
+            ))
+        ),
+        "the fixture's intentionally disabled 3D projection must reject R8 before HAL: {error:?}"
+    );
+    global.texture_drop(unsupported_texture);
+    std::println!("PASS: 1D and fixture-disabled 3D resources are rejected by Core");
 
     let mut npot_mip_texture_desc = texture_desc(
         wgt::TextureFormat::Rgba8Unorm,

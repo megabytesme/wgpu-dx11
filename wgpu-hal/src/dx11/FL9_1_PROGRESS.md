@@ -21285,3 +21285,46 @@ requests a valid-usage R8 volume to verify Core's rejection. The fixture passed
 capability subcase was explicitly skipped. Generalizing R8 volume shadow,
 upload, copy/readback and sample paths remains a possible capability expansion
 if a workload needs it.
+
+## Query-gated R8 FL9_1 3D volume support — 2026-11-14
+
+The R8-only 3D exclusion was replaced with a per-format mask for RGBA8 and
+R8_UNORM. Projection intersects the FL9_1 required-format guarantee, the
+selected device's `TEXTURE3D | SHADER_SAMPLE` result and backend support.
+Volume allocation, initialization, views, transfer layout and CPU shadows use
+the native format's bytes per texel. Mip support requires `MIP` for every
+projected 3D format because Core exposes one shared volume-mipmap limit. The
+RGBA8-only 3D textureLoad emulation was kept narrow.
+
+Strict hardware results used NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), explicitly requested and confirmed FL9_1 with
+`software=false`:
+
+- Private HAL R8 test: padded partial upload, partial 3D-to-3D CPU-shadow
+  copy, full readback of 64 texels and sampled output across every slice; all
+  expected bytes matched and untouched voxels sampled as zero.
+- Public wgpu R8 test: upload, nonzero-origin partial 3D copy and padded
+  readback; all 64 voxels and row/offset sentinels matched.
+- Core fixture: the selected R8 projection, volume creation and D3 view were
+  accepted; a synthetic projection with 3D disabled rejected the shape.
+
+Full strict results: `wgpu-hal` 545/545, public `wgpu` D3D11 170/170, and
+fixture-enabled `wgpu-core` 155/155. Core DX12 passed 139/139. The focused
+`wgpu-types` 3D shape test passed 1/1. The public suite logged an optional
+selected-device Float16 vertex-input skip; that is not counted as a hardware
+pass. Cargo printed its existing Visual Studio startup `vError: Unknown error`
+banner; all commands completed with exit code zero. The full HAL run retained
+seven existing `unused_qualifications` warnings. One `wgpu-types`
+unnecessary-qualification warning remains.
+
+Independent Core/HAL audits found no confirmed public-valid request reaching
+a known unsupported HAL path in their reviewed areas; coverage remains
+non-exhaustive. They confirmed that separate-alpha blending is guarded in
+Core, HAL and public tests. Microsoft's [10Level9 `CreateBlendState` method
+table](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device)
+enumerates FL9_1 restrictions and names `SRC_ALPHASAT` and dual-source factors,
+but does not restrict the ordinary blend operations. That D3D11 method
+contract, rather than the legacy D3D9 minimum-capability table's optional
+`D3DPMISCCAPS_BLENDOP` bit, governs this backend. The RTX has strict readback
+coverage for all five operations; historical-device execution remains
+unverified.
