@@ -1,6 +1,6 @@
 //! Owned Naga shader modules for the private D3D11 HAL.
 #[cfg(test)]
-use super::shader::compile_naga_with_bindings;
+use super::shader::{compile_naga_with_bindings, translate_naga_with_viewport_and_fl9_inputs};
 use super::{
     device::NativeDevice,
     shader::{
@@ -3800,6 +3800,84 @@ mod tests {
                 DynamicAccessMode::new(naga::ShaderStage::Vertex, input_options, true, false,),
             ));
         }
+    }
+
+    #[test]
+    fn fl91_uniform_indexed_vertex_array_compiles_but_remains_rejected() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            struct Palette {
+                index: u32,
+                values: array<vec4f, 4>,
+            }
+            @group(0) @binding(7) var<uniform> palette: Palette;
+            @vertex fn main(@location(0) position: vec2f) -> @builtin(position) vec4f {
+                let selected = palette.values[palette.index];
+                return vec4f(position * selected.xy, selected.z, selected.w);
+            }
+            "#,
+        )
+        .expect("parse dynamic uniform-index FXC probe");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate dynamic uniform-index FXC probe");
+        let function = &module.entry_points[0].function;
+        let function_info = info.get_entry_point(0);
+        let input_options = Fl9ShaderInputOptions::default();
+        assert!(
+            has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices(
+                &module,
+                &info,
+                function,
+                function_info,
+                ShaderProfile::VertexLevel9_1,
+                input_options,
+                &[],
+            )
+        );
+        assert!(has_unsupported_dynamic_access(
+            &module,
+            &info,
+            function,
+            function_info,
+            DynamicAccessMode::new(naga::ShaderStage::Vertex, input_options, true, true),
+        ));
+        let bindings = [ShaderBinding {
+            binding: naga::ResourceBinding {
+                group: 0,
+                binding: 7,
+            },
+            slot: 0,
+            kind: ShaderBindingKind::Uniform,
+        }];
+        let (hlsl, _) = translate_naga_with_viewport_and_fl9_inputs(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "main",
+            ShaderProfile::VertexLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions::default(),
+        )
+        .expect("translate dynamic uniform-index FXC probe");
+        assert!(hlsl.contains("palette.values"));
+        let bytecode = compile_naga_with_bindings(
+            &module,
+            &info,
+            naga::ShaderStage::Vertex,
+            "main",
+            ShaderProfile::VertexLevel9_1,
+            &bindings,
+        );
+        assert!(
+            bytecode
+                .as_ref()
+                .is_ok_and(|code| code.starts_with(b"DXBC")),
+            "FXC rejected the dynamic vertex uniform-index probe: {bytecode:?}"
+        );
     }
 
     #[test]

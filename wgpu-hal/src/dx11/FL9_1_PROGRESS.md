@@ -159,6 +159,44 @@ cargo +1.93.1 fmt --all -- --check
 git diff --check
 ```
 
+## Combined-use RGBA8 view transition — 2026-11-14
+
+Added a strict public rendering test for an explicit
+`TEXTURE_BINDING | RENDER_ATTACHMENT` RGBA8 view. The first render pass clears
+that view to a distinctive color; a later pass samples the same view into a
+separate target and reads it back. This exercises the resource-role transition
+without relying on two separately created SRV/RTV views or on D3D11's implicit
+conflict unbind.
+
+The focused test passed 1/1 and the complete strict public D3D11 target passed
+154/154 test functions with zero failures or ignored tests on the physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requesting
+and confirming FL9_1. All 64 output pixels matched `[64, 128, 191, 255]`
+within one byte. This is RGBA8 transition evidence only; it does not establish
+the same operation for every advertised format.
+
+The FXC probe for a vertex uniform value indexing a uniform `vec4` array also
+compiles under `vs_4_0_level_9_1`. A HAL test asserts that its normal integer
+semantics and dynamic-access proofs still reject this shape. The production
+Core gate likewise only accepts direct `vertex_index` or `instance_index`
+provenance today. The Naga `Restrict` clamp is compatible with WGSL's
+out-of-bounds uniform-load allowance, but compiler acceptance alone does not
+prove in-range runtime selection, so no support was enabled.
+
+The focused HAL compiler-boundary test passed 1/1 and confirmed that the
+generated shader compiles while production validation rejects the shape.
+The complete strict private D3D11 HAL unit target passed 531/531 test
+functions; this count mixes CPU tests, compiler tests and hardware fixtures,
+and is not the number of GPU renders.
+Public-test Clippy and formatting passed; Clippy reported only eight
+pre-existing warnings in the D3D11 HAL dependency. `git diff --check` passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fl91_combined_rgba8_view_transitions_from_attachment_to_sampling -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_uniform_indexed_vertex_array_compiles_but_remains_rejected -- --nocapture --test-threads=1
+```
+
 ## Computed helper coordinates for fragment 2D `textureLoad` — 2026-11-12
 
 The selected-entry fragment 2D float `textureLoad` subset now accepts one
@@ -19898,3 +19936,94 @@ With Rust 1.93.1 and the Visual Studio x64 environment, verification was:
 
 The HAL test build continues to emit four `unused_qualifications` warnings in
 `hal_queue.rs`; this test-only change does not touch that file.
+
+## Core-to-HAL texture format usage matrix — 2026-11-14
+
+Extended the controlled Core FL9_1 fixture to compare selected HAL format
+capabilities with Core's reported usages for 21 linear/sRGB, compressed,
+packed, normalized and depth formats. For each advertised format, it creates
+every nonempty advertised combination of `COPY_SRC`, `COPY_DST`,
+`TEXTURE_BINDING` and `RENDER_ATTACHMENT` through Core/HAL, then creates exact
+D2 views for sampled, attachment and combined sampled/attachment usage. This
+test checks capability projection and resource/view creation; it does not
+claim pixel-level execution for every format. Existing public format tests
+provide the separate public API usage matrix and selected-format operation
+tests.
+
+The baseline command using the established `E:\Temp\wgpu-mission-gpu-target`
+failed before tests because that volume had only 0.26 GB free (`os error 112`).
+No files were removed. Retried with an isolated target at
+`C:\Users\ben\AppData\Local\Temp\wgpu-dx11-completion-target` using the
+installed Rust 1.93.1 toolchain and Visual Studio x64 environment.
+
+With `WGPU_DX11_REQUIRE_HARDWARE=1`, the focused fixture passed on the physical
+NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requesting
+and confirming FL9_1. It created 191 advertised usage combinations and 199
+exact-usage views across 21 formats; all 21 formats were advertised on this
+device. RG8 mip-chain support was unavailable and emitted an explicit optional
+`SKIP`; no strict hardware test skipped. The fixture also executed its
+existing rendering, copy, sampling and readback coverage.
+
+The full Core test target passed 150/150 with strict hardware mode enabled.
+This is a unit-test count, not 150 GPU renders; only hardware fixtures perform
+GPU work. Core Clippy completed successfully. It reported three existing
+warnings in `dx11_fixture_tests.rs` at lines 597, 770 and 7032, plus eight
+existing warnings in the D3D11 HAL dependency; the new matrix introduced no
+Clippy warnings. Rustfmt and `git diff --check` passed.
+
+The public format projection test passed 1/1 on the same physical adapter at
+requested/actual FL9_1, reporting 201 accepted usage combinations, 124
+validation rejections, 228 view-usage checks, 21 mip checks and 40 sample-count
+checks. The complete strict public D3D11 target then passed 153/153 test
+functions (0 failed, 0 ignored) in 23 seconds. Optional feature queries inside
+individual tests still logged SKIP for unsupported mip/vertex-format cases;
+these are not counted as hardware successes. The target also executed existing
+pixel-validated uploads, copies, sampled renders, depth/stencil, multisample
+resolve and uniform update tests.
+
+Commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib -- --test-threads=1
+cargo +1.93.1 clippy --offline -j8 -p wgpu-core --tests --no-default-features --features dx11-test-fixture,wgsl,std
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_format_usage_projection_matches_core_creation_at_fl91 -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+rustup run 1.93.1 rustfmt --edition 2021 --check wgpu-core/src/dx11_fixture_tests.rs
+git diff --check
+```
+
+## Bounded fragment-loop sampling composition — 2026-11-14
+
+Extended the existing public static-loop test with a 4×1 RGBA8 pattern and a
+three-iteration fragment loop that samples the red, green and blue texels at
+their centers. The averaged sample is combined with values from the bounded
+vertex and fragment loops, so all three operations affect the checked output.
+Core still rejects the existing dynamic-loop sibling entries before FXC.
+No capability flags, shader allowlists or backend implementation paths
+changed.
+
+The focused strict test passed on the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), requested and confirmed FL9_1.
+All 64 pixels matched `[85, 64, 85, 255]` within one byte. This demonstrates
+the supported bounded-loop plus implicit-sampling composition on this modern
+adapter/profile, not on historical FL9_1 devices.
+
+After this change, the full strict public D3D11 target passed 153/153 test
+functions with 0 failures or ignored tests in 21.63 seconds. Three optional
+subcases reported SKIP: R8G8 vertex-input support, R16G16_FLOAT vertex-input
+support, and Rg8Unorm mip-chain support. No Rust test function skipped.
+`cargo +1.93.1 clippy --offline -j8 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std`
+and `cargo +1.93.1 fmt --all -- --check` completed successfully. Clippy
+reported only the eight pre-existing D3D11 HAL warnings; the changed public
+test introduced no warning. `git diff --check` passed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91 -- --exact --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cargo +1.93.1 clippy --offline -j8 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```

@@ -2681,6 +2681,34 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
             hal::Adapter::texture_format_capabilities(&fixture, format)
         })
     });
+    let matrix_formats = [
+        wgt::TextureFormat::Rgba8Unorm,
+        wgt::TextureFormat::Rgba8UnormSrgb,
+        wgt::TextureFormat::Bgra8Unorm,
+        wgt::TextureFormat::Bgra8UnormSrgb,
+        wgt::TextureFormat::R8Unorm,
+        wgt::TextureFormat::Rg8Unorm,
+        wgt::TextureFormat::Rg8Snorm,
+        wgt::TextureFormat::Rg16Snorm,
+        wgt::TextureFormat::Rgba8Snorm,
+        wgt::TextureFormat::Bc1RgbaUnorm,
+        wgt::TextureFormat::Bc1RgbaUnormSrgb,
+        wgt::TextureFormat::Bc2RgbaUnorm,
+        wgt::TextureFormat::Bc2RgbaUnormSrgb,
+        wgt::TextureFormat::Bc3RgbaUnorm,
+        wgt::TextureFormat::Bc3RgbaUnormSrgb,
+        wgt::TextureFormat::Rgb5g6b5Unorm,
+        wgt::TextureFormat::Rgb5a1Unorm,
+        wgt::TextureFormat::Rgba4Unorm,
+        wgt::TextureFormat::Depth16Unorm,
+        wgt::TextureFormat::Depth24Plus,
+        wgt::TextureFormat::Depth24PlusStencil8,
+    ];
+    let matrix_hal_caps = matrix_formats.map(|format| {
+        (format, unsafe {
+            hal::Adapter::texture_format_capabilities(&fixture, format)
+        })
+    });
     assert!(unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Rgba16Float)
     }
@@ -3575,6 +3603,108 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         usage,
         view_formats: Vec::new(),
     };
+    let usage_bits = [
+        wgt::TextureUsages::COPY_SRC,
+        wgt::TextureUsages::COPY_DST,
+        wgt::TextureUsages::TEXTURE_BINDING,
+        wgt::TextureUsages::RENDER_ATTACHMENT,
+    ];
+    let mut created_usage_combinations = 0;
+    let mut created_views = 0;
+    let mut unadvertised_formats = 0;
+    for (format, hal_caps) in matrix_hal_caps {
+        let core_caps = global.adapter_get_texture_format_features(adapter_id, format);
+        let mut expected_base_usages = wgt::TextureUsages::empty();
+        for (hal_cap, usage) in [
+            (
+                hal::TextureFormatCapabilities::COPY_SRC,
+                wgt::TextureUsages::COPY_SRC,
+            ),
+            (
+                hal::TextureFormatCapabilities::COPY_DST,
+                wgt::TextureUsages::COPY_DST,
+            ),
+            (
+                hal::TextureFormatCapabilities::SAMPLED,
+                wgt::TextureUsages::TEXTURE_BINDING,
+            ),
+            (
+                hal::TextureFormatCapabilities::COLOR_ATTACHMENT
+                    | hal::TextureFormatCapabilities::DEPTH_STENCIL_ATTACHMENT,
+                wgt::TextureUsages::RENDER_ATTACHMENT,
+            ),
+        ] {
+            if hal_caps.intersects(hal_cap) {
+                expected_base_usages |= usage;
+            }
+        }
+        let expected_transient =
+            if expected_base_usages.contains(wgt::TextureUsages::RENDER_ATTACHMENT) {
+                wgt::TextureUsages::TRANSIENT_ATTACHMENT
+            } else {
+                wgt::TextureUsages::empty()
+            };
+        assert_eq!(
+            core_caps.allowed_usages,
+            expected_base_usages | expected_transient,
+            "Core usage projection for {format:?} must match HAL format capabilities"
+        );
+        if expected_base_usages.is_empty() {
+            unadvertised_formats += 1;
+            assert!(core_caps.flags.is_empty(), "unadvertised {format:?} flags");
+            continue;
+        }
+
+        for mask in 1..(1 << usage_bits.len()) {
+            let usage = usage_bits
+                .iter()
+                .enumerate()
+                .filter_map(|(index, bit)| (mask & (1 << index) != 0).then_some(*bit))
+                .fold(wgt::TextureUsages::empty(), |usage, bit| usage | bit);
+            if !expected_base_usages.contains(usage) {
+                continue;
+            }
+
+            let (texture, error) =
+                global.device_create_texture(device, &texture_desc(format, usage), None);
+            assert!(
+                error.is_none(),
+                "Core advertised {format:?} usage combination {usage:?}, but Core-to-HAL creation failed: {error:?}"
+            );
+            created_usage_combinations += 1;
+
+            for view_usage in [
+                wgt::TextureUsages::TEXTURE_BINDING,
+                wgt::TextureUsages::RENDER_ATTACHMENT,
+                wgt::TextureUsages::TEXTURE_BINDING | wgt::TextureUsages::RENDER_ATTACHMENT,
+            ] {
+                if !usage.contains(view_usage) {
+                    continue;
+                }
+                let (view, error) = global.texture_create_view(
+                    texture,
+                    &crate::resource::TextureViewDescriptor {
+                        format: Some(format),
+                        dimension: Some(wgt::TextureViewDimension::D2),
+                        usage: Some(view_usage),
+                        ..Default::default()
+                    },
+                    None,
+                );
+                assert!(
+                    error.is_none(),
+                    "Core advertised {format:?} texture usage {usage:?}, but {view_usage:?} view creation failed: {error:?}"
+                );
+                global.texture_view_drop(view);
+                created_views += 1;
+            }
+            global.texture_drop(texture);
+        }
+    }
+    std::println!(
+        "PASS: Core-to-HAL format/usage/view matrix: {} formats, {created_usage_combinations} advertised usage combinations, {created_views} views; {unadvertised_formats} formats unadvertised on this device",
+        matrix_formats.len()
+    );
     for dimension in [wgt::TextureDimension::D1, wgt::TextureDimension::D3] {
         let mut unsupported =
             texture_desc(wgt::TextureFormat::Rgba8Unorm, wgt::TextureUsages::COPY_DST);

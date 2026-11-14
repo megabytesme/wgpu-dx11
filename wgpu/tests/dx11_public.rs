@@ -21294,6 +21294,8 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
         source: ShaderSource::Wgsl(
             r#"
             @group(0) @binding(0) var<uniform> loop_limit: f32;
+            @group(0) @binding(1) var sampled_texture: texture_2d<f32>;
+            @group(0) @binding(2) var sampled_sampler: sampler;
             struct VertexOutput {
                 @builtin(position) position: vec4f,
                 @location(0) loop_value: f32,
@@ -21316,6 +21318,13 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
                 for (var i = 0.0; i < 3.0; i += 1.0) { value += 0.25; }
                 return value;
             }
+            fn sampled_fragment_loop() -> vec4f {
+                var value = vec4f(0.0);
+                for (var i = 0.0; i < 3.0; i += 1.0) {
+                    value += textureSample(sampled_texture, sampled_sampler, vec2f((i + 0.5) / 4.0, 0.5));
+                }
+                return value / 3.0;
+            }
             @vertex fn vertex_static(@location(0) p: vec2f) -> VertexOutput {
                 var output: VertexOutput;
                 output.position = vec4f(p, 0.0, 1.0);
@@ -21323,7 +21332,8 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
                 return output;
             }
             @fragment fn fragment_static(input: VertexOutput) -> @location(0) vec4f {
-                return vec4f(input.loop_value, static_fragment_loop(), 0.0, 1.0);
+                let sampled = sampled_fragment_loop();
+                return vec4f(input.loop_value * sampled.r, static_fragment_loop() * sampled.g, sampled.b, sampled.a);
             }
             @vertex fn vertex_dynamic() -> @builtin(position) vec4f {
                 return vec4f(dynamic_loop_helper(), 0.0, 0.0, 1.0);
@@ -21409,6 +21419,62 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
         view_formats: &[],
     });
     let view = target.create_view(&TextureViewDescriptor::default());
+    let sampled_texture = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 static-loop sampled input"),
+        size: Extent3d {
+            width: 4,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &sampled_texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &[
+            255, 0, 0, 255, 0, 255, 0, 255, 0, 0, 255, 255, 255, 255, 255, 255,
+        ],
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(16),
+            rows_per_image: Some(1),
+        },
+        Extent3d {
+            width: 4,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    let sampled_view = sampled_texture.create_view(&TextureViewDescriptor::default());
+    let sampled_sampler = device.create_sampler(&SamplerDescriptor {
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let sampled_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 static-loop sampled bindings"),
+        layout: &pipeline.get_bind_group_layout(0),
+        entries: &[
+            BindGroupEntry {
+                binding: 1,
+                resource: BindingResource::TextureView(&sampled_view),
+            },
+            BindGroupEntry {
+                binding: 2,
+                resource: BindingResource::Sampler(&sampled_sampler),
+            },
+        ],
+    });
     let vertex_data: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
         .into_iter()
         .flat_map(f32::to_ne_bytes)
@@ -21451,6 +21517,7 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
             multiview_mask: None,
         });
         pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &sampled_group, &[]);
         pass.set_vertex_buffer(0, vertex.slice(..));
         pass.draw(0..3, 0..1);
     }
@@ -21495,7 +21562,7 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
         for y in 0..8 {
             for x in 0..8 {
                 let offset = y * 256 + x * 4;
-                let expected = [255, 191, 0, 255];
+                let expected = [85, 64, 85, 255];
                 for (channel, (&actual, expected)) in
                     data[offset..offset + 4].iter().zip(expected).enumerate()
                 {
@@ -21509,7 +21576,7 @@ fn public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91() {
     }
     readback.unmap();
     println!(
-        "PASS: FL9_1 static vertex and fragment loops rendered 64/64 expected pixels; core rejected dynamic loops before FXC"
+        "PASS: FL9_1 bounded vertex/fragment loops and three patterned texture samples inside the fragment loop rendered 64/64 expected pixels; core rejected dynamic loops before FXC"
     );
 }
 
@@ -42615,6 +42682,272 @@ fn public_dx11_texture_sample_base_clamp_to_edge_at_fl91() {
         );
     }
     readback.unmap();
+}
+
+#[test]
+fn public_dx11_fl91_combined_rgba8_view_transitions_from_attachment_to_sampling() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapter = poll_ready(instance.enumerate_adapters(Backends::DX11))
+        .into_iter()
+        .find(|adapter| adapter.get_info().device_type != DeviceType::Cpu);
+    let Some(adapter) = adapter else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical FL9_1 D3D11 adapter for combined RGBA8 view transition");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    let combined_usage = TextureUsages::TEXTURE_BINDING | TextureUsages::RENDER_ATTACHMENT;
+    let format_features = adapter.get_texture_format_features(TextureFormat::Rgba8Unorm);
+    assert!(
+        format_features.allowed_usages.contains(combined_usage),
+        "FL9_1 adapter must support RGBA8 combined view usage: {format_features:?}"
+    );
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=one combined RGBA8 view used as render attachment then sampled input",
+        info.name, info.vendor, info.device, info.driver, info.driver_info
+    );
+
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("FL9_1 combined RGBA8 view role transition"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request the selected physical FL9_1 device");
+
+    const SIZE: Extent3d = Extent3d {
+        width: 8,
+        height: 8,
+        depth_or_array_layers: 1,
+    };
+    const ROW_PITCH: u32 = 256;
+    let source = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 combined-use RGBA8 source"),
+        size: SIZE,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: combined_usage,
+        view_formats: &[],
+    });
+    let combined_view = source.create_view(&TextureViewDescriptor {
+        usage: Some(combined_usage),
+        ..Default::default()
+    });
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 combined-use transition readback target"),
+        size: SIZE,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 combined view transition shaders"),
+        source: ShaderSource::Wgsl(
+            "struct Out { @builtin(position) position: vec4f, }\n\
+             @vertex fn vs(@location(0) position: vec2f) -> Out { var out: Out; out.position = vec4f(position, 0.0, 1.0); return out; }\n\
+             @group(0) @binding(7) var image: texture_2d<f32>;\n\
+             @group(0) @binding(42) var smp: sampler;\n\
+             @fragment fn sample_source() -> @location(0) vec4f { return textureSample(image, smp, vec2f(0.5, 0.5)); }"
+                .into(),
+        ),
+    });
+    let vertex_bytes: Vec<u8> = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertex = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 combined view fullscreen triangle"),
+        size: vertex_bytes.len() as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    vertex
+        .slice(..)
+        .get_mapped_range_mut()
+        .expect("map combined view triangle")
+        .copy_from_slice(&vertex_bytes);
+    vertex.unmap();
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 0,
+    }];
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 8,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &attributes,
+    })];
+    let target_state = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 sample combined-use view after attachment"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("sample_source"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &target_state,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 combined-use view sample group"),
+        layout: &pipeline.get_bind_group_layout(0),
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&combined_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 combined view transition readback"),
+        size: (ROW_PITCH * SIZE.height) as u64,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 combined view role transition commands"),
+    });
+    {
+        let _pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("render through combined-use view"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &combined_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color {
+                        r: 0.25,
+                        g: 0.5,
+                        b: 0.75,
+                        a: 1.0,
+                    }),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+    }
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("sample combined-use view after render pass transition"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(ROW_PITCH),
+                rows_per_image: Some(SIZE.height),
+            },
+        },
+        SIZE,
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for combined view transition rendering");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("combined view transition map callback")
+        .expect("map combined view transition pixels");
+    {
+        let pixels = readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped combined view transition pixels");
+        for y in 0..SIZE.height as usize {
+            for x in 0..SIZE.width as usize {
+                let offset = y * ROW_PITCH as usize + x * 4;
+                let actual = &pixels[offset..offset + 4];
+                for (channel, expected) in [64_u8, 128, 191, 255].into_iter().enumerate() {
+                    assert!(
+                        (actual[channel] as i16 - expected as i16).abs() <= 1,
+                        "combined view transition pixel ({x}, {y}) channel {channel}: actual={}, expected={expected}",
+                        actual[channel]
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: one RGBA8 view transitioned from render attachment to sampled input; all 64 pixels matched [64, 128, 191, 255]");
 }
 
 #[test]

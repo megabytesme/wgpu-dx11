@@ -348,13 +348,32 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_format_usage_projection_matches_core_creation_at_fl91 -- --nocapture --test-threads=1
 ```
 
-The RTX 3090 Ti at requested/actual FL9_1 passed 197 advertised usage
-combinations, 128 unreported-usage rejections, 216 canonical D2 view checks,
-21 mip contracts and 40 sample-count contracts. Separate strict tests execute
-actual operations for query-advertised format families; view creation alone
-is not counted as proof of rendering or transfer execution. The full strict
-`dx11_public` target also passed 129/129 test functions after these checks;
-three optional capability subcases reported SKIP.
+The RTX 3090 Ti at requested/actual FL9_1 passed 201 advertised usage
+combinations, 124 unreported-usage rejections, 228 canonical D2 view-usage
+checks, 21 mip contracts and 40 sample-count contracts in the latest focused
+run. Separate strict tests execute actual operations for query-advertised
+format families; view creation alone is not counted as proof of rendering or
+transfer execution. The latest recorded full strict `dx11_public` target
+passed 153/153 test functions; three optional capability subcases reported
+SKIP.
+
+The Core fixture also cross-checks the underlying HAL capability bits against
+Core's public format projection for the same 21 formats. It creates every
+advertised subset of copy-source, copy-destination, sampled and render-target
+usage directly through Core and HAL, then creates sampled, attachment and
+combined-use D2 views for each applicable subset. This checks the inner
+Core-to-HAL boundary in addition to the public API test above.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
+```
+
+The RTX 3090 Ti at requested/actual FL9_1 passed the direct Core fixture with
+191 advertised usage combinations and 199 exact-usage views across 21
+formats. All 21 were advertised on this device. One optional RG8 mip-chain
+query remained unavailable and was reported as SKIP; the strict test does not
+require that optional mip capability.
 
 ## Multisample blending with a partial write mask
 
@@ -4037,18 +4056,26 @@ cargo test --offline -p wgpu-core --lib --no-default-features --features dx11-te
 
 `public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91` compiles
 statically bounded vertex and fragment loops through the normal public
-pipeline path, renders their values, and checks all 64 pixels. Dynamic vertex
-and fragment loops are rejected by core validation before FXC or GPU
-submission. The synthetic core test also covers helper pointer writes, local
-aliases, a safe sibling entry, and a provably unbounded loop with a literal
-false exit. The public limits distinguish the statically unrolled subset from
-dynamic-loop support.
+pipeline path. Its fragment loop samples three different texels from a
+patterned 4×1 texture, accumulates them, and combines that result with the
+vertex-loop and fragment-loop values. The strict FL9_1 GPU test checks all 64
+pixels against `[85, 64, 85, 255]`. Dynamic vertex and fragment loops are
+rejected by core validation before FXC or GPU submission. The synthetic core
+test also covers helper pointer writes, local aliases, a safe sibling entry,
+and a provably unbounded loop with a literal false exit. The public limits
+distinguish the statically unrolled subset from dynamic-loop support.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93 test --offline -j16 -p wgpu-hal --lib --no-default-features --features dx11 fl91_static_loops_compile_and_dynamic_loops_are_rejected_by_fxc -- --nocapture --test-threads=1
 cargo +1.93 test --offline -j16 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91 -- --nocapture --test-threads=1
 ```
+
+The updated strict test passed on the physical RTX 3090 Ti at requested/actual
+FL9_1, matching all 64 output pixels. The three sampled texels materially
+affect all three RGB output channels; the alpha channel checks the averaged
+sample alpha. The texture path is an ordinary implicit sample inside the
+bounded loop and does not change shader capability reporting.
 
 ### FL9_1 1D texture boundary
 
@@ -5337,3 +5364,17 @@ The forced FL9_1 test passed on the physical NVIDIA GeForce RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`). This creates one scratch texture per
 multi-mip 2D view and issues a copy before each draw using this proof; it is a
 correctness fallback with additional allocation and bandwidth cost.
+
+## Combined color view attachment-to-sampling transition
+
+`public_dx11_fl91_combined_rgba8_view_transitions_from_attachment_to_sampling`
+creates one RGBA8 view with explicit `TEXTURE_BINDING | RENDER_ATTACHMENT`
+usage, clears it in a render pass, then samples the same view in a later pass.
+The sampled result is rendered to a separate RGBA8 target and all 64 pixels are checked.
+This verifies a real role transition for the selected format, not every format
+in the capability matrix.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fl91_combined_rgba8_view_transitions_from_attachment_to_sampling -- --nocapture --test-threads=1
+```

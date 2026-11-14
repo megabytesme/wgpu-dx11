@@ -3576,3 +3576,45 @@ or display-driver reset was found. HAL enumeration can filter a native FL9_1
 device-creation HRESULT into an empty adapter list, so the cause is not yet
 known. Track this as a residual stability concern and, if it reappears, add
 test-only HRESULT diagnostics before attempting a code change.
+
+## Coordinator status and next work — 2026-11-14
+
+The current tree includes the shared Core/HAL shader-shape corpus checkpoint
+(`027e96965`). The opt-in backend remains useful for constrained native
+graphics, with physical RTX 3090 Ti evidence for public wgpu rendering,
+depth-tested textured output, transfers and desktop presentation at forced
+FL9_1. It is not a general-purpose-complete backend: shader forms and
+resource/format combinations remain selectively gated, while compute/UAV,
+geometry shaders, multiple color targets, indirect drawing, occlusion queries,
+ordinary 1D/array textures and fragment derivatives remain unavailable or
+unadvertised at this level. Historical 9_1 devices and Lumia/CoreWindow runtime
+are still external verification gaps.
+
+The Core-to-HAL texture capability matrix now cross-checks all 21 currently
+mapped color, compressed, packed and depth formats against Core's usage
+projection. It creates all 191 advertised non-transient usage combinations
+and 199 exact sampled/attachment views on the selected RTX at requested and
+actual FL9_1. The public matrix separately checks 201 usage combinations and
+228 exact view usages. A source audit found existing pixel-executed paths for
+the advertised base texture usages across these format families, so avoid
+duplicating those tests. Strict public coverage now also proves bounded
+fragment loops compose with sampled textures and that one explicit combined-
+usage RGBA8 view can transition from render attachment to sampled input; both
+tests validate all 64 output pixels.
+
+Use agents for independent source audits, compatibility research, compiler
+probes and narrowly scoped test triage. Keep multi-crate implementation,
+shared validation changes and final regression integration coordinator-owned.
+One exact-view role-transition gap is now covered for the selected RGBA8
+format. The remaining public capability/operation matrix is still not
+exhaustive, and formats or usages with existing pixel tests should not be
+duplicated. A separate Core/HAL audit identified a plausible narrow shader
+composition candidate: one fragment uniform together with 2D
+`textureDimensions` and one implicit sample of that same image. Each component
+is implemented separately, but both selected-entry proofs currently reject
+the additional uniform. Verify Naga/FXC and add matching Core/HAL allowlists
+only if a strict GPU test can prove the uniform, dimensions and sampled data
+all affect output; keep unrelated resources rejected. Preserve the
+uniform-indexed vertex array rejection until its current compiler-only probe
+is supplemented by matching selected-entry proofs and in-range hardware
+readback.
