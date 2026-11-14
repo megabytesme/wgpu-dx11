@@ -3,23 +3,21 @@
 ## Coordinator status — 2026-11-14
 
 Current support is a constrained opt-in public desktop graphics subset, not a
-general FL9_1-complete wgpu backend. The latest feature checkpoint is
-`86811fe68` (direct uniform-indexed vertex palette). A follow-up strict test
-now verifies that the existing fragment `textureGather` emulation combines a
-texture in group 1, sampler in group 2 and tint uniform in group 3, with group
-0 empty; it passed all 64 pixels on the RTX 3090 Ti at requested/actual
-FL9_1. The complete strict public suite passed 157/157. That test-only
-increment adds coverage without changing backend capability projection.
+general FL9_1-complete wgpu backend. The current uncommitted increment permits
+one existing helper-based fragment `textureSampleLevel(..., 0.0)` result to be
+multiplied by one selected-entry-used `vec4<f32>` tint uniform. Core/HAL accept
+only that exact componentwise product shape and reject addition, scalar
+promotion, extra resources and control flow. FXC accepts the lowered shader;
+the strict RTX 3090 Ti test checked all 64 pixels against two distinct tinted
+texel colors at requested/actual FL9_1. Core DX11, private HAL, public DX11 and
+Core DX12 suites passed 153, 534, 157 and 140 tests respectively.
 
-The direct uniform-indexed vertex palette also now has near-limit GPU
-evidence: the maximum 253-entry `vec4f` buffer selected entry 252 and produced
-the expected magenta output in all 64 pixels at forced FL9_1. FXC/Core still
-reject length 254. The 13+13 static uniform configuration now also renders
-through one public bind group and one source buffer; all 64 pixels match the
-existing two-group result. The next implementation candidate is a caller-side
-tint uniform on the existing helper-based literal-zero LOD sample, a common
-material composition that must remain within the selected-entry FL9_1 shader
-proof.
+Recent committed coverage also verifies fragment `textureGather` across
+separate groups with a tint uniform (`c2e278703`), the maximum 253-entry
+uniform-indexed vertex palette (`52569af72`), and 13 vertex plus 13 fragment
+uniforms in one group (`a53bb7298`). Each strict draw checked all 64 pixels.
+The current tint change will be checkpointed after its documentation and
+final checks.
 
 ### Remaining support work
 
@@ -42,6 +40,11 @@ proof.
   the repository has not yet passed a representative application workload
   such as Horizon. The backend should be used through explicit DX11 selection
   and within the published experimental projection.
+
+The next bounded verification candidate is the query-gated `Rg16Snorm`
+2D-to-2D `copyTextureToTexture` CTS case, filtered to two-dimensional
+non-array resources. Record it as a curated pass only if strict hardware
+execution has zero failures and skips.
 
 Use agents for bounded read-only audits, compiler/specification probes,
 supported-CTS triage and application requirement reviews. Keep each

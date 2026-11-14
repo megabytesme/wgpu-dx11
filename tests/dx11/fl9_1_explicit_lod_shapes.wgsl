@@ -1,5 +1,7 @@
 @group(0) @binding(7) var image: texture_2d<f32>;
 @group(0) @binding(23) var smp: sampler;
+@group(1) @binding(63) var<uniform> tint: vec4f;
+@group(1) @binding(64) var<uniform> scalar_tint: f32;
 
 struct VertexOut {
     @builtin(position) position: vec4f,
@@ -32,6 +34,18 @@ fn sample_wrapper(uv: vec2f) -> vec4f {
 
 @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
     return sample_zero(uv);
+}
+
+@fragment fn helper_tinted(@location(0) uv: vec2f) -> @location(0) vec4f {
+    return sample_zero(uv) * tint;
+}
+
+@fragment fn helper_tinted_add(@location(0) uv: vec2f) -> @location(0) vec4f {
+    return sample_zero(uv) + tint;
+}
+
+@fragment fn helper_tinted_scalar(@location(0) uv: vec2f) -> @location(0) vec4f {
+    return sample_zero(uv) * vec4f(scalar_tint);
 }
 
 @fragment fn computed_lod_helper(@location(0) uv: vec2f) -> @location(0) vec4f {

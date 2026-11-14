@@ -6303,6 +6303,7 @@ mod tests {
         for entry in [
             "eligible",
             "helper",
+            "helper_tinted",
             "computed_lod_helper",
             "sibling",
             "nonzero",
@@ -6330,7 +6331,13 @@ mod tests {
             );
         }
 
-        for entry in ["control_flow", "offset", "nested"] {
+        for entry in [
+            "control_flow",
+            "offset",
+            "nested",
+            "helper_tinted_add",
+            "helper_tinted_scalar",
+        ] {
             assert!(
                 fl9_texture_sample_level_zero_proof(
                     &module,
@@ -6351,6 +6358,86 @@ mod tests {
         )
         .unwrap()
         .is_none());
+    }
+
+    #[test]
+    fn fl91_explicit_lod_helper_tint_translates_and_compiles_with_fxc() {
+        let module = naga::front::wgsl::parse_str(include_str!(
+            "../../../tests/dx11/fl9_1_explicit_lod_shapes.wgsl"
+        ))
+        .expect("parse shared FL9_1 explicit-LOD corpus");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate shared FL9_1 explicit-LOD corpus");
+        let proof = fl9_texture_sample_level_zero_proof(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "helper_tinted",
+        )
+        .expect("analyze the tinted helper entry")
+        .expect("prove the helper sample and vec4 uniform tint");
+        assert_eq!(proof.expressions.len(), 1);
+        assert_eq!(proof.pairs.len(), 1);
+
+        let mut lowered = module.clone();
+        let entry_index = lowered
+            .entry_points
+            .iter()
+            .position(|entry| {
+                entry.stage == naga::ShaderStage::Fragment && entry.name == "helper_tinted"
+            })
+            .expect("find tinted helper entry");
+        lower_fl9_texture_sample_level_zero(&mut lowered, entry_index, &proof)
+            .expect("lower the proven helper sample");
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 7,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 23,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 1,
+                    binding: 63,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Uniform,
+            },
+        ];
+        let (hlsl, generated_entry) = translate_naga_with_viewport_and_fl9_inputs(
+            &lowered,
+            &info,
+            naga::ShaderStage::Fragment,
+            "helper_tinted",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions::default(),
+        )
+        .expect("translate the lowered helper and tint");
+        assert!(hlsl.contains(".Sample("), "{hlsl}");
+        assert!(!hlsl.contains("SampleLevel"), "{hlsl}");
+        let bytecode = super::super::shader::compile_hlsl(
+            &hlsl,
+            &generated_entry,
+            ShaderProfile::PixelLevel9_1,
+        )
+        .expect("FXC accepts helper sampling multiplied by a vec4 uniform");
+        assert!(!bytecode.is_empty());
     }
 
     #[test]
@@ -6815,19 +6902,58 @@ fn fl9_texture_sample_level_zero_helper(
         }
     }
     let (helper, arguments, call_result) = call?;
+    let returned = returned?;
+    let (tint_load, tint_global) = match entry.expressions[returned] {
+        naga::Expression::Binary {
+            op: naga::BinaryOperator::Multiply,
+            left,
+            right,
+        } if left == call_result => {
+            let naga::Expression::Load { pointer } = entry.expressions[right] else {
+                return None;
+            };
+            let naga::Expression::GlobalVariable(global) = entry.expressions[pointer] else {
+                return None;
+            };
+            (Some(right), Some((pointer, global)))
+        }
+        naga::Expression::CallResult(function) if function == helper => (None, None),
+        _ => return None,
+    };
+    if let Some((_, global)) = tint_global {
+        let tint = &module.global_variables[global];
+        if tint.space != naga::AddressSpace::Uniform
+            || tint.binding.is_none()
+            || !fl9_is_float_vector(module, tint.ty, naga::VectorSize::Quad)
+        {
+            return None;
+        }
+    }
     if arguments.len() != 1
         || !matches!(
             entry.expressions[arguments[0]],
             naga::Expression::FunctionArgument(0)
         )
-        || returned? != call_result
         || !matches!(entry.expressions[call_result], naga::Expression::CallResult(function) if function == helper)
         || entry
             .expressions
             .iter()
-            .any(|(_, expression)| !match expression {
-                naga::Expression::FunctionArgument(_) => true,
+            .any(|(handle, expression)| !match expression {
+                naga::Expression::FunctionArgument(index) => *index == 0,
                 naga::Expression::CallResult(function) => *function == helper,
+                naga::Expression::GlobalVariable(global) => {
+                    tint_global.is_some_and(|(_, tint)| *global == tint)
+                }
+                naga::Expression::Load { pointer } => {
+                    tint_global.is_some_and(|(tint_pointer, _)| *pointer == tint_pointer)
+                }
+                naga::Expression::Binary {
+                    op: naga::BinaryOperator::Multiply,
+                    left,
+                    right,
+                } => tint_load.is_some_and(|load| {
+                    handle == returned && *left == call_result && *right == load
+                }),
                 _ => false,
             })
     {

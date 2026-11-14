@@ -1,5 +1,29 @@
 # FL9_1 completion plan
 
+## Latest coordinator increment — helper sample with tint — 2026-11-14
+
+The selected fragment helper-based literal-zero sample may now be multiplied
+by one selected-entry-used `vec4<f32>` uniform. Core/HAL restrict the caller to
+one exact `helper_result * tint` expression; the helper remains a single
+straight-line texture sample with its existing coordinate, resource and LOD
+proof. Naga's lowering remains unchanged. Synthetic Core/HAL negative cases,
+FXC compilation, and strict public GPU readback all passed.
+
+The current capability path remains an experimental subset, not complete
+FL9_1 WebGPU support. Continue evidence-led vertical slices and coverage; do
+not expand profile or hardware boundaries. One bounded next verification
+candidate from the latest read-only audit is the query-gated `Rg16Snorm`
+2D-to-2D `copyTextureToTexture` CTS case, filtered to `dimension="2d"` so
+unsupported dimensional variants do not contaminate the result. Add it to the
+curated passing inventory only if strict hardware execution has zero failures
+and skips. Do not claim that forced FL9_1 on the RTX models older drivers.
+
+The long-running gaps remain a broader capability-to-Core-to-HAL audit,
+curated CTS coverage for the selected projection, representative application
+workload validation, historical FL9_1 drivers, Windows 10 Mobile/Lumia runtime,
+and physical TDR/device-removal recovery. Native exclusions documented below
+remain rejected.
+
 ## Coordinator status and specialist review — 2026-11-12
 
 The backend is now a substantial opt-in public wgpu graphics subset, not a

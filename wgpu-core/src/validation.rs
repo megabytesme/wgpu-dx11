@@ -4124,6 +4124,35 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
 
         let (helper, arguments, call_result) = call?;
         let returned_value = returned_value?;
+        let (tint_load, tint_global) = match entry_point.function.expressions[returned_value] {
+            naga::Expression::Binary {
+                op: naga::BinaryOperator::Multiply,
+                left,
+                right,
+            } if left == call_result => {
+                let naga::Expression::Load { pointer } = entry_point.function.expressions[right]
+                else {
+                    return None;
+                };
+                let naga::Expression::GlobalVariable(global) =
+                    entry_point.function.expressions[pointer]
+                else {
+                    return None;
+                };
+                (Some(right), Some((pointer, global)))
+            }
+            naga::Expression::CallResult(function) if function == helper => (None, None),
+            _ => return None,
+        };
+        if let Some((_, global)) = tint_global {
+            let tint = &module.global_variables[global];
+            if tint.space != naga::AddressSpace::Uniform
+                || tint.binding.is_none()
+                || !fl9_is_float_vector(module, tint.ty, naga::VectorSize::Quad)
+            {
+                return None;
+            }
+        }
         if arguments.len() != 1
             || entry_point.function.arguments.len() != 1
             || !fl9_is_float_vector(
@@ -4140,7 +4169,6 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
                 entry_point.function.expressions[arguments[0]],
                 naga::Expression::FunctionArgument(0)
             )
-            || returned_value != call_result
             || !matches!(
                 entry_point.function.expressions[call_result],
                 naga::Expression::CallResult(function) if function == helper
@@ -4149,9 +4177,22 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
                 .function
                 .expressions
                 .iter()
-                .any(|(_, expression)| !match expression {
-                    naga::Expression::FunctionArgument(_) => true,
+                .any(|(handle, expression)| !match expression {
+                    naga::Expression::FunctionArgument(index) => *index == 0,
                     naga::Expression::CallResult(function) => *function == helper,
+                    naga::Expression::GlobalVariable(global) => {
+                        tint_global.is_some_and(|(_, tint)| *global == tint)
+                    }
+                    naga::Expression::Load { pointer } => {
+                        tint_global.is_some_and(|(tint_pointer, _)| *pointer == tint_pointer)
+                    }
+                    naga::Expression::Binary {
+                        op: naga::BinaryOperator::Multiply,
+                        left,
+                        right,
+                    } => tint_load.is_some_and(|load| {
+                        handle == returned_value && *left == call_result && *right == load
+                    }),
                     _ => false,
                 })
         {
@@ -12803,6 +12844,7 @@ mod tests {
         for entry in [
             "eligible",
             "helper",
+            "helper_tinted",
             "computed_lod_helper",
             "sibling",
             "nonzero",
@@ -12834,7 +12876,13 @@ mod tests {
             );
         }
 
-        for entry in ["control_flow", "offset", "nested"] {
+        for entry in [
+            "control_flow",
+            "offset",
+            "nested",
+            "helper_tinted_add",
+            "helper_tinted_scalar",
+        ] {
             assert!(
                 interface
                     .entry_point_uses_unsupported_texture_sample_level(

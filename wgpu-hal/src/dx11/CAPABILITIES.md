@@ -1,5 +1,19 @@
 # D3D11 capability and public-adapter contract
 
+## Helper-based fragment LOD-zero sampling with a tint
+
+The restricted fragment `textureSampleLevel(..., 0.0)` proof accepts a selected
+entry point that forwards its `vec2f` input once to one straight-line helper
+and returns that helper's result, or multiplies it componentwise by one
+selected-entry-used `vec4<f32>` uniform. Core and HAL require the exact
+`helper_result * tint` expression, validate the uniform's address space and
+type, and reject additional expressions, resources, calls or control flow.
+Naga lowers only the proven helper sample to implicit sampling; the tint stays
+on the ordinary uniform binding path. The strict public RTX 3090 Ti FL9_1 test
+checked all 64 pixels for the two distinct tinted texel colors. This adds no
+general explicit-LOD capability or broader shader claim; historical FL9_1
+drivers remain unverified.
+
 ## FL9_1 fragment textureGather emulation
 
 The native FL9_1 shader profile does not provide HLSL Gather. The backend does

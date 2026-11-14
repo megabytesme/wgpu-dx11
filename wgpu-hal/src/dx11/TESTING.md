@@ -1,5 +1,27 @@
 # Direct3D 11 validation plan
 
+## Helper-based explicit LOD zero with a tint uniform
+
+The selected fragment entry may call one supported straight-line sample
+helper with its unchanged `vec2f` coordinate and return the result multiplied
+by one directly loaded `vec4<f32>` uniform. Core/HAL accept that exact
+componentwise product and reject addition, scalar promotion, extra resources,
+extra calls and control flow. The public test renders a patterned texture with
+a sparse tint binding and checks every pixel against both transformed texel
+colors.
+
+```powershell
+cargo +1.93.1 test --offline -j8 -p wgpu-core --no-default-features --features dx11-test-fixture,wgsl,std --lib fl9_shared_explicit_lod_shape_corpus_matches_core_contract -- --nocapture --test-threads=1
+cargo +1.93.1 test --offline -j8 -p wgpu-hal --no-default-features --features dx11 --lib fl91_explicit_lod_ -- --nocapture --test-threads=1
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+On 2026-11-14, the public test requested and confirmed FL9_1 on the physical
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, `software=false`). The
+tinted helper returned `[100, 5, 15, 255]` and `[5, 55, 20, 255]` on the two
+texel halves; all 64 pixels matched.
+
 ## Computed coordinates in one fragment 2D `textureLoad` helper
 
 The selected entry point must pass its `@location(0) vec2f` argument unchanged

@@ -1,3 +1,29 @@
+## Helper sample composed with a tint uniform — 2026-11-14
+
+The selected-entry Core and HAL proofs now accept one caller expression of
+the form `sample_helper(uv) * tint`, where `uv` is forwarded unchanged to one
+existing straight-line fragment helper and `tint` is a directly loaded,
+selected-entry-used `vec4<f32>` uniform. The helper's existing image, sampler,
+coordinate and LOD restrictions remain unchanged. Addition, scalar promotion,
+extra resources and other expression shapes remain rejected. No capability
+limit changed and no general explicit-LOD support was enabled.
+
+The shared Core/HAL explicit-LOD corpus accepts the new form and rejects the
+additive and wrong-type variants. HAL lowers only the helper sample, translates
+the uniform through the existing binding map and FXC compiles the result for
+`ps_4_0_level_9_1`. Under strict hardware mode, the public test ran on the
+physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+explicitly requested and confirmed FL9_1 with `software=false`. The 2x2
+patterned texture multiplied by tint `[0.5, 0.25, 0.5, 1.0]` produced
+`[100, 5, 15, 255]` and `[5, 55, 20, 255]`; all 64 pixels matched.
+
+After the change, Core DX11 fixture tests passed 153/153, strict private HAL
+tests passed 534/534, the strict public D3D11 target passed 157/157 with zero
+failures or ignored tests, and Core DX12 tests passed 140/140. Focused Core
+proof and seven HAL explicit-LOD tests also passed. Clippy completed for Core,
+HAL and the public test target. The HAL emitted the same eight pre-existing
+warnings. Rust 1.93.1 formatting and `git diff --check` passed.
+
 ## Combined FL9_1 `textureLoad`, `textureDimensions` and one uniform — 2026-11-14
 
 The exact direct fragment 2D float composition of one constant-coordinate

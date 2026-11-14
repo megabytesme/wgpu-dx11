@@ -1,3 +1,21 @@
+## Helper-based explicit LOD zero with a tint uniform — 2026-11-14
+
+Core and HAL now permit one selected fragment entry point to forward its
+location-0 `vec2f` unchanged to one supported straight-line explicit-LOD
+sampling helper and return the helper result multiplied by one used
+`vec4<f32>` uniform. The proof requires a direct componentwise product and
+rejects scalar promotion, addition, additional used resources, extra calls,
+and control flow. Naga's existing lowering changes only the helper's proven
+literal-zero sample to implicit sampling; ordinary uniform mapping supplies
+the tint. The shared Core/HAL corpus covers positive and rejected forms, and
+FXC accepts the lowered shader for `ps_4_0_level_9_1`.
+
+The strict public offscreen test used a sparse tint binding with a patterned
+2x2 texture and checked all 64 readback pixels against `[100, 5, 15, 255]` and
+`[5, 55, 20, 255]` on the physical RTX 3090 Ti at explicitly requested and
+confirmed FL9_1. This extends only the existing explicit-LOD proof subset;
+general explicit LOD remains unavailable.
+
 ## ARM32 UWP cross-compilation — 2026-11-14
 
 The Rust 1.93.1 toolchain has no prebuilt `thumbv7a-uwp-windows-msvc`

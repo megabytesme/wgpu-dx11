@@ -3056,11 +3056,48 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             },
         ],
     });
+    let sample_level_tint_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 explicit texture-level tint layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 23,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 63,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Buffer {
+                    ty: BufferBindingType::Uniform,
+                    has_dynamic_offset: false,
+                    min_binding_size: NonZeroU64::new(16),
+                },
+                count: None,
+            },
+        ],
+    });
     let sample_level_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
         label: Some("FL9_1 explicit texture-level pipeline layout"),
         bind_group_layouts: &[None, None, Some(&sample_level_layout)],
         immediate_size: 0,
     });
+    let sample_level_tint_pipeline_layout =
+        device.create_pipeline_layout(&PipelineLayoutDescriptor {
+            label: Some("FL9_1 explicit texture-level tint pipeline layout"),
+            bind_group_layouts: &[None, None, Some(&sample_level_tint_layout)],
+            immediate_size: 0,
+        });
     let group_zero_sampling_pipeline_layout =
         device.create_pipeline_layout(&PipelineLayoutDescriptor {
             label: Some("FL9_1 group-zero sampling validation layout"),
@@ -3072,6 +3109,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
         source: ShaderSource::Wgsl(
             "@group(2) @binding(7) var image: texture_2d<f32>;\n\
              @group(2) @binding(23) var smp: sampler;\n\
+             @group(2) @binding(63) var<uniform> tint: vec4f;\n\
              struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
              @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(vec4f(position, 0.0, 1.0), uv); }\n\
              fn sample_exact(uv: vec2f, lod: f32) -> vec4f { return textureSampleLevel(image, smp, uv, lod); }\n\
@@ -3084,6 +3122,7 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
              @fragment fn exact_dynamic(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, uv.x * 2.0 + 0.5); }\n\
              @fragment fn exact_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_exact(uv, uv.x); }\n\
              @fragment fn exact_helper_zero(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_zero(uv); }\n\
+             @fragment fn exact_helper_tinted(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_zero(uv) * tint; }\n\
              @fragment fn exact_helper_computed(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_computed(uv); }\n\
              @fragment fn exact_helper_computed_transformed(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_computed_transformed(uv); }\n\
              @fragment fn exact_helper_transformed(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_transformed(uv); }\n\
@@ -3137,6 +3176,28 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             cache: None,
         })
     };
+    let sample_level_helper_tinted_pipeline =
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some("FL9_1 helper explicit texture level tint pipeline"),
+            layout: Some(&sample_level_tint_pipeline_layout),
+            vertex: VertexState {
+                module: &sample_level_shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &sample_level_vertex_layouts,
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &sample_level_shader,
+                entry_point: Some("exact_helper_tinted"),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &sample_level_targets,
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
     let sample_level_pipeline = create_sample_level_pipeline("exact_direct");
     let sample_level_mixed_pipeline = create_sample_level_pipeline("exact_and_implicit");
     let sample_level_implicit_minified_pipeline = create_sample_level_pipeline("implicit_minified");
@@ -3210,6 +3271,40 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             BindGroupEntry {
                 binding: 23,
                 resource: BindingResource::Sampler(&level_zero_sampler),
+            },
+        ],
+    });
+    let level_zero_tint = [0.5f32, 0.25, 0.5, 1.0];
+    let level_zero_tint_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 helper explicit LOD tint uniform"),
+        size: std::mem::size_of_val(&level_zero_tint) as u64,
+        usage: BufferUsages::UNIFORM | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    queue.write_buffer(
+        &level_zero_tint_buffer,
+        0,
+        bytemuck::cast_slice(&level_zero_tint),
+    );
+    let level_zero_tinted_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 explicit LOD zero sampled resources and tint"),
+        layout: &sample_level_tint_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&level_zero_view),
+            },
+            BindGroupEntry {
+                binding: 23,
+                resource: BindingResource::Sampler(&level_zero_sampler),
+            },
+            BindGroupEntry {
+                binding: 63,
+                resource: BindingResource::Buffer(BufferBinding {
+                    buffer: &level_zero_tint_buffer,
+                    offset: 0,
+                    size: NonZeroU64::new(16),
+                }),
             },
         ],
     });
@@ -3328,6 +3423,96 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
                 for y in 0..8 {
                     for x in 0..8 {
                         let offset = y * 256 + x * 4;
+                        assert_eq!(
+                            &pixels[offset..offset + 4],
+                            expected,
+                            "{label} pixel ({x}, {y})"
+                        );
+                    }
+                }
+            }
+            sample_level_readback.unmap();
+        };
+    let render_sample_level_pattern_and_verify =
+        |pipeline: &RenderPipeline,
+         group: &BindGroup,
+         label: &'static str,
+         expected_left: [u8; 4],
+         expected_right: [u8; 4]| {
+            let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+            {
+                let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                    label: Some(label),
+                    color_attachments: &[Some(RenderPassColorAttachment {
+                        view: &sample_level_target_view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: Operations {
+                            load: LoadOp::Clear(Color::BLACK),
+                            store: StoreOp::Store,
+                        },
+                    })],
+                    depth_stencil_attachment: None,
+                    timestamp_writes: None,
+                    occlusion_query_set: None,
+                    multiview_mask: None,
+                });
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(2, group, &[]);
+                pass.set_vertex_buffer(0, sample_level_vertex.slice(..));
+                pass.draw(0..3, 0..1);
+            }
+            encoder.copy_texture_to_buffer(
+                TexelCopyTextureInfo {
+                    texture: &sample_level_target,
+                    mip_level: 0,
+                    origin: Origin3d::ZERO,
+                    aspect: TextureAspect::All,
+                },
+                TexelCopyBufferInfo {
+                    buffer: &sample_level_readback,
+                    layout: TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(8),
+                    },
+                },
+                Extent3d {
+                    width: 8,
+                    height: 8,
+                    depth_or_array_layers: 1,
+                },
+            );
+            let submission = queue.submit([encoder.finish()]);
+            let (sender, receiver) = std::sync::mpsc::channel();
+            sample_level_readback
+                .slice(..)
+                .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+            device
+                .poll(PollType::Wait {
+                    submission_index: Some(submission.clone()),
+                    timeout: Some(Duration::from_secs(10)),
+                })
+                .unwrap_or_else(|error| {
+                    panic!(
+                        "wait for {label} submission {submission:?} failed: {error:?}; uncaptured={:?}; lost={:?}",
+                        *uncaptured_errors.lock().unwrap(),
+                        *device_lost.lock().unwrap()
+                    )
+                });
+            receiver
+                .recv_timeout(Duration::from_secs(10))
+                .expect("helper tint map callback")
+                .expect("map helper tint output");
+            {
+                let pixels = sample_level_readback
+                    .slice(..)
+                    .get_mapped_range()
+                    .expect("mapped helper tint output");
+                for y in 0..8 {
+                    for x in 0..8 {
+                        let offset = y * 256 + x * 4;
+                        let expected = if x < 4 { expected_left } else { expected_right };
                         assert_eq!(
                             &pixels[offset..offset + 4],
                             expected,
@@ -3502,6 +3687,14 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
     }
     sample_level_readback.unmap();
     println!("PASS: one straight-line helper forwarded textureSampleLevel(..., 0.0) and all 64 GPU-read pixels matched the expected pattern");
+    render_sample_level_pattern_and_verify(
+        &sample_level_helper_tinted_pipeline,
+        &level_zero_tinted_group,
+        "FL9_1 helper explicit LOD zero tint rendering pass",
+        [100, 5, 15, 255],
+        [5, 55, 20, 255],
+    );
+    println!("PASS: helper-based literal-zero sampling composed with one sparse vec4 tint uniform; all 64 GPU-read pixels matched both transformed texel colors");
 
     let mut computed_helper_encoder =
         device.create_command_encoder(&CommandEncoderDescriptor::default());
