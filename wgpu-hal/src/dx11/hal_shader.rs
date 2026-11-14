@@ -5645,20 +5645,10 @@ mod tests {
 
     #[test]
     fn fl91_explicit_lod_zero_proof_lowers_only_selected_direct_samples() {
-        let module = naga::front::wgsl::parse_str(
-            r#"
-            @group(2) @binding(7) var image: texture_2d<f32>;
-            @group(2) @binding(42) var smp: sampler;
-            @fragment fn eligible(@location(0) uv: vec2f) -> @location(0) vec4f {
-                let first = textureSampleLevel(image, smp, uv, 0.0);
-                return first + textureSampleLevel(image, smp, uv.yx, 0.0);
-            }
-            @fragment fn sibling(@location(0) uv: vec2f) -> @location(0) vec4f {
-                return textureSampleLevel(image, smp, uv, 1.0);
-            }
-            "#,
-        )
-        .expect("parse explicit-LOD shader");
+        let module = naga::front::wgsl::parse_str(include_str!(
+            "../../../tests/dx11/fl9_1_explicit_lod_shapes.wgsl"
+        ))
+        .expect("parse explicit-LOD shader corpus");
         let info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::empty(),
@@ -5678,12 +5668,12 @@ mod tests {
             proof.pairs,
             [TextureSampleLevelZeroPair {
                 texture: naga::ResourceBinding {
-                    group: 2,
+                    group: 0,
                     binding: 7,
                 },
                 sampler: naga::ResourceBinding {
-                    group: 2,
-                    binding: 42,
+                    group: 0,
+                    binding: 23,
                 },
                 base_mip_view: true,
             }]
@@ -5728,7 +5718,7 @@ mod tests {
         let bindings = [
             ShaderBinding {
                 binding: naga::ResourceBinding {
-                    group: 2,
+                    group: 0,
                     binding: 7,
                 },
                 slot: 0,
@@ -5736,8 +5726,8 @@ mod tests {
             },
             ShaderBinding {
                 binding: naga::ResourceBinding {
-                    group: 2,
-                    binding: 42,
+                    group: 0,
+                    binding: 23,
                 },
                 slot: 0,
                 kind: ShaderBindingKind::Sampler,
@@ -5767,23 +5757,10 @@ mod tests {
 
     #[test]
     fn fl91_explicit_lod_zero_proof_lowers_helper_computed_coordinates() {
-        let module = naga::front::wgsl::parse_str(
-            r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
-            @group(0) @binding(42) var smp: sampler;
-            fn sample_zero(uv: vec2f) -> vec4f {
-                let coordinates = uv + vec2f(0.5, 0.0);
-                return textureSampleLevel(image, smp, coordinates, 0.0);
-            }
-            @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
-                return sample_zero(uv);
-            }
-            @fragment fn sibling(@location(0) uv: vec2f) -> @location(0) vec4f {
-                return textureSampleLevel(image, smp, uv, 1.0);
-            }
-            "#,
-        )
-        .expect("parse helper explicit-LOD shader");
+        let module = naga::front::wgsl::parse_str(include_str!(
+            "../../../tests/dx11/fl9_1_explicit_lod_shapes.wgsl"
+        ))
+        .expect("parse helper explicit-LOD shader corpus");
         let info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::empty(),
@@ -5815,7 +5792,7 @@ mod tests {
                 },
                 sampler: naga::ResourceBinding {
                     group: 0,
-                    binding: 42,
+                    binding: 23,
                 },
                 base_mip_view: true,
             }]
@@ -5865,7 +5842,7 @@ mod tests {
             ShaderBinding {
                 binding: naga::ResourceBinding {
                     group: 0,
-                    binding: 42,
+                    binding: 23,
                 },
                 slot: 0,
                 kind: ShaderBindingKind::Sampler,
@@ -5894,21 +5871,77 @@ mod tests {
     }
 
     #[test]
-    fn fl91_explicit_lod_zero_proof_lowers_computed_lod_and_coordinates_in_helper() {
-        let module = naga::front::wgsl::parse_str(
-            r#"
-            @group(0) @binding(7) var image: texture_2d<f32>;
-            @group(0) @binding(42) var smp: sampler;
-            fn sample_dynamic(uv: vec2f) -> vec4f {
-                let coordinates = uv + vec2f(0.25, 0.0);
-                return textureSampleLevel(image, smp, coordinates, uv.x * 2.0 + 0.5);
-            }
-            @fragment fn helper_dynamic(@location(0) uv: vec2f) -> @location(0) vec4f {
-                return sample_dynamic(uv);
-            }
-            "#,
+    fn fl91_shared_explicit_lod_shape_corpus_matches_hal_contract() {
+        let module = naga::front::wgsl::parse_str(include_str!(
+            "../../../tests/dx11/fl9_1_explicit_lod_shapes.wgsl"
+        ))
+        .expect("parse shared FL9_1 explicit-LOD corpus");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
         )
-        .expect("parse helper computed-LOD shader");
+        .validate(&module)
+        .expect("validate shared FL9_1 explicit-LOD corpus");
+
+        for entry in [
+            "eligible",
+            "helper",
+            "computed_lod_helper",
+            "sibling",
+            "nonzero",
+            "fractional",
+        ] {
+            let proof = fl9_texture_sample_level_zero_proof(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                entry,
+            )
+            .unwrap_or_else(|error| panic!("HAL should support {entry}: {error:?}"))
+            .unwrap_or_else(|| panic!("HAL should produce a proof for {entry}"));
+            assert!(!proof.expressions.is_empty(), "{entry} must retain samples");
+            assert_eq!(proof.pairs.len(), 1, "{entry} must retain its pair");
+            assert_eq!(
+                (
+                    proof.pairs[0].texture.group,
+                    proof.pairs[0].texture.binding,
+                    proof.pairs[0].sampler.group,
+                    proof.pairs[0].sampler.binding,
+                ),
+                (0, 7, 0, 23),
+                "{entry} must preserve logical resource identities"
+            );
+        }
+
+        for entry in ["control_flow", "offset", "nested"] {
+            assert!(
+                fl9_texture_sample_level_zero_proof(
+                    &module,
+                    &info,
+                    naga::ShaderStage::Fragment,
+                    entry,
+                )
+                .is_err(),
+                "HAL should reject unsupported shape {entry}"
+            );
+        }
+
+        assert!(fl9_texture_sample_level_zero_proof(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "safe",
+        )
+        .unwrap()
+        .is_none());
+    }
+
+    #[test]
+    fn fl91_explicit_lod_zero_proof_lowers_computed_lod_and_coordinates_in_helper() {
+        let module = naga::front::wgsl::parse_str(include_str!(
+            "../../../tests/dx11/fl9_1_explicit_lod_shapes.wgsl"
+        ))
+        .expect("parse helper computed-LOD shader corpus");
         let info = naga::valid::Validator::new(
             naga::valid::ValidationFlags::all(),
             naga::valid::Capabilities::empty(),
@@ -5919,7 +5952,7 @@ mod tests {
             &module,
             &info,
             naga::ShaderStage::Fragment,
-            "helper_dynamic",
+            "computed_lod_helper",
         )
         .expect("analyze helper entry")
         .expect("prove the bounded helper LOD");
@@ -5933,7 +5966,7 @@ mod tests {
             .entry_points
             .iter()
             .position(|entry| {
-                entry.stage == naga::ShaderStage::Fragment && entry.name == "helper_dynamic"
+                entry.stage == naga::ShaderStage::Fragment && entry.name == "computed_lod_helper"
             })
             .unwrap();
         lower_fl9_texture_sample_level_zero(&mut lowered, helper_index, &proof)
@@ -5958,7 +5991,7 @@ mod tests {
             ShaderBinding {
                 binding: naga::ResourceBinding {
                     group: 0,
-                    binding: 42,
+                    binding: 23,
                 },
                 slot: 0,
                 kind: ShaderBindingKind::Sampler,
@@ -5969,7 +6002,7 @@ mod tests {
                 &lowered,
                 &info,
                 naga::ShaderStage::Fragment,
-                "helper_dynamic",
+                "computed_lod_helper",
                 ShaderProfile::PixelLevel9_1,
                 &bindings,
                 Fl9ShaderInputOptions::default(),

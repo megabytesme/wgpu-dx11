@@ -12456,6 +12456,94 @@ mod tests {
     }
 
     #[test]
+    fn fl9_shared_explicit_lod_shape_corpus_matches_core_contract() {
+        let module = naga::front::wgsl::parse_str(include_str!(
+            "../../tests/dx11/fl9_1_explicit_lod_shapes.wgsl"
+        ))
+        .expect("parse shared FL9_1 explicit-LOD corpus");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate shared FL9_1 explicit-LOD corpus");
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let restricted = wgt::DownlevelLimits {
+            texture_sample_level: false,
+            texture_sample_level_zero_2d_float_fragment: true,
+            ..Default::default()
+        };
+
+        for entry in [
+            "eligible",
+            "helper",
+            "computed_lod_helper",
+            "sibling",
+            "nonzero",
+            "fractional",
+        ] {
+            assert!(
+                !interface
+                    .entry_point_uses_unsupported_texture_sample_level(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                        &restricted,
+                    )
+                    .unwrap(),
+                "Core should accept the supported single-mip shape {entry}"
+            );
+            let pairs = interface
+                .entry_point_fl9_texture_sample_level_zero_pairs(naga::ShaderStage::Fragment, entry)
+                .unwrap();
+            assert_eq!(pairs.len(), 1, "{entry} must retain its sampled pair");
+            assert_eq!(
+                (
+                    pairs[0].texture_group,
+                    pairs[0].texture_binding,
+                    pairs[0].sampler_group,
+                    pairs[0].sampler_binding,
+                ),
+                (0, 7, 0, 23),
+                "{entry} must preserve the logical resource identities"
+            );
+        }
+
+        for entry in ["control_flow", "offset", "nested"] {
+            assert!(
+                interface
+                    .entry_point_uses_unsupported_texture_sample_level(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                        &restricted,
+                    )
+                    .unwrap(),
+                "Core should reject unsupported single-mip shape {entry}"
+            );
+            assert!(
+                interface
+                    .entry_point_fl9_texture_sample_level_zero_pairs(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                    )
+                    .unwrap()
+                    .is_empty()
+            );
+        }
+
+        assert!(!interface
+            .entry_point_uses_unsupported_texture_sample_level(
+                naga::ShaderStage::Fragment,
+                "safe",
+                &restricted,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_fl9_texture_sample_level_zero_pairs(naga::ShaderStage::Fragment, "safe",)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
     fn texture_gather_limits_follow_selected_entry_and_helpers() {
         let module = naga::front::wgsl::parse_str(
             r#"

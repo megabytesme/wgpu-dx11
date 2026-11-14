@@ -19868,3 +19868,33 @@ set CARGO_BUILD_JOBS=1
 set CARGO_TARGET_DIR=C:\Users\ben\AppData\Local\Temp\wgpu-dx11-arm32-target
 cargo +nightly -Z build-std=std,panic_abort build --offline -p wgpu --no-default-features --features dx11,wgsl,std --target thumbv7a-uwp-windows-msvc
 ```
+
+## Shared explicit-LOD shader-shape corpus — 2026-11-14
+
+Added `tests/dx11/fl9_1_explicit_lod_shapes.wgsl` as a common source for Core
+and HAL proof tests. The selected-entry cases cover direct samples, a single
+helper, a computed helper LOD, sibling/nonzero/fractional LOD entries, and
+unsupported control-flow, offset, and nested-helper forms. Both production
+proofs now assert the same logical texture/sampler identity and agree on the
+supported and rejected cases. Existing FXC-backed lowering tests use the
+fixture for direct and helper-coordinate samples.
+
+With Rust 1.93.1 and the Visual Studio x64 environment, verification was:
+
+- Core's complete DX11-enabled unit target: 138 passed, with strict hardware
+  mode enabled. This target is primarily CPU validation coverage.
+- Private HAL's complete DX11 unit target: 530 passed, 0 failed, with strict
+  hardware mode enabled. This includes CPU tests and hardware fixtures; it is
+  not a count of 530 GPU renders.
+- Core's explicit-LOD render-bundle fixture: 1 passed on the physical NVIDIA
+  RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), forced and confirmed
+  FL9_1. It created the device and pipeline and validated bundle acceptance/
+  rejection; it did not submit a rendered draw.
+- Core shared-corpus test: 1 passed; HAL shared-corpus test: 1 passed.
+- FXC-backed HAL lowering tests: 3 passed, including direct and helper shader
+  compilation at the FL9_1 profile.
+- `rustfmt +1.93.1 --edition 2021 --check` on both changed Rust files and
+  `git diff --check` passed.
+
+The HAL test build continues to emit four `unused_qualifications` warnings in
+`hal_queue.rs`; this test-only change does not touch that file.
