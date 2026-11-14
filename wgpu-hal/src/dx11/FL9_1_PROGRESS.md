@@ -21135,6 +21135,7 @@ stay coordinator-owned.
 
 ## Coordinator increment — diagnostic surface error propagation — 2026-11-14
 
+Commit `a25beaf5ba203abea46af10b2425317bb93b0037` (`dx11: propagate diagnostic surface flush errors`) records this small fix.
 A full read-only scan of production D3D11 HAL panic/unwrap paths found no confirmed public
 Core-valid path to an unimplemented operation or panic. It did find one doc-hidden unsafe
 UWP diagnostic path that unwrapped `flush_mapped_ranges`; the call now maps the failure to
