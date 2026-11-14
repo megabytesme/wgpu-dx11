@@ -3616,19 +3616,16 @@ separate Always-based depth-fail remapping documented above. The documented
 FL9_1 LessEqual restriction applies to comparison samplers, not raster depth
 state. Historical hardware remains unverified.
 
-The public timestamp test now includes a timestamped Never-depth draw. It
-checks the unchanged clear-color image, then uses a farther LessEqual draw to
-verify the Never draw did not update depth. Pass-boundary and explicit
-in-pass timestamps resolve in nondecreasing command order.
+Public FL9_1 rendering does not issue timestamp commands. The public
+timestamp-query test below verifies that timestamp features are not advertised,
+requests for them fail, and timestamp query-set creation is rejected before
+HAL. The native timestamp/disjoint query test is a private HAL diagnostic only;
+it does not establish public wgpu timestamp support.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"
 cargo +1.93.1 test --offline -j2 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_timestamp_queries_are_not_advertised_at_fl91 -- --nocapture --test-threads=1
 ```
-
-On the RTX 3090 Ti at requested/actual FL9_1, all 16 color pixels matched the
-clear color and then the expected blue depth-probe output. Timestamp values
-were nonzero and nondecreasing in command order.
 
 ```powershell
 $env:WGPU_DX11_REQUIRE_HARDWARE = "1"

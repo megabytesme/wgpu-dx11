@@ -21629,3 +21629,23 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 This verifies the positive selected-driver branch only; the conservative
 negative and unavailable-query behavior is covered by synthetic capability
 tests, and historical 9_x drivers remain unverified.
+
+## Coordinator documentation correction — public timestamp rejection — 2026-11-14
+
+The independent completion audit found that an older `TESTING.md` paragraph
+incorrectly described the public timestamp-rejection test as rendering a
+timestamped depth-Never draw and reading its result. The current test only
+checks that timestamp features are absent, feature requests fail, the queue
+timestamp period is zero, and timestamp query-set creation is rejected before
+HAL. The paragraph now distinguishes this public rejection test from the
+private HAL timestamp/disjoint diagnostic.
+
+The corrected public test was rerun with strict physical-device selection and
+passed 1/1 on the NVIDIA RTX 3090 Ti (`0x10de:0x2203`, requested/actual FL9_1,
+`software=false`). It confirmed that timestamp requests and query-set creation
+are rejected; it performed no render or timestamp execution. The command was:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_timestamp_queries_are_not_advertised_at_fl91 -- --exact --nocapture --test-threads=1
+```
