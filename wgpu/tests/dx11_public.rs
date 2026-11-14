@@ -9402,6 +9402,207 @@ fn public_dx11_vertex_buffer_stride_limit_boundary_at_fl91() {
 }
 
 #[test]
+fn public_dx11_vertex_buffer_slot_15_draw_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters
+        .into_iter()
+        .find(|adapter| adapter.get_info().driver_info.contains("physical"))
+    else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    let limits = adapter.limits();
+    assert_eq!(limits.max_vertex_buffers, 16);
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; max_vertex_buffers={}",
+        info.name, info.vendor, info.device, info.driver_info, limits.max_vertex_buffers
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 vertex slot 15 test"),
+        required_features: Features::empty(),
+        required_limits: limits,
+        ..Default::default()
+    }))
+    .expect("request the selected physical FL9_1 device");
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 vertex slot 15 shader"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(15) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.0, 1.0); }\n\
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(0.125, 0.75, 0.25, 1.0); }"
+                .into(),
+        ),
+    });
+    let attributes = [VertexAttribute {
+        format: VertexFormat::Float32x2,
+        offset: 0,
+        shader_location: 15,
+    }];
+    let vertex_buffers: [Option<VertexBufferLayout<'_>>; 16] = std::array::from_fn(|slot| {
+        (slot == 15).then_some(VertexBufferLayout {
+            array_stride: 8,
+            step_mode: VertexStepMode::Vertex,
+            attributes: &attributes,
+        })
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 slot 15 rendering pipeline"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &[Some(ColorTargetState {
+                format: TextureFormat::Rgba8Unorm,
+                blend: None,
+                write_mask: ColorWrites::ALL,
+            })],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+
+    let positions = [-1.0f32, -1.0, 3.0, -1.0, -1.0, 3.0];
+    let vertex_buffer = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 slot 15 vertex data"),
+        size: std::mem::size_of_val(&positions) as u64,
+        usage: BufferUsages::VERTEX,
+        mapped_at_creation: true,
+    });
+    let position_bytes = positions.map(f32::to_ne_bytes).concat();
+    vertex_buffer
+        .get_mapped_range_mut(..)
+        .expect("map slot 15 vertex data")
+        .copy_from_slice(&position_bytes);
+    vertex_buffer.unmap();
+
+    let target = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 slot 15 render target"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let target_view = target.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 slot 15 readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 slot 15 commands"),
+    });
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 slot 15 pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(15, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for slot 15 draw");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("slot 15 readback callback")
+        .expect("map slot 15 readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                for (channel, (&observed, expected)) in data[offset..offset + 4]
+                    .iter()
+                    .zip([32, 191, 64, 255])
+                    .enumerate()
+                {
+                    assert!(
+                        observed.abs_diff(expected) <= 1,
+                        "slot 15 pixel ({x}, {y}) channel {channel}: expected {expected}, observed {observed}"
+                    );
+                }
+            }
+        }
+    }
+    readback.unmap();
+    println!("PASS: vertex buffer slot 15 rendered all 64 pixels as [32, 191, 64, 255]");
+}
+
+#[test]
 fn public_dx11_color_write_masks_preserve_disabled_channels_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
