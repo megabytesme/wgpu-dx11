@@ -5465,8 +5465,9 @@ semantics after the shader operation is lowered to implicit sampling. Copying
 uses a matching format, an explicit source box and zero destination offset.
 The scratch resource is retained by recorded commands and refreshed in replay
 order, so writes before submission are visible. General explicit LOD and
-computed nonzero LOD remain unavailable; equal min/mag filters, anisotropy one
-and minimum LOD zero are still required.
+computed nonzero LOD remain unavailable except for the fixed integer subset
+described next; equal min/mag filters, anisotropy one and minimum LOD zero are
+still required.
 
 The strict public test uses a 4x4 RGBA8 texture with three distinct mip colors.
 It verifies the full view's red level zero, a view beginning at mip 1's green
@@ -5482,9 +5483,46 @@ cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,w
 ```
 
 The forced FL9_1 test passed on the physical NVIDIA GeForce RTX 3090 Ti
-(`0x10de:0x2203`, driver `32.0.16.2101`). This creates one scratch texture per
-multi-mip 2D view and issues a copy before each draw using this proof; it is a
-correctness fallback with additional allocation and bandwidth cost.
+(`0x10de:0x2203`, driver `32.0.16.2101`). This creates one base-mip scratch
+texture per multi-mip 2D view and issues a copy before each draw using this
+proof; it is a correctness fallback with additional allocation and bandwidth
+cost.
+
+## Fixed integer LOD on multi-mip views
+
+The new `DownlevelLimits::texture_sample_level_integer_2d_float_fragment`
+limit is separate from general explicit-LOD support and the legacy one-mip
+subset. It permits a direct sample or the existing single-helper shape when
+all uses of each sampled texture in the selected fragment entry point use one
+statically known, nonnegative integer LOD. A multi-mip view must contain the
+selected view-relative level. If the bound view has one mip, the older subset
+continues to use its sole mip for any supported finite LOD.
+
+Core checks actual bound-view mip count and sampler compatibility at draw time.
+The sampler minimum must be zero, min/mag filters equal and anisotropy one; its
+original maximum must reach the selected level. This matters because FL9_1
+requires the native sampler MaxLOD to be `FLT_MAX`: the backend records the
+original finite limit and rejects it if it would clamp the selected level.
+Naga lowers the proven operation to implicit sampling. The HAL uses a one-mip
+scratch resource for the selected subresource. Each view has a mutex-protected
+lazy cache; command recording stores the selected SRV and refresh `Arc`, and
+replay refreshes the scratch before the draw. A previously cached scratch is
+therefore updated after later writes. This adds storage for each selected mip
+per view and a copy before every draw that uses this lowering.
+
+The strict public test checks level 1 from a full three-mip view, level 1
+relative to a view beginning at mip 1, a write to mip 1 after its scratch has
+been used, and a one-mip view. It also expects rejection when the selected
+level is outside the view or above the sampler's original maximum. All
+readback cases check the full 8x8 target.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_api_renders_offscreen_at_fl91 -- --nocapture --test-threads=1
+```
+
+This command has not yet been rerun after the fixed-integer-LOD change. Do not
+count it as hardware validation until it passes in strict mode.
 
 ## Combined color view attachment-to-sampling transition
 

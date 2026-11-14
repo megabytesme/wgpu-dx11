@@ -24,6 +24,7 @@ pub(super) struct TextureSampleLevelZeroPair {
     pub(super) texture: naga::ResourceBinding,
     pub(super) sampler: naga::ResourceBinding,
     pub(super) base_mip_view: bool,
+    pub(super) selected_mip_level: Option<u32>,
 }
 
 struct TextureSampleLevelZeroProof {
@@ -6093,6 +6094,7 @@ mod tests {
                     binding: 23,
                 },
                 base_mip_view: true,
+                selected_mip_level: Some(0),
             }]
         );
 
@@ -6212,6 +6214,7 @@ mod tests {
                     binding: 23,
                 },
                 base_mip_view: true,
+                selected_mip_level: Some(0),
             }]
         );
 
@@ -6606,6 +6609,78 @@ mod tests {
     }
 
     #[test]
+    fn fl91_explicit_integer_lod_selects_a_view_relative_mip_and_lowers_to_sample() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(7) var image: texture_2d<f32>;
+            @group(0) @binding(23) var smp: sampler;
+            @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleLevel(image, smp, uv, 1.0);
+            }
+            "#,
+        )
+        .expect("parse integer-LOD shader");
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .expect("validate integer-LOD shader");
+        let proof = fl9_texture_sample_level_zero_proof(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+        )
+        .expect("analyze integer-LOD shader")
+        .expect("find supported integer-LOD sample");
+        assert_eq!(proof.pairs.len(), 1);
+        assert!(!proof.pairs[0].base_mip_view);
+        assert_eq!(proof.pairs[0].selected_mip_level, Some(1));
+
+        let mut lowered = module;
+        lower_fl9_texture_sample_level_zero(&mut lowered, 0, &proof)
+            .expect("lower the proven sample to the selected one-mip view");
+        let bindings = [
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 7,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::TextureFloat,
+            },
+            ShaderBinding {
+                binding: naga::ResourceBinding {
+                    group: 0,
+                    binding: 23,
+                },
+                slot: 0,
+                kind: ShaderBindingKind::Sampler,
+            },
+        ];
+        let (hlsl, generated_entry) = translate_naga_with_viewport_and_fl9_inputs(
+            &lowered,
+            &info,
+            naga::ShaderStage::Fragment,
+            "main",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions::default(),
+        )
+        .expect("translate lowered integer-LOD shader");
+        assert!(hlsl.contains(".Sample("), "{hlsl}");
+        assert!(!hlsl.contains("SampleLevel"), "{hlsl}");
+        let bytecode = super::super::shader::compile_hlsl(
+            &hlsl,
+            &generated_entry,
+            ShaderProfile::PixelLevel9_1,
+        )
+        .expect("FXC accepts integer-LOD lowering at FL9_1");
+        assert!(!bytecode.is_empty());
+    }
+
+    #[test]
     fn fl91_explicit_lod_zero_proof_is_selected_entry_specific() {
         let module = naga::front::wgsl::parse_str(
             r#"
@@ -6845,6 +6920,7 @@ fn fl9_texture_sample_level_zero_proof(
                 function.expressions[level],
                 naga::Expression::Literal(naga::Literal::F32(value)) if value == 0.0
             ),
+            selected_mip_level: fl9_sample_level_integer_literal(&function.expressions, level),
         };
         pair.base_mip_view = pair.base_mip_view
             && fl9_texture_sample_level_zero_only_uses_base_mip(
@@ -6852,6 +6928,14 @@ fn fl9_texture_sample_level_zero_proof(
                 &function.expressions,
                 pair.texture,
             );
+        pair.selected_mip_level = pair.selected_mip_level.filter(|mip_level| {
+            fl9_texture_sample_level_only_uses_mip(
+                module,
+                &function.expressions,
+                pair.texture,
+                *mip_level,
+            )
+        });
         pairs.push(pair);
     }
 
@@ -7092,6 +7176,18 @@ fn fl9_texture_sample_level_zero_helper(
                 &helper_function.expressions,
                 texture_binding,
             ),
+            selected_mip_level: fl9_sample_level_integer_literal(
+                &helper_function.expressions,
+                level,
+            )
+            .filter(|mip_level| {
+                fl9_texture_sample_level_only_uses_mip(
+                    module,
+                    &helper_function.expressions,
+                    texture_binding,
+                    *mip_level,
+                )
+            }),
         }],
     })
 }
@@ -7138,6 +7234,49 @@ fn fl9_texture_sample_level_zero_only_uses_base_mip(
         }
         _ => true,
     })
+}
+
+fn fl9_texture_sample_level_only_uses_mip(
+    module: &naga::Module,
+    expressions: &naga::Arena<naga::Expression>,
+    texture_binding: naga::ResourceBinding,
+    mip_level: u32,
+) -> bool {
+    let is_texture = |handle| {
+        let naga::Expression::GlobalVariable(global) = expressions[handle] else {
+            return false;
+        };
+        module.global_variables[global]
+            .binding
+            .is_some_and(|binding| binding == texture_binding)
+    };
+    expressions.iter().all(|(_, expression)| match *expression {
+        naga::Expression::ImageSample {
+            image,
+            level: naga::SampleLevel::Exact(level),
+            ..
+        } if is_texture(image) => {
+            fl9_sample_level_integer_literal(expressions, level) == Some(mip_level)
+        }
+        naga::Expression::ImageSample { image, .. } if is_texture(image) => false,
+        naga::Expression::ImageLoad { image, .. } | naga::Expression::ImageQuery { image, .. }
+            if is_texture(image) =>
+        {
+            false
+        }
+        _ => true,
+    })
+}
+
+fn fl9_sample_level_integer_literal(
+    expressions: &naga::Arena<naga::Expression>,
+    level: naga::Handle<naga::Expression>,
+) -> Option<u32> {
+    let naga::Expression::Literal(naga::Literal::F32(value)) = expressions[level] else {
+        return None;
+    };
+    (value.is_finite() && value >= 0.0 && value.fract() == 0.0 && value < 4_294_967_296.0)
+        .then_some(value as u32)
 }
 
 fn fl9_sample_level_expression_supported(

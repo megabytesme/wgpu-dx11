@@ -404,7 +404,7 @@ impl RenderState {
         true
     }
 
-    fn binding_commands(&self) -> Option<Vec<NativeCommand>> {
+    fn binding_commands(&self, device: &NativeDevice) -> Option<Vec<NativeCommand>> {
         let mut commands = Vec::new();
         let mut refresh = Vec::new();
         let plan = self.active_plan.as_ref()?;
@@ -443,29 +443,38 @@ impl RenderState {
             }
             for (local, texture) in bound.resources.textures.iter().enumerate() {
                 let binding = bound.kind.textures.get(local).copied().flatten()?;
-                let requires_base_mip = self.sampling_pairs.iter().any(|pair| {
-                    pair.texture.group == index as u32
-                        && pair.texture.binding == binding
-                        && pair.requires_base_mip
+                let selected_mip_level = self.sampling_pairs.iter().find_map(|pair| {
+                    (pair.texture.group == index as u32 && pair.texture.binding == binding)
+                        .then(|| {
+                            pair.selected_mip_level
+                                .or_else(|| pair.requires_base_mip.then_some(0))
+                        })
+                        .flatten()
                 });
-                let texture_refresh = if requires_base_mip {
-                    texture
-                        .base_mip_refresh
-                        .as_ref()
-                        .or(texture.refresh.as_ref())
-                } else {
-                    texture.refresh.as_ref()
+                let selected_mip_view = match selected_mip_level {
+                    Some(level) => Some(
+                        device
+                            .sample_level_mip_view(
+                                texture,
+                                level.min(texture.mip_count.saturating_sub(1)),
+                            )
+                            .ok()?,
+                    ),
+                    None => None,
                 };
+                let texture_refresh = selected_mip_view
+                    .as_ref()
+                    .and_then(|view| view.refresh.as_ref())
+                    .or(texture.refresh.as_ref());
                 if let Some(copy) = texture_refresh {
                     refresh.push(copy.clone());
                 }
                 commands.push(NativeCommand::SetTexture {
                     slot: slots.textures + local as u32,
-                    texture: if requires_base_mip {
-                        texture.base_mip_view.clone()?
-                    } else {
-                        texture.view.clone()
-                    },
+                    texture: selected_mip_view
+                        .as_ref()
+                        .map(|view| view.view.clone())
+                        .unwrap_or_else(|| texture.view.clone()),
                 });
             }
             for (local, sampler) in bound.resources.samplers.iter().enumerate() {
@@ -1749,7 +1758,7 @@ impl crate::CommandEncoder for CommandEncoder {
                     return;
                 };
             }
-            let Some(binding_commands) = render.binding_commands() else {
+            let Some(binding_commands) = render.binding_commands(&self.device) else {
                 self.reject();
                 return;
             };
@@ -1796,7 +1805,7 @@ impl crate::CommandEncoder for CommandEncoder {
                     return;
                 };
             }
-            let Some(binding_commands) = render.binding_commands() else {
+            let Some(binding_commands) = render.binding_commands(&self.device) else {
                 self.reject();
                 return;
             };
@@ -1818,7 +1827,7 @@ impl crate::CommandEncoder for CommandEncoder {
             });
             return;
         }
-        let Some(binding_commands) = render.binding_commands() else {
+        let Some(binding_commands) = render.binding_commands(&self.device) else {
             self.reject();
             return;
         };
@@ -1991,7 +2000,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            let Some(binding_commands) = render.binding_commands() else {
+            let Some(binding_commands) = render.binding_commands(&self.device) else {
                 self.reject();
                 return;
             };
@@ -2090,7 +2099,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            let Some(binding_commands) = render.binding_commands() else {
+            let Some(binding_commands) = render.binding_commands(&self.device) else {
                 self.reject();
                 return;
             };
@@ -2167,7 +2176,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            let Some(binding_commands) = render.binding_commands() else {
+            let Some(binding_commands) = render.binding_commands(&self.device) else {
                 self.reject();
                 return;
             };
@@ -2242,7 +2251,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            let Some(binding_commands) = render.binding_commands() else {
+            let Some(binding_commands) = render.binding_commands(&self.device) else {
                 self.reject();
                 return;
             };
@@ -2357,7 +2366,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            let Some(binding_commands) = render.binding_commands() else {
+            let Some(binding_commands) = render.binding_commands(&self.device) else {
                 self.reject();
                 return;
             };
@@ -2443,7 +2452,7 @@ impl crate::CommandEncoder for CommandEncoder {
         let offset = *offset;
         let vertex_bytes = *vertex_bytes;
         let index = index.clone();
-        let Some(binding_commands) = render.binding_commands() else {
+        let Some(binding_commands) = render.binding_commands(&self.device) else {
             self.reject();
             return;
         };

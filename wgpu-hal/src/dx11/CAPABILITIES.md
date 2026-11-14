@@ -10,6 +10,37 @@ compressed blocks. R16G16_SNORM remains point-sampled because its
 selected-device query lacks `FILTERABLE`. These are selected-device execution
 results, not historical FL9_1 guarantees.
 
+## Fixed integer LOD sampling from multi-mip views
+
+The backend has a separate `DownlevelLimits::texture_sample_level_integer_2d_float_fragment`
+limit for a statically known nonnegative integer LOD that selects an in-range
+mip from a multi-mip, non-array `texture_2d<f32>` view. The selected fragment
+entry point must use one fixed integer level for every operation on that
+texture, and must fit the existing direct or single-helper FL9_1 lowering
+proof. Core records the selected level and rechecks the currently bound view
+and sampler before draws and render-bundle draws. A one-mip view remains
+covered by the older single-mip subset, where its only level clamps supported
+finite explicit LOD values.
+
+The FL9_1 shader still receives no native `SampleLevel` instruction. Naga
+lowers the proven sample to implicit sampling while the HAL binds a one-mip
+scratch view populated from the selected view-relative subresource. A per-view
+mutex protects lazy scratch-view creation; recorded commands retain the chosen
+SRV and refresh operation. The refresh copy runs in command replay before the
+draw, so writes made after the scratch was first created remain visible.
+Equal min/mag filters, anisotropy one, and zero sampler MinLOD remain required.
+For a positive selected level, the original sampler MaxLOD must reach that
+level. FL9_1 requires the native MaxLOD to be `FLT_MAX`, so finite wgpu maxima
+are raised in the native descriptor and tracked in sampler compatibility
+metadata; maxima below the selected level are rejected. Fractional/dynamic LOD,
+multiple fixed levels on one texture, other stages and broader sampling forms
+remain unavailable.
+
+The strict public test now checks level 1 on a full view and on a view beginning
+at mip 1, refresh after updating an already cached mip, one-mip fallback, and
+negative range/MaxLOD cases. The new GPU test has not yet been rerun after this
+change; no new hardware pass is claimed here.
+
 ## Helper-based fragment LOD-zero sampling with a tint
 
 The restricted fragment `textureSampleLevel(..., 0.0)` proof accepts a selected

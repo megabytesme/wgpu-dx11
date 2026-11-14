@@ -323,6 +323,7 @@ fn fl91_core_empty_unmap_and_mapped_write_flush_failure_cleans_up() {
                     texture_sample_base_clamp_to_edge_2d_float_fragment: false,
                     texture_sample_level: false,
                     texture_sample_level_zero_2d_float_fragment: false,
+                    texture_sample_level_integer_2d_float_fragment: false,
                     texture_gather: false,
                     texture_gather_2d_float_fragment: false,
                     texture_load: false,
@@ -2594,13 +2595,14 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
     };
     let bc1_required = hal::TextureFormatCapabilities::SAMPLED
         | hal::TextureFormatCapabilities::COPY_DST
-        | hal::TextureFormatCapabilities::COPY_SRC
-        | hal::TextureFormatCapabilities::SINGLE_MIP_ONLY;
+        | hal::TextureFormatCapabilities::COPY_SRC;
     let bc1_supported = bc1_caps.contains(bc1_required);
     assert!(bc1_supported);
-    assert!(
-        (bc1_caps & !bc1_required & !hal::TextureFormatCapabilities::SAMPLED_LINEAR).is_empty()
-    );
+    assert!((bc1_caps
+        & !bc1_required
+        & !hal::TextureFormatCapabilities::SAMPLED_LINEAR
+        & !hal::TextureFormatCapabilities::SINGLE_MIP_ONLY)
+        .is_empty());
     let bc2_caps = unsafe {
         hal::Adapter::texture_format_capabilities(&fixture, wgt::TextureFormat::Bc2RgbaUnorm)
     };
@@ -2837,12 +2839,15 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         );
         assert_eq!(
             bc1_core.flags,
-            wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
-                | if bc1_caps.contains(hal::TextureFormatCapabilities::SAMPLED_LINEAR) {
-                    wgt::TextureFormatFeatureFlags::FILTERABLE
-                } else {
-                    wgt::TextureFormatFeatureFlags::empty()
-                }
+            (if bc1_caps.contains(hal::TextureFormatCapabilities::SINGLE_MIP_ONLY) {
+                wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
+            } else {
+                wgt::TextureFormatFeatureFlags::empty()
+            }) | (if bc1_caps.contains(hal::TextureFormatCapabilities::SAMPLED_LINEAR) {
+                wgt::TextureFormatFeatureFlags::FILTERABLE
+            } else {
+                wgt::TextureFormatFeatureFlags::empty()
+            })
         );
     } else {
         assert!(bc1_core.allowed_usages.is_empty());
@@ -2874,12 +2879,15 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         assert_eq!(
             core_caps.flags,
             if sampled {
-                wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
-                    | if hal_caps.contains(hal::TextureFormatCapabilities::SAMPLED_LINEAR) {
-                        wgt::TextureFormatFeatureFlags::FILTERABLE
-                    } else {
-                        wgt::TextureFormatFeatureFlags::empty()
-                    }
+                (if hal_caps.contains(hal::TextureFormatCapabilities::SINGLE_MIP_ONLY) {
+                    wgt::TextureFormatFeatureFlags::SINGLE_MIP_ONLY
+                } else {
+                    wgt::TextureFormatFeatureFlags::empty()
+                }) | (if hal_caps.contains(hal::TextureFormatCapabilities::SAMPLED_LINEAR) {
+                    wgt::TextureFormatFeatureFlags::FILTERABLE
+                } else {
+                    wgt::TextureFormatFeatureFlags::empty()
+                })
             } else {
                 wgt::TextureFormatFeatureFlags::empty()
             },

@@ -4,11 +4,16 @@
 
 The public path has meaningful FL9_1 rendering coverage but remains a
 constrained opt-in subset. The latest strict test targets passed: public
-D3D11 169/169 and private HAL 538/538 on the physical RTX 3090 Ti at explicitly
-requested and confirmed FL9_1. New boundary evidence covers the 2048 2D
-texture-width limit, eight inter-stage variables (ninth rejected),
-Repeat/MirrorRepeat limit rejection, and anisotropic minification readback.
-Formatting, diff checks and affected Clippy checks passed.
+D3D11 169/169, Core DX11 fixtures 154/154, and private HAL 541/541 on the
+physical RTX 3090 Ti at explicitly requested and confirmed FL9_1. Core DX12
+passed 138/138 and wgpu-types passed 118/118. New coverage includes fixed
+integer fragment texture LOD at full-view mip levels 1 and 2, nonzero-base
+views, source updates after scratch-view caching, one-mip behavior and
+validation failures for invalid view/sampler ranges. Formatting, diff checks
+and affected Clippy checks passed. Strict DX11 CTS passed 4/4 buffer-to-buffer
+copy selectors and six selected 2D color texture-copy selectors (1/1 each,
+with no skipped or failed leaves). The first CTS runner build exceeded current
+system commit headroom; its sequential low-debug build succeeded.
 
 Remaining gaps divide into unfinished capability/validation/CTS evidence and
 workload-led implementation, deliberate FL9_1/profile exclusions (compute,
@@ -25,6 +30,39 @@ pipeline requires `texture_2d_array`; the current FL9_1 projection cannot run
 that pipeline. A standalone indexed mesh using a 2D texture is a realistic
 first app integration smoke test. Actual terrain rendering requires a separate
 application-side atlas/shader path, not an FL9_1 capability claim.
+
+## Latest coordinator increment — fixed integer fragment texture LOD — 2026-11-14
+
+Added a distinct downlevel limit for literal nonnegative integer
+`textureSampleLevel` on a narrowly proven fragment 2D float sampling shape.
+Core and HAL validate selected-entry relationships, one fixed mip per texture,
+view-relative bounds, sampler range and the existing minification/magnification
+restrictions. HAL lowers only the proven operation to ordinary sampling
+through a cached one-mip SRV, refreshing the scratch image immediately before
+draw and retaining its view through replay. One-mip views preserve mip-zero
+semantics. Other explicit-LOD shader forms remain rejected.
+
+Strict public testing on the RTX 3090 Ti explicitly requested and confirmed
+FL9_1 with `software=false`; readback matched full-view mips 1 and 2,
+view-relative mip 1 from a nonzero-base view, refreshed cached mip contents,
+and one-mip fallback. Out-of-range views and a sampler maximum below the
+selected mip were rejected. This is evidence for the selected modern driver,
+not historical FL9_1 hardware. Full strict public tests passed 169/169; Core
+DX11 fixtures passed 154/154, HAL 541/541, Core DX12 138/138, and wgpu-types
+118/118. The full Core fixture corrected a stale BC1 assertion to condition
+`SINGLE_MIP_ONLY` on the selected-device HAL capability; no BC projection
+changed.
+
+The coordinator audits of resource/transfer, pipeline/depth, public
+API/presentation and HAL-method reachability found no concrete public-valid
+request reaching an unsupported HAL operation in their reviewed scopes. The
+HAL-method audit traced compute, immediate data, query, indirect, pipeline
+cache, acceleration-structure and suspected buffer/array paths to explicit
+Core gates. Format/view cross-products and all CTS-valid operation combinations
+remain a coverage task, not a proven exhaustive audit. Keep using agents for
+independent read-only audits, specification/compiler research and isolated
+CTS triage; cross-crate code changes and strict GPU integration stay
+coordinator-owned.
 
 ## Latest coordinator increment — multisample-mask execution — 2026-11-14
 

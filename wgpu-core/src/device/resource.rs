@@ -6526,20 +6526,29 @@ impl Device {
                 }
 
                 if !self.downlevel.limits.texture_sample_level
-                    && self
+                    && (self
                         .downlevel
                         .limits
                         .texture_sample_level_zero_2d_float_fragment
+                        || self
+                            .downlevel
+                            .limits
+                            .texture_sample_level_integer_2d_float_fragment)
                 {
                     if let Some(interface) = shader_module.interface.interface() {
-                        fl9_texture_sample_level_zero_pairs.extend(
-                            interface
-                                .entry_point_fl9_texture_sample_level_zero_pairs(
-                                    stage.to_naga(),
-                                    &fragment_entry_point_name,
-                                )
-                                .map_err(stage_err)?,
-                        );
+                        let mut pairs = interface
+                            .entry_point_fl9_texture_sample_level_zero_pairs(
+                                stage.to_naga(),
+                                &fragment_entry_point_name,
+                            )
+                            .map_err(stage_err)?;
+                        for pair in &mut pairs {
+                            pair.allow_multi_mip_integer_lod = self
+                                .downlevel
+                                .limits
+                                .texture_sample_level_integer_2d_float_fragment;
+                        }
+                        fl9_texture_sample_level_zero_pairs.extend(pairs);
                     }
                 }
 

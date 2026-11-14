@@ -904,6 +904,7 @@ mod tests {
             requires_bias_compatible: false,
             requires_single_mip: false,
             requires_base_mip: false,
+            selected_mip_level: None,
         };
         for stage in [wgt::ShaderStages::VERTEX, wgt::ShaderStages::FRAGMENT] {
             assert!(matches!(
@@ -3099,7 +3100,9 @@ impl RenderPipeline {
                 };
                 pair.requires_bias_compatible = true;
                 pair.requires_base_mip = level_zero_pair.base_mip_view;
-                pair.requires_single_mip = !level_zero_pair.base_mip_view;
+                pair.selected_mip_level = level_zero_pair.selected_mip_level;
+                pair.requires_single_mip =
+                    !level_zero_pair.base_mip_view && level_zero_pair.selected_mip_level.is_none();
             }
             validate_sampling_pairs(
                 &desc.layout.bindings,

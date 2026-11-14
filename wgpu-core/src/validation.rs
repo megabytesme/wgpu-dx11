@@ -371,6 +371,8 @@ pub(crate) struct TextureSampleLevelZeroPair {
     pub sampler_group: u32,
     pub sampler_binding: u32,
     pub base_mip_view: bool,
+    pub selected_mip_level: Option<u32>,
+    pub allow_multi_mip_integer_lod: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -4277,6 +4279,15 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
                 pair.texture_group,
                 pair.texture_binding,
             );
+        pair.selected_mip_level = pair.selected_mip_level.filter(|level| {
+            fl9_texture_sample_level_only_uses_mip(
+                module,
+                &helper_function.expressions,
+                pair.texture_group,
+                pair.texture_binding,
+                *level,
+            )
+        });
         return Some(alloc::vec![pair]);
     }
 
@@ -4319,6 +4330,15 @@ fn entry_point_fl9_texture_sample_level_zero_pairs(
                 pair.texture_group,
                 pair.texture_binding,
             );
+        pair.selected_mip_level = pair.selected_mip_level.filter(|level| {
+            fl9_texture_sample_level_only_uses_mip(
+                module,
+                &entry_point.function.expressions,
+                pair.texture_group,
+                pair.texture_binding,
+                *level,
+            )
+        });
         pairs.push(pair);
     }
     if pairs.is_empty() {
@@ -4403,6 +4423,7 @@ fn fl9_texture_sample_level_zero_pair(
     }
     let image = image_global.binding.as_ref()?;
     let sampler = sampler_global.binding.as_ref()?;
+    let selected_mip_level = fl9_sample_level_integer_literal(expressions, level);
     Some(TextureSampleLevelZeroPair {
         texture_group: image.group,
         texture_binding: image.binding,
@@ -4412,6 +4433,44 @@ fn fl9_texture_sample_level_zero_pair(
             expressions[level],
             naga::Expression::Literal(naga::Literal::F32(value)) if value == 0.0
         ),
+        selected_mip_level,
+        allow_multi_mip_integer_lod: false,
+    })
+}
+
+fn fl9_texture_sample_level_only_uses_mip(
+    module: &naga::Module,
+    expressions: &naga::Arena<naga::Expression>,
+    texture_group: u32,
+    texture_binding: u32,
+    mip_level: u32,
+) -> bool {
+    let is_texture = |handle| {
+        let naga::Expression::GlobalVariable(global) = expressions[handle] else {
+            return false;
+        };
+        module.global_variables[global]
+            .binding
+            .as_ref()
+            .is_some_and(|binding| {
+                binding.group == texture_group && binding.binding == texture_binding
+            })
+    };
+    expressions.iter().all(|(_, expression)| match *expression {
+        naga::Expression::ImageSample {
+            image,
+            level: naga::SampleLevel::Exact(level),
+            ..
+        } if is_texture(image) => {
+            fl9_sample_level_integer_literal(expressions, level) == Some(mip_level)
+        }
+        naga::Expression::ImageSample { image, .. } if is_texture(image) => false,
+        naga::Expression::ImageLoad { image, .. } | naga::Expression::ImageQuery { image, .. }
+            if is_texture(image) =>
+        {
+            false
+        }
+        _ => true,
     })
 }
 
@@ -4449,6 +4508,17 @@ fn fl9_texture_sample_level_zero_only_uses_base_mip(
         }
         _ => true,
     })
+}
+
+fn fl9_sample_level_integer_literal(
+    expressions: &naga::Arena<naga::Expression>,
+    level: naga::Handle<naga::Expression>,
+) -> Option<u32> {
+    let naga::Expression::Literal(naga::Literal::F32(value)) = expressions[level] else {
+        return None;
+    };
+    (value.is_finite() && value >= 0.0 && value.fract() == 0.0 && value < 4_294_967_296.0)
+        .then_some(value as u32)
 }
 
 fn fl9_sample_level_expression_supported(
@@ -9874,9 +9944,17 @@ impl Interface {
                 .fl9_texture_sample_level_zero_pairs
                 .as_ref()
                 .is_some_and(|pairs| !pairs.is_empty());
+        let restricted_integer_supported = limits.texture_sample_level_integer_2d_float_fragment
+            && entry_point
+                .fl9_texture_sample_level_zero_pairs
+                .as_ref()
+                .is_some_and(|pairs| {
+                    !pairs.is_empty() && pairs.iter().all(|pair| pair.selected_mip_level.is_some())
+                });
         Ok(entry_point.texture_sample_level_used
             && !limits.texture_sample_level
-            && !restricted_zero_supported)
+            && !restricted_zero_supported
+            && !restricted_integer_supported)
     }
 
     pub(crate) fn entry_point_fl9_texture_sample_level_zero_pairs(
@@ -12579,6 +12657,9 @@ mod tests {
             fn exact_helper(uv: vec2f) -> vec4f {
                 return textureSampleLevel(image, smp, uv, 0.0);
             }
+            fn exact_one_helper(uv: vec2f) -> vec4f {
+                return textureSampleLevel(image, smp, uv, 1.0);
+            }
             fn dynamic_helper(uv: vec2f) -> vec4f {
                 return textureSampleLevel(image, smp, uv, uv.x * 2.0 + 0.5);
             }
@@ -12606,6 +12687,12 @@ mod tests {
             @fragment fn level_zero(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleLevel(image, smp, uv, 0.0);
             }
+            @fragment fn level_one(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleLevel(image, smp, uv, 1.0);
+            }
+            @fragment fn level_negative(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleLevel(image, smp, uv, -1.0);
+            }
             @fragment fn level_zero_and_implicit(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleLevel(image, smp, uv, 0.0) + textureSample(image, smp, uv);
             }
@@ -12632,6 +12719,9 @@ mod tests {
             }
             @fragment fn helper(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return exact_helper(uv);
+            }
+            @fragment fn helper_level_one(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return exact_one_helper(uv);
             }
             @fragment fn helper_dynamic(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return dynamic_helper(uv);
@@ -12684,6 +12774,45 @@ mod tests {
             texture_sample_level_zero_2d_float_fragment: true,
             ..Default::default()
         };
+        let fixed_integer = wgt::DownlevelLimits {
+            texture_sample_level: false,
+            texture_sample_level_integer_2d_float_fragment: true,
+            ..Default::default()
+        };
+
+        for (entry, level) in [
+            ("level_zero", 0),
+            ("level_zero_negative", 0),
+            ("level_one", 1),
+            ("helper_level_one", 1),
+        ] {
+            assert!(!interface
+                .entry_point_uses_unsupported_texture_sample_level(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &fixed_integer,
+                )
+                .unwrap());
+            assert_eq!(
+                interface
+                    .entry_point_fl9_texture_sample_level_zero_pairs(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                    )
+                    .unwrap()[0]
+                    .selected_mip_level,
+                Some(level)
+            );
+        }
+        for entry in ["level_nonzero", "level_negative", "level_dynamic"] {
+            assert!(interface
+                .entry_point_uses_unsupported_texture_sample_level(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &fixed_integer,
+                )
+                .unwrap());
+        }
 
         for entry in [
             "level_zero",
@@ -12776,6 +12905,8 @@ mod tests {
                 sampler_group: 2,
                 sampler_binding: 42,
                 base_mip_view: true,
+                selected_mip_level: Some(0),
+                allow_multi_mip_integer_lod: false,
             }]
         );
         assert!(!interface
@@ -12798,6 +12929,8 @@ mod tests {
                 sampler_group: 2,
                 sampler_binding: 42,
                 base_mip_view: true,
+                selected_mip_level: Some(0),
+                allow_multi_mip_integer_lod: false,
             }]
         );
         assert!(!interface
@@ -12817,6 +12950,12 @@ mod tests {
         assert!(
             !wgt::DownlevelLimits::default().check_limits(&wgt::DownlevelLimits {
                 texture_sample_level_zero_2d_float_fragment: true,
+                ..Default::default()
+            })
+        );
+        assert!(
+            !wgt::DownlevelLimits::default().check_limits(&wgt::DownlevelLimits {
+                texture_sample_level_integer_2d_float_fragment: true,
                 ..Default::default()
             })
         );

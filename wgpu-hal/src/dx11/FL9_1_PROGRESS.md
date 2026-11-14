@@ -21069,3 +21069,66 @@ The remaining local task is still evidence-led completion of the
 capability/Core/HAL and applicable CTS matrices. Do not treat a scoped audit as
 proof of the full contract, or an intentional FL9_1 exclusion as an
 implementation target without a correct, validated emulation path.
+## Fixed integer fragment texture LOD on restricted FL9_1 — 2026-11-14
+
+Added a distinct `DownlevelLimits` capability for literal nonnegative integer `textureSampleLevel` on supported fragment `texture_2d<f32>` relationships. Core and HAL prove the selected entry point uses one fixed mip per sampled texture; mixed mip access, other image operations, unsupported samplers and out-of-view levels remain rejected. HAL lowers only the proven sample to implicit sampling against a cached, view-relative one-mip SRV, refreshed from the source before each draw. The scratch view is retained through replay. One-mip views preserve their prior level-zero behavior. Public explicit DX11 remains opt-in and DX11 remains absent from the default backend set.
+
+Strict hardware execution on the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) explicitly requested and confirmed FL9_1 with `software=false`. It sampled full-view mips 1 and 2, selected relative mip 1 from a nonzero-base view, verified cached contents after a texture update, preserved one-mip behavior, and rejected out-of-range views and sampler maxima below the selected level. Actual pixels were checked by the existing offscreen readback helper. This proves the selected modern driver under FL9_1, not historical FL9_1 hardware.
+
+Regression evidence after the change:
+
+- Strict private D3D11 HAL library: 541/541 test functions passed.
+- Strict Core DX11 fixture library: 154/154 passed; selected RTX 3090 Ti, with a conditional RG8 vertex-format case skipped because the device query does not advertise it.
+- Strict public `dx11_public`: 169/169 passed, including the expanded integer-LOD test.
+- Core DX12 library: 138/138 passed.
+- `wgpu-types` library: 118/118 passed.
+- Clippy completed for Core, HAL and public `wgpu`; existing warnings remain (3 in the Core fixture, 28 in HAL tests, including 8 HAL library warnings). No new warning was reported from the integer-LOD code.
+- Rust 1.93.1 workspace formatting check and `git diff --check` passed. The Cargo wrapper continues to print its existing Visual Studio `vError: Unknown error` banner while commands succeed.
+
+The Core fixture's BC1 assertion was corrected after the full strict run showed that selected-device BC1 capabilities do not include `SINGLE_MIP_ONLY`; the fixture now checks that bit conditionally, matching the existing capability projection. No BC capability behavior changed in this increment.
+
+The implementation and test changes remain in the working tree at base HEAD `a28db4caf`; no commit was made. The current `AGENTS.md` explicitly prohibits agent-created commits, which conflicts with the attached mission's commit instruction.
+
+The method-by-method public Core-to-HAL reachability audit is now complete for the reviewed unsupported HAL stubs. It found no confirmed public-valid request that reaches an unsupported operation; it traced compute, immediate data, queries, indirect draws, pipeline cache, acceleration structures, and suspected buffer/array cases to explicit Core gates. The full format/view cross-product and applicable CTS matrix remain incomplete, so this is not an exhaustive API proof. The other read-only audits found broad existing depth/stencil, pipeline, texture, transfer, buffer and public HWND support. Known deliberate FL9_1 exclusions include compute/storage/UAV, geometry shaders, multiple color targets, indirect draws, ordinary texture arrays and unsupported shader-profile operations. Cross-feature implementation should remain coordinator-owned; agents should continue with independent audits, specification/FXC research, and isolated CTS triage. Historical FL9_1 hardware, physical device removal and Lumia/CoreWindow runtime behavior remain external verification gaps.
+## Public wgpu end-to-end example — 2026-11-14
+
+Ran the existing `dx11_fl91_offscreen` example with strict hardware mode through the public `wgpu` API. It selected the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), requested and verified FL9_1, rendered an indexed textured cube with depth, submitted, waited, mapped readback and validated the image. Readback classified 112 red-texture pixels, 277 green-texture pixels and 635 blue background pixels (1024 total); the example exited successfully. This confirms an app-shaped public render path on the development driver, not historical FL9_1 or Lumia behavior.
+
+Command:
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo run --offline -j4 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std
+```
+## Strict FL9_1 command-buffer copy CTS slice — 2026-11-14
+
+With `WGPU_DX11_REQUIRE_HARDWARE=1`, strict DX11-only CTS selected the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) and verified its explicit FL9_1 marker. The following CTS selectors ran on that adapter:
+
+- `webgpu:api,operation,command_buffer,copyBufferToBuffer:*`: 4/4 passed, 0 skipped, 0 failed.
+- Six `copyTextureToTexture` 2D, non-array color selectors from `cts_runner/test.lst`: BGRA8→BGRA8, BGRA8→BGRA8-sRGB, BGRA8-sRGB→BGRA8, R8→R8, RGBA8→RGBA8-sRGB and RGBA8-sRGB→RGBA8. Each passed 1/1, 0 skipped, 0 failed.
+
+The first `cts_runner` build failed before executing tests with rustc allocation/stack-overrun errors under default and then two-job builds. Rebuilding sequentially with `CARGO_BUILD_JOBS=1`, `CARGO_PROFILE_DEV_DEBUG=0` and `CARGO_PROFILE_TEST_DEBUG=0` succeeded. Subsequent CTS runs must retain those settings while commit headroom is low. An initial direct invocation of the parameterized texture selector lost the selector's JSON quotes through Windows command-line parsing; it was not a test execution. Selecting the corresponding exact line from `cts_runner/test.lst` with a quote-insensitive regex preserved the canonical selector and passed.
+
+A follow-up `rendering/basic:clear:*` CTS attempt did not execute because `cts_runner` compilation failed with E0460 (a stale/mismatched `ash` artifact) after the target directory had been built under differing Cargo profile settings. No result is claimed for that selector; use a single consistent build profile or a separate temp target before retrying.
+
+## Coordinator update — support inventory and strict baseline CTS — 2026-11-14
+
+Three disjoint read-only reviews found no confirmed public Core-valid texture/view/usage
+or buffer request reaching an unsupported DX11 HAL path in the reviewed contract. The
+3D `COPY_SRC` subset is an ordered CPU-shadow fallback, not a native FL9_1 3D copy; its
+projected usages exclude rendering/storage writes. Microsoft 10Level9 documents occlusion
+queries beginning at FL9_2, so they remain unavailable at FL9_1. A private driver-specific
+probe could be exploratory only and must not promote the public FL9_1 capability.
+
+Strict hardware CTS was rerun on the physical NVIDIA RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) with requested and verified FL9_1, using the existing MSVC/temp-target
+wrapper and four Cargo jobs. `webgpu:api,operation,rendering,basic:clear:*` passed 1/1 and
+`webgpu:api,operation,rendering,basic:fullscreen_quad:*` passed 1/1; the exact RGBA8
+`pipeline_output_targets:color,component_count` selector passed 1/1. Each had zero skips
+and failures. The parameterized selector was passed through a temporary selector-list file
+to preserve its JSON quotes on Windows; the temporary file was removed after execution.
+The CTS audit recommends exact, workload-matched selectors and warns that broad
+rendering/transfer selectors mix unsupported sibling cases. Current remaining work is
+chiefly closure of the advertised-capability/Core/HAL/CTS evidence matrix, plus external
+historical FL9_1, Lumia/CoreWindow and device-removal verification. Agents remain useful
+for independent audits and selector triage; cross-crate implementation and GPU integration
+stay coordinator-owned.

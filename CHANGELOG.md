@@ -46,6 +46,7 @@ Bottom level categories:
 
 #### General
 
+- Add a distinct downlevel limit for fixed integer fragment `textureSampleLevel` on multi-mip views.
 - Add a downlevel capability limit for direct `vertex_index` reads from float vectors.
 - Extend the experimental D3D11 FL9_1 texture-gather emulation to bounded coordinate expressions inside its single helper.
 

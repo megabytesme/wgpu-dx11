@@ -1415,6 +1415,16 @@ pub struct DownlevelLimits {
     /// general explicit-LOD sampling. The selected view and sampler are checked at draw time.
     #[cfg_attr(feature = "serde", serde(default))]
     pub texture_sample_level_zero_2d_float_fragment: bool,
+    /// Whether a fragment entry point may use a statically known, non-negative integer LOD
+    /// that selects an in-range mip of a multi-mip, non-array `texture_2d<f32>` view with a
+    /// regular sampler.
+    ///
+    /// This restricted subset is distinct from [`Self::texture_sample_level`] and from the
+    /// level-zero subset above. Backends may emulate it by selecting a single mip before the
+    /// draw. The selected view and sampler are checked at draw time. One-mip views remain covered
+    /// by the level-zero subset, where the sole mip clamps a supported finite LOD.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub texture_sample_level_integer_2d_float_fragment: bool,
     /// Whether shader entry points may use `textureGather` operations.
     ///
     /// This applies to every shader stage and can be unavailable when a selected shader profile
@@ -1687,6 +1697,7 @@ impl Default for DownlevelLimits {
             texture_sample_base_clamp_to_edge_2d_float_fragment: false,
             texture_sample_level: true,
             texture_sample_level_zero_2d_float_fragment: false,
+            texture_sample_level_integer_2d_float_fragment: false,
             texture_gather: true,
             texture_gather_2d_float_fragment: false,
             texture_load: true,
@@ -1984,6 +1995,8 @@ impl DownlevelLimits {
             && (!required.texture_sample_level || self.texture_sample_level)
             && (!required.texture_sample_level_zero_2d_float_fragment
                 || self.texture_sample_level_zero_2d_float_fragment)
+            && (!required.texture_sample_level_integer_2d_float_fragment
+                || self.texture_sample_level_integer_2d_float_fragment)
             && (!required.texture_gather || self.texture_gather)
             && (!required.texture_gather_2d_float_fragment
                 || self.texture_gather
@@ -2789,6 +2802,7 @@ mod tests {
             texture_sample_base_clamp_to_edge_2d_float_fragment: false,
             texture_sample_level: false,
             texture_sample_level_zero_2d_float_fragment: true,
+            texture_sample_level_integer_2d_float_fragment: false,
             texture_gather: false,
             texture_gather_2d_float_fragment: false,
             texture_load: true,
@@ -2880,6 +2894,7 @@ mod tests {
             texture_sample_base_clamp_to_edge_2d_float_fragment: false,
             texture_sample_level: false,
             texture_sample_level_zero_2d_float_fragment: true,
+            texture_sample_level_integer_2d_float_fragment: false,
             texture_gather: false,
             texture_gather_2d_float_fragment: false,
             texture_load: true,

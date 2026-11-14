@@ -3453,6 +3453,8 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
              fn sample_computed_transformed(uv: vec2f) -> vec4f { let coordinates = uv + vec2f(0.5, 0.0); return textureSampleLevel(image, smp, coordinates, uv.x * 2.0 + 0.5); }\n\
              fn sample_transformed(uv: vec2f) -> vec4f { let coordinates = uv + vec2f(0.5, 0.0); return textureSampleLevel(image, smp, coordinates, 0.0); }\n\
              @fragment fn exact_direct(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, 0.0); }\n\
+             @fragment fn exact_one(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, 1.0); }\n\
+             @fragment fn exact_two(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, 2.0); }\n\
              @fragment fn exact_and_implicit(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, 0.0) + textureSample(image, smp, uv); }\n\
              @fragment fn exact_dynamic(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleLevel(image, smp, uv, uv.x * 2.0 + 0.5); }\n\
              @fragment fn exact_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_exact(uv, uv.x); }\n\
@@ -3534,6 +3536,8 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             cache: None,
         });
     let sample_level_pipeline = create_sample_level_pipeline("exact_direct");
+    let sample_level_one_pipeline = create_sample_level_pipeline("exact_one");
+    let sample_level_two_pipeline = create_sample_level_pipeline("exact_two");
     let sample_level_mixed_pipeline = create_sample_level_pipeline("exact_and_implicit");
     let sample_level_implicit_minified_pipeline = create_sample_level_pipeline("implicit_minified");
     let sample_level_dynamic_pipeline = create_sample_level_pipeline("exact_dynamic");
@@ -4284,6 +4288,195 @@ fn public_dx11_api_renders_offscreen_at_fl91() {
             },
         ],
     });
+    let integer_lod_sampler = device.create_sampler(&SamplerDescriptor {
+        label: Some("FL9_1 integer texture LOD sampler maximum reaches selected level"),
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        lod_min_clamp: 0.0,
+        lod_max_clamp: 1.0,
+        ..Default::default()
+    });
+    let integer_lod_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 exact integer LOD resources in group 2"),
+        layout: &sample_level_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&multi_mip_view),
+            },
+            BindGroupEntry {
+                binding: 23,
+                resource: BindingResource::Sampler(&integer_lod_sampler),
+            },
+        ],
+    });
+    let insufficient_max_integer_lod_sampler = device.create_sampler(&SamplerDescriptor {
+        label: Some("FL9_1 integer texture LOD sampler maximum below selected level"),
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        lod_min_clamp: 0.0,
+        lod_max_clamp: 0.5,
+        ..Default::default()
+    });
+    let insufficient_max_integer_lod_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 exact integer LOD finite-maximum sampler"),
+        layout: &sample_level_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&multi_mip_view),
+            },
+            BindGroupEntry {
+                binding: 23,
+                resource: BindingResource::Sampler(&insufficient_max_integer_lod_sampler),
+            },
+        ],
+    });
+    let integer_lod_two_sampler = device.create_sampler(&SamplerDescriptor {
+        label: Some("FL9_1 integer texture LOD two sampler maximum reaches selected level"),
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        lod_min_clamp: 0.0,
+        lod_max_clamp: 2.0,
+        ..Default::default()
+    });
+    let integer_lod_two_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 exact integer LOD two from full multi-mip view"),
+        layout: &sample_level_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&multi_mip_view),
+            },
+            BindGroupEntry {
+                binding: 23,
+                resource: BindingResource::Sampler(&integer_lod_two_sampler),
+            },
+        ],
+    });
+    let two_mip_view = multi_mip_source.create_view(&TextureViewDescriptor {
+        mip_level_count: Some(2),
+        ..Default::default()
+    });
+    let out_of_range_integer_lod_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 integer texture LOD beyond the view range"),
+        layout: &sample_level_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&two_mip_view),
+            },
+            BindGroupEntry {
+                binding: 23,
+                resource: BindingResource::Sampler(&integer_lod_two_sampler),
+            },
+        ],
+    });
+    let integer_lod_one_mip_view = multi_mip_source.create_view(&TextureViewDescriptor {
+        base_mip_level: 0,
+        mip_level_count: Some(1),
+        ..Default::default()
+    });
+    let integer_lod_one_mip_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 exact integer LOD one-mip view selects its only mip"),
+        layout: &sample_level_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&integer_lod_one_mip_view),
+            },
+            BindGroupEntry {
+                binding: 23,
+                resource: BindingResource::Sampler(&integer_lod_sampler),
+            },
+        ],
+    });
+
+    render_sample_level_and_verify(
+        &sample_level_one_pipeline,
+        &integer_lod_group,
+        "FL9_1 exact integer LOD one from full multi-mip view",
+        mip_colors[1],
+    );
+    render_sample_level_and_verify(
+        &sample_level_two_pipeline,
+        &integer_lod_two_group,
+        "FL9_1 exact integer LOD two from full multi-mip view",
+        mip_colors[2],
+    );
+    mip_colors[1] = [45, 190, 215, 255];
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &multi_mip_source,
+            mip_level: 1,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &mip_colors[1].repeat(4),
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(8),
+            rows_per_image: Some(2),
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+    );
+    render_sample_level_and_verify(
+        &sample_level_one_pipeline,
+        &integer_lod_group,
+        "FL9_1 exact integer LOD one after cached scratch refresh",
+        mip_colors[1],
+    );
+    let integer_lod_nonzero_base_view = multi_mip_source.create_view(&TextureViewDescriptor {
+        base_mip_level: 1,
+        mip_level_count: Some(2),
+        ..Default::default()
+    });
+    let integer_lod_nonzero_base_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 exact integer LOD one from nonzero-base view"),
+        layout: &sample_level_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&integer_lod_nonzero_base_view),
+            },
+            BindGroupEntry {
+                binding: 23,
+                resource: BindingResource::Sampler(&integer_lod_sampler),
+            },
+        ],
+    });
+    render_sample_level_and_verify(
+        &sample_level_one_pipeline,
+        &integer_lod_nonzero_base_group,
+        "FL9_1 exact integer LOD one from nonzero-base view",
+        mip_colors[2],
+    );
+    render_sample_level_and_verify(
+        &sample_level_one_pipeline,
+        &integer_lod_one_mip_group,
+        "FL9_1 exact integer LOD one clamped to a one-mip view",
+        mip_colors[0],
+    );
+    expect_sample_level_draw_rejection(
+        &sample_level_two_pipeline,
+        &out_of_range_integer_lod_group,
+        "exact integer LOD beyond the selected view range",
+        "IncompatibleTextureSampleLevelView",
+    );
+    expect_sample_level_draw_rejection(
+        &sample_level_one_pipeline,
+        &insufficient_max_integer_lod_group,
+        "exact integer LOD above the sampler maximum",
+        "IncompatibleSamplerMipRange",
+    );
+    println!("PASS: forced FL9_1 fixed integer LOD selected full-view mips 1 and 2 and nonzero-base view-relative mip 1, refreshed cached mip contents, retained one-mip behavior, and rejected out-of-range views and sampler maxima below the selected mip");
 
     render_sample_level_and_verify(
         &sample_level_pipeline,

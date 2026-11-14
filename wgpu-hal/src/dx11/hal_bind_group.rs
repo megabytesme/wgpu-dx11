@@ -673,7 +673,10 @@ impl BindGroup {
                 .map(|((size, mip_levels), view)| super::sampling::TextureInfo {
                     size,
                     mip_levels,
-                    base_mip_view_available: view.base_mip_view.is_some(),
+                    sample_level_mip_views_available: !view
+                        .sample_level_mip_views
+                        .lock()
+                        .is_empty(),
                 })
                 .collect(),
             samplers_wrap,
@@ -831,6 +834,7 @@ mod tests {
             requires_bias_compatible: false,
             requires_single_mip: false,
             requires_base_mip: false,
+            selected_mip_level: None,
         };
         assert!(plan.sampling_pairs_compatible(&[pair]));
 
@@ -908,6 +912,7 @@ mod tests {
             requires_bias_compatible: false,
             requires_single_mip: false,
             requires_base_mip: false,
+            selected_mip_level: None,
         };
         assert!(plan.sampling_pairs_compatible(&[]));
         assert!(plan.sampling_pairs_compatible(&[pair]));

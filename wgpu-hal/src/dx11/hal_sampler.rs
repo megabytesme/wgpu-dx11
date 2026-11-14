@@ -603,6 +603,7 @@ mod tests {
             requires_bias_compatible: false,
             requires_single_mip: false,
             requires_base_mip: false,
+            selected_mip_level: None,
         };
         for size in [[3, 4, 1], [4, 3, 1]] {
             for mode in [wgt::AddressMode::Repeat, wgt::AddressMode::MirrorRepeat] {
@@ -614,7 +615,7 @@ mod tests {
                         textures: alloc::vec![TextureInfo {
                             size,
                             mip_levels: 1,
-                            base_mip_view_available: false,
+                            sample_level_mip_views_available: false,
                         }],
                         samplers_wrap: alloc::vec![requires_power_of_two(&modes)],
                         samplers_clamp_to_edge_u_v: alloc::vec![

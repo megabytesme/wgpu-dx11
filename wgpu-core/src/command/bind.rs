@@ -353,6 +353,33 @@ fn sampler_mip_pair_compatible(
         })
 }
 
+fn sampler_supports_explicit_lod(level: u32, compatibility: hal::SamplerMipCompatibility) -> bool {
+    match compatibility {
+        hal::SamplerMipCompatibility::Unrestricted => true,
+        hal::SamplerMipCompatibility::RaisedMaximum {
+            original,
+            anisotropic,
+        } => !anisotropic && original >= level as f32,
+        hal::SamplerMipCompatibility::SingleMip => false,
+    }
+}
+
+fn fl9_texture_sample_level_view_compatible(
+    pair: &crate::validation::TextureSampleLevelZeroPair,
+    mip_count: u32,
+) -> bool {
+    if mip_count == 0 {
+        return false;
+    }
+    let Some(level) = pair.selected_mip_level else {
+        return mip_count == 1 || pair.base_mip_view;
+    };
+    if mip_count == 1 {
+        return true;
+    }
+    level < mip_count && (level == 0 || pair.allow_multi_mip_integer_lod)
+}
+
 fn fl9_texture_gather_view_compatible(
     texture_mip_levels: &[u32],
     texture_formats: &[wgt::TextureFormat],
@@ -778,11 +805,30 @@ impl Binder {
                         && level_zero.sampler_binding == pair.sampler_binding
                         && level_zero.base_mip_view
                 });
+            let selected_mip_level = pipeline
+                .fl9_texture_sample_level_zero_pairs
+                .iter()
+                .find(|level| {
+                    level.texture_group == pair.texture_group
+                        && level.texture_binding == pair.texture_binding
+                        && level.sampler_group == pair.sampler_group
+                        && level.sampler_binding == pair.sampler_binding
+                })
+                .and_then(|level| level.selected_mip_level);
             let sampler_lod_min_clamp_zero = sampler_group
                 .sampler_texture_sample_level_zero_compatible
                 .get(&pair.sampler_binding)
                 .is_some_and(|compatible| compatible.as_slice() == [true]);
-            let compatible_mips = if sample_level_zero_base_view && sampler_lod_min_clamp_zero {
+            let integer_lod_sampler_compatible = selected_mip_level.is_some_and(|level| {
+                level > 0
+                    && sampler_lod_min_clamp_zero
+                    && sampler_compatibility
+                        .iter()
+                        .all(|compatibility| sampler_supports_explicit_lod(level, *compatibility))
+            });
+            let compatible_mips = if (sample_level_zero_base_view && sampler_lod_min_clamp_zero)
+                || (selected_mip_level.is_some() && integer_lod_sampler_compatible)
+            {
                 sampler_mip_pair_compatible(&[1], sampler_compatibility)
             } else {
                 sampler_mip_pair_compatible(texture_mip_levels, sampler_compatibility)
@@ -832,8 +878,7 @@ impl Binder {
                     binding: pair.texture_binding,
                 })?;
             if mip_levels.len() != 1
-                || mip_levels[0] == 0
-                || (!pair.base_mip_view && mip_levels[0] != 1)
+                || !fl9_texture_sample_level_view_compatible(pair, mip_levels[0])
             {
                 return Err(DrawError::IncompatibleTextureSampleLevelView {
                     group: pair.texture_group,
@@ -854,7 +899,7 @@ impl Binder {
                     binding: pair.sampler_binding,
                 });
             }
-            if pair.base_mip_view && mip_levels[0] > 1 {
+            if (pair.base_mip_view || pair.selected_mip_level.is_some()) && mip_levels[0] > 1 {
                 let sampler_lod_min_clamp_zero = sampler_group
                     .sampler_texture_sample_level_zero_compatible
                     .get(&pair.sampler_binding)
@@ -863,6 +908,22 @@ impl Binder {
                         binding: pair.sampler_binding,
                     })?;
                 if sampler_lod_min_clamp_zero.as_slice() != [true] {
+                    return Err(DrawError::IncompatibleTextureSampleLevelSampler {
+                        group: pair.sampler_group,
+                        binding: pair.sampler_binding,
+                    });
+                }
+                if pair.selected_mip_level.is_some_and(|level| {
+                    level > 0
+                        && !sampler_group
+                            .sampler_mip_compatibility
+                            .get(&pair.sampler_binding)
+                            .is_some_and(|compatibility| {
+                                compatibility.iter().all(|compatibility| {
+                                    sampler_supports_explicit_lod(level, *compatibility)
+                                })
+                            })
+                }) {
                     return Err(DrawError::IncompatibleTextureSampleLevelSampler {
                         group: pair.sampler_group,
                         binding: pair.sampler_binding,
@@ -992,7 +1053,8 @@ impl Binder {
 mod tests {
     use super::{
         fl9_texture_gather_sampler_compatible, fl9_texture_gather_view_compatible,
-        npot_sampler_pair_compatible, sample_bias_sampler_compatible, sampler_mip_pair_compatible,
+        fl9_texture_sample_level_view_compatible, npot_sampler_pair_compatible,
+        sample_bias_sampler_compatible, sampler_mip_pair_compatible, sampler_supports_explicit_lod,
     };
 
     #[test]
@@ -1034,6 +1096,60 @@ mod tests {
             &[1, 2],
             &[Mip::Unrestricted, restricted]
         ));
+    }
+
+    #[test]
+    fn explicit_integer_lod_requires_the_distinct_multimip_limit() {
+        use hal::SamplerMipCompatibility as Mip;
+
+        assert!(sampler_supports_explicit_lod(1, Mip::Unrestricted));
+        assert!(sampler_supports_explicit_lod(
+            1,
+            Mip::RaisedMaximum {
+                original: 1.0,
+                anisotropic: false,
+            }
+        ));
+        assert!(!sampler_supports_explicit_lod(
+            1,
+            Mip::RaisedMaximum {
+                original: 0.5,
+                anisotropic: false,
+            }
+        ));
+        assert!(!sampler_supports_explicit_lod(
+            1,
+            Mip::RaisedMaximum {
+                original: 2.0,
+                anisotropic: true,
+            }
+        ));
+        assert!(!sampler_supports_explicit_lod(1, Mip::SingleMip));
+
+        let mut pair = crate::validation::TextureSampleLevelZeroPair {
+            texture_group: 0,
+            texture_binding: 7,
+            sampler_group: 0,
+            sampler_binding: 8,
+            base_mip_view: false,
+            selected_mip_level: Some(1),
+            allow_multi_mip_integer_lod: false,
+        };
+        assert!(fl9_texture_sample_level_view_compatible(&pair, 1));
+        assert!(!fl9_texture_sample_level_view_compatible(&pair, 2));
+        pair.allow_multi_mip_integer_lod = true;
+        assert!(fl9_texture_sample_level_view_compatible(&pair, 2));
+        assert!(fl9_texture_sample_level_view_compatible(&pair, 1));
+        pair.selected_mip_level = Some(2);
+        assert!(fl9_texture_sample_level_view_compatible(&pair, 3));
+        assert!(!fl9_texture_sample_level_view_compatible(&pair, 2));
+
+        pair.selected_mip_level = None;
+        pair.base_mip_view = false;
+        assert!(fl9_texture_sample_level_view_compatible(&pair, 1));
+        assert!(!fl9_texture_sample_level_view_compatible(&pair, 2));
+        pair.base_mip_view = true;
+        assert!(fl9_texture_sample_level_view_compatible(&pair, 3));
     }
 
     #[test]

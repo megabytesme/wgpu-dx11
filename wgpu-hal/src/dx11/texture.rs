@@ -606,7 +606,6 @@ impl NativeTexture {
 pub struct NativeTextureView {
     resource: Option<ID3D11ShaderResourceView>,
     base_mip_resource: Option<ID3D11ShaderResourceView>,
-    base_mip_refresh: Option<Arc<SampledRefresh>>,
     render_target: Option<ID3D11RenderTargetView>,
     surface_target: Option<Arc<ID3D11RenderTargetView>>,
     depth_stencil: Option<ID3D11DepthStencilView>,
@@ -619,6 +618,13 @@ pub struct NativeTextureView {
     mip_base: u32,
     mip_count: u32,
     refresh: Option<Arc<SampledRefresh>>,
+    sample_level_mip_views: Arc<Mutex<Vec<Option<SampledMipView>>>>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct SampledMipView {
+    pub view: ID3D11ShaderResourceView,
+    pub refresh: Option<Arc<SampledRefresh>>,
 }
 
 #[derive(Debug)]
@@ -661,7 +667,6 @@ impl SampledRefresh {
 pub(super) struct SampledBinding {
     pub view: ID3D11ShaderResourceView,
     pub base_mip_view: Option<ID3D11ShaderResourceView>,
-    pub base_mip_refresh: Option<Arc<SampledRefresh>>,
     pub original: ID3D11Resource,
     pub refresh: Option<Arc<SampledRefresh>>,
     pub mip_base: u32,
@@ -671,6 +676,7 @@ pub(super) struct SampledBinding {
     pub sample_count: u32,
     pub filterable: bool,
     pub depth: bool,
+    pub sample_level_mip_views: Arc<Mutex<Vec<Option<SampledMipView>>>>,
 }
 
 impl NativeTextureView {
@@ -692,6 +698,15 @@ impl NativeTextureView {
     ) -> Option<alloc::sync::Weak<ID3D11RenderTargetView>> {
         self.surface_target.as_ref().map(Arc::downgrade)
     }
+}
+
+fn sample_level_mip_cache(count: u32) -> Result<Arc<Mutex<Vec<Option<SampledMipView>>>>> {
+    let mut cache = Vec::new();
+    cache
+        .try_reserve_exact(count as usize)
+        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+    cache.resize_with(count as usize, || None);
+    Ok(Arc::new(Mutex::new(cache)))
 }
 
 crate::impl_dyn_resource!(NativeTexture, NativeTextureView);
@@ -1345,7 +1360,6 @@ impl NativeDevice {
             SampledBinding {
                 view: resource,
                 base_mip_view: view.base_mip_resource.clone(),
-                base_mip_refresh: view.base_mip_refresh.clone(),
                 original: view.texture.as_resource()?,
                 refresh: view.refresh.clone(),
                 mip_base: view.mip_base,
@@ -1355,6 +1369,7 @@ impl NativeDevice {
                 sample_count,
                 filterable,
                 depth: view.depth_sampled,
+                sample_level_mip_views: view.sample_level_mip_views.clone(),
             },
             size,
             levels,
@@ -1842,10 +1857,36 @@ impl NativeDevice {
             } else {
                 (None, None)
             };
+        let sample_level_mip_views = sample_level_mip_cache(
+            if texture.dimension == wgt::TextureDimension::D2 && texture.layers == 1 {
+                texture.mip_levels
+            } else {
+                0
+            },
+        )?;
+        if texture.dimension == wgt::TextureDimension::D2 && texture.layers == 1 {
+            let selected = if texture.mip_levels == 1 {
+                SampledMipView {
+                    view: view.clone(),
+                    refresh: None,
+                }
+            } else {
+                SampledMipView {
+                    view: base_mip_resource
+                        .clone()
+                        .ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                    refresh: Some(
+                        base_mip_refresh
+                            .clone()
+                            .ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                    ),
+                }
+            };
+            sample_level_mip_views.lock()[0] = Some(selected);
+        }
         Ok(NativeTextureView {
             resource: Some(view),
             base_mip_resource,
-            base_mip_refresh,
             render_target: None,
             surface_target: None,
             depth_stencil: None,
@@ -1864,6 +1905,7 @@ impl NativeDevice {
             mip_base: 0,
             mip_count: texture.mip_levels,
             refresh: None,
+            sample_level_mip_views,
         })
     }
 
@@ -1939,7 +1981,6 @@ impl NativeDevice {
             return Ok(NativeTextureView {
                 resource: Some(shader.ok_or_else(|| Error::from_hresult(E_FAIL))?),
                 base_mip_resource: None,
-                base_mip_refresh: None,
                 render_target: None,
                 surface_target: None,
                 depth_stencil: None,
@@ -1952,19 +1993,28 @@ impl NativeDevice {
                 mip_base,
                 mip_count,
                 refresh: None,
+                sample_level_mip_views: sample_level_mip_cache(0)?,
             });
         }
         let mut shader = None;
         let mut base_mip_shader = None;
-        let mut base_mip_refresh = None;
         let mut target = None;
         let mut depth = None;
         let mut refresh = None;
+        let sample_level_mip_views =
+            sample_level_mip_cache(if resource && dimension == wgt::TextureViewDimension::D2 {
+                mip_count
+            } else {
+                0
+            })?;
         unsafe {
             if resource {
                 let mut texture_desc = D3D11_TEXTURE2D_DESC::default();
                 texture.raw.as_2d()?.GetDesc(&mut texture_desc);
                 let cube = dimension == wgt::TextureViewDimension::Cube;
+                if mip_count == 0 {
+                    return Err(invalid());
+                }
                 if cube
                     && (texture_desc.ArraySize != 6
                         || texture_desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE.0 as u32 == 0
@@ -2097,6 +2147,10 @@ impl NativeDevice {
                 if dimension == wgt::TextureViewDimension::D2 {
                     if mip_count == 1 {
                         base_mip_shader = shader.clone();
+                        sample_level_mip_views.lock()[0] = Some(SampledMipView {
+                            view: shader.clone().ok_or_else(|| Error::from_hresult(E_FAIL))?,
+                            refresh: None,
+                        });
                     } else if mip_count > 1 {
                         let (base, refresh) = self.create_base_mip_sampled_view(
                             texture.raw.as_2d()?,
@@ -2105,8 +2159,11 @@ impl NativeDevice {
                             (texture_desc.Height >> mip_base).max(1),
                             shader_desc.Format,
                         )?;
-                        base_mip_shader = Some(base);
-                        base_mip_refresh = Some(refresh);
+                        base_mip_shader = Some(base.clone());
+                        sample_level_mip_views.lock()[0] = Some(SampledMipView {
+                            view: base,
+                            refresh: Some(refresh),
+                        });
                     }
                 }
             }
@@ -2185,7 +2242,6 @@ impl NativeDevice {
         Ok(NativeTextureView {
             resource: shader,
             base_mip_resource: base_mip_shader,
-            base_mip_refresh,
             render_target: target,
             surface_target,
             depth_stencil: depth,
@@ -2198,6 +2254,7 @@ impl NativeDevice {
             mip_base,
             mip_count,
             refresh,
+            sample_level_mip_views,
         })
     }
 
@@ -2238,6 +2295,49 @@ impl NativeDevice {
             }],
         });
         Ok((view.ok_or_else(|| Error::from_hresult(E_FAIL))?, refresh))
+    }
+
+    pub(super) fn sample_level_mip_view(
+        &self,
+        binding: &SampledBinding,
+        level: u32,
+    ) -> Result<SampledMipView> {
+        if binding.dimension != wgt::TextureViewDimension::D2 || level >= binding.mip_count {
+            return Err(invalid());
+        }
+        let mut cache = binding.sample_level_mip_views.lock();
+        let slot = cache.get_mut(level as usize).ok_or_else(invalid)?;
+        if let Some(view) = slot {
+            return Ok(view.clone());
+        }
+        let source = binding.original.cast::<ID3D11Texture2D>()?;
+        let mut texture_desc = D3D11_TEXTURE2D_DESC::default();
+        let mut view_desc = D3D11_SHADER_RESOURCE_VIEW_DESC::default();
+        unsafe {
+            source.GetDesc(&mut texture_desc);
+            binding
+                .base_mip_view
+                .as_ref()
+                .ok_or_else(invalid)?
+                .GetDesc(&mut view_desc);
+        }
+        let source_mip = binding.mip_base.checked_add(level).ok_or_else(invalid)?;
+        if source_mip >= texture_desc.MipLevels {
+            return Err(invalid());
+        }
+        let (view, refresh) = self.create_base_mip_sampled_view(
+            &source,
+            source_mip,
+            (texture_desc.Width >> source_mip).max(1),
+            (texture_desc.Height >> source_mip).max(1),
+            view_desc.Format,
+        )?;
+        let selected = SampledMipView {
+            view,
+            refresh: Some(refresh),
+        };
+        *slot = Some(selected.clone());
+        Ok(selected)
     }
 
     pub(super) fn texture_desc(&self, texture: &NativeTexture) -> Result<D3D11_TEXTURE2D_DESC> {

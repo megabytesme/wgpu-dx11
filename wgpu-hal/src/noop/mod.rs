@@ -249,6 +249,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 texture_sample_base_clamp_to_edge_2d_float_fragment: false,
                 texture_sample_level: true,
                 texture_sample_level_zero_2d_float_fragment: false,
+                texture_sample_level_integer_2d_float_fragment: false,
                 texture_gather: true,
                 texture_gather_2d_float_fragment: false,
                 texture_load: true,

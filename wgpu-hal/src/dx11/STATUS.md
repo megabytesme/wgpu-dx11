@@ -1,3 +1,24 @@
+## Fixed integer fragment LOD on multi-mip views — 2026-11-14
+
+Added a distinct downlevel limit for direct or supported single-helper
+fragment `textureSampleLevel` calls with a statically known, nonnegative
+integer LOD. Core and HAL prove that every sample of the selected texture uses
+the same fixed level. Core validates the view-relative level and sampler at
+draw time. The HAL lazily creates one-mip scratch resources per selected view
+mip under a per-view mutex and retains the selected SRV and refresh copy in the
+recorded command. This avoids native level-9 `SampleLevel` while selecting the
+requested subresource. The prior one-mip path continues to clamp to its only
+level.
+
+The sampler minimum must be zero, min/mag filters must match, anisotropy must
+be one, and the original maximum must reach the selected level. FL9_1's native
+maximum remains `FLT_MAX`; a finite descriptor maximum is accepted only when
+the selected level is no greater than that original maximum. The capability is
+projected separately from both general explicit-LOD support and the prior
+single-mip subset. Strict public readback coverage for full and nonzero-base
+views, cache refresh, one-mip fallback and negative range/MaxLOD cases is
+written but has not yet been executed after this change.
+
 ## Query-gated BC1/BC2/BC3 mip chains — 2026-11-14
 
 The private/public mip paths for BC1, BC2 and BC3 UNORM and sRGB now require
