@@ -20857,6 +20857,8 @@ gap for multiple pending partial queue writes and copy/readback ordering.
 
 ## Query-supported multisample-mask execution — 2026-11-14
 
+Verified checkpoint: `f4ac37af89fdd012ce8d6705fe67db8dd2687cab`.
+
 Extended the strict public RGBA8 4x resolve test to run pipeline masks `0`,
 `1`, `3`, `0x10` and `1 << 32` through the FL9_1 output merger and readback.
 On the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
