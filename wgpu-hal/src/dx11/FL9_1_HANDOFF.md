@@ -2,14 +2,17 @@
 
 ## Coordinator status — 2026-11-14
 
-The source-test checkpoint is `d9f7be3f5`; this handoff refresh records
-subsequent read-only audit findings without source changes. D3D11 is an
-experimental public backend available through explicit selection; it remains
-excluded from default backend selection. The latest recorded strict runs passed
-169/169 public DX11 test functions and 538/538 private HAL tests on a physical RTX 3090 Ti
+The latest code checkpoint is `bbd6604859470634fe22636a99213a2bede8da3e`
+(`dx11: support fixed integer fragment texture LOD`). It records the selected-
+entry integer-level `textureSampleLevel` implementation, validation, lowering
+and readback tests. The latest strict runs passed 541/541 private HAL tests,
+154/154 Core DX11 fixture tests (one conditional unsupported-format subcase
+skipped), and 169/169 public DX11 test functions on a physical RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`) with FL9_1 explicitly requested and
-confirmed. These counts are regression evidence, not a measure of API
-completeness or the number of GPU executions.
+confirmed. Core DX12 passed 138/138 and `wgpu-types` 118/118. Three fresh strict
+CTS selectors for clear, fullscreen quad and the RGBA8 output target each
+passed 1/1 with no skips or failures. These counts are regression evidence,
+not a measure of API completeness or the number of GPU executions.
 
 The implemented subset covers desktop offscreen and HWND rendering, textured
 depth-tested draws, tested multi-group resource patterns, uniforms and dynamic

@@ -3970,3 +3970,23 @@ one tint uniform applied in the caller to the existing helper-based
 `textureSampleLevel(..., 0.0)` path; it is a common material composition that
 can be kept within the current selected-entry proof, but must be checked
 against the actual Core, HAL and Naga restrictions before implementation.
+
+## Coordinator update — fixed integer fragment LOD checkpoint — 2026-11-14
+
+The helper-based fragment `textureSampleLevel` path now supports the selected
+fixed nonnegative integer levels validated by Core and HAL, including
+view-relative mip selection and cache refresh after source updates. Commit
+`bbd6604859470634fe22636a99213a2bede8da3e` records the implementation. The
+previously proposed caller tint composition was implemented and verified in a
+separate preceding checkpoint; it is no longer the next task. The latest strict
+regression counts and RTX readback results are in `FL9_1_PROGRESS.md`.
+
+The mission remains PARTIALLY COMPLETE. No concrete public-valid texture/view/
+buffer-to-HAL mismatch was found in the latest scoped review, and occlusion
+queries remain correctly unavailable because the 10Level9 contract starts at
+FL9_2. Continue by auditing remaining advertised pipeline/shader contracts and
+the public-to-HAL failure paths, then run only narrowly scoped CTS selectors
+whose generated cases match the FL9_1 projection. Agents should investigate
+disjoint categories; cross-crate fixes and strict GPU integration remain under
+one coordinator. Historical FL9_1 hardware, Lumia/CoreWindow runtime and actual
+device-removal/TDR behavior remain external verification requirements.
