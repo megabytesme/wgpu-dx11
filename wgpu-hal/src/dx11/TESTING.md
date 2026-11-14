@@ -5606,3 +5606,29 @@ $env:CARGO_TARGET_DIR = 'E:\Temp\wgpu-mission-gpu-target'
 On the RTX 3090 Ti forced to FL9_1, the maximum-width edge copy returned the
 expected RGBA value and the over-limit texture failed validation. The full
 strict public target passed 169/169 test functions after adding this case.
+
+## ARM32 UWP compile check
+
+Rust 1.93.1 does not ship a prebuilt `thumbv7a-uwp-windows-msvc` standard
+library. Install `rust-src`, then build the standard library from the pinned
+toolchain source. Use the installed Visual Studio ARM/UWP environment, for
+example `VsDevCmd.bat -arch=arm -host_arch=x64 -app_platform=UWP
+-winsdk=10.0.22621.0 -vcvars_ver=14.44`:
+
+```powershell
+rustup component add rust-src --toolchain 1.93.1-x86_64-pc-windows-msvc
+$env:RUSTC_BOOTSTRAP = '1'
+$env:CARGO_NET_OFFLINE = 'true'
+$env:CARGO_TARGET_DIR = 'E:\Temp\wgpu-arm32-target'
+cargo -Z build-std=core,alloc,std,panic_abort check --offline -j32 -p wgpu --target thumbv7a-uwp-windows-msvc --no-default-features --features dx11,wgsl,std
+```
+
+The check passed for `wgpu-hal`, `wgpu-core` and public `wgpu`. A temporary
+consumer using `InstanceDescriptor::new_without_display_handle()` and
+`Backends::DX11` also built and linked for this target. This proves compilation
+and linking only; it does not prove CoreWindow activation, adapter creation or
+GPU rendering on ARM32. `cargo check -p wgpu --tests` currently fails while
+building the `windows-sys 0.52` dependency pulled in through test/example
+dependencies (`DELAYLOAD_INFO`, `TBBUTTON` and shell notification types are
+missing for this target); the library check and standalone consumer do not use
+that dependency path.
