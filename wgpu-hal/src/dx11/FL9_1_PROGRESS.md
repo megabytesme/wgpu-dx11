@@ -21047,8 +21047,9 @@ Rust 1.93.1 has no prebuilt `thumbv7a-uwp-windows-msvc` std component. After ins
 
 ## Coordinator follow-up — public contract and CoreWindow reviews — 2026-11-14
 
-The current clean checkpoint is `d9f7be3f5`. A fresh scoped Core/HAL review
-checked unsupported compute, indirect, ray-tracing, pipeline-cache and query
+The source-test checkpoint audited here is `d9f7be3f5`; this journal entry is
+committed separately and contains no source changes. A fresh scoped Core/HAL
+review checked unsupported compute, indirect, ray-tracing, pipeline-cache and query
 paths. Core gates these behind capabilities that the DX11 projection does not
 expose; no public-valid request reaching those HAL stubs was identified. The
 direct `tlas_instance_to_bytes` panic remains unreachable through the current

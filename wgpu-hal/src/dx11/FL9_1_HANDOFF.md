@@ -2,10 +2,11 @@
 
 ## Coordinator status — 2026-11-14
 
-Branch `uwp-dx11` is clean at `d9f7be3f5`. D3D11 is an experimental public
-backend available through explicit selection; it remains excluded from default
-backend selection. The latest recorded strict runs passed 169/169 public DX11
-test functions and 538/538 private HAL tests on a physical RTX 3090 Ti
+The source-test checkpoint is `d9f7be3f5`; this handoff refresh records
+subsequent read-only audit findings without source changes. D3D11 is an
+experimental public backend available through explicit selection; it remains
+excluded from default backend selection. The latest recorded strict runs passed
+169/169 public DX11 test functions and 538/538 private HAL tests on a physical RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`) with FL9_1 explicitly requested and
 confirmed. These counts are regression evidence, not a measure of API
 completeness or the number of GPU executions.
