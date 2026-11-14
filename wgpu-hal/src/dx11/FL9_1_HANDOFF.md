@@ -2,8 +2,9 @@
 
 ## Coordinator status — 2026-11-14
 
-The latest verified worktree increment is a narrow selected-entry fragment
-`textureSampleGrad` subset, not yet committed. Core and HAL prove it is direct,
+The latest code checkpoint is `a60a74f1a` (`dx11: lower restricted FL9_1
+textureSampleGrad`). It adds a narrow selected-entry fragment
+`textureSampleGrad` subset. Core and HAL prove it is direct,
 unconditional sampling of non-array 2D float textures with regular samplers;
 draw validation additionally requires a single-mip view, matching min/mag
 filters and anisotropy 1. HAL lowers only this proven case to implicit sampling

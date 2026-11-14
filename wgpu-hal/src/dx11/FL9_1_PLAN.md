@@ -67,6 +67,9 @@ coordinator-owned.
 
 ## Latest coordinator increment — restricted fragment textureSampleGrad — 2026-11-14
 
+Commit `a60a74f1a` (`dx11: lower restricted FL9_1 textureSampleGrad`) records
+the following implementation and verification.
+
 Added a distinct downlevel limit for one narrowly proven operation: a direct,
 unconditional fragment `textureSampleGrad` on non-array `texture_2d<f32>`
 resources. Core and the private HAL validate the selected entry point and

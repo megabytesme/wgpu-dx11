@@ -21174,3 +21174,5 @@ call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu-hal --features dx
 call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu-types restricted_single_mip_sample_grad_is_a_downlevel_limit -- --nocapture
 call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu-core --features dx12,wgsl fl9_single_mip_sample_grad_requires_direct_unconditional_fragment_use --lib -- --nocapture
 ```
+
+Verified code checkpoint: commit `a60a74f1a` (`dx11: lower restricted FL9_1 textureSampleGrad`).
