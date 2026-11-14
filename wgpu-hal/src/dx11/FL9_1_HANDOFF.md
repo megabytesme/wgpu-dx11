@@ -2,6 +2,46 @@
 
 ## Coordinator status — 2026-11-14
 
+Current support is a constrained opt-in public desktop graphics subset, not a
+general FL9_1-complete wgpu backend. The latest feature checkpoint is
+`86811fe68` (direct uniform-indexed vertex palette). A follow-up strict test
+now verifies that the existing fragment `textureGather` emulation combines a
+texture in group 1, sampler in group 2 and tint uniform in group 3, with group
+0 empty; it passed all 64 pixels on the RTX 3090 Ti at requested/actual
+FL9_1. The complete strict public suite passed 157/157. That test-only
+increment adds coverage without changing backend capability projection.
+
+### Remaining support work
+
+- **Implementation and validation:** finish a capability-to-Core-to-HAL
+  operation matrix; extend selected shader and resource paths only when an
+  actual application or validated API contract needs them; expand curated CTS
+  coverage for supported descriptors and operations. Existing audits have
+  not found a confirmed Core-valid-to-known-unimplemented-HAL mismatch in the
+  paths they reviewed, but those audits are scoped, not exhaustive.
+- **Hardware/profile boundaries:** compute/UAV/storage execution, geometry
+  shaders, multiple color outputs, indirect drawing and occlusion queries
+  remain excluded at FL9_1. Other public support remains deliberately
+  restricted for shader operations, formats, views, usages and descriptor
+  combinations. These are not candidates for forced enablement.
+- **External verification:** no historical FL9_1 adapter/driver has been
+  tested; the Lumia ARM32/CoreWindow runtime could not be reached; physical
+  TDR/device-removal recovery has not been exercised. A modern RTX forced to
+  FL9_1 is not a substitute for those systems.
+- **Usability evidence:** desktop offscreen and HWND rendering are tested, but
+  the repository has not yet passed a representative application workload
+  such as Horizon. The backend should be used through explicit DX11 selection
+  and within the published experimental projection.
+
+Use agents for bounded read-only audits, compiler/specification probes,
+supported-CTS triage and application requirement reviews. Keep each
+cross-crate implementation, strict GPU run and checkpoint with the
+coordinator; serialize GPU tests so results have one clear owner. Agents
+cannot provide historical hardware, Lumia or physical TDR evidence without
+those devices being available.
+
+## Coordinator status — 2026-11-14
+
 The latest verified code checkpoint is `e52cb32ea` (`dx11: allow a uniform
 with direct FL9_1 texture gather`); `1f4b637f4` records its evidence. This
 bounded Core/HAL/Naga proof permits one used `vec4f` uniform alongside a

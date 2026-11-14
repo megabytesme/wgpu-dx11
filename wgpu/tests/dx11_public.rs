@@ -44767,12 +44767,12 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
         ),
     });
     let target_format = TextureFormat::Rgba8Unorm;
-    let create_pipeline = |entry_point| {
+    let create_pipeline = |module, layout, entry_point| {
         device.create_render_pipeline(&RenderPipelineDescriptor {
             label: Some("FL9_1 textureGather pipeline"),
-            layout: Some(&pipeline_layout),
+            layout: Some(layout),
             vertex: VertexState {
-                module: &shader,
+                module,
                 entry_point: Some("vs"),
                 compilation_options: PipelineCompilationOptions::default(),
                 buffers: &[Some(VertexBufferLayout {
@@ -44799,7 +44799,7 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
             depth_stencil: None,
             multisample: MultisampleState::default(),
             fragment: Some(FragmentState {
-                module: &shader,
+                module,
                 entry_point: Some(entry_point),
                 compilation_options: PipelineCompilationOptions::default(),
                 targets: &[Some(ColorTargetState {
@@ -44812,11 +44812,70 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
             cache: None,
         })
     };
-    let pipeline = create_pipeline("fs");
-    let computed_pipeline = create_pipeline("fs_computed");
-    let helper_pipeline = create_pipeline("fs_helper");
-    let computed_helper_pipeline = create_pipeline("fs_helper_computed");
-    let uniform_pipeline = create_pipeline("fs_uniform");
+    let pipeline = create_pipeline(&shader, &pipeline_layout, "fs");
+    let computed_pipeline = create_pipeline(&shader, &pipeline_layout, "fs_computed");
+    let helper_pipeline = create_pipeline(&shader, &pipeline_layout, "fs_helper");
+    let computed_helper_pipeline = create_pipeline(&shader, &pipeline_layout, "fs_helper_computed");
+    let uniform_pipeline = create_pipeline(&shader, &pipeline_layout, "fs_uniform");
+
+    let split_texture_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 split textureGather texture layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 7,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Texture {
+                sample_type: TextureSampleType::Float { filterable: true },
+                view_dimension: TextureViewDimension::D2,
+                multisampled: false,
+            },
+            count: None,
+        }],
+    });
+    let split_sampler_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 split textureGather sampler layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 42,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Sampler(SamplerBindingType::Filtering),
+            count: None,
+        }],
+    });
+    let split_uniform_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 split textureGather uniform layout"),
+        entries: &[BindGroupLayoutEntry {
+            binding: 63,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: NonZeroU64::new(16),
+            },
+            count: None,
+        }],
+    });
+    let split_pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 split textureGather pipeline layout"),
+        bind_group_layouts: &[
+            None,
+            Some(&split_texture_layout),
+            Some(&split_sampler_layout),
+            Some(&split_uniform_layout),
+        ],
+        immediate_size: 0,
+    });
+    let split_shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 split-group textureGather shader"),
+        source: ShaderSource::Wgsl(
+            "@group(1) @binding(7) var image: texture_2d<f32>;\n\
+             @group(2) @binding(42) var smp: sampler;\n\
+             @group(3) @binding(63) var<uniform> tint: vec4f;\n\
+             struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f }\n\
+             @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(vec4f(position, 0.0, 1.0), uv); }\n\
+             @fragment fn fs(@location(0) uv: vec2f) -> @location(0) vec4f { return textureGather(2, image, smp, uv) * tint; }"
+                .into(),
+        ),
+    });
+    let split_pipeline = create_pipeline(&split_shader, &split_pipeline_layout, "fs");
 
     let input = device.create_texture(&TextureDescriptor {
         label: Some("FL9_1 textureGather patterned input"),
@@ -44903,6 +44962,34 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
             },
         ],
     });
+    let split_texture_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 split textureGather texture group"),
+        layout: &split_texture_layout,
+        entries: &[BindGroupEntry {
+            binding: 7,
+            resource: BindingResource::TextureView(&input_view),
+        }],
+    });
+    let split_sampler_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 split textureGather sampler group"),
+        layout: &split_sampler_layout,
+        entries: &[BindGroupEntry {
+            binding: 42,
+            resource: BindingResource::Sampler(&sampler),
+        }],
+    });
+    let split_uniform_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 split textureGather tint group"),
+        layout: &split_uniform_layout,
+        entries: &[BindGroupEntry {
+            binding: 63,
+            resource: BindingResource::Buffer(BufferBinding {
+                buffer: &tint,
+                offset: 0,
+                size: NonZeroU64::new(tint_data.len() as u64),
+            }),
+        }],
+    });
     let vertex_data: Vec<u8> = [
         -1.0f32, -1.0, 0.5, 0.5, 3.0, -1.0, 0.5, 0.5, -1.0, 3.0, 0.5, 0.5,
     ]
@@ -44933,7 +45020,7 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
     let target_view = target.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 textureGather readback"),
-        size: 5 * 8 * 256,
+        size: 6 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -45155,6 +45242,51 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
             depth_or_array_layers: 1,
         },
     );
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 split-group textureGather with uniform tint pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&split_pipeline);
+        pass.set_bind_group(1, &split_texture_group, &[]);
+        pass.set_bind_group(2, &split_sampler_group, &[]);
+        pass.set_bind_group(3, &split_uniform_group, &[]);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 40 * 256,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
@@ -45184,6 +45316,7 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
             ("computed", 16 * 256, computed_expected),
             ("computed helper", 24 * 256, computed_expected),
             ("uniform", 32 * 256, uniform_expected),
+            ("split-group uniform", 40 * 256, uniform_expected),
         ] {
             for y in 0..8 {
                 for x in 0..8 {
@@ -45202,7 +45335,7 @@ fn public_dx11_fragment_texture_gather_emulation_at_fl91() {
     }
     readback.unmap();
     println!(
-        "PASS: physical FL9_1 direct, computed-coordinate, forwarding-helper, computed-coordinate-helper, and uniform-backed textureGather sampled expected texels; direct/helper output {expected:?}, computed output {computed_expected:?}, uniform output {uniform_expected:?}, 64/64 pixels each within one UNORM step"
+        "PASS: physical FL9_1 direct, computed-coordinate, forwarding-helper, computed-coordinate-helper, uniform-backed, and split-group uniform textureGather sampled expected texels; direct/helper output {expected:?}, computed output {computed_expected:?}, uniform output {uniform_expected:?}, 64/64 pixels each within one UNORM step"
     );
 
     let srgb_features = adapter.get_texture_format_features(TextureFormat::Rgba8UnormSrgb);

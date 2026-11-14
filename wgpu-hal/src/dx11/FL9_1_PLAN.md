@@ -3693,3 +3693,24 @@ and Lumia/CoreWindow remain unverified, and physical device-removal recovery
 has not been simulated. Use agents for non-overlapping read-only contract,
 shader, and workload audits or bounded compiler probes; keep cross-crate
 changes, hardware tests, and checkpoint integration with the coordinator.
+
+## Coordinator increment — split-group fragment gather with uniform — 2026-11-14
+
+The narrow selected fragment gather plus one `vec4f` uniform now has public
+strict GPU coverage with the texture at group 1/binding 7, sampler at
+group 2/binding 42 and tint at group 3/binding 63; group 0 is empty. The
+physical RTX 3090 Ti at explicitly requested and confirmed FL9_1 produced the
+expected tint-modulated gather in all 64 pixels. The complete strict public
+suite passed 157/157. This adds no capability or shader-shape support; it
+verifies that the existing cross-group mapping and the special gather
+emulation cooperate.
+
+Use agent work for independent, read-only audits, specification checks,
+compiler probes and application requirement reviews. Do not assign separate
+agents to implement cross-layer Core/HAL/Naga features or run concurrent
+hardware suites. The coordinator should own changes spanning those layers,
+one-at-a-time strict GPU proof, regression integration and commits. The next
+mission focus remains systematic supported-contract/CTS coverage and a real
+application workload; historical hardware, Lumia/CoreWindow execution and
+physical device-removal recovery require external devices and cannot be
+closed by code agents.

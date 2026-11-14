@@ -46,6 +46,40 @@ cargo +1.93.1 fmt --all -- --check
 git diff --check
 ```
 
+## Split-group fragment `textureGather` with a uniform — 2026-11-14
+
+The selected fragment `textureGather` path was exercised with its texture,
+sampler and sole allowed `vec4f` tint in separate groups 1, 2 and 3, leaving
+group 0 empty. The shader used sparse logical bindings 7, 42 and 63. This
+closes a cross-group execution-coverage gap; Core, HAL and Naga validation or
+capability projections did not change. The texture, sampler and tint each
+affected the expected gathered output.
+
+With `WGPU_DX11_REQUIRE_HARDWARE=1`, the focused test ran on the physical NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), explicitly
+requested and confirmed FL9_1. Direct, computed-coordinate, helper,
+computed-coordinate-helper, same-group uniform, and split-group uniform
+variants each matched all 64 pixels; the new split-group result matched
+`[76, 83, 53, 91]` within one UNORM step. The existing sRGB readback also
+matched all 64 pixels, and the R8 and multi-mip negative cases were rejected
+before HAL execution.
+
+The complete strict public D3D11 target passed 157/157 test functions with no
+Rust test failures or ignored tests. The focused target passed 1/1. Public
+test-target Clippy completed with eight existing D3D11 HAL warnings and no
+warning introduced by this test. Rust 1.93.1 formatting and `git diff --check`
+passed. This verifies group-index consistency for this tested emulation
+composition on the RTX; historical FL9_1 drivers remain untested.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cmd /c call "%TEMP%\wgpu-mission-cargo-c-target.bat" test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_fragment_texture_gather_emulation_at_fl91 -- --exact --nocapture --test-threads=1
+cmd /c call "%TEMP%\wgpu-mission-cargo-c-target.bat" test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+cmd /c call "%TEMP%\wgpu-mission-cargo-c-target.bat" clippy --offline -j8 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std
+cargo +1.93.1 fmt --all -- --check
+git diff --check
+```
+
 ## Direct uniform-indexed vertex palette — 2026-11-14
 
 Added a narrowly proved selected-entry form for a vertex uniform containing a
