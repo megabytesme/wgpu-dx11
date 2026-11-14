@@ -203,6 +203,26 @@ The first covers both values of the `blending_disabled` parameter. The second
 checks RGBA8 UNORM clamping; color and alpha use the same blend component, so
 it does not cover the known separate-alpha portability issue.
 
+## Additional strict texture-copy selector — 2026-11-14
+
+The BGRA8 UNORM 2D-to-2D copy selector passed without skips or failures on the
+physical RTX 3090 Ti with requested and actual FL9_1. The corresponding
+`Rg16Snorm` selector was also attempted, but all subcases skipped because
+`texture-formats-tier1` is not in this adapter's conservative projection; it
+is not a passing selector and is not in the curated pass inventory.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="bgra8unorm";dstFormat="bgra8unorm";dimension="2d"'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="rg16snorm";dstFormat="rg16snorm";dimension="2d"'
+```
+
+The strict BGRA8 run selected NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), requested and confirmed FL9_1, and reported 1 pass,
+0 skips and 0 failures. The Rg16Snorm run selected the same adapter and
+reported 0 passes, 1 skipped test case and 0 failures; each subcase required
+the unexposed `texture-formats-tier1` feature.
+
 An attempted narrowly filtered RGBA8 texture-zero-initialization selector
 matched no cases. Its requested aspect, mip, sample-count, layer and related
 parameters are nested subcases rather than query parameters; the coarser

@@ -20388,3 +20388,34 @@ cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware '
 
 Do not add this selector to the curated passing inventory. The next candidate
 should be selected from scoped API, resource and shader coverage audits.
+
+## BGRA8 2D copy CTS and scoped support audits — 2026-11-14
+
+The strict `copyTextureToTexture` selector for 2D `Bgra8Unorm` was executed on
+the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at explicitly requested and verified FL9_1. It passed 1/1
+with zero skips or failures. The result is recorded in `FL9_1_CTS.md`.
+
+Three read-only audits examined the public Core/HAL command contract, texture
+and transfer coverage, and the selected shader/profile subset. None found a
+confirmed Core-valid request reaching an unimplemented HAL command in the
+reviewed paths. Compute/storage, indirect draw, occlusion, vertex texture
+sampling and derivatives remain withheld or rejected by projection and
+backend checks. Shader audit found no clean next opcode to enable without a
+real workload; explicit LOD, `textureGatherCompare`, derivatives,
+`textureSampleGrad`, unrestricted runtime indexing and broad control-flow
+compositions remain constrained for profile or semantic reasons. Resource
+creation/view coverage is broad, but its 191 advertised usage combinations
+and 199 exact-usage views across 21 formats are not pixel-level execution for
+every format. Historical FL9_1 hardware, Lumia/CoreWindow execution, and
+physical TDR/device-removal remain unverified external requirements.
+
+No implementation change was justified by these audits. Continue with
+projection-constrained operation coverage or a representative application
+workload; do not treat the amount of prior implementation as proof of full
+FL9_1 support.
+
+```powershell
+$env:CARGO_TARGET_DIR = 'C:\Users\ben\AppData\Local\Temp\wgpu-dx11-completion-target'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="bgra8unorm";dstFormat="bgra8unorm";dimension="2d"'
+```

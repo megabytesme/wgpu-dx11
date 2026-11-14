@@ -27,11 +27,19 @@ RGBA8 2D copy selector is already recorded below as a strict 1/1 pass. Choose
 the next CTS or implementation candidate from the current scoped coverage
 audits rather than repeating either probe.
 
-The long-running gaps remain a broader capability-to-Core-to-HAL audit,
-curated CTS coverage for the selected projection, representative application
-workload validation, historical FL9_1 drivers, Windows 10 Mobile/Lumia runtime,
-and physical TDR/device-removal recovery. Native exclusions documented below
-remain rejected.
+Scoped Core/HAL, resource/transfer and shader audits found no confirmed
+Core-valid-to-unimplemented-HAL mismatch in the reviewed paths, and no
+workload-independent shader operation that is safe to enable next. A strict
+BGRA8 2D texture-copy CTS case now passes 1/1; the attempted Rg16Snorm case
+skips because its required format tier is not projected. Continue expanding
+evidence only within advertised capability boundaries, or use a real
+application workload to justify the next vertical slice.
+
+The long-running gaps remain exhaustive capability-to-Core-to-HAL coverage,
+curated CTS coverage for the full selected projection, representative
+application workload validation, historical FL9_1 drivers, Windows 10
+Mobile/Lumia runtime, and physical TDR/device-removal recovery. Native
+exclusions documented below remain rejected.
 
 ## Coordinator status and specialist review — 2026-11-12
 
