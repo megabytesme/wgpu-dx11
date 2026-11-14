@@ -21193,3 +21193,19 @@ unit library also passed 140/140 tests, but that run did not include the
 set WGPU_DX11_REQUIRE_HARDWARE=1&& call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1
 set WGPU_DX11_REQUIRE_HARDWARE=1&& call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu-core --features dx11,wgsl --lib -- --nocapture --test-threads=1
 ```
+
+## Strict CTS fragment-output format slice — 2026-11-14
+
+Strict DX11 CTS ran three format-specific `pipeline_output_targets:color,component_count`
+selectors using a temporary selector file to preserve the JSON quotes through
+Windows argument parsing. BGRA8 linear, BGRA8 sRGB and RGBA8 sRGB each passed
+1/1 with zero skips and failures. Each runner preflight selected the physical
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) and verified the FL9_1
+marker. This adds one-target fragment-output/readback evidence only; it does
+not change format capability projection. The CTS inventory records exact
+selectors and commands.
+
+The first run rebuilt the CTS runner using a consistent low-debug, single-job
+profile after prior mixed-profile artifacts had made CTS builds unreliable.
+The temporary selector list was created under the system temporary directory
+and removed after the run.

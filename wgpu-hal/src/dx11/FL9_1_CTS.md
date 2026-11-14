@@ -34,6 +34,9 @@ only.
 | --- | --- | --- |
 | `webgpu:api,operation,rendering,basic:clear:*` | 1/1 passed, no skips or failures | RGBA8 clear, copy to buffer, and readback. |
 | `webgpu:api,operation,rendering,basic:fullscreen_quad:*` | 1/1 passed, no skips or failures | Bufferless triangle, selected `vertex_index` lowering, and green pixel readback. |
+| `webgpu:api,operation,render_pipeline,pipeline_output_targets:color,component_count:format="bgra8unorm"` | 1/1 passed, no skips or failures | Four-component BGRA8 fragment output. |
+| `webgpu:api,operation,render_pipeline,pipeline_output_targets:color,component_count:format="bgra8unorm-srgb"` | 1/1 passed, no skips or failures | Four-component BGRA8 sRGB fragment output. |
+| `webgpu:api,operation,render_pipeline,pipeline_output_targets:color,component_count:format="rgba8unorm-srgb"` | 1/1 passed, no skips or failures | Four-component RGBA8 sRGB fragment output. |
 | `webgpu:api,operation,rendering,color_target_state:color_write_mask,channel_work:*` | 16 cases passed, no skips or failures | All channel-write-mask combinations. |
 | `webgpu:api,operation,rendering,color_target_state:blend_constant,setting:*` | 3 cases passed, no skips or failures | Constant-factor blending with pixel checks; does not cover separate-alpha equations. |
 | `webgpu:api,operation,rendering,color_target_state:blend_constant,initial:*` | 1/1 passed, no skips | Initial blend-constant behavior. |
