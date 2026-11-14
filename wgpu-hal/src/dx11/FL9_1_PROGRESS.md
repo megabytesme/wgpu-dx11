@@ -20399,7 +20399,12 @@ giving 5/5 passed with zero skips or failures. The same five cases passed 5/5
 on DX12 and 5/5 on Vulkan. The Vulkan loader reported one unavailable optional
 OBS layer manifest; it did not affect test execution. These CTS tests validate
 copying stored texel bits; the backend performs no color-space conversion.
-The results and exact selectors are recorded in `FL9_1_CTS.md`.
+The results and exact selectors are recorded in `FL9_1_CTS.md`. All five
+selectors were added to `cts_runner/test.lst`; the `lst_files_are_sorted`
+integration test passed 1/1. The test-list and report update is the current
+uncommitted increment; the preceding CTS evidence checkpoints are
+`2394d39fe` (Rg16Snorm skip), `7f209d353` (BGRA8 baseline copy) and
+`62e7b7c0d` (sRGB-compatible copies).
 
 Three read-only audits examined the public Core/HAL command contract, texture
 and transfer coverage, and the selected shader/profile subset. None found a
