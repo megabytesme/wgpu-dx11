@@ -21241,6 +21241,24 @@ projection test passed 1/1. Do not treat the selected RTX as proof for
 historical blend-factor support. Existing warnings and the Visual Studio
 startup banner are unchanged.
 
+The HAL, Core fixture-enabled, and public `dx11_public` Clippy commands all
+exited successfully. HAL Clippy reported its existing 28 warnings; Core
+reported existing fixture warnings and inherited HAL warnings. Rust 1.93.1
+workspace formatting and `git diff --check` passed.
+
+The exact bounded commands, using the checked-in Rust 1.93.1 wrapper and
+Visual Studio x64 environment, were:
+
+```text
+cmd.exe /d /s /c "set WGPU_DX11_REQUIRE_HARDWARE=1&& call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu --test dx11_public --no-default-features --features dx11,wgsl,std -- --nocapture --test-threads=1"
+cmd.exe /d /s /c "set WGPU_DX11_REQUIRE_HARDWARE=1&& call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu-hal --features dx11 --lib -- --nocapture --test-threads=1"
+cmd.exe /d /s /c "set WGPU_DX11_REQUIRE_HARDWARE=1&& call E:\Temp\wgpu_mission_cargo.bat test --offline -j4 -p wgpu-core --lib --no-default-features --features dx11-test-fixture,std fl91_core_buffer_and_offscreen_render_on_hardware -- --nocapture --test-threads=1"
+cmd.exe /d /s /c "call E:\Temp\wgpu_mission_cargo.bat clippy --offline -j4 -p wgpu-hal --features dx11 --lib --tests"
+cmd.exe /d /s /c "call E:\Temp\wgpu_mission_cargo.bat clippy --offline -j4 -p wgpu-core --no-default-features --features dx11-test-fixture,std --lib --tests"
+cmd.exe /d /s /c "call E:\Temp\wgpu_mission_cargo.bat clippy --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public"
+cmd.exe /d /s /c "call E:\Temp\wgpu_mission_cargo.bat fmt --all -- --check"
+```
+
 The unrecorded strict CTS state transition
 `webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_before_non_indexed_draw:*`
 passed 1/1 with zero skips/failures. It indexed-draws, changes to a

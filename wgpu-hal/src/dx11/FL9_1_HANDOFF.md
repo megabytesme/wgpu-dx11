@@ -2,17 +2,25 @@
 
 ## Coordinator status — 2026-11-14
 
-Latest code checkpoint before the current work is `8a8bc1e7e` (`dx11: record
-FL9_1 output format CTS coverage`). The working tree contains an alpha-
-equivalent coupled-blend validation change and evidence-backed CTS inventory
-updates. Full strict D3D11 public and private HAL suites on the physical RTX
-3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) explicitly requested and
-confirmed FL9_1 passed 169/169 and 543/543 after the final blend descriptor and
-readback expectation were selected. The strict Core fixture passed 1/1 (154
+Latest code checkpoint is `0f9fed45a` (`dx11: allow alpha-equivalent coupled
+blend states`). It normalizes color factors to their alpha-channel equations
+before deciding whether the FL9_1 separate-alpha gate is needed; genuinely
+different equations remain rejected. Core and HAL validate the same projection
+and the HAL uses the color equation's alpha-native factor forms. The Core
+fixture tests a valid equivalent pipeline and keeps invalid Min/Max and true
+separate-alpha requests rejected. Strict public readback checks the accepted
+inverse-color case and the premultiplied baseline over all 64 pixels. The
+checkpoint also adds an explicit Core rejection test for R8 3D textures, which
+the RGBA8-only volume shadow path cannot handle, and records verified CTS cases.
+
+Full strict D3D11 public and private HAL suites on the physical RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) explicitly requested and confirmed
+FL9_1 passed 169/169 and 543/543. The strict Core fixture passed 1/1 (154
 tests filtered; one optional RG8 mip capability subcase skipped). Core DX12
-passed 139/139 and the `wgpu-types` projection test passed. Three new CTS
-state/transition selectors passed 1/1 each; two same-format sRGB copy
-selectors passed 1/1 each; the shared CTS-list sorter passed 1/1. Details are
+passed 139/139 and the `wgpu-types` projection test passed. Three state or
+transition CTS selectors passed 1/1 each; two same-format sRGB copy selectors
+passed 1/1 each; the shared CTS-list sorter passed 1/1. HAL, Core and public
+Clippy passed with existing warnings; workspace formatting passed. Details are
 in `FL9_1_PROGRESS.md` and `FL9_1_CTS.md`.
 
 The implemented subset covers desktop offscreen and HWND rendering, textured
