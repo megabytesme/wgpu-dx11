@@ -20391,10 +20391,13 @@ should be selected from scoped API, resource and shader coverage audits.
 
 ## BGRA8 2D copy CTS and scoped support audits — 2026-11-14
 
-The strict `copyTextureToTexture` selector for 2D `Bgra8Unorm` was executed on
-the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
-`32.0.16.2101`) at explicitly requested and verified FL9_1. It passed 1/1
-with zero skips or failures. The result is recorded in `FL9_1_CTS.md`.
+Four strict `copyTextureToTexture` selectors ran on the physical NVIDIA
+GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) at explicitly
+requested and verified FL9_1. BGRA8 UNORM same-format copy passed 1/1, and
+RGBA8 and BGRA8 each passed both linear-to-sRGB and sRGB-to-linear copy,
+giving 4/4 passed with zero skips or failures. These CTS tests validate
+copying the stored texel bits; the backend performs no color-space conversion.
+The results and exact selectors are recorded in `FL9_1_CTS.md`.
 
 Three read-only audits examined the public Core/HAL command contract, texture
 and transfer coverage, and the selected shader/profile subset. None found a

@@ -11,12 +11,8 @@ FXC compilation, and strict public GPU readback all passed.
 
 The current capability path remains an experimental subset, not complete
 FL9_1 WebGPU support. Continue evidence-led vertical slices and coverage; do
-not expand profile or hardware boundaries. One bounded next verification
-candidate from the latest read-only audit is the query-gated `Rg16Snorm`
-2D-to-2D `copyTextureToTexture` CTS case, filtered to `dimension="2d"` so
-unsupported dimensional variants do not contaminate the result. Add it to the
-curated passing inventory only if strict hardware execution has zero failures
-and skips. Do not claim that forced FL9_1 on the RTX models older drivers.
+not expand profile or hardware boundaries. Do not claim that forced FL9_1 on
+the RTX models older drivers.
 
 The previous next-candidate probe, query-gated `Rg16Snorm` 2D texture copy,
 was not eligible for this adapter projection: the CTS required
@@ -29,8 +25,9 @@ audits rather than repeating either probe.
 
 Scoped Core/HAL, resource/transfer and shader audits found no confirmed
 Core-valid-to-unimplemented-HAL mismatch in the reviewed paths, and no
-workload-independent shader operation that is safe to enable next. A strict
-BGRA8 2D texture-copy CTS case now passes 1/1; the attempted Rg16Snorm case
+workload-independent shader operation that is safe to enable next. Four
+BGRA8/RGBA8 2D texture-copy CTS cases now pass 4/4, including supported
+linear/sRGB format pairs in both directions. The attempted Rg16Snorm case
 skips because its required format tier is not projected. Continue expanding
 evidence only within advertised capability boundaries, or use a real
 application workload to justify the next vertical slice.
