@@ -4,10 +4,9 @@
 
 ### Current verification checkpoint
 
-The live branch is `uwp-dx11`, HEAD
-`0d690854b3225e7d35435a1fdc19ee73da3eccf0`, with a clean working tree.
-The latest code checkpoint remains `ff062dbcc`; commits after it record
-verified results or correct a stale timestamp-test description.
+The live branch is `uwp-dx11`; the latest implementation checkpoint remains
+`ff062dbcc`. Later commits record verified results and corrections to test
+documentation; inspect Git history for the current documentation HEAD.
 
 Since that checkpoint, strict forced-FL9_1 public runs on the RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`) confirmed: the public offscreen
@@ -30,14 +29,15 @@ or device configuration was changed.
 Independent audits of shader/profile boundaries, formats/usages, render and
 transfer paths, public resource/view validation, presentation, and reviewed
 HAL panic reachability have found no concrete Core-valid request reaching a
-known unsupported HAL path. These reviews are scoped and do not prove the full
-matrix. A fresh capability-projection/HAL reachability/CTS-coverage audit is
-in progress. The mission remains **PARTIALLY COMPLETE** until the advertised
-capability, Core-validation, HAL-operation and applicable CTS evidence is
-reconciled, and external hardware gaps are clearly reported. The current next
-step is to integrate those audit findings and run a narrowly selected CTS or
-regression test for any concrete gap; if no implementation gap is evidenced,
-continue the matrix audit rather than inventing unsupported FL9_1 features.
+known unsupported HAL path. A fresh capability-projection and HAL-reachability
+review is complete, and CTS triage selected compatible override-pipeline
+cases that have since passed on strict hardware. These reviews are scoped and
+do not prove the full matrix. The mission remains **PARTIALLY COMPLETE** until
+the advertised capability, Core-validation, HAL-operation and applicable CTS
+evidence is reconciled, and external hardware gaps are clearly reported. The
+next step is to continue systematic coverage, changing implementation only
+when a concrete mismatch is demonstrated rather than inventing unsupported
+FL9_1 features.
 
 ### Verification refresh — optional RG8 3D path
 
@@ -49,6 +49,19 @@ Fixture-enabled Core passed 155/155, Core DX12 passed 139/139, and
 single-process public runs intermittently hit FXC internal `0x8007000e` errors
 in varying shader tests; the latest full run succeeded, and process-sharded
 runs remain a reproducible alternative.
+
+The latest strict public CTS additions exercise render-pipeline overrides
+across shared shader modules and separate entry points. Both selectors passed
+2/2 on the physical RTX 3090 Ti at forced FL9_1, with twelve rendered
+subcases and no skips or failures; details are in `FL9_1_PROGRESS.md`.
+
+The follow-up capability/Core/HAL audits found no confirmed public-valid
+request that reaches an unsupported HAL operation. A reported separate-alpha
+blend mismatch was withdrawn after checking the existing Core downlevel-flag
+gate. Static shader loops remain supported within FXC's profile budget; the
+backend reports a recoverable pipeline compilation error when FXC rejects a
+shader that exceeds the instruction budget, which Core cannot estimate soundly
+from WGSL operations alone.
 
 The latest compiler-boundary probe compiles a runtime-data fragment `mat4`
 inverse successfully under the shader-model-5 control, then confirms FXC

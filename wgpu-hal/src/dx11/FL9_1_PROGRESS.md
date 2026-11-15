@@ -21687,3 +21687,36 @@ cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware '
 The successful build took 8m27s in the fresh target. The prior E0460 and
 1455 outcomes are build failures, not CTS case results. No implementation code
 changed for this test.
+
+## Strict public CTS — shared-module and multi-entry-point overrides — 2026-11-15
+
+The follow-up CTS audit selected two more render-pipeline override cases whose
+fixtures match the current BGRA8 single-target projection:
+
+- `webgpu:api,operation,render_pipeline,overrides:shared_shader_module:*`
+- `webgpu:api,operation,render_pipeline,overrides:multi_entry_points:*`
+
+Both selectors passed 2/2 (the asynchronous and synchronous pipeline-creation
+variants), with zero skips or failures. Each variant checked three rendered
+override combinations, for twelve rendered subcases total. Strict selection
+reported the physical RTX 3090 Ti (`0x10de:0x2203`), driver `32.0.16.2101`,
+requested and actual FL9_1. This confirms reuse of shader modules across
+specialized pipelines and separate vertex/fragment entry-point constants.
+
+The normal `cargo xtask cts` invocation did not reach CTS: rebuilding
+`cts_runner` first failed with rustc `STATUS_STACK_BUFFER_OVERRUN` while using
+the default debug profile; a zero-debug, one-job retry through the Visual
+Studio environment failed while compiling `clang-sys` with the same allocation
+failure. The cases were then run using the already-built DX11-enabled runner
+from the preceding successful `overrides:basic` CTS build. From the `cts`
+directory, the direct invocations were:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:DENO_WEBGPU_BACKEND = 'dx11'
+& 'E:\Temp\wgpu-dx11-cts-overrides-20261115\debug\cts_runner.exe' './tools/run_deno' '--verbose' 'webgpu:api,operation,render_pipeline,overrides:shared_shader_module:*'
+& 'E:\Temp\wgpu-dx11-cts-overrides-20261115\debug\cts_runner.exe' './tools/run_deno' '--verbose' 'webgpu:api,operation,render_pipeline,overrides:multi_entry_points:*'
+```
+
+The direct runner is evidence from this session, not a replacement for a
+reproducible clean `xtask` build. No implementation code changed.

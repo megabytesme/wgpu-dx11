@@ -35,6 +35,8 @@ only.
 | `webgpu:api,operation,rendering,basic:clear:*` | 1/1 passed, no skips or failures | RGBA8 clear, copy to buffer, and readback. |
 | `webgpu:api,operation,rendering,basic:fullscreen_quad:*` | 1/1 passed, no skips or failures | Bufferless triangle, selected `vertex_index` lowering, and green pixel readback. |
 | `webgpu:api,operation,render_pipeline,overrides:basic:*` | 2/2 passed, no skips or failures | Vertex/fragment WGSL overrides through asynchronous and synchronous pipeline creation, rendering, and output checks. |
+| `webgpu:api,operation,render_pipeline,overrides:shared_shader_module:*` | 2/2 passed, no skips or failures | Reuses one vertex/fragment shader-module pair across separately specialized pipelines; verifies both rendered outputs for async and sync creation. |
+| `webgpu:api,operation,render_pipeline,overrides:multi_entry_points:*` | 2/2 passed, no skips or failures | Stage-specific override constants for separate entry points in one module; verifies rendered output for async and sync creation. |
 | `webgpu:api,operation,render_pipeline,pipeline_output_targets:color,component_count:format="bgra8unorm"` | 1/1 passed, no skips or failures | Four-component BGRA8 fragment output. |
 | `webgpu:api,operation,render_pipeline,pipeline_output_targets:color,component_count:format="bgra8unorm-srgb"` | 1/1 passed, no skips or failures | Four-component BGRA8 sRGB fragment output. |
 | `webgpu:api,operation,render_pipeline,pipeline_output_targets:color,component_count:format="rgba8unorm-srgb"` | 1/1 passed, no skips or failures | Four-component RGBA8 sRGB fragment output. |
