@@ -4231,3 +4231,10 @@ hardware markers in all tests. There have now been three consecutive passing
 full runs after one unexplained process failure. Treat reliability as
 improved but not root-caused; no adapter substitution or hardware skips were
 counted as passing test functions.
+## Public end-to-end examples reverified — 2026-11-15
+
+Current-tree strict RTX 3090 Ti FL9_1 runs passed both documented public
+examples: offscreen indexed textured depth rendering with validated 1,024
+pixel readback, and 10 real HWND-presented frames. Exact commands/logs are in
+the progress journal. Lumia Device Portal remains unreachable (request timeout);
+legacy ARM32/CoreWindow runtime and historical FL9_1 hardware remain open.

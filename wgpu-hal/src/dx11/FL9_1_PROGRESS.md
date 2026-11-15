@@ -21977,3 +21977,32 @@ green monolithic runs since the earlier failure, but does not explain or erase
 the earlier intermittent FXC/adapter/access-violation incident. Logs:
 `E:\Temp\wgpu-dx11-public-repeat-1-20261115.log` and
 `E:\Temp\wgpu-dx11-public-repeat-2-20261115.log`.
+## Public example recheck from current committed tree — 2026-11-15
+
+The required public API examples were rerun with
+`WGPU_DX11_REQUIRE_HARDWARE=1` through the pinned Visual Studio/Rust wrapper.
+Both selected the physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) and explicitly requested/received FL9_1 with `software=false`.
+
+- `dx11_fl91_offscreen` passed: public wgpu created a device and queue,
+  uploaded indexed geometry and a patterned texture, rendered a depth-tested
+  cube, waited and mapped readback; 112 red, 277 green and 635 blue-background
+  pixels matched across 1,024 pixels.
+- `dx11_fl91_windowed --frames=10` passed: the native HWND example presented
+  10 textured, indexed, depth-tested frames and exited cleanly. This is a real
+  surface/presentation run; this invocation did not capture the displayed
+  pixels. Prior visual capture evidence remains in the earlier journal entry.
+
+Exact commands:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j8 -p wgpu --example dx11_fl91_offscreen --no-default-features --features dx11,wgsl,std
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j8 -p wgpu --example dx11_fl91_windowed --no-default-features --features dx11,wgsl,std -- --frames=10
+```
+
+Logs: `E:\Temp\wgpu-dx11-offscreen-current-20261115.log` and
+`E:\Temp\wgpu-dx11-windowed-current-20261115.log`. The Lumia Device Portal
+`/api/os/devicefamily` request was retried and timed out again; this is an
+external device connectivity blocker, not a runtime test result. No Lumia or
+historical FL9_1 hardware claim is made.
