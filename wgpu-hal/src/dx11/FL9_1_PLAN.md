@@ -11,10 +11,9 @@ matching `dpdx` / `dpdy` expressions used exclusively as the selected sample's
 gradients enter the existing single-mip lowering path. See the latest
 progress entry for the proof shape and strict GPU results.
 
-Committed selected-device evidence on the RTX 3090 Ti includes strict
-forced-FL9_1 public runs that
-(`0x10de:0x2203`, driver `32.0.16.2101`) confirmed: the public offscreen
-textured indexed cube readback classified 112 red, 277 green and 635 background
+Committed selected-device evidence includes the public offscreen textured
+indexed cube test on the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`), which classified 112 red, 277 green and 635 background
 pixels; the public HWND example presented 60 textured indexed depth-tested
 frames; and the safe `Arc<Window>` winit example resized/reconfigured from
 400x300 to 640x480 and presented 60 frames. The strict BC mip/cube test passed
