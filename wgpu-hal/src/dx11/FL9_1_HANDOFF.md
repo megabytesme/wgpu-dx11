@@ -4191,3 +4191,33 @@ hardware validation and integration coordinated here.
 ## Coordinator update — ARM32 UWP build evidence — 2026-11-14
 
 The pinned Rust 1.93.1 toolchain, using `rust-src` and `-Z build-std` for the low-tier target, successfully checked the full HAL/Core/public `wgpu` library chain for `thumbv7a-uwp-windows-msvc`. A minimal consumer selecting `Backends::DX11` linked for ARM32 UWP with the Visual Studio ARM linker and Windows SDK 10.0.22621.0. This reduces the platform source-build risk but is not an AppX deployment, CoreWindow run, adapter creation or GPU execution. The repository's `--tests` cross-check is blocked by `windows-sys 0.52.0` missing Win32 declarations under this target; tests are not needed for the library build. The Lumia address currently has no TCP 443 reachability and Device Portal requests time out.
+
+## Current coordinator handoff — bounded coordinate-derivative gradients — 2026-11-15
+
+Branch `uwp-dx11`; HEAD `8489758b0` (`dx11: accept bounded coordinate
+gradients at FL9_1`); working tree clean. Core and the private HAL now permit
+finite literal gradients or exact matching `dpdx(coordinate)` /
+`dpdy(coordinate)` values used only by the corresponding gradient argument of
+the restricted single-mip `textureSampleGrad` path. The direct form and the
+existing one-call helper form have positive GPU tests. Mismatched axes,
+transformed or dynamic gradients, derivative reuse, control flow, nested or
+repeated helpers and general derivative use remain rejected. The
+`fragment_derivatives` capability remains false.
+
+Final-tree checks passed: strict public D3D11 175/175, private D3D11 HAL
+547/547, Core fixture 155/155, Core DX12 139/139, targeted Core and HAL/FXC
+tests, Clippy for Core/HAL/public tests, formatting and `git diff --check`.
+Strict hardware is the physical RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) at requested and selected FL9_1, `software=false`; direct and
+helper derivative render targets each matched 64/64 pixels. Ordinary default
+D3D11 adapter isolation still passes.
+
+Mission status remains PARTIALLY COMPLETE. The public backend is an opt-in
+tested subset, not a drop-in complete FL9_1 wgpu backend. Remaining local work
+is systematic capability/Core/HAL/CTS closure and a consumer-shaped smoke
+test. Historical FL9_1 driver behavior, Lumia/CoreWindow runtime and physical
+device-removal/TDR recovery remain external verification gaps. Prior strict
+monolithic suite instability has three later clean reruns, including this
+175-test run, but its earlier FXC/adapter/access-violation cause is unknown.
+Do not broaden derivative semantics or enable ordinary adapter enumeration
+without separate evidence.

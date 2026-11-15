@@ -4,12 +4,15 @@
 
 ### Current verification checkpoint
 
-The live branch is `uwp-dx11`; current HEAD is `dfe912c91` (strict override
-CTS coverage). The working tree also carries the zero-after-discard public test
-and its plan/journal updates, plus a Core validation fix for empty immediate
-writes without `Features::IMMEDIATES`; see the latest progress entry.
+The live branch is `uwp-dx11`; current HEAD is `8489758b0` (bounded
+coordinate-derivative `textureSampleGrad` support). The working tree is clean.
+The latest increment preserves `fragment_derivatives=false`; only exact
+matching `dpdx` / `dpdy` expressions used exclusively as the selected sample's
+gradients enter the existing single-mip lowering path. See the latest
+progress entry for the proof shape and strict GPU results.
 
-Since that checkpoint, strict forced-FL9_1 public runs on the RTX 3090 Ti
+Committed selected-device evidence on the RTX 3090 Ti includes strict
+forced-FL9_1 public runs that
 (`0x10de:0x2203`, driver `32.0.16.2101`) confirmed: the public offscreen
 textured indexed cube readback classified 112 red, 277 green and 635 background
 pixels; the public HWND example presented 60 textured indexed depth-tested
@@ -19,6 +22,13 @@ all six BC1/2/3 UNORM/sRGB 2D formats and all six cube formats, including 2x2
 and 1x1 mip tails. The query-gated 6x10 NPOT four-mip test passed with the
 selected FL9_1 device's positive unrestricted-NPOT result. The public timestamp
 test confirms timestamps are withheld and rejected; it performs no draw.
+
+After the example checkpoint, the strict public D3D11 target passed 175/175
+test functions, the private HAL suite passed 547/547, fixture-enabled Core
+passed 155/155, and Core DX12 passed 139/139. The current public test includes
+direct and helper coordinate-derivative gradient samples with all 64 pixels
+checked for each result. The committed change is selected modern-GPU evidence,
+not historical FL9_1 coverage.
 
 The current public `wgpu` crate and dependencies also passed an ARM32 UWP
 cross-check for `thumbv7a-uwp-windows-msvc` using Rust 1.93.1 `build-std` and
