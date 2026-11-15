@@ -13094,7 +13094,7 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
              @fragment fn derivative_direct(input: VertexOut) -> @location(0) vec4f { return vec4f(dpdx(input.uv), 0.0, 1.0); }\n\
              @fragment fn derivative_helper(input: VertexOut) -> @location(0) vec4f { return vec4f(derivative_fn(input.uv), 0.0, 1.0); }\n\
              @fragment fn gradient_direct(input: VertexOut) -> @location(0) vec4f { return textureSampleGrad(levels, mip_sampler, input.uv, vec2f(0.01, 0.0), vec2f(0.0, 0.01)); }\n\
-             @fragment fn gradient_helper(input: VertexOut) -> @location(0) vec4f { return sample_with_grad(input.uv); }"
+             @fragment fn gradient_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_with_grad(uv); }"
                 .into(),
         ),
     });
@@ -13160,7 +13160,6 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         "bias_offset",
         "derivative_direct",
         "derivative_helper",
-        "gradient_helper",
     ] {
         expect_validation_error(&device, &format!("unsupported {entry_point}"), || {
             drop(create_pipeline(entry_point));
@@ -13205,6 +13204,7 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         mapped_at_creation: false,
     });
     let gradient_pipeline = create_pipeline("gradient_direct");
+    let gradient_helper_pipeline = create_pipeline("gradient_helper");
     expect_validation_error(&device, "multi-mip textureSampleGrad view", || {
         let mut invalid_encoder =
             device.create_command_encoder(&CommandEncoderDescriptor::default());
@@ -13417,8 +13417,94 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
         }
     }
     readback.unmap();
+    let helper_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 helper textureSampleGrad readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut helper_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 helper textureSampleGrad encoder"),
+    });
+    {
+        let mut pass = helper_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("single-mip helper FL9_1 textureSampleGrad pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&gradient_helper_pipeline);
+        pass.set_bind_group(0, &gradient_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    helper_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &helper_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let helper_submission = queue.submit([helper_encoder.finish()]);
+    let (helper_sender, helper_receiver) = std::sync::mpsc::channel();
+    helper_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| {
+            helper_sender.send(result).unwrap()
+        });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(helper_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for helper textureSampleGrad render");
+    helper_receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("helper textureSampleGrad readback callback")
+        .expect("map helper textureSampleGrad readback");
+    {
+        let data = helper_readback
+            .slice(..)
+            .get_mapped_range()
+            .expect("mapped helper textureSampleGrad data");
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    mip_colors[1],
+                    "single-mip helper textureSampleGrad pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    helper_readback.unmap();
     println!(
-        "PASS: public FL9_1 implicit sampling and literal biases -3, +1 and +3 (including a constant forwarded through a helper) selected expected mip colors; a non-suffix 2D view refreshed and sampled its selected mip range; 384 mip pixels plus 64 single-mip textureSampleGrad pixels matched, helper/derivative forms were rejected, and Core rejected a direct-gradient draw with a multi-mip view before HAL"
+        "PASS: direct and single-helper FL9_1 textureSampleGrad rendering matched every checked pixel; unsupported sample-gradient forms were rejected"
     );
 }
 

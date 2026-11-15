@@ -21903,3 +21903,47 @@ The diagnostic build and execution succeeded through the Visual Studio developer
 ```
 
 The first direct `cargo +1.93.1` attempt failed only because that shell did not have `link.exe` on `PATH`; retrying through the wrapper succeeded. This is a selected-device observation, not proof that no FL9_1 driver offers optional render-target support. Microsoft's FL9_x format requirements do not guarantee B5G5R5A1 or B4G4R4A4 render-target support; the backend should only pursue an implementation if a target device reports the relevant bit and can execute the full path.
+
+## Bounded helper-based explicit gradients — 2026-11-15
+
+Core validation and the private HAL now accept one additional, deliberately
+narrow `textureSampleGrad` form: a fragment entry point forwards its unchanged
+`vec2f` input through exactly one unconditional helper call, and that helper
+returns one direct-global `texture_2d<f32>`/regular-sampler sample with finite
+literal gradients. Nested or multiple calls, transformed coordinates,
+derivatives, control flow, other image operations, and other resource shapes
+remain rejected. Existing single-mip, equal min/mag filter and anisotropy-one
+runtime restrictions remain. Core and HAL each retain selected-entry-specific
+proofs; HAL lowers only the proven expression in its per-compilation module.
+No public capability flags or adapter enumeration changed.
+
+The strict public test used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) and explicitly requested and received
+FL9_1 (`software=false`). Both direct and helper-based draws ran through Core,
+HAL, FXC and D3D11; the submitted render targets were read back and all 64
+pixels in each result matched. The new negative helper shapes were rejected.
+This is selected-device proof, not evidence for historical FL9_1 drivers.
+
+Verification on this tree:
+
+- `cargo test --offline -j8 -p wgpu-core --features dx11-test-fixture --lib fl9_single_mip_sample_grad_requires_direct_unconditional_fragment_use`: 1 passed.
+- Full fixture-enabled Core suite: 155 passed (run after helper implementation).
+- Full private D3D11 HAL suite with strict hardware: 547 passed (run after helper implementation; strict tests used the physical adapter).
+- Strict public `public_dx11_sampled_mip_chain_at_fl91`: 1 passed, 174 filtered; both direct and helper outputs checked as above.
+- Core DX12 suite (`--features dx12,wgsl --lib`): 139 passed.
+- Clippy passed for `wgpu-core`, `wgpu-hal`, and the public D3D11 integration test target. HAL retains 27 warnings in the test build (8 duplicate library warnings), all in pre-existing DX11/test code; Core retains 3 test-fixture warnings. The one clippy suggestion in the edited Core proof was applied. Formatting and `git diff --check` passed.
+
+The monolithic public integration process remains unreliable: its earlier
+strict run encountered intermittent FXC `0x8007000e`, later adapter
+enumeration failure and `STATUS_ACCESS_VIOLATION`; all 175 test functions
+passed when isolated in fresh strict processes before this change. That suite
+accumulation issue remains open and is not hidden by the passing targeted test.
+
+Mission status remains PARTIALLY COMPLETE. The implementation provides a
+substantial opt-in FL9_1 rendering subset, not complete WebGPU support or every
+operation that a feature-level-9_1 device might expose. The major open work is
+systematic public capability/Core/HAL/CTS contract closure, an application-like
+workload and stability investigation, plus external runs on historical FL9_1
+hardware and the Lumia/CoreWindow runtime. Physical TDR/device-removal recovery
+also remains unverified. Continue only when a concrete gap is identified by
+those audits; do not infer support from feature level alone.

@@ -4061,7 +4061,6 @@ fn fl9_texture_sample_grad_single_mip_pairs(
     entry_point: &naga::EntryPoint,
 ) -> Option<Vec<TextureSampleGradSingleMipPair>> {
     if entry_point.stage != naga::ShaderStage::Fragment
-        || fl9_texture_sample_grad_block_is_straight_line(&entry_point.function.body).is_none()
         || entry_point
             .function
             .expressions
@@ -4075,6 +4074,198 @@ fn fl9_texture_sample_grad_single_mip_pairs(
     {
         return None;
     }
+
+    if entry_point
+        .function
+        .body
+        .iter()
+        .any(|statement| matches!(statement, naga::Statement::Call { .. }))
+    {
+        if entry_point
+            .function
+            .expressions
+            .iter()
+            .any(|(_, expression)| {
+                matches!(
+                    expression,
+                    naga::Expression::ImageSample { .. }
+                        | naga::Expression::ImageLoad { .. }
+                        | naga::Expression::ImageQuery { .. }
+                )
+            })
+        {
+            return None;
+        }
+
+        let is_float_vector = |ty: naga::Handle<naga::Type>, size: naga::VectorSize| {
+            matches!(
+                module.types[ty].inner,
+                naga::TypeInner::Vector { size: actual, scalar }
+                    if actual == size
+                        && scalar.kind == naga::ScalarKind::Float
+                        && scalar.width == 4
+            )
+        };
+        let is_literal_gradient =
+            |function: &naga::Function, expression: naga::Handle<naga::Expression>| {
+                let naga::Expression::Compose { ty, ref components } =
+                    function.expressions[expression]
+                else {
+                    return false;
+                };
+                is_float_vector(ty, naga::VectorSize::Bi)
+                && components.len() == 2
+                && components.iter().all(|component| {
+                    matches!(
+                        function.expressions[*component],
+                        naga::Expression::Literal(naga::Literal::F32(value)) if value.is_finite()
+                    )
+                })
+            };
+        if entry_point.function.arguments.len() != 1
+            || !matches!(
+                entry_point.function.arguments[0].binding,
+                Some(naga::Binding::Location { location: 0, .. })
+            )
+            || !is_float_vector(entry_point.function.arguments[0].ty, naga::VectorSize::Bi)
+            || !entry_point.function.result.as_ref().is_some_and(|result| {
+                matches!(
+                    result.binding,
+                    Some(naga::Binding::Location { location: 0, .. })
+                ) && is_float_vector(result.ty, naga::VectorSize::Quad)
+            })
+        {
+            return None;
+        }
+
+        let mut call = None;
+        let mut returned = None;
+        for statement in entry_point.function.body.iter() {
+            match statement {
+                naga::Statement::Emit(_) => {}
+                naga::Statement::Call {
+                    function,
+                    arguments,
+                    result: Some(result),
+                } if call.is_none() => call = Some((*function, arguments, *result)),
+                naga::Statement::Return { value: Some(value) } if returned.is_none() => {
+                    returned = Some(*value)
+                }
+                _ => return None,
+            }
+        }
+        let (helper, arguments, call_result) = call?;
+        if arguments.len() != 1
+            || !matches!(
+                entry_point.function.expressions[arguments[0]],
+                naga::Expression::FunctionArgument(0)
+            )
+            || returned != Some(call_result)
+        {
+            return None;
+        }
+
+        let helper_function = &module.functions[helper];
+        if helper_function.arguments.len() != 1
+            || !is_float_vector(helper_function.arguments[0].ty, naga::VectorSize::Bi)
+            || !helper_function
+                .result
+                .as_ref()
+                .is_some_and(|result| is_float_vector(result.ty, naga::VectorSize::Quad))
+        {
+            return None;
+        }
+        let mut helper_return = None;
+        for statement in helper_function.body.iter() {
+            match statement {
+                naga::Statement::Emit(_) => {}
+                naga::Statement::Return { value: Some(value) } if helper_return.is_none() => {
+                    helper_return = Some(*value)
+                }
+                _ => return None,
+            }
+        }
+        let sample = helper_return?;
+        let naga::Expression::ImageSample {
+            image,
+            sampler,
+            coordinate,
+            array_index: None,
+            offset: None,
+            level: naga::SampleLevel::Gradient { x, y },
+            depth_ref: None,
+            gather: None,
+            clamp_to_edge: false,
+            ..
+        } = helper_function.expressions[sample]
+        else {
+            return None;
+        };
+        if !matches!(
+            helper_function.expressions[coordinate],
+            naga::Expression::FunctionArgument(0)
+        ) || !is_literal_gradient(helper_function, x)
+            || !is_literal_gradient(helper_function, y)
+        {
+            return None;
+        }
+        for (handle, expression) in helper_function.expressions.iter() {
+            if matches!(
+                expression,
+                naga::Expression::Derivative { .. } | naga::Expression::Select { .. }
+            ) || (matches!(
+                expression,
+                naga::Expression::ImageSample { .. }
+                    | naga::Expression::ImageLoad { .. }
+                    | naga::Expression::ImageQuery { .. }
+            ) && handle != sample)
+            {
+                return None;
+            }
+        }
+        let naga::Expression::GlobalVariable(texture_global) = helper_function.expressions[image]
+        else {
+            return None;
+        };
+        let naga::Expression::GlobalVariable(sampler_global) = helper_function.expressions[sampler]
+        else {
+            return None;
+        };
+        let texture = &module.global_variables[texture_global];
+        let sampler = &module.global_variables[sampler_global];
+        let (Some(texture_binding), Some(sampler_binding)) = (texture.binding, sampler.binding)
+        else {
+            return None;
+        };
+        if texture.space != naga::AddressSpace::Handle
+            || !matches!(
+                module.types[texture.ty].inner,
+                naga::TypeInner::Image {
+                    dim: naga::ImageDimension::D2,
+                    arrayed: false,
+                    class: naga::ImageClass::Sampled {
+                        kind: naga::ScalarKind::Float,
+                        multi: false,
+                    },
+                }
+            )
+            || sampler.space != naga::AddressSpace::Handle
+            || !matches!(
+                module.types[sampler.ty].inner,
+                naga::TypeInner::Sampler { comparison: false }
+            )
+        {
+            return None;
+        }
+        return Some(alloc::vec![TextureSampleGradSingleMipPair {
+            texture_group: texture_binding.group,
+            texture_binding: texture_binding.binding,
+            sampler_group: sampler_binding.group,
+            sampler_binding: sampler_binding.binding,
+        }]);
+    }
+
+    fl9_texture_sample_grad_block_is_straight_line(&entry_point.function.body)?;
 
     let mut pairs = Vec::new();
     for (_, expression) in entry_point.function.expressions.iter() {
@@ -12800,6 +12991,10 @@ mod tests {
             fn helper(uv: vec2f) -> vec4f {
                 return textureSampleGrad(image, smp, uv, vec2f(0.25, 0.0), vec2f(0.0, 0.25));
             }
+            fn nested(uv: vec2f) -> vec4f { return helper(uv); }
+            fn derivative_helper(uv: vec2f) -> vec4f {
+                return textureSampleGrad(image, smp, uv, dpdx(uv), vec2f(0.0, 0.25));
+            }
             @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleGrad(image, smp, uv, vec2f(0.25, 0.0), vec2f(0.0, 0.25));
             }
@@ -12809,6 +13004,18 @@ mod tests {
             }
             @fragment fn helper_call(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return helper(uv);
+            }
+            @fragment fn helper_transformed(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return helper(uv * 0.5);
+            }
+            @fragment fn helper_nested(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return nested(uv);
+            }
+            @fragment fn helper_multiple(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return helper(uv) + helper(uv);
+            }
+            @fragment fn helper_derivative(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return derivative_helper(uv);
             }
             @fragment fn derivative(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleGrad(image, smp, uv, dpdx(uv), dpdy(uv));
@@ -12851,7 +13058,36 @@ mod tests {
                 sampler_binding: 42,
             }]
         );
-        for entry in ["control_flow", "helper_call", "derivative"] {
+        assert_eq!(
+            interface
+                .entry_point_fl9_texture_sample_grad_single_mip_pairs(
+                    naga::ShaderStage::Fragment,
+                    "helper_call",
+                )
+                .unwrap(),
+            alloc::vec![TextureSampleGradSingleMipPair {
+                texture_group: 2,
+                texture_binding: 7,
+                sampler_group: 2,
+                sampler_binding: 42,
+            }]
+        );
+        assert!(!interface
+            .entry_point_uses_unsupported_fragment_derivatives(
+                naga::ShaderStage::Fragment,
+                "helper_call",
+                &limits,
+            )
+            .unwrap());
+
+        for entry in [
+            "control_flow",
+            "helper_transformed",
+            "helper_nested",
+            "helper_multiple",
+            "helper_derivative",
+            "derivative",
+        ] {
             assert!(
                 interface
                     .entry_point_uses_unsupported_fragment_derivatives(

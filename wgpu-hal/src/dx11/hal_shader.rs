@@ -34,8 +34,14 @@ pub(super) struct TextureSampleGradSingleMipPair {
 }
 
 struct TextureSampleGradSingleMipProof {
-    expressions: Vec<naga::Handle<naga::Expression>>,
+    expressions: Vec<TextureSampleGradSingleMipExpression>,
     pairs: Vec<TextureSampleGradSingleMipPair>,
+}
+
+#[derive(Clone, Copy)]
+struct TextureSampleGradSingleMipExpression {
+    function: Option<naga::Handle<naga::Function>>,
+    expression: naga::Handle<naga::Expression>,
 }
 
 struct TextureSampleLevelZeroProof {
@@ -5265,7 +5271,7 @@ mod tests {
             ..Default::default()
         };
         let pipeline = naga::back::hlsl::PipelineOptions {
-            entry_point: Some((naga::ShaderStage::Fragment, entry.name.clone().into())),
+            entry_point: Some((naga::ShaderStage::Fragment, entry.name.clone())),
         };
         let mut source = alloc::string::String::new();
         let reflection = naga::back::hlsl::Writer::new(&mut source, &options, &pipeline)
@@ -6737,6 +6743,10 @@ mod tests {
             fn helper(uv: vec2f) -> vec4f {
                 return textureSampleGrad(image, smp, uv, vec2f(0.5, 0.0), vec2f(0.0, 0.5));
             }
+            fn nested(uv: vec2f) -> vec4f { return helper(uv); }
+            fn derivative_helper(uv: vec2f) -> vec4f {
+                return textureSampleGrad(image, smp, uv, dpdx(uv), vec2f(0.0, 0.5));
+            }
             @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleGrad(image, smp, uv, vec2f(0.5, 0.0), vec2f(0.0, 0.5));
             }
@@ -6746,6 +6756,18 @@ mod tests {
             }
             @fragment fn helper_call(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return helper(uv);
+            }
+            @fragment fn helper_transformed(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return helper(uv * 0.5);
+            }
+            @fragment fn helper_nested(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return nested(uv);
+            }
+            @fragment fn helper_multiple(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return helper(uv) + helper(uv);
+            }
+            @fragment fn helper_derivative(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return derivative_helper(uv);
             }
             @fragment fn derivative(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleGrad(image, smp, uv, dpdx(uv), dpdy(uv));
@@ -6771,7 +6793,26 @@ mod tests {
         assert_eq!(proof.pairs[0].texture.binding, 7);
         assert_eq!(proof.pairs[0].sampler.binding, 42);
 
-        for entry in ["control", "helper_call", "derivative"] {
+        let helper_proof = fl9_texture_sample_grad_single_mip_proof(
+            &module,
+            &info,
+            naga::ShaderStage::Fragment,
+            "helper_call",
+        )
+        .unwrap()
+        .expect("one unconditional helper call enters the narrow proof");
+        assert_eq!(helper_proof.pairs.len(), 1);
+        assert_eq!(helper_proof.pairs[0].texture.binding, 7);
+        assert_eq!(helper_proof.pairs[0].sampler.binding, 42);
+
+        for entry in [
+            "control",
+            "helper_transformed",
+            "helper_nested",
+            "helper_multiple",
+            "helper_derivative",
+            "derivative",
+        ] {
             assert!(
                 fl9_texture_sample_grad_single_mip_proof(
                     &module,
@@ -6828,6 +6869,57 @@ mod tests {
         )
         .expect("FXC accepts the semantics-preserving single-mip lowering");
         assert!(bytecode.starts_with(b"DXBC"));
+
+        let helper_entry_index = module
+            .entry_points
+            .iter()
+            .position(|entry| {
+                entry.stage == naga::ShaderStage::Fragment && entry.name == "helper_call"
+            })
+            .unwrap();
+        let mut lowered_helper = module.clone();
+        lower_fl9_texture_sample_grad_single_mip(
+            &mut lowered_helper,
+            helper_entry_index,
+            &helper_proof,
+        )
+        .expect("lower the helper's validated gradient sample");
+        let (helper_hlsl, helper_generated_entry) = translate_naga_with_viewport_and_fl9_inputs(
+            &lowered_helper,
+            &info,
+            naga::ShaderStage::Fragment,
+            "helper_call",
+            ShaderProfile::PixelLevel9_1,
+            &[
+                ShaderBinding {
+                    binding: naga::ResourceBinding {
+                        group: 0,
+                        binding: 7,
+                    },
+                    slot: 0,
+                    kind: ShaderBindingKind::TextureFloat,
+                },
+                ShaderBinding {
+                    binding: naga::ResourceBinding {
+                        group: 0,
+                        binding: 42,
+                    },
+                    slot: 0,
+                    kind: ShaderBindingKind::Sampler,
+                },
+            ],
+            Fl9ShaderInputOptions::default(),
+        )
+        .expect("translate lowered helper sample to FL9_1");
+        assert!(helper_hlsl.contains(".Sample("), "{helper_hlsl}");
+        assert!(!helper_hlsl.contains("SampleGrad"), "{helper_hlsl}");
+        let helper_bytecode = super::super::shader::compile_hlsl(
+            &helper_hlsl,
+            &helper_generated_entry,
+            ShaderProfile::PixelLevel9_1,
+        )
+        .expect("FXC accepts the helper-based single-mip lowering");
+        assert!(helper_bytecode.starts_with(b"DXBC"));
     }
 }
 
@@ -7107,16 +7199,181 @@ fn fl9_texture_sample_grad_single_mip_proof(
     let invalid = || {
         crate::PipelineError::Linkage(
             stages,
-            "D3D11 FL9_1 only supports direct, unconditional textureSampleGrad on a single-mip 2D float view with a regular sampler, matching min/mag filters and anisotropy one".into(),
+            "D3D11 FL9_1 only supports direct or single-helper unconditional textureSampleGrad on a single-mip 2D float view with a regular sampler, matching min/mag filters and anisotropy one".into(),
         )
     };
-    if stage != naga::ShaderStage::Fragment
-        || fl9_flat_block(&function.body).is_none()
+    if stage != naga::ShaderStage::Fragment {
+        return Err(invalid());
+    }
+
+    if function
+        .body
+        .iter()
+        .any(|statement| matches!(statement, naga::Statement::Call { .. }))
+    {
+        if function.arguments.len() != 1
+            || !matches!(
+                function.arguments[0].binding,
+                Some(naga::Binding::Location { location: 0, .. })
+            )
+            || !fl9_is_float_vector(module, function.arguments[0].ty, naga::VectorSize::Bi)
+            || !function.result.as_ref().is_some_and(|result| {
+                matches!(
+                    result.binding,
+                    Some(naga::Binding::Location { location: 0, .. })
+                ) && fl9_is_float_vector(module, result.ty, naga::VectorSize::Quad)
+            })
+            || function.expressions.iter().any(|(_, expression)| {
+                matches!(
+                    expression,
+                    naga::Expression::Derivative { .. }
+                        | naga::Expression::Select { .. }
+                        | naga::Expression::ImageSample { .. }
+                        | naga::Expression::ImageLoad { .. }
+                        | naga::Expression::ImageQuery { .. }
+                )
+            })
+        {
+            return Err(invalid());
+        }
+
+        let mut call = None;
+        let mut returned = None;
+        for statement in function.body.iter() {
+            match statement {
+                naga::Statement::Emit(_) => {}
+                naga::Statement::Call {
+                    function,
+                    arguments,
+                    result: Some(result),
+                } if call.is_none() => call = Some((*function, arguments, *result)),
+                naga::Statement::Return { value: Some(value) } if returned.is_none() => {
+                    returned = Some(*value)
+                }
+                _ => return Err(invalid()),
+            }
+        }
+        let (helper, arguments, call_result) = call.ok_or_else(invalid)?;
+        if arguments.len() != 1
+            || !matches!(
+                function.expressions[arguments[0]],
+                naga::Expression::FunctionArgument(0)
+            )
+            || returned != Some(call_result)
+        {
+            return Err(invalid());
+        }
+
+        let helper_function = &module.functions[helper];
+        if helper_function.arguments.len() != 1
+            || !fl9_is_float_vector(
+                module,
+                helper_function.arguments[0].ty,
+                naga::VectorSize::Bi,
+            )
+            || !helper_function.result.as_ref().is_some_and(|result| {
+                fl9_is_float_vector(module, result.ty, naga::VectorSize::Quad)
+            })
+        {
+            return Err(invalid());
+        }
+        let mut helper_return = None;
+        for statement in helper_function.body.iter() {
+            match statement {
+                naga::Statement::Emit(_) => {}
+                naga::Statement::Return { value: Some(value) } if helper_return.is_none() => {
+                    helper_return = Some(*value)
+                }
+                _ => return Err(invalid()),
+            }
+        }
+        let sample = helper_return.ok_or_else(invalid)?;
+        let naga::Expression::ImageSample {
+            image,
+            sampler,
+            coordinate,
+            array_index: None,
+            offset: None,
+            level: naga::SampleLevel::Gradient { x, y },
+            depth_ref: None,
+            gather: None,
+            clamp_to_edge: false,
+            ..
+        } = helper_function.expressions[sample]
+        else {
+            return Err(invalid());
+        };
+        if !matches!(
+            helper_function.expressions[coordinate],
+            naga::Expression::FunctionArgument(0)
+        ) || !fl9_texture_sample_grad_is_literal_vec2(module, helper_function, x)
+            || !fl9_texture_sample_grad_is_literal_vec2(module, helper_function, y)
+        {
+            return Err(invalid());
+        }
+        for (handle, expression) in helper_function.expressions.iter() {
+            if matches!(
+                expression,
+                naga::Expression::Derivative { .. } | naga::Expression::Select { .. }
+            ) || (matches!(
+                expression,
+                naga::Expression::ImageSample { .. }
+                    | naga::Expression::ImageLoad { .. }
+                    | naga::Expression::ImageQuery { .. }
+            ) && handle != sample)
+            {
+                return Err(invalid());
+            }
+        }
+        let naga::Expression::GlobalVariable(texture) = helper_function.expressions[image] else {
+            return Err(invalid());
+        };
+        let naga::Expression::GlobalVariable(sampler) = helper_function.expressions[sampler] else {
+            return Err(invalid());
+        };
+        let texture = &module.global_variables[texture];
+        let sampler = &module.global_variables[sampler];
+        let (Some(texture_binding), Some(sampler_binding)) = (texture.binding, sampler.binding)
+        else {
+            return Err(invalid());
+        };
+        let valid_texture = texture.space == naga::AddressSpace::Handle
+            && matches!(
+                module.types[texture.ty].inner,
+                naga::TypeInner::Image {
+                    dim: naga::ImageDimension::D2,
+                    arrayed: false,
+                    class: naga::ImageClass::Sampled {
+                        kind: naga::ScalarKind::Float,
+                        multi: false,
+                    },
+                }
+            );
+        let valid_sampler = sampler.space == naga::AddressSpace::Handle
+            && matches!(
+                module.types[sampler.ty].inner,
+                naga::TypeInner::Sampler { comparison: false }
+            );
+        if !valid_texture || !valid_sampler {
+            return Err(invalid());
+        }
+        return Ok(Some(TextureSampleGradSingleMipProof {
+            expressions: alloc::vec![TextureSampleGradSingleMipExpression {
+                function: Some(helper),
+                expression: sample,
+            }],
+            pairs: alloc::vec![TextureSampleGradSingleMipPair {
+                texture: texture_binding,
+                sampler: sampler_binding,
+            }],
+        }));
+    }
+
+    if fl9_flat_block(&function.body).is_none()
         || function.body.iter().any(|statement| {
             matches!(
                 statement,
-                naga::Statement::Call { .. }
-                    | naga::Statement::If { .. }
+                naga::Statement::If { .. }
                     | naga::Statement::Switch { .. }
                     | naga::Statement::Loop { .. }
                     | naga::Statement::Kill
@@ -7193,7 +7450,10 @@ fn fl9_texture_sample_grad_single_mip_proof(
         if !valid_texture || !valid_sampler {
             return Err(invalid());
         }
-        expressions.push(handle);
+        expressions.push(TextureSampleGradSingleMipExpression {
+            function: None,
+            expression: handle,
+        });
         pairs.push(TextureSampleGradSingleMipPair { texture, sampler });
     }
     if expressions.is_empty() {
@@ -7211,14 +7471,36 @@ fn fl9_texture_sample_grad_single_mip_proof(
     Ok(Some(TextureSampleGradSingleMipProof { expressions, pairs }))
 }
 
+fn fl9_texture_sample_grad_is_literal_vec2(
+    module: &naga::Module,
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+) -> bool {
+    let naga::Expression::Compose { ty, ref components } = function.expressions[expression] else {
+        return false;
+    };
+    fl9_is_float_vector(module, ty, naga::VectorSize::Bi)
+        && components.len() == 2
+        && components.iter().all(|component| {
+            matches!(
+                function.expressions[*component],
+                naga::Expression::Literal(naga::Literal::F32(value)) if value.is_finite()
+            )
+        })
+}
+
 fn lower_fl9_texture_sample_grad_single_mip(
     module: &mut naga::Module,
     entry_index: usize,
     proof: &TextureSampleGradSingleMipProof,
 ) -> Result<(), ()> {
     for expression in &proof.expressions {
+        let expression_arena = match expression.function {
+            Some(function) => &mut module.functions[function].expressions,
+            None => &mut module.entry_points[entry_index].function.expressions,
+        };
         let naga::Expression::ImageSample { level, .. } =
-            &mut module.entry_points[entry_index].function.expressions[*expression]
+            &mut expression_arena[expression.expression]
         else {
             return Err(());
         };

@@ -4196,3 +4196,22 @@ FXC's internal parser `0x8007000e`; the affected tests passed alone. See the
 progress journal for exact commands and interpretation. The mission remains
 PARTIALLY COMPLETE: do not count the optional RG8 path as GPU proven, and keep
 historical hardware, Lumia/CoreWindow and device-removal verification open.
+
+## Coordinator status — helper explicit gradients and remaining completion work — 2026-11-15
+
+A constrained single-helper `textureSampleGrad` path is now implemented in
+Core and private HAL, with strict public RTX 3090 Ti FL9_1 readback evidence
+and conservative negative validation. See `FL9_1_PROGRESS.md` for commands
+and counts. This closes only that small shader-shape gap.
+
+The mission remains PARTIALLY COMPLETE. The current code is a useful opt-in
+FL9_1 renderer, but not a general WebGPU implementation and not evidence that
+all old FL9_1 devices behave identically. Next, close the projected public
+capability/Core/HAL/CTS matrix with concrete reachable-operation audits, then
+exercise a representative application-like workload and resolve the monolithic
+strict-test process instability. Historical FL9_1 hardware, Lumia/CoreWindow
+and physical device-removal/TDR testing need those external environments.
+Keep true FL9_1 hardware exclusions (for example compute/UAV, geometry,
+multiple color targets and array textures) documented as unavailable rather
+than treating them as backend bugs. Public ordinary adapter enumeration stays
+disabled.

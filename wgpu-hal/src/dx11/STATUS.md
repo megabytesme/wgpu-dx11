@@ -2438,14 +2438,17 @@ the combined sampled-resource and depth path for this exact pipeline shape.
 
 ## Restricted FL9_1 fragment `textureSampleGrad`
 
-One direct, unconditional fragment `textureSampleGrad` is lowered to implicit
-sampling only when the selected image is a non-array 2D float texture, its
-currently bound view exposes exactly one mip, and the regular sampler has
-matching min/mag filters with anisotropy one. Core and HAL prove the selected
-entry-point shape and recheck live bindings before drawing. This does not
-enable derivatives, helper/control-flow samples or general explicit-gradient
-semantics. Strict FL9_1 execution on the RTX 3090 Ti rendered the existing
-four-level patterned mip chain through a single-mip view and verified all 64
-pixels; a draw using the same pipeline and a multi-mip view was rejected by
-Core before HAL. The full public target passed 169/169 in strict mode. This is
-selected modern-driver evidence, not validation on historical FL9_1 hardware.
+One direct, unconditional fragment `textureSampleGrad` or one narrow
+helper-wrapped sample is lowered to implicit sampling only when the selected
+image is a non-array 2D float texture, its currently bound view exposes exactly
+one mip, and the regular sampler has matching min/mag filters with anisotropy
+one. The helper must be called exactly once with its unchanged `vec2f` input
+and return one direct-global sample with literal gradients. Core and HAL prove
+the selected entry-point shape and recheck live bindings before drawing. Other
+helper/control-flow forms and general derivative semantics remain unsupported.
+Strict FL9_1 execution on the RTX 3090 Ti rendered the existing four-level
+patterned mip chain through a single-mip view; both direct and helper samples
+matched all 64 readback pixels. A draw using the direct-gradient pipeline and
+a multi-mip view was rejected by Core before HAL. The full public target
+previously passed 169/169 in strict mode. This is selected modern-driver
+evidence, not validation on historical FL9_1 hardware.

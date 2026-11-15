@@ -2,14 +2,16 @@
 
 ## Restricted FL9_1 fragment `textureSampleGrad`
 
-The only enabled explicit-gradient case is one direct, unconditional fragment
-sample of a non-array `texture_2d<f32>` with a regular sampler. The selected
-view must expose one mip and min/mag filters must match with anisotropy 1. On
-that combination, the explicit gradients cannot change the chosen mip or
-spatial filter, so the HAL lowers the sample to implicit sampling. Derivative
-operations, helper/control-flow gradient samples, multi-mip views, and
-incompatible samplers remain rejected. The limit is distinct from and does
-not enable `fragment_derivatives`.
+The enabled explicit-gradient cases are direct unconditional fragment samples
+and one narrow helper shape: the entry point calls one helper exactly once with
+its unchanged `vec2f` input, and that helper returns one direct-global sample
+from a non-array `texture_2d<f32>` and regular sampler using literal gradient
+vectors. The selected view must expose one mip and min/mag filters must match
+with anisotropy 1. Under those runtime conditions, gradients cannot change the
+chosen mip or spatial filter, so the HAL lowers the sample to implicit
+sampling. Nested, transformed, repeated, conditional or derivative-using
+helpers, multi-mip views and incompatible samplers remain rejected. The limit
+is distinct from and does not enable `fragment_derivatives`.
 
 Run CPU proof/model tests and the strict public GPU case:
 
@@ -23,9 +25,9 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 ```
 
 The public test is grouped with the existing mip-chain workload to avoid an
-extra device lifetime in the full GPU suite. It verifies 64 output pixels
-sampled through a one-mip view and rejects the same shader draw with a
-multi-mip view. The strict run selected an NVIDIA GeForce RTX 3090 Ti
+extra device lifetime in the full GPU suite. It verifies all 64 output pixels
+for both direct and helper samples through a one-mip view and rejects a direct
+gradient draw with a multi-mip view. The strict run selected an NVIDIA GeForce RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`) at requested and actual FL9_1 with
 `software=false`.
 

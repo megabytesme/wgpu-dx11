@@ -2295,20 +2295,24 @@ special case does not imply general dynamic matrix indexing support.
 ## Restricted fragment `textureSampleGrad`
 
 The selected FL9_1 projection exposes a separate downlevel limit for a direct,
-unconditional fragment `textureSampleGrad` from a non-array
-`texture_2d<f32>` with a regular sampler. Core and HAL retain a selected-entry
-logical texture/sampler relationship and require the currently bound view to
-expose exactly one mip and the sampler to have equal minification and
-magnification filters with anisotropy one. The sampler binding class remains
-the one derived from its full descriptor, including `mipmap_filter`.
+unconditional fragment `textureSampleGrad` or one exact helper form from a
+non-array `texture_2d<f32>` with a regular sampler. The helper form is one
+unconditional entry-point call, forwarding its unchanged `vec2f` input to a
+single straight-line helper that returns one direct-global sample with literal
+gradient vectors. Core and HAL retain the selected-entry logical
+texture/sampler relationship and require the currently bound view to expose
+exactly one mip and the sampler to have equal minification and magnification
+filters with anisotropy one. The sampler binding class remains the one derived
+from its full descriptor, including `mipmap_filter`.
 
 Under those runtime conditions, explicit gradients cannot change the only
 accessible mip, the minification-versus-magnification kernel, or anisotropic
 footprint. The coordinate, spatial filter and address modes remain those of
 the original sample. HAL therefore lowers only the proven image operation to
 implicit sampling, whose instruction is available in the FL9_1 pixel profile.
-The proof rejects helper calls, branches, selects, derivative expressions,
-offsets, depth/comparison resources and other shapes; this is not general
+The proof rejects nested, repeated or transformed helper calls, branches,
+selects, derivative expressions, other image operations, offsets,
+depth/comparison resources and other shapes; this is not general
 fragment-derivative or `SampleGrad` support. Core checks current bind-group
 views and samplers before a draw, and HAL repeats the resource compatibility
 check before issuing native draw commands. See `TESTING.md` for execution
