@@ -4215,3 +4215,12 @@ Keep true FL9_1 hardware exclusions (for example compute/UAV, geometry,
 multiple color targets and array textures) documented as unavailable rather
 than treating them as backend bugs. Public ordinary adapter enumeration stays
 disabled.
+## Strict public-suite reliability update — 2026-11-15
+
+A fresh strict single-process run passed all 175 public DX11 test functions on
+the physical RTX 3090 Ti at requested/actual FL9_1; 175 hardware markers were
+observed and four optional capability subcases logged skips. This improves the
+evidence baseline. An earlier run with the same target failed in FXC, then lost
+adapter enumeration and crashed, so process reliability remains a watch item
+rather than a closed root cause. Full output and exact command are in
+`FL9_1_PROGRESS.md`.

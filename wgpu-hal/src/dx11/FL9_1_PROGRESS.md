@@ -21947,3 +21947,23 @@ workload and stability investigation, plus external runs on historical FL9_1
 hardware and the Lumia/CoreWindow runtime. Physical TDR/device-removal recovery
 also remains unverified. Continue only when a concrete gap is identified by
 those audits; do not infer support from feature level alone.
+## Strict monolithic public suite rerun — 2026-11-15
+
+After the earlier 175-test strict process hit intermittent FXC `0x8007000e`,
+then failed adapter enumeration and exited with an access violation, a fresh
+single-process rerun completed successfully. All 175 public test functions
+passed, every test logged physical NVIDIA GeForce RTX 3090 Ti selection
+(`0x10de:0x2203`, driver `32.0.16.2101`, requested/actual FL9_1,
+`software=false`), and there were no Rust test failures. Four optional-device
+subcases logged skips: `R8G8_UNORM` and `R16G16_FLOAT` vertex input support,
+optional RG8 3D transfer, and optional Rg8Unorm mip support. The process-level
+failure did not reproduce, but one clean run does not establish it is fixed.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+Result: 175 passed, 0 failed, 0 ignored in 23.66 seconds. The full output is
+in `E:\Temp\wgpu-dx11-public-full-rerun-20261115.log`. Keep process stability
+as a watch item; the previous compiler/adapter/AV failure remains unexplained.
