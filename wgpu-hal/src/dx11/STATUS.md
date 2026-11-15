@@ -2443,12 +2443,15 @@ helper-wrapped sample is lowered to implicit sampling only when the selected
 image is a non-array 2D float texture, its currently bound view exposes exactly
 one mip, and the regular sampler has matching min/mag filters with anisotropy
 one. The helper must be called exactly once with its unchanged `vec2f` input
-and return one direct-global sample with literal gradients. Core and HAL prove
-the selected entry-point shape and recheck live bindings before drawing. Other
+and return one direct-global sample. Direct and helper samples may use literal
+gradients or exact matching `dpdx(uv)` / `dpdy(uv)` values used only by that
+sample. Core and HAL prove the
+selected entry-point shape and recheck live bindings before drawing. Other
 helper/control-flow forms and general derivative semantics remain unsupported.
 Strict FL9_1 execution on the RTX 3090 Ti rendered the existing four-level
-patterned mip chain through a single-mip view; both direct and helper samples
-matched all 64 readback pixels. A draw using the direct-gradient pipeline and
+patterned mip chain through a single-mip view; direct and helper samples with
+literal gradients or matching coordinate derivatives matched all 64 readback
+pixels. A draw using the direct-gradient pipeline and
 a multi-mip view was rejected by Core before HAL. The full public target
 previously passed 169/169 in strict mode. This is selected modern-driver
 evidence, not validation on historical FL9_1 hardware.

@@ -2298,8 +2298,9 @@ The selected FL9_1 projection exposes a separate downlevel limit for a direct,
 unconditional fragment `textureSampleGrad` or one exact helper form from a
 non-array `texture_2d<f32>` with a regular sampler. The helper form is one
 unconditional entry-point call, forwarding its unchanged `vec2f` input to a
-single straight-line helper that returns one direct-global sample with literal
-gradient vectors. Core and HAL retain the selected-entry logical
+single straight-line helper that returns one direct-global sample. Direct and
+helper samples may use finite literal gradients or matching `dpdx(uv)` /
+`dpdy(uv)` values used only by that sample. Core and HAL retain the selected-entry logical
 texture/sampler relationship and require the currently bound view to expose
 exactly one mip and the sampler to have equal minification and magnification
 filters with anisotropy one. The sampler binding class remains the one derived
@@ -2311,7 +2312,8 @@ footprint. The coordinate, spatial filter and address modes remain those of
 the original sample. HAL therefore lowers only the proven image operation to
 implicit sampling, whose instruction is available in the FL9_1 pixel profile.
 The proof rejects nested, repeated or transformed helper calls, branches,
-selects, derivative expressions, other image operations, offsets,
+selects, derivatives other than the exact matching coordinate gradients,
+derivatives used elsewhere, other image operations, offsets,
 depth/comparison resources and other shapes; this is not general
 fragment-derivative or `SampleGrad` support. Core checks current bind-group
 views and samplers before a draw, and HAL repeats the resource compatibility

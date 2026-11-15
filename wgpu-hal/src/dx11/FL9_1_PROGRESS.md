@@ -22006,3 +22006,74 @@ Logs: `E:\Temp\wgpu-dx11-offscreen-current-20261115.log` and
 `/api/os/devicefamily` request was retried and timed out again; this is an
 external device connectivity blocker, not a runtime test result. No Lumia or
 historical FL9_1 hardware claim is made.
+
+## Coordinate-derivative texture gradients — 2026-11-15
+
+Core and the private HAL now accept one additional `textureSampleGrad` shape:
+each gradient may be a finite literal `vec2f` or the exact matching
+`dpdx(coordinate)` / `dpdy(coordinate)` expression. A derivative must be used
+only by that sample's gradient argument. The direct entry-point form and the
+existing one-call helper form are both covered. Naga's validated `FunctionInfo`
+reference counts make derivative reuse fail closed; no WGSL text or generated
+HLSL parsing was added. All other derivative use, mismatched axes, transformed
+coordinates, computed gradient vectors, conditionals and nested/repeated
+helper calls remain rejected. The selected-view one-mip, equal min/mag and
+anisotropy-one draw restrictions are unchanged. `fragment_derivatives` remains
+false; this is only a semantics-preserving `textureSampleGrad` lowering case.
+
+The first public GPU attempt used `input.uv` field expressions, which Naga
+represented as distinct coordinate expressions and the exact proof rejected.
+The positive test now uses a direct fragment `uv` location, and a helper whose
+sample and derivatives share its `uv` argument. This makes the validator's
+identity requirement explicit instead of accepting merely similar-looking
+expressions.
+
+Strict hardware verification used the physical NVIDIA GeForce RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`), requested/actual FL9_1,
+`software=false`, with `WGPU_DX11_REQUIRE_HARDWARE=1`. Direct and helper
+pipelines both compiled through FXC, executed through public wgpu/Core/HAL,
+and read back all 64 expected single-mip pixels. HAL also compiles the direct
+and helper derivative variants to `ps_4_0_level_9_1` after lowering the sample
+to implicit `Sample`; the generated HLSL can retain unused derivative
+temporaries, but FXC accepts the output and GPU readback is correct.
+
+Final-tree verification:
+
+- Strict public D3D11 target: 175 passed, 0 failed, 0 ignored. Hardware tests
+  explicitly selected FL9_1 on the RTX 3090 Ti; the changed sampling test
+  checked 64 pixels for each direct/helper derivative form.
+- Strict private D3D11 HAL suite: 547 passed, 0 failed.
+- Fixture-enabled Core library: 155 passed, 0 failed.
+- Core DX12 regression suite: 139 passed, 0 failed.
+- Focused Core proof and HAL/FXC tests: 1 passed each, including rejection of
+  computed gradients, axis mismatch, transformed derivative inputs and reused
+  derivative values.
+- Public default-backend isolation: 1 passed; ordinary adapter selection is
+  unchanged.
+- Clippy passed for Core, HAL and the public test target. Existing warnings
+  remain in HAL and Core fixtures; no new warnings were introduced in the
+  edited paths. `cargo fmt --all -- --check` and `git diff --check` passed.
+
+Commands (run through the pinned Rust 1.93.1 / Visual Studio wrapper):
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-core --features dx11-test-fixture --lib fl9_single_mip_sample_grad_requires_direct_unconditional_fragment_use
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-hal --features dx11-test-fixture --lib fl91_sample_grad_single_mip_proof_lowers_only_straight_line_samples
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_sampled_mip_chain_at_fl91 -- --exact --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-hal --features dx11-test-fixture --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-core --features dx11-test-fixture --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-core --features dx12,wgsl --lib
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' fmt --all -- --check
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j8 -p wgpu-core --features dx11-test-fixture --tests
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j8 -p wgpu-hal --features dx11-test-fixture --tests
+& 'E:\Temp\wgpu_mission_cargo.bat' clippy --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public
+git diff --check
+```
+
+This increment does not close general shader/profile support. Current product
+status remains PARTIALLY COMPLETE: the opt-in tested FL9_1 subset is useful,
+but broad public capability/Core/HAL/CTS closure, production workload smoke
+testing, historical FL9_1 hardware, Lumia/CoreWindow runtime and physical
+device-removal/TDR recovery remain open.

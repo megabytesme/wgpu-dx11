@@ -13077,6 +13077,7 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
              fn sample_with_bias(uv: vec2f, bias: f32) -> vec4f { return textureSampleBias(levels, mip_sampler, uv, bias); }\n\
              fn sample_with_bias_offset(uv: vec2f) -> vec4f { return textureSampleBias(levels, mip_sampler, uv, 1.0, vec2i(0, 1)); }\n\
              fn sample_with_grad(uv: vec2f) -> vec4f { return textureSampleGrad(levels, mip_sampler, uv, vec2f(0.01, 0.0), vec2f(0.0, 0.01)); }\n\
+             fn sample_with_grad_derivatives(uv: vec2f) -> vec4f { return textureSampleGrad(levels, mip_sampler, uv, dpdx(uv), dpdy(uv)); }\n\
              fn derivative_fn(uv: vec2f) -> vec2f { return dpdy(uv); }\n\
              struct VertexOut { @builtin(position) position: vec4f, @location(0) uv: vec2f };\n\
              @vertex fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOut { return VertexOut(vec4f(position, 0.5, 1.0), uv); }\n\
@@ -13094,7 +13095,9 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
              @fragment fn derivative_direct(input: VertexOut) -> @location(0) vec4f { return vec4f(dpdx(input.uv), 0.0, 1.0); }\n\
              @fragment fn derivative_helper(input: VertexOut) -> @location(0) vec4f { return vec4f(derivative_fn(input.uv), 0.0, 1.0); }\n\
              @fragment fn gradient_direct(input: VertexOut) -> @location(0) vec4f { return textureSampleGrad(levels, mip_sampler, input.uv, vec2f(0.01, 0.0), vec2f(0.0, 0.01)); }\n\
-             @fragment fn gradient_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_with_grad(uv); }"
+             @fragment fn gradient_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_with_grad(uv); }\n\
+             @fragment fn gradient_derivative_direct(@location(0) uv: vec2f) -> @location(0) vec4f { return textureSampleGrad(levels, mip_sampler, uv, dpdx(uv), dpdy(uv)); }\n\
+             @fragment fn gradient_derivative_helper(@location(0) uv: vec2f) -> @location(0) vec4f { return sample_with_grad_derivatives(uv); }"
                 .into(),
         ),
     });
@@ -13199,12 +13202,14 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
     vertex_buffer.unmap();
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 sampled mip readback"),
-        size: 7 * 8 * 256,
+        size: 8 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let gradient_pipeline = create_pipeline("gradient_direct");
     let gradient_helper_pipeline = create_pipeline("gradient_helper");
+    let gradient_derivative_pipeline = create_pipeline("gradient_derivative_direct");
+    let gradient_derivative_helper_pipeline = create_pipeline("gradient_derivative_helper");
     expect_validation_error(&device, "multi-mip textureSampleGrad view", || {
         let mut invalid_encoder =
             device.create_command_encoder(&CommandEncoderDescriptor::default());
@@ -13366,6 +13371,49 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
             depth_or_array_layers: 1,
         },
     );
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("single-mip derivative FL9_1 textureSampleGrad pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&gradient_derivative_pipeline);
+        pass.set_bind_group(0, &gradient_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: (7 * 8 * 256) as u64,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
@@ -13415,11 +13463,21 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
                 );
             }
         }
+        for y in 0..8 {
+            for x in 0..8 {
+                let offset = 7 * 8 * 256 + y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    mip_colors[1],
+                    "single-mip derivative textureSampleGrad pixel ({x}, {y})"
+                );
+            }
+        }
     }
     readback.unmap();
     let helper_readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 helper textureSampleGrad readback"),
-        size: 8 * 256,
+        size: 16 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -13469,6 +13527,49 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
             depth_or_array_layers: 1,
         },
     );
+    {
+        let mut pass = helper_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("single-mip helper derivative FL9_1 textureSampleGrad pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &target_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&gradient_derivative_helper_pipeline);
+        pass.set_bind_group(0, &gradient_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    helper_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &target,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &helper_readback,
+            layout: TexelCopyBufferLayout {
+                offset: (8 * 256) as u64,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
     let helper_submission = queue.submit([helper_encoder.finish()]);
     let (helper_sender, helper_receiver) = std::sync::mpsc::channel();
     helper_readback
@@ -13491,14 +13592,16 @@ fn public_dx11_sampled_mip_chain_at_fl91() {
             .slice(..)
             .get_mapped_range()
             .expect("mapped helper textureSampleGrad data");
-        for y in 0..8 {
-            for x in 0..8 {
-                let offset = y * 256 + x * 4;
-                assert_eq!(
-                    &data[offset..offset + 4],
-                    mip_colors[1],
-                    "single-mip helper textureSampleGrad pixel ({x}, {y})"
-                );
+        for slot in 0..2 {
+            for y in 0..8 {
+                for x in 0..8 {
+                    let offset = slot * 8 * 256 + y * 256 + x * 4;
+                    assert_eq!(
+                        &data[offset..offset + 4],
+                        mip_colors[1],
+                        "single-mip helper textureSampleGrad slot {slot} pixel ({x}, {y})"
+                    );
+                }
             }
         }
     }

@@ -4215,6 +4215,33 @@ Keep true FL9_1 hardware exclusions (for example compute/UAV, geometry,
 multiple color targets and array textures) documented as unavailable rather
 than treating them as backend bugs. Public ordinary adapter enumeration stays
 disabled.
+
+## Coordinator status — bounded coordinate-derivative gradients — 2026-11-15
+
+Core and the private HAL now also accept a narrow exact derivative-gradient
+form for the existing single-mip `textureSampleGrad` subset: `dpdx` and
+`dpdy` must refer to the same validated coordinate expression as the sample,
+and each derivative must be used only as that sample's corresponding gradient.
+The equivalent direct form and the existing one-helper form are tested.
+Literal finite gradients remain supported; computed gradient vectors,
+mismatched axes, transformed coordinates, derivative reuse, control flow and
+general derivative operations remain rejected. This does not turn on the
+`fragment_derivatives` capability.
+
+The final-tree strict public run passed 175/175 test functions on the RTX 3090
+Ti at explicitly requested and selected FL9_1; the new direct/helper cases
+checked 64 readback pixels each. The private HAL suite passed 547/547, Core
+fixture suite 155/155, Core DX12 139/139, focused Core/HAL tests passed, and
+ordinary default D3D11 adapter isolation passed. Clippy, formatting and
+`git diff --check` passed with existing HAL/Core fixture warnings. Exact
+commands and test-shape details are in `FL9_1_PROGRESS.md`.
+
+This remains a limited shader case. The overall mission is still PARTIALLY
+COMPLETE: systematic capability/Core/HAL/CTS coverage is incomplete, and
+historical FL9_1 device, Lumia/CoreWindow runtime and physical
+device-removal/TDR evidence remain external requirements. The next local work
+should continue the contract/CTS audit or be driven by a concrete consumer
+workload gap, not expand derivative semantics speculatively.
 ## Strict public-suite reliability update — 2026-11-15
 
 A fresh strict single-process run passed all 175 public DX11 test functions on

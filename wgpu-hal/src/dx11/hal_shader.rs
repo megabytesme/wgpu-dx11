@@ -6745,7 +6745,15 @@ mod tests {
             }
             fn nested(uv: vec2f) -> vec4f { return helper(uv); }
             fn derivative_helper(uv: vec2f) -> vec4f {
-                return textureSampleGrad(image, smp, uv, dpdx(uv), vec2f(0.0, 0.5));
+                return textureSampleGrad(image, smp, uv, dpdx(uv), dpdy(uv));
+            }
+            fn derivative_reuse_helper(uv: vec2f) -> vec4f {
+                let dx = dpdx(uv);
+                let color = textureSampleGrad(image, smp, uv, dx, dpdy(uv));
+                return color + vec4f(dx, 0.0, 0.0);
+            }
+            fn dynamic_gradient_helper(uv: vec2f) -> vec4f {
+                return textureSampleGrad(image, smp, uv, uv * 0.5, vec2f(0.0, 0.5));
             }
             @fragment fn main(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleGrad(image, smp, uv, vec2f(0.5, 0.0), vec2f(0.0, 0.5));
@@ -6771,6 +6779,26 @@ mod tests {
             }
             @fragment fn derivative(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleGrad(image, smp, uv, dpdx(uv), dpdy(uv));
+            }
+            @fragment fn derivative_axis_mismatch(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleGrad(image, smp, uv, dpdy(uv), dpdx(uv));
+            }
+            @fragment fn derivative_transformed(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleGrad(image, smp, uv, dpdx(uv * 0.5), dpdy(uv));
+            }
+            @fragment fn derivative_reused(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let dx = dpdx(uv);
+                let color = textureSampleGrad(image, smp, uv, dx, dpdy(uv));
+                return color + vec4f(dx, 0.0, 0.0);
+            }
+            @fragment fn dynamic_gradient(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleGrad(image, smp, uv, uv * 0.5, vec2f(0.0, 0.5));
+            }
+            @fragment fn helper_dynamic_gradient(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return dynamic_gradient_helper(uv);
+            }
+            @fragment fn helper_derivative_reused(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return derivative_reuse_helper(uv);
             }
             "#,
         )
@@ -6805,13 +6833,31 @@ mod tests {
         assert_eq!(helper_proof.pairs[0].texture.binding, 7);
         assert_eq!(helper_proof.pairs[0].sampler.binding, 42);
 
+        for entry in ["derivative", "helper_derivative"] {
+            let derivative_proof = fl9_texture_sample_grad_single_mip_proof(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                entry,
+            )
+            .unwrap()
+            .expect("coordinate derivatives used only by the sample are erased");
+            assert_eq!(derivative_proof.pairs.len(), 1);
+            assert_eq!(derivative_proof.pairs[0].texture.binding, 7);
+            assert_eq!(derivative_proof.pairs[0].sampler.binding, 42);
+        }
+
         for entry in [
             "control",
             "helper_transformed",
             "helper_nested",
             "helper_multiple",
-            "helper_derivative",
-            "derivative",
+            "derivative_axis_mismatch",
+            "derivative_transformed",
+            "derivative_reused",
+            "helper_derivative_reused",
+            "dynamic_gradient",
+            "helper_dynamic_gradient",
         ] {
             assert!(
                 fl9_texture_sample_grad_single_mip_proof(
@@ -6920,6 +6966,64 @@ mod tests {
         )
         .expect("FXC accepts the helper-based single-mip lowering");
         assert!(helper_bytecode.starts_with(b"DXBC"));
+
+        for entry in ["derivative", "helper_derivative"] {
+            let derivative_proof = fl9_texture_sample_grad_single_mip_proof(
+                &module,
+                &info,
+                naga::ShaderStage::Fragment,
+                entry,
+            )
+            .unwrap()
+            .expect("validated coordinate derivatives are lowered");
+            let entry_index = module
+                .entry_points
+                .iter()
+                .position(|candidate| {
+                    candidate.stage == naga::ShaderStage::Fragment && candidate.name == entry
+                })
+                .unwrap();
+            let mut lowered = module.clone();
+            lower_fl9_texture_sample_grad_single_mip(&mut lowered, entry_index, &derivative_proof)
+                .expect("lower the selected derivative sample");
+            let (hlsl, generated_entry) = translate_naga_with_viewport_and_fl9_inputs(
+                &lowered,
+                &info,
+                naga::ShaderStage::Fragment,
+                entry,
+                ShaderProfile::PixelLevel9_1,
+                &[
+                    ShaderBinding {
+                        binding: naga::ResourceBinding {
+                            group: 0,
+                            binding: 7,
+                        },
+                        slot: 0,
+                        kind: ShaderBindingKind::TextureFloat,
+                    },
+                    ShaderBinding {
+                        binding: naga::ResourceBinding {
+                            group: 0,
+                            binding: 42,
+                        },
+                        slot: 0,
+                        kind: ShaderBindingKind::Sampler,
+                    },
+                ],
+                Fl9ShaderInputOptions::default(),
+            )
+            .expect("translate the selected derivative sample");
+            assert!(hlsl.contains(".Sample("), "{hlsl}");
+            assert!(!hlsl.contains("SampleGrad"), "{hlsl}");
+
+            let bytecode = super::super::shader::compile_hlsl(
+                &hlsl,
+                &generated_entry,
+                ShaderProfile::PixelLevel9_1,
+            )
+            .expect("FXC accepts the lowered derivative sample");
+            assert!(bytecode.starts_with(b"DXBC"));
+        }
     }
 }
 
@@ -7306,24 +7410,50 @@ fn fl9_texture_sample_grad_single_mip_proof(
         if !matches!(
             helper_function.expressions[coordinate],
             naga::Expression::FunctionArgument(0)
-        ) || !fl9_texture_sample_grad_is_literal_vec2(module, helper_function, x)
-            || !fl9_texture_sample_grad_is_literal_vec2(module, helper_function, y)
+        ) {
+            return Err(invalid());
+        }
+        let helper_info = &module_info[helper];
+        let mut derivative_uses = Vec::new();
+        if !(fl9_texture_sample_grad_is_literal_vec2(module, helper_function, x)
+            || fl9_texture_sample_grad_note_derivative(
+                helper_function,
+                helper_info,
+                x,
+                naga::DerivativeAxis::X,
+                coordinate,
+                &mut derivative_uses,
+            ))
+            || !(fl9_texture_sample_grad_is_literal_vec2(module, helper_function, y)
+                || fl9_texture_sample_grad_note_derivative(
+                    helper_function,
+                    helper_info,
+                    y,
+                    naga::DerivativeAxis::Y,
+                    coordinate,
+                    &mut derivative_uses,
+                ))
         {
             return Err(invalid());
         }
         for (handle, expression) in helper_function.expressions.iter() {
-            if matches!(
-                expression,
-                naga::Expression::Derivative { .. } | naga::Expression::Select { .. }
-            ) || (matches!(
-                expression,
-                naga::Expression::ImageSample { .. }
-                    | naga::Expression::ImageLoad { .. }
-                    | naga::Expression::ImageQuery { .. }
-            ) && handle != sample)
+            if matches!(expression, naga::Expression::Select { .. })
+                || (matches!(
+                    expression,
+                    naga::Expression::ImageSample { .. }
+                        | naga::Expression::ImageLoad { .. }
+                        | naga::Expression::ImageQuery { .. }
+                ) && handle != sample)
             {
                 return Err(invalid());
             }
+        }
+        if !fl9_texture_sample_grad_derivatives_are_exclusive(
+            helper_function,
+            helper_info,
+            &derivative_uses,
+        ) {
+            return Err(invalid());
         }
         let naga::Expression::GlobalVariable(texture) = helper_function.expressions[image] else {
             return Err(invalid());
@@ -7385,22 +7515,21 @@ fn fl9_texture_sample_grad_single_mip_proof(
 
     let mut expressions = Vec::new();
     let mut pairs = Vec::new();
+    let mut derivative_uses = Vec::new();
     for (handle, expression) in function.expressions.iter() {
         if info[handle].ref_count == 0 {
             continue;
         }
-        if matches!(
-            expression,
-            naga::Expression::Derivative { .. } | naga::Expression::Select { .. }
-        ) {
+        if matches!(expression, naga::Expression::Select { .. }) {
             return Err(invalid());
         }
         let naga::Expression::ImageSample {
             image,
             sampler,
+            coordinate,
             array_index,
             offset,
-            level: naga::SampleLevel::Gradient { .. },
+            level: naga::SampleLevel::Gradient { x, y },
             depth_ref,
             gather,
             clamp_to_edge,
@@ -7409,6 +7538,27 @@ fn fl9_texture_sample_grad_single_mip_proof(
         else {
             continue;
         };
+        if !(fl9_texture_sample_grad_is_literal_vec2(module, function, x)
+            || fl9_texture_sample_grad_note_derivative(
+                function,
+                info,
+                x,
+                naga::DerivativeAxis::X,
+                coordinate,
+                &mut derivative_uses,
+            ))
+            || !(fl9_texture_sample_grad_is_literal_vec2(module, function, y)
+                || fl9_texture_sample_grad_note_derivative(
+                    function,
+                    info,
+                    y,
+                    naga::DerivativeAxis::Y,
+                    coordinate,
+                    &mut derivative_uses,
+                ))
+        {
+            return Err(invalid());
+        }
         if array_index.is_some()
             || offset.is_some()
             || depth_ref.is_some()
@@ -7459,6 +7609,9 @@ fn fl9_texture_sample_grad_single_mip_proof(
     if expressions.is_empty() {
         return Err(invalid());
     }
+    if !fl9_texture_sample_grad_derivatives_are_exclusive(function, info, &derivative_uses) {
+        return Err(invalid());
+    }
     pairs.sort_unstable_by_key(|pair| {
         (
             pair.texture.group,
@@ -7487,6 +7640,49 @@ fn fl9_texture_sample_grad_is_literal_vec2(
                 naga::Expression::Literal(naga::Literal::F32(value)) if value.is_finite()
             )
         })
+}
+
+fn fl9_texture_sample_grad_note_derivative(
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    expression: naga::Handle<naga::Expression>,
+    expected_axis: naga::DerivativeAxis,
+    coordinate: naga::Handle<naga::Expression>,
+    derivative_uses: &mut Vec<(naga::Handle<naga::Expression>, usize)>,
+) -> bool {
+    let naga::Expression::Derivative { axis, expr, .. } = function.expressions[expression] else {
+        return false;
+    };
+    if axis != expected_axis || expr != coordinate {
+        return false;
+    }
+    if let Some((_, count)) = derivative_uses
+        .iter_mut()
+        .find(|(handle, _)| *handle == expression)
+    {
+        *count += 1;
+    } else {
+        derivative_uses.push((expression, 1));
+    }
+    function_info[expression].ref_count != 0
+}
+
+fn fl9_texture_sample_grad_derivatives_are_exclusive(
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    derivative_uses: &[(naga::Handle<naga::Expression>, usize)],
+) -> bool {
+    function.expressions.iter().all(|(handle, expression)| {
+        if !matches!(expression, naga::Expression::Derivative { .. }) {
+            return true;
+        }
+        derivative_uses
+            .iter()
+            .find(|(used, _)| *used == handle)
+            .is_some_and(|(_, expected)| {
+                *expected != 0 && function_info[handle].ref_count == *expected
+            })
+    })
 }
 
 fn lower_fl9_texture_sample_grad_single_mip(

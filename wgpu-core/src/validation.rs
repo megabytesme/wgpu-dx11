@@ -4058,19 +4058,16 @@ fn entry_point_uses_fragment_derivatives(
 
 fn fl9_texture_sample_grad_single_mip_pairs(
     module: &naga::Module,
+    module_info: &naga::valid::ModuleInfo,
     entry_point: &naga::EntryPoint,
+    entry_point_info: &naga::valid::FunctionInfo,
 ) -> Option<Vec<TextureSampleGradSingleMipPair>> {
     if entry_point.stage != naga::ShaderStage::Fragment
         || entry_point
             .function
             .expressions
             .iter()
-            .any(|(_, expression)| {
-                matches!(
-                    expression,
-                    naga::Expression::Derivative { .. } | naga::Expression::Select { .. }
-                )
-            })
+            .any(|(_, expression)| matches!(expression, naga::Expression::Select { .. }))
     {
         return None;
     }
@@ -4088,7 +4085,8 @@ fn fl9_texture_sample_grad_single_mip_pairs(
             .any(|(_, expression)| {
                 matches!(
                     expression,
-                    naga::Expression::ImageSample { .. }
+                    naga::Expression::Derivative { .. }
+                        | naga::Expression::ImageSample { .. }
                         | naga::Expression::ImageLoad { .. }
                         | naga::Expression::ImageQuery { .. }
                 )
@@ -4106,22 +4104,6 @@ fn fl9_texture_sample_grad_single_mip_pairs(
                         && scalar.width == 4
             )
         };
-        let is_literal_gradient =
-            |function: &naga::Function, expression: naga::Handle<naga::Expression>| {
-                let naga::Expression::Compose { ty, ref components } =
-                    function.expressions[expression]
-                else {
-                    return false;
-                };
-                is_float_vector(ty, naga::VectorSize::Bi)
-                && components.len() == 2
-                && components.iter().all(|component| {
-                    matches!(
-                        function.expressions[*component],
-                        naga::Expression::Literal(naga::Literal::F32(value)) if value.is_finite()
-                    )
-                })
-            };
         if entry_point.function.arguments.len() != 1
             || !matches!(
                 entry_point.function.arguments[0].binding,
@@ -4204,24 +4186,50 @@ fn fl9_texture_sample_grad_single_mip_pairs(
         if !matches!(
             helper_function.expressions[coordinate],
             naga::Expression::FunctionArgument(0)
-        ) || !is_literal_gradient(helper_function, x)
-            || !is_literal_gradient(helper_function, y)
+        ) {
+            return None;
+        }
+        let helper_info = &module_info[helper];
+        let mut derivative_uses = Vec::new();
+        if !(fl9_texture_sample_grad_is_literal_vec2(module, helper_function, x)
+            || fl9_texture_sample_grad_note_derivative(
+                helper_function,
+                helper_info,
+                x,
+                naga::DerivativeAxis::X,
+                coordinate,
+                &mut derivative_uses,
+            ))
+            || !(fl9_texture_sample_grad_is_literal_vec2(module, helper_function, y)
+                || fl9_texture_sample_grad_note_derivative(
+                    helper_function,
+                    helper_info,
+                    y,
+                    naga::DerivativeAxis::Y,
+                    coordinate,
+                    &mut derivative_uses,
+                ))
         {
             return None;
         }
         for (handle, expression) in helper_function.expressions.iter() {
-            if matches!(
-                expression,
-                naga::Expression::Derivative { .. } | naga::Expression::Select { .. }
-            ) || (matches!(
-                expression,
-                naga::Expression::ImageSample { .. }
-                    | naga::Expression::ImageLoad { .. }
-                    | naga::Expression::ImageQuery { .. }
-            ) && handle != sample)
+            if matches!(expression, naga::Expression::Select { .. })
+                || (matches!(
+                    expression,
+                    naga::Expression::ImageSample { .. }
+                        | naga::Expression::ImageLoad { .. }
+                        | naga::Expression::ImageQuery { .. }
+                ) && handle != sample)
             {
                 return None;
             }
+        }
+        if !fl9_texture_sample_grad_derivatives_are_exclusive(
+            helper_function,
+            helper_info,
+            &derivative_uses,
+        ) {
+            return None;
         }
         let naga::Expression::GlobalVariable(texture_global) = helper_function.expressions[image]
         else {
@@ -4268,13 +4276,15 @@ fn fl9_texture_sample_grad_single_mip_pairs(
     fl9_texture_sample_grad_block_is_straight_line(&entry_point.function.body)?;
 
     let mut pairs = Vec::new();
+    let mut derivative_uses = Vec::new();
     for (_, expression) in entry_point.function.expressions.iter() {
         let naga::Expression::ImageSample {
             image,
             sampler,
+            coordinate,
             array_index,
             offset,
-            level: naga::SampleLevel::Gradient { .. },
+            level: naga::SampleLevel::Gradient { x, y },
             depth_ref,
             gather,
             clamp_to_edge,
@@ -4288,6 +4298,27 @@ fn fl9_texture_sample_grad_single_mip_pairs(
             || depth_ref.is_some()
             || gather.is_some()
             || clamp_to_edge
+        {
+            return None;
+        }
+        if !(fl9_texture_sample_grad_is_literal_vec2(module, &entry_point.function, x)
+            || fl9_texture_sample_grad_note_derivative(
+                &entry_point.function,
+                entry_point_info,
+                x,
+                naga::DerivativeAxis::X,
+                coordinate,
+                &mut derivative_uses,
+            ))
+            || !(fl9_texture_sample_grad_is_literal_vec2(module, &entry_point.function, y)
+                || fl9_texture_sample_grad_note_derivative(
+                    &entry_point.function,
+                    entry_point_info,
+                    y,
+                    naga::DerivativeAxis::Y,
+                    coordinate,
+                    &mut derivative_uses,
+                ))
         {
             return None;
         }
@@ -4334,9 +4365,80 @@ fn fl9_texture_sample_grad_single_mip_pairs(
     if pairs.is_empty() {
         return None;
     }
+    if !fl9_texture_sample_grad_derivatives_are_exclusive(
+        &entry_point.function,
+        entry_point_info,
+        &derivative_uses,
+    ) {
+        return None;
+    }
     pairs.sort_unstable();
     pairs.dedup();
     Some(pairs)
+}
+
+fn fl9_texture_sample_grad_is_literal_vec2(
+    module: &naga::Module,
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+) -> bool {
+    let naga::Expression::Compose { ty, ref components } = function.expressions[expression] else {
+        return false;
+    };
+    matches!(
+        module.types[ty].inner,
+        naga::TypeInner::Vector { size: naga::VectorSize::Bi, scalar }
+            if scalar.kind == naga::ScalarKind::Float && scalar.width == 4
+    ) && components.len() == 2
+        && components.iter().all(|component| {
+            matches!(
+                function.expressions[*component],
+                naga::Expression::Literal(naga::Literal::F32(value)) if value.is_finite()
+            )
+        })
+}
+
+fn fl9_texture_sample_grad_note_derivative(
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    expression: naga::Handle<naga::Expression>,
+    expected_axis: naga::DerivativeAxis,
+    coordinate: naga::Handle<naga::Expression>,
+    derivative_uses: &mut Vec<(naga::Handle<naga::Expression>, usize)>,
+) -> bool {
+    let naga::Expression::Derivative { axis, expr, .. } = function.expressions[expression] else {
+        return false;
+    };
+    if axis != expected_axis || expr != coordinate {
+        return false;
+    }
+    if let Some((_, count)) = derivative_uses
+        .iter_mut()
+        .find(|(handle, _)| *handle == expression)
+    {
+        *count += 1;
+    } else {
+        derivative_uses.push((expression, 1));
+    }
+    function_info[expression].ref_count != 0
+}
+
+fn fl9_texture_sample_grad_derivatives_are_exclusive(
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    derivative_uses: &[(naga::Handle<naga::Expression>, usize)],
+) -> bool {
+    function.expressions.iter().all(|(handle, expression)| {
+        if !matches!(expression, naga::Expression::Derivative { .. }) {
+            return true;
+        }
+        derivative_uses
+            .iter()
+            .find(|(used, _)| *used == handle)
+            .is_some_and(|(_, expected)| {
+                *expected != 0 && function_info[handle].ref_count == *expected
+            })
+    })
 }
 
 fn fl9_texture_sample_grad_block_is_straight_line(block: &naga::Block) -> Option<bool> {
@@ -9514,7 +9616,9 @@ impl Interface {
                 ),
                 fl9_texture_sample_grad_single_mip_pairs: fl9_texture_sample_grad_single_mip_pairs(
                     module,
+                    module_info,
                     entry_point,
+                    info,
                 ),
                 texture_sample_level_used: entry_point_uses_texture_sample_level(
                     module,
@@ -12993,7 +13097,10 @@ mod tests {
             }
             fn nested(uv: vec2f) -> vec4f { return helper(uv); }
             fn derivative_helper(uv: vec2f) -> vec4f {
-                return textureSampleGrad(image, smp, uv, dpdx(uv), vec2f(0.0, 0.25));
+                return textureSampleGrad(image, smp, uv, dpdx(uv), dpdy(uv));
+            }
+            fn helper_dynamic(uv: vec2f) -> vec4f {
+                return textureSampleGrad(image, smp, uv, uv * 0.5, vec2f(0.0, 0.25));
             }
             @fragment fn direct(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleGrad(image, smp, uv, vec2f(0.25, 0.0), vec2f(0.0, 0.25));
@@ -13019,6 +13126,23 @@ mod tests {
             }
             @fragment fn derivative(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return textureSampleGrad(image, smp, uv, dpdx(uv), dpdy(uv));
+            }
+            @fragment fn derivative_axis_mismatch(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleGrad(image, smp, uv, dpdy(uv), dpdx(uv));
+            }
+            @fragment fn derivative_transformed(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleGrad(image, smp, uv, dpdx(uv * 0.5), dpdy(uv));
+            }
+            @fragment fn derivative_reused(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let dx = dpdx(uv);
+                let color = textureSampleGrad(image, smp, uv, dx, dpdy(uv));
+                return color + vec4f(dx, 0.0, 0.0);
+            }
+            @fragment fn dynamic_gradient(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSampleGrad(image, smp, uv, uv * 0.5, vec2f(0.0, 0.25));
+            }
+            @fragment fn helper_dynamic_gradient(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return helper_dynamic(uv);
             }
             @fragment fn unrelated() -> @location(0) vec4f { return vec4f(1.0); }
             "#,
@@ -13079,14 +13203,40 @@ mod tests {
                 &limits,
             )
             .unwrap());
+        for entry in ["derivative", "helper_derivative"] {
+            assert!(!interface
+                .entry_point_uses_unsupported_fragment_derivatives(
+                    naga::ShaderStage::Fragment,
+                    entry,
+                    &limits,
+                )
+                .unwrap());
+            assert_eq!(
+                interface
+                    .entry_point_fl9_texture_sample_grad_single_mip_pairs(
+                        naga::ShaderStage::Fragment,
+                        entry,
+                    )
+                    .unwrap(),
+                alloc::vec![TextureSampleGradSingleMipPair {
+                    texture_group: 2,
+                    texture_binding: 7,
+                    sampler_group: 2,
+                    sampler_binding: 42,
+                }]
+            );
+        }
 
         for entry in [
             "control_flow",
             "helper_transformed",
             "helper_nested",
             "helper_multiple",
-            "helper_derivative",
-            "derivative",
+            "derivative_axis_mismatch",
+            "derivative_transformed",
+            "derivative_reused",
+            "dynamic_gradient",
+            "helper_dynamic_gradient",
         ] {
             assert!(
                 interface
