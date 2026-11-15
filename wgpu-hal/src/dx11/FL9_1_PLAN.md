@@ -1,6 +1,43 @@
 # FL9_1 completion plan
 
-## Coordinator status synthesis — current 2026-11-14
+## Coordinator status synthesis — current 2026-11-15
+
+### Current verification checkpoint
+
+The live branch is `uwp-dx11`, HEAD
+`0d690854b3225e7d35435a1fdc19ee73da3eccf0`, with a clean working tree.
+The latest code checkpoint remains `ff062dbcc`; commits after it record
+verified results or correct a stale timestamp-test description.
+
+Since that checkpoint, strict forced-FL9_1 public runs on the RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) confirmed: the public offscreen
+textured indexed cube readback classified 112 red, 277 green and 635 background
+pixels; the public HWND example presented 60 textured indexed depth-tested
+frames; and the safe `Arc<Window>` winit example resized/reconfigured from
+400x300 to 640x480 and presented 60 frames. The strict BC mip/cube test passed
+all six BC1/2/3 UNORM/sRGB 2D formats and all six cube formats, including 2x2
+and 1x1 mip tails. The query-gated 6x10 NPOT four-mip test passed with the
+selected FL9_1 device's positive unrestricted-NPOT result. The public timestamp
+test confirms timestamps are withheld and rejected; it performs no draw.
+
+The current public `wgpu` crate and dependencies also passed an ARM32 UWP
+cross-check for `thumbv7a-uwp-windows-msvc` using Rust 1.93.1 `build-std` and
+the VS 2022 ARM/UWP environment. This is compile/link-target evidence, not
+device runtime evidence. The Lumia Device Portal timed out; direct TCP/443 and
+ICMP checks to `192.168.1.157` failed from the development desktop. No network
+or device configuration was changed.
+
+Independent audits of shader/profile boundaries, formats/usages, render and
+transfer paths, public resource/view validation, presentation, and reviewed
+HAL panic reachability have found no concrete Core-valid request reaching a
+known unsupported HAL path. These reviews are scoped and do not prove the full
+matrix. A fresh capability-projection/HAL reachability/CTS-coverage audit is
+in progress. The mission remains **PARTIALLY COMPLETE** until the advertised
+capability, Core-validation, HAL-operation and applicable CTS evidence is
+reconciled, and external hardware gaps are clearly reported. The current next
+step is to integrate those audit findings and run a narrowly selected CTS or
+regression test for any concrete gap; if no implementation gap is evidenced,
+continue the matrix audit rather than inventing unsupported FL9_1 features.
 
 ### Verification refresh — optional RG8 3D path
 
