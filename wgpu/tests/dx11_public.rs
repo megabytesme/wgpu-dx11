@@ -1128,6 +1128,159 @@ fn public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91() {
 }
 
 #[test]
+fn public_dx11_discarded_texture_is_zero_before_readback_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().next() else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.contains("physical"), "{info:?}");
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=discarded texture zero initialization and readback",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 discarded-texture initialization"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request a device within the public FL9_1 projection");
+
+    let texture = device.create_texture(&TextureDescriptor {
+        label: Some("public FL9_1 discarded texture"),
+        size: Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = texture.create_view(&TextureViewDescriptor::default());
+    let mut clear_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public FL9_1 discarded-texture clear encoder"),
+    });
+    {
+        let _pass = clear_encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("public FL9_1 discarded-texture clear pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color {
+                        r: 1.0,
+                        g: 0.25,
+                        b: 0.0,
+                        a: 1.0,
+                    }),
+                    store: StoreOp::Discard,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+    }
+    let clear_submission = queue.submit([clear_encoder.finish()]);
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(clear_submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for the nonzero texture clear and discard");
+
+    const ROW_PITCH: u64 = 256;
+    const HEIGHT: u64 = 2;
+    const SENTINEL: u8 = 0xA5;
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("public FL9_1 discarded-texture readback"),
+        size: ROW_PITCH * HEIGHT,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let sentinel = vec![SENTINEL; (ROW_PITCH * HEIGHT) as usize];
+    queue.write_buffer(&readback, 0, &sentinel);
+    let mut copy_encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("public FL9_1 discarded-texture readback encoder"),
+    });
+    copy_encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &texture,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(ROW_PITCH as u32),
+                rows_per_image: Some(HEIGHT as u32),
+            },
+        },
+        Extent3d {
+            width: 2,
+            height: HEIGHT as u32,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([copy_encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for zero initialization and texture readback");
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .expect("discarded-texture readback callback")
+        .expect("map discarded-texture readback");
+    {
+        let data = readback.slice(..).get_mapped_range().expect("mapped data");
+        for row in 0..HEIGHT as usize {
+            let start = row * ROW_PITCH as usize;
+            assert_eq!(
+                &data[start..start + 8],
+                &[0; 8],
+                "discarded RGBA8 row {row} was not zero-initialized"
+            );
+            assert!(
+                data[start + 8..start + ROW_PITCH as usize]
+                    .iter()
+                    .all(|&byte| byte == SENTINEL),
+                "texture readback overwrote row {row} padding"
+            );
+        }
+    }
+    readback.unmap();
+    println!(
+        "PASS: a nonzero discarded RGBA8 render target read back as zero; both padded rows preserved their 0xA5 sentinels"
+    );
+}
+
+#[test]
 fn public_dx11_map_nonzero_slice_after_gpu_write_preserves_neighbors_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

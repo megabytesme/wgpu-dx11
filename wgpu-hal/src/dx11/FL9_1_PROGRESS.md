@@ -21720,3 +21720,186 @@ $env:DENO_WEBGPU_BACKEND = 'dx11'
 
 The direct runner is evidence from this session, not a replacement for a
 reproducible clean `xtask` build. No implementation code changed.
+
+## Strict public texture zero-initialization after discard — 2026-11-15
+
+The public DX11 CTS candidate
+`webgpu:api,operation,resource_init,texture_zero:uninitialized_texture_is_zero:dimension="2d";readMethod="CopyToBuffer";format="rgba8unorm"`
+is not isolatable to its supported single-layer subcase: its internal
+parameter expansion always includes `layerCount=7`. On this adapter Core
+correctly rejects that shape against `max_texture_array_layers=6`; all 240
+logged byte expectation failures were associated with those invalid
+seven-layer shapes, and the run also logged two validation exceptions. The
+one-layer, one-mip, POT, canary-free subcase completed without a content
+mismatch, but the selector failed 0/1 and is not counted as a pass. The
+`--list` case identifiers omit these internal subcase dimensions, so the
+selector cannot exclude the unsupported layer count.
+
+To get focused evidence for the supported contract, added
+`public_dx11_discarded_texture_is_zero_before_readback_at_fl91` to
+`wgpu/tests/dx11_public.rs`. It clears a 2x2 RGBA8 render target to a nonzero
+color, submits and waits, discards the attachment, then reads it in a second
+submission into a sentinel-filled buffer with 256-byte row pitch. At strict
+FL9_1 on the physical RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+all eight texel bytes in each row were zero and every padding byte remained
+`0xA5`.
+
+The targeted test passed:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_discarded_texture_is_zero_before_readback_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+The complete strict public target was then run twice after this addition; the
+captured run passed 174/174 test functions, with 0 failed and 3 optional
+selected-device subcase skips (R8G8_UNORM and R16G16_FLOAT vertex input, and
+R8G8_UNORM mip support). The full command was:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public -- --nocapture --test-threads=1
+```
+
+The aggregate texture-zero CTS result is recorded as a fixture boundary, not
+as a backend initialization failure. The strict public test is the positive
+hardware evidence for the supported 2D texture shape.
+
+## Strict texture-copy CTS triage — 2026-11-15
+
+The candidate padded-row selector
+`webgpu:api,operation,command_buffer,image_copy:rowsPerImage_and_bytesPerRow:initMethod="CopyB2T";checkMethod="FullCopyT2B";format="rgba8unorm";dimension="2d"`
+cannot isolate the intended nested copy-size case: CTS query identifiers expose
+only the outer method, format and dimension parameters. Adding nested padding
+and extent fields to the query matched no cases. The strict aggregate ran 0/1
+outer cases successfully. Its nested cases create six-layer D2 textures for
+every copy depth; Core accepts those only as valid cube textures because the
+selected FL9_1 projection does not expose ordinary 2D arrays. The generated
+non-square and unsupported NPOT cube shapes are therefore invalid fixtures.
+This result is not counted as a transfer pass or as a supported-request
+failure; the existing custom tests remain the positive padded-row and
+multi-layer cube evidence.
+
+The exact exploratory invocations used the existing DX11 CTS runner built for
+the prior override-selector tests. It is session evidence, not a clean xtask
+runner rebuild:
+
+```powershell
+& 'E:\Temp\wgpu-dx11-cts-overrides-20261115\debug\cts_runner.exe' './tools/run_deno' '--list' 'webgpu:api,operation,command_buffer,image_copy:rowsPerImage_and_bytesPerRow:*'
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:DENO_WEBGPU_BACKEND = 'dx11'
+& 'E:\Temp\wgpu-dx11-cts-overrides-20261115\debug\cts_runner.exe' './tools/run_deno' '--verbose' 'webgpu:api,operation,command_buffer,image_copy:rowsPerImage_and_bytesPerRow:initMethod="CopyB2T";checkMethod="FullCopyT2B";format="rgba8unorm";dimension="2d"'
+```
+
+## Strict R8 UNORM copy CTS recheck — 2026-11-15
+
+The curated non-array same-format R8 UNORM `copyTextureToTexture` selector
+passed 1/1 with no skips or failures on the physical NVIDIA RTX 3090 Ti
+(`0x10de:0x2203`, driver `32.0.16.2101`) with requested and actual FL9_1.
+The generated cases cover empty and partial extents, mip-level selection and
+unequal source/destination dimensions. The selector is already present in
+`cts_runner/test.lst`; no list change was needed. This rerun confirms current
+behavior and does not broaden the R8 format capability projection.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:DENO_WEBGPU_BACKEND = 'dx11'
+& 'E:\Temp\wgpu-dx11-cts-overrides-20261115\debug\cts_runner.exe' './tools/run_deno' '--verbose' 'webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat="r8unorm";dstFormat="r8unorm";dimension="2d"'
+```
+
+## Core immediate-feature validation and support status — 2026-11-15
+
+A read-only HAL/Core reject crosswalk found no spec-valid public request in the
+audited query, timestamp, bundle, indirect, compute, resolve, attachment,
+viewport or scissor paths reaching an unsupported D3D11 encoder operation.
+It did find one invalid-use edge: a zero-byte `set_immediates(0, &[])` on a
+zero-immediate layout could pass Core and reach the HAL's unsupported operation
+even when `Features::IMMEDIATES` was absent. The shared pass replay validator now
+requires that feature before validating the layout or calling HAL. Render
+passes, compute passes and render-bundle validation all use this helper.
+
+The public regression creates a zero-immediate render pipeline on the strict
+physical NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`),
+requests/receives FL9_1, records an empty immediate write without the feature,
+and checks that Core produces a validation error with no internal error. It
+passed 1/1:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_empty_immediate_write_requires_feature_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+After the Core change, the fixture-enabled Core suite passed 155/155, including
+its strict FL9_1 hardware fixtures and synthetic error-injection cases; the
+Core DX12 suite passed 139/139. The public R8/RG8/RGB565 render-attachment
+test passed separately 1/1. A full strict public run began 175 tests but made
+no visible progress for over two minutes; it was interrupted, so that attempt
+has no suite result. The suspected narrow-format attachment test passed
+individually, and the prior tree's full strict target passed 174/174. Do not
+count the interrupted 175-test attempt as a pass. A subsequent captured
+monolithic rerun exposed a real test-run reliability problem: two shader cases
+hit FXC `0x8007000e` internal parser errors, later tests could no longer
+enumerate the physical adapter, and the test process exited with
+`STATUS_ACCESS_VIOLATION` (`0xc0000005`).
+
+To separate suite accumulation from per-test correctness, all 175 public test
+functions were then run as separate strict processes using the already-built
+test binary. All 175 processes exited successfully; 172 printed the physical
+RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`, requested/actual FL9_1,
+`software=false`) marker, and four logged optional selected-device skips. The
+two shader cases that failed in the monolithic run passed 1/1 when isolated;
+the adapter was again available for each strict child process. This provides
+complete per-test coverage for the current public target but does not erase the
+monolithic-run FXC/adapter/AV failure. The current issue is process-wide test
+reliability, not a reproduced single-test backend failure.
+
+The exact process-isolated invocation was:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$exe = 'E:\Temp\wgpu-mission-gpu-target\debug\deps\dx11_public-2546d7ac1b2de23d.exe'
+$testNames = @(& $exe --list | ForEach-Object { if ($_ -match '^([^:]+): test$') { $Matches[1] } })
+foreach ($name in $testNames) {
+    & $exe $name --exact --nocapture --test-threads=1
+}
+```
+
+The full Core fixture suite passed 155/155 and the Core DX12 suite passed
+139/139 after the shared Core validation change. `cargo clippy` passed for
+`wgpu-core` with the D3D11 fixture and for `wgpu` with D3D11 tests enabled; it
+reported the same eight existing D3D11 HAL warnings. `cargo +1.93.1 fmt --all
+-- --check` and `git diff --check` passed.
+
+The present support state is an opt-in public wgpu backend with a substantial
+but deliberately narrow FL9_1 subset, not a drop-in general WebGPU backend.
+Compute/UAV/storage, geometry shaders, more than one color target, indirect
+drawing, occlusion queries, ordinary 1D and 2D-array textures, vertex texture
+sampling, general fragment derivatives and unrestricted WGSL remain
+unavailable or gated. The implementation additionally limits format/usage
+combinations to guaranteed or positively queried paths, and several level-9
+shader operations are enabled only through selected-entry proofs and tested
+lowerings. Multiple bind groups, dynamic uniform offsets, bundles, depth/stencil
+subsets, selected multisample resolve paths and broad texture-transfer paths
+are already implemented; they are not the outstanding Milestone 8 gaps.
+
+The remaining mission work is chiefly (1) reconcile the advertised
+capability/Core/HAL/CTS matrix more exhaustively and extend applicable strict
+CTS evidence, (2) implement ordinary FL9_1 graphics functionality only when a
+specific reachable gap is demonstrated, and (3) obtain external verification
+on historical FL9_1 hardware and the Lumia/CoreWindow runtime. Physical GPU
+removal/TDR recovery also remains unverified; existing loss tests inject errors
+synthetically. Independent agents are most useful for non-overlapping audits,
+spec/FXC research and CTS triage. Keep cross-crate implementation, test
+selection, serial strict GPU work and integration with the coordinator.
+
+## Packed 16-bit render-target feasibility probe — 2026-11-15
+
+The public/resource audit identified `Rgb5a1Unorm` and `Rgba4Unorm` render targets as an optional-device candidate: these formats already have sampled/upload/copy paths, but FL9_1 does not require render-target support. The native `dx11_probe` now reports their forced-FL9_1 `CheckFormatSupport` values. On the NVIDIA GeForce RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`), both formats returned `0x000213a0`, including `TEXTURE2D | SHADER_SAMPLE | MIP` but no `RENDER_TARGET`. This device cannot validate an RTV implementation for either format; no capability or texture-view exposure was added.
+
+The diagnostic build and execution succeeded through the Visual Studio developer wrapper:
+
+```powershell
+& 'E:\Temp\wgpu_mission_cargo.bat' run --offline -j8 -p wgpu-hal --example dx11_probe --features dx11
+```
+
+The first direct `cargo +1.93.1` attempt failed only because that shell did not have `link.exe` on `PATH`; retrying through the wrapper succeeded. This is a selected-device observation, not proof that no FL9_1 driver offers optional render-target support. Microsoft's FL9_x format requirements do not guarantee B5G5R5A1 or B4G4R4A4 render-target support; the backend should only pursue an implementation if a target device reports the relevant bit and can execute the full path.

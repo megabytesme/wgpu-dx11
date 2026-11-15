@@ -4,9 +4,10 @@
 
 ### Current verification checkpoint
 
-The live branch is `uwp-dx11`; the latest implementation checkpoint remains
-`ff062dbcc`. Later commits record verified results and corrections to test
-documentation; inspect Git history for the current documentation HEAD.
+The live branch is `uwp-dx11`; current HEAD is `dfe912c91` (strict override
+CTS coverage). The working tree also carries the zero-after-discard public test
+and its plan/journal updates, plus a Core validation fix for empty immediate
+writes without `Features::IMMEDIATES`; see the latest progress entry.
 
 Since that checkpoint, strict forced-FL9_1 public runs on the RTX 3090 Ti
 (`0x10de:0x2203`, driver `32.0.16.2101`) confirmed: the public offscreen
@@ -32,12 +33,15 @@ HAL panic reachability have found no concrete Core-valid request reaching a
 known unsupported HAL path. A fresh capability-projection and HAL-reachability
 review is complete, and CTS triage selected compatible override-pipeline
 cases that have since passed on strict hardware. These reviews are scoped and
-do not prove the full matrix. The mission remains **PARTIALLY COMPLETE** until
-the advertised capability, Core-validation, HAL-operation and applicable CTS
-evidence is reconciled, and external hardware gaps are clearly reported. The
-next step is to continue systematic coverage, changing implementation only
-when a concrete mismatch is demonstrated rather than inventing unsupported
-FL9_1 features.
+do not prove the full matrix. The explicit public DX11 path is useful for the
+verified constrained workload, but it is not a general wgpu backend: ordinary
+FL9_1 exclusions, shader/compiler subsets, selected-query format paths, and
+historical-device/platform verification still bound it. The mission remains
+**PARTIALLY COMPLETE** until the advertised capability, Core-validation,
+HAL-operation and applicable CTS evidence is reconciled, and external hardware
+gaps are clearly reported. Continue systematic coverage, changing
+implementation only when a concrete mismatch is demonstrated rather than
+inventing unsupported FL9_1 features.
 
 ### Verification refresh — optional RG8 3D path
 
@@ -55,6 +59,18 @@ across shared shader modules and separate entry points. Both selectors passed
 2/2 on the physical RTX 3090 Ti at forced FL9_1, with twelve rendered
 subcases and no skips or failures; details are in `FL9_1_PROGRESS.md`.
 
+The strict public target now passes all 175 test functions when each is run in
+its own process; 172 printed the physical RTX 3090 Ti/FL9_1 marker and four
+logged optional-capability skips. The post-discard texture test verifies that a
+nonzero 2x2 RGBA8 target is zeroed before a later copy-to-buffer and that
+256-byte row padding is preserved. A monolithic 175-test rerun remains
+unstable: it encountered two FXC `0x8007000e` internal errors, subsequent
+adapter-enumeration failures, then process exit `0xc0000005`. The affected
+shader tests pass individually. The broader CTS zero-texture selector cannot
+isolate its supported shape because it includes an unsupported seven-layer
+internal subcase; that failure remains a fixture boundary, not a positive CTS
+result.
+
 The follow-up capability/Core/HAL audits found no confirmed public-valid
 request that reaches an unsupported HAL operation. A reported separate-alpha
 blend mismatch was withdrawn after checking the existing Core downlevel-flag
@@ -62,6 +78,18 @@ gate. Static shader loops remain supported within FXC's profile budget; the
 backend reports a recoverable pipeline compilation error when FXC rejects a
 shader that exceeds the instruction budget, which Core cannot estimate soundly
 from WGSL operations alone.
+
+The coordinator's latest scoped agent reviews covered public buffer mapping,
+updates, copies, queue ordering and lifetime, plus render-pipeline and shader
+validation. Neither found a concrete Core-valid request reaching an
+unsupported HAL path. The projection continues to gate storage and indirect
+buffers, compute, multiple color targets, two-sided stencil and occlusion
+queries before their unsupported HAL operations. Remaining local work is
+capability/CTS evidence closure and workload-driven extensions; historical
+FL9_1, Lumia/CoreWindow and physical device-removal behavior remain external
+verification requirements. Agents should continue with independent audits or
+CTS triage, while cross-layer implementation and strict hardware runs remain
+coordinator-owned.
 
 The latest compiler-boundary probe compiles a runtime-data fragment `mat4`
 inverse successfully under the shader-model-5 control, then confirms FXC
