@@ -21658,3 +21658,32 @@ Lumia endpoint (`192.168.1.157`) found both TCP port 443 and ICMP unreachable.
 This confirms the current environment cannot provide a device-runtime result;
 it does not establish whether the phone is powered off or on another network.
 No network, router or device settings were changed.
+
+## Strict public CTS — WGSL override pipelines — 2026-11-15
+
+A strict CTS gap audit identified the public
+`webgpu:api,operation,render_pipeline,overrides:basic:*` selector as a
+supported, unrecorded operation: it uses a single BGRA8 target and checks both
+synchronous and asynchronous specialized pipeline output. The selector passed
+2/2 with zero skips or failures on the physical RTX 3090 Ti (`0x10de:0x2203`,
+driver `32.0.16.2101`), requested and actual FL9_1. All six override
+combinations passed for each pipeline-creation mode.
+
+The initial invocation against the shared target directory did not reach CTS:
+`cts_runner` failed with E0460 because that target contained incompatible
+Naga artifacts. A fresh target directory avoided that collision, but the
+first build attempt at four jobs hit Windows error 1455 while compiling
+`serde_core`. Reusing the isolated target with one job completed the build and
+the strict CTS run:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_BUILD_JOBS = '1'
+$env:CARGO_NET_OFFLINE = 'true'
+$env:CARGO_TARGET_DIR = 'E:\Temp\wgpu-dx11-cts-overrides-20261115'
+cargo +1.93.1 xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,render_pipeline,overrides:basic:*'
+```
+
+The successful build took 8m27s in the fresh target. The prior E0460 and
+1455 outcomes are build failures, not CTS case results. No implementation code
+changed for this test.
