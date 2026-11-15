@@ -245,9 +245,17 @@ pub(crate) fn set_immediates<E, F: FnOnce(&[u32])>(
     f: F,
 ) -> Result<(), E>
 where
-    E: From<ImmediateUploadError> + From<InvalidValuesOffset> + From<MissingPipeline>,
+    E: From<ImmediateUploadError>
+        + From<InvalidValuesOffset>
+        + From<MissingFeatures>
+        + From<MissingPipeline>,
 {
     api_log!("Pass::set_immediates");
+
+    state
+        .base
+        .device
+        .require_features(wgt::Features::IMMEDIATES)?;
 
     // Alignment has been validated by `validate_immediates_alignment` when pushing `SetImmediate` commands.
 
