@@ -4224,3 +4224,10 @@ evidence baseline. An earlier run with the same target failed in FXC, then lost
 adapter enumeration and crashed, so process reliability remains a watch item
 rather than a closed root cause. Full output and exact command are in
 `FL9_1_PROGRESS.md`.
+## Public suite repeated successfully — 2026-11-15
+
+Two more fresh strict monolithic runs passed 175/175 with physical FL9_1
+hardware markers in all tests. There have now been three consecutive passing
+full runs after one unexplained process failure. Treat reliability as
+improved but not root-caused; no adapter substitution or hardware skips were
+counted as passing test functions.

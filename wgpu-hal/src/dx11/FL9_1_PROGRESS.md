@@ -21967,3 +21967,13 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 Result: 175 passed, 0 failed, 0 ignored in 23.66 seconds. The full output is
 in `E:\Temp\wgpu-dx11-public-full-rerun-20261115.log`. Keep process stability
 as a watch item; the previous compiler/adapter/AV failure remains unexplained.
+## Repeated strict public-suite stability check — 2026-11-15
+
+Two additional fresh single-process strict runs completed consecutively after
+the passing rerun above. Each reported 175/175 Rust tests passed, zero failed,
+zero ignored, and 175 physical RTX 3090 Ti hardware markers at requested and
+actual FL9_1. Runs took 23.99 and 24.02 seconds. This makes three consecutive
+green monolithic runs since the earlier failure, but does not explain or erase
+the earlier intermittent FXC/adapter/access-violation incident. Logs:
+`E:\Temp\wgpu-dx11-public-repeat-1-20261115.log` and
+`E:\Temp\wgpu-dx11-public-repeat-2-20261115.log`.
