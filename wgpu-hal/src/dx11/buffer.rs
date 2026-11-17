@@ -456,10 +456,7 @@ impl NativeDevice {
             .checked_sub(offset)
             .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
         let length = size.map_or(remaining, NonZeroU64::get);
-        if !buffer.usage.contains(wgt::BufferUses::INDEX)
-            || !offset.is_multiple_of(alignment)
-            || length == 0
-        {
+        if !buffer.usage.contains(wgt::BufferUses::INDEX) || !offset.is_multiple_of(alignment) {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
         let len = usize::try_from(length).map_err(|_| Error::from_hresult(E_INVALIDARG))?;
