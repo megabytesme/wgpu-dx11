@@ -110,6 +110,7 @@ mod tests {
             @group(0) @binding(8) var<uniform> value: vec4f;
             struct Mixed { color: vec4f, number: vec4u }
             @group(0) @binding(9) var<uniform> mixed: Mixed;
+            @group(0) @binding(10) var<uniform> unused_integer_values: array<vec4u, 16>;
             fn from_helper(x: u32) -> f32 { return f32(x); }
             @fragment fn bitcast_uniform() -> @location(0) vec4f { return vec4f(bitcast<f32>(bits.x)); }
             @fragment fn compare_uniform() -> @location(0) vec4f { return select(vec4f(0.0), vec4f(1.0), bits.x == 16777217u); }
@@ -120,6 +121,10 @@ mod tests {
             @fragment fn static_index() -> @location(0) vec4f { return vec4f(value[2]); }
             @fragment fn constant_math() -> @location(0) vec4f { return vec4f(f32(1u + 2u)); }
             @fragment fn float_safe() -> @location(0) vec4f { return value; }
+            @vertex fn phony_uniform_load() -> @builtin(position) vec4f {
+                _ = unused_integer_values[0];
+                return vec4f();
+            }
             @vertex fn integer_input(@location(0) x: vec4u) -> @builtin(position) vec4f { return vec4f(x); }
             @vertex fn integer_math_input(@location(0) x: vec4u) -> @builtin(position) vec4f { return vec4f(x + vec4u(1u)); }
             fn local_positions(index: u32) -> vec2f {
@@ -161,6 +166,7 @@ mod tests {
                 "static_index"
                     | "constant_math"
                     | "float_safe"
+                    | "phony_uniform_load"
                     | "integer_input"
                     | "static_local_array_index"
             );
@@ -185,6 +191,25 @@ mod tests {
                 ShaderProfile::Pixel5_0
             ));
         }
+        let phony_index = module
+            .entry_points
+            .iter()
+            .position(|entry| entry.name == "phony_uniform_load")
+            .unwrap();
+        let unused_integer = module
+            .global_variables
+            .iter()
+            .find_map(|(handle, global)| {
+                (global.name.as_deref() == Some("unused_integer_values")).then_some(handle)
+            })
+            .unwrap();
+        assert!(info.get_entry_point(phony_index)[unused_integer]
+            .contains(naga::valid::GlobalUse::READ));
+        assert!(!integer_uniform_has_live_read(
+            &module.entry_points[phony_index].function,
+            info.get_entry_point(phony_index),
+            unused_integer
+        ));
         let vector_entry_index = module
             .entry_points
             .iter()
@@ -11671,6 +11696,99 @@ fn has_unsafe_integer_semantics_with_options(
     )
 }
 
+fn expression_points_to_global(
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+    global: naga::Handle<naga::GlobalVariable>,
+) -> bool {
+    match function.expressions[expression] {
+        naga::Expression::GlobalVariable(candidate) => candidate == global,
+        naga::Expression::Access { base, .. } | naga::Expression::AccessIndex { base, .. } => {
+            expression_points_to_global(function, base, global)
+        }
+        _ => false,
+    }
+}
+
+fn integer_uniform_has_live_read(
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    global: naga::Handle<naga::GlobalVariable>,
+) -> bool {
+    let mut found_load = false;
+    for (handle, expression) in function.expressions.iter() {
+        if let naga::Expression::Load { pointer } = *expression {
+            if expression_points_to_global(function, pointer, global) {
+                found_load = true;
+                if function_info[handle].ref_count != 0 {
+                    return true;
+                }
+            }
+        }
+    }
+    !found_load
+}
+
+fn pointer_chain_is_exclusive_to_load(
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    mut pointer: naga::Handle<naga::Expression>,
+) -> bool {
+    loop {
+        if function_info[pointer].ref_count != 1 {
+            return false;
+        }
+        match function.expressions[pointer] {
+            naga::Expression::GlobalVariable(_) => return true,
+            naga::Expression::Access { base, .. } | naga::Expression::AccessIndex { base, .. } => {
+                pointer = base
+            }
+            _ => return false,
+        }
+    }
+}
+
+fn pointer_chain_contains(
+    function: &naga::Function,
+    pointer: naga::Handle<naga::Expression>,
+    expression: naga::Handle<naga::Expression>,
+) -> bool {
+    if pointer == expression {
+        return true;
+    }
+    match function.expressions[pointer] {
+        naga::Expression::Access { base, .. } | naga::Expression::AccessIndex { base, .. } => {
+            pointer_chain_contains(function, base, expression)
+        }
+        _ => false,
+    }
+}
+
+fn is_unused_uniform_load_expression(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    expression: naga::Handle<naga::Expression>,
+) -> bool {
+    function.expressions.iter().any(|(load, candidate)| {
+        let naga::Expression::Load { pointer } = *candidate else {
+            return false;
+        };
+        if function_info[load].ref_count != 0
+            || !pointer_chain_is_exclusive_to_load(function, function_info, pointer)
+        {
+            return false;
+        }
+        let Some(global) = module.global_variables.iter().find_map(|(global, _)| {
+            expression_points_to_global(function, pointer, global).then_some(global)
+        }) else {
+            return false;
+        };
+        module.global_variables[global].space == naga::AddressSpace::Uniform
+            && (load == expression || pointer_chain_contains(function, pointer, expression))
+    })
+}
+
 #[allow(clippy::too_many_arguments)]
 fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
     module: &naga::Module,
@@ -11733,7 +11851,9 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
     for (handle, global) in module.global_variables.iter() {
         if !function_info[handle].is_empty() {
             if global.space == naga::AddressSpace::Uniform
+                && function_info[handle].contains(naga::valid::GlobalUse::READ)
                 && type_may_contain_integer(module, &module.types[global.ty].inner, &budget)
+                && integer_uniform_has_live_read(function, function_info, handle)
                 && fragment_index_proof.is_none_or(|proof| !proof.uniforms.contains(&handle))
                 && vertex_index_proof.is_none_or(|proof| proof.uniform != handle)
             {
@@ -12170,6 +12290,7 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                 integer_operation
                     || (!kinds.is_const(handle)
                         && integer(handle)
+                        && !is_unused_uniform_load_expression(module, function, info, handle)
                         && !supported_vertex_integer_expression
                         && texture_query_conversion != Some(handle)
                         && texture_dimensions_helper_result != Some(handle)
@@ -15186,7 +15307,7 @@ impl ShaderModule {
         self.compile_with_viewport_and_constants(stage, entry, bindings, false, false, constants)
     }
 
-    pub(super) fn compile_targetless_fragment_with_bindings_and_constants(
+    pub(super) fn compile_fragment_with_synthetic_output_if_needed(
         &self,
         entry: &str,
         bindings: &[ShaderBinding],
@@ -15482,7 +15603,13 @@ impl ShaderModule {
         let present = used_shader_bindings(&module, entry_info, bindings);
         let compiled = if targetless_fragment {
             super::shader::compile_naga_with_synthetic_fragment_output(
-                &module, &info, entry, profile, &present,
+                &module,
+                &info,
+                entry,
+                profile,
+                &present,
+                input_options,
+                &uniform_index_arguments,
             )
         } else {
             compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(

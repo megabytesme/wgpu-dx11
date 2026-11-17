@@ -3067,6 +3067,104 @@ fn function_parameter_is_supported_uniform_index_only(
     result
 }
 
+fn expression_points_to_global(
+    function: &naga::Function,
+    expression: naga::Handle<naga::Expression>,
+    global: naga::Handle<naga::GlobalVariable>,
+) -> bool {
+    match function.expressions[expression] {
+        naga::Expression::GlobalVariable(candidate) => candidate == global,
+        naga::Expression::Access { base, .. } | naga::Expression::AccessIndex { base, .. } => {
+            expression_points_to_global(function, base, global)
+        }
+        _ => false,
+    }
+}
+
+fn pointer_chain_is_exclusive_to_load(
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    mut pointer: naga::Handle<naga::Expression>,
+) -> bool {
+    loop {
+        if function_info[pointer].ref_count != 1 {
+            return false;
+        }
+        match function.expressions[pointer] {
+            naga::Expression::GlobalVariable(_) => return true,
+            naga::Expression::Access { base, .. } | naga::Expression::AccessIndex { base, .. } => {
+                pointer = base
+            }
+            _ => return false,
+        }
+    }
+}
+
+fn pointer_chain_contains(
+    function: &naga::Function,
+    pointer: naga::Handle<naga::Expression>,
+    expression: naga::Handle<naga::Expression>,
+) -> bool {
+    if pointer == expression {
+        return true;
+    }
+    match function.expressions[pointer] {
+        naga::Expression::Access { base, .. } | naga::Expression::AccessIndex { base, .. } => {
+            pointer_chain_contains(function, base, expression)
+        }
+        _ => false,
+    }
+}
+
+fn function_uses_only_unused_uniform_loads(
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    global: naga::Handle<naga::GlobalVariable>,
+) -> bool {
+    if !block_is_straight_line_read_only(&function.body) {
+        return false;
+    }
+    let mut found_load = false;
+    for (handle, expression) in function.expressions.iter() {
+        if let naga::Expression::Load { pointer } = *expression {
+            if expression_points_to_global(function, pointer, global) {
+                found_load = true;
+                if function_info[handle].ref_count != 0
+                    || !pointer_chain_is_exclusive_to_load(function, function_info, pointer)
+                {
+                    return false;
+                }
+            }
+        }
+    }
+    found_load
+}
+
+fn is_unused_uniform_load_expression(
+    module: &naga::Module,
+    function: &naga::Function,
+    function_info: &naga::valid::FunctionInfo,
+    expression: naga::Handle<naga::Expression>,
+) -> bool {
+    function.expressions.iter().any(|(load, candidate)| {
+        let naga::Expression::Load { pointer } = *candidate else {
+            return false;
+        };
+        if function_info[load].ref_count != 0
+            || !pointer_chain_is_exclusive_to_load(function, function_info, pointer)
+        {
+            return false;
+        }
+        let Some(global) = module.global_variables.iter().find_map(|(global, _)| {
+            expression_points_to_global(function, pointer, global).then_some(global)
+        }) else {
+            return false;
+        };
+        module.global_variables[global].space == naga::AddressSpace::Uniform
+            && (load == expression || pointer_chain_contains(function, pointer, expression))
+    })
+}
+
 fn function_uses_unsupported_integer_semantics(
     module: &naga::Module,
     function: &naga::Function,
@@ -3183,6 +3281,7 @@ fn function_uses_unsupported_integer_semantics(
         integer_operation
             || (!kinds.is_const(handle)
                 && expression_may_contain_integer(module, function_info, handle, budget)
+                && !is_unused_uniform_load_expression(module, function, function_info, handle)
                 && !matches!(
                     function.expressions[handle],
                     naga::Expression::FunctionArgument(index)
@@ -3278,6 +3377,11 @@ fn entry_point_uses_unsupported_integer_semantics(
         !entry_point_info[handle].is_empty()
             && global.space == naga::AddressSpace::Uniform
             && type_may_contain_integer(module, &module.types[global.ty].inner, &mut budget)
+            && !function_uses_only_unused_uniform_loads(
+                &entry_point.function,
+                entry_point_info,
+                handle,
+            )
             && fragment_index_proof
                 .as_ref()
                 .is_none_or(|proof| !proof.uniforms.contains(&handle))
@@ -18963,5 +19067,48 @@ mod tests {
                 "{entry} must remain unavailable at FL9_1"
             );
         }
+    }
+
+    #[test]
+    fn fl91_runtime_integer_gate_ignores_discarded_uniform_loads() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var<uniform> values: array<vec4u, 16>;
+            @vertex fn discarded() -> @builtin(position) vec4f {
+                _ = values[0];
+                return vec4f(0.0, 0.0, 0.0, 1.0);
+            }
+            @vertex fn consumed() -> @builtin(position) vec4f {
+                return vec4f(values[0]);
+            }
+            "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface = Interface::new(&module, &info, wgt::Limits::defaults());
+        let fl91 = wgt::DownlevelLimits {
+            runtime_integer_shader_operations: false,
+            ..Default::default()
+        };
+
+        assert!(!interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Vertex,
+                "discarded",
+                &fl91,
+            )
+            .unwrap());
+        assert!(interface
+            .entry_point_uses_unsupported_runtime_integer_semantics(
+                naga::ShaderStage::Vertex,
+                "consumed",
+                &fl91,
+            )
+            .unwrap());
     }
 }

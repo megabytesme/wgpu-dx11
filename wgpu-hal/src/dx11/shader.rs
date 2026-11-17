@@ -639,6 +639,8 @@ pub(super) fn compile_naga_with_synthetic_fragment_output(
     entry: &str,
     profile: ShaderProfile,
     bindings: &[ShaderBinding],
+    input_options: Fl9ShaderInputOptions,
+    uniform_index_arguments: &[(u32, u32)],
 ) -> Result<Vec<u8>, NagaCompileError> {
     let entry_index = module
         .entry_points
@@ -648,14 +650,15 @@ pub(super) fn compile_naga_with_synthetic_fragment_output(
         })
         .ok_or_else(|| NagaCompileError::Translation(String::from("entry point not found")))?;
     if module.entry_points[entry_index].function.result.is_some() {
-        return compile_naga_with_viewport(
+        return compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
             module,
             info,
             naga::ShaderStage::Fragment,
             entry,
             profile,
             bindings,
-            false,
+            input_options,
+            uniform_index_arguments,
         );
     }
 
@@ -669,14 +672,15 @@ pub(super) fn compile_naga_with_synthetic_fragment_output(
     )
     .validate(&module)
     .map_err(|error| NagaCompileError::Translation(format!("{error:?}")))?;
-    compile_naga_with_viewport(
+    compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         &module,
         &info,
         naga::ShaderStage::Fragment,
         entry,
         profile,
         bindings,
-        false,
+        input_options,
+        uniform_index_arguments,
     )
 }
 
@@ -1682,8 +1686,48 @@ mod tests {
             "main",
             ShaderProfile::PixelLevel9_1,
             &binding,
+            Fl9ShaderInputOptions::default(),
+            &[],
         )
         .expect("synthesize an unbound color output while preserving fragment execution");
+        assert!(translated.starts_with(b"DXBC"));
+    }
+
+    #[test]
+    fn fl91_fragment_output_wrapper_preserves_texture_dimensions_emulation() {
+        let module = naga::front::wgsl::parse_str(
+            "@group(0) @binding(0) var image: texture_2d<f32>; fn query_dimensions() -> vec2u { return textureDimensions(image); } @fragment fn fs() -> @location(0) vec4f { let dimensions = vec2f(query_dimensions()); return vec4f(dimensions / vec2f(16.0, 8.0), 0.0, 1.0); }",
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let texture_binding = naga::ResourceBinding {
+            group: 0,
+            binding: 0,
+        };
+        let bindings = [ShaderBinding {
+            binding: texture_binding,
+            slot: 0,
+            kind: ShaderBindingKind::TextureFloat,
+        }];
+        let translated = compile_naga_with_synthetic_fragment_output(
+            &module,
+            &info,
+            "fs",
+            ShaderProfile::PixelLevel9_1,
+            &bindings,
+            Fl9ShaderInputOptions {
+                texture_dimensions_binding: Some(texture_binding),
+                texture_dimensions_helper: true,
+                ..Default::default()
+            },
+            &[],
+        )
+        .expect("preserve FL9_1 textureDimensions inputs through fragment wrapper compilation");
         assert!(translated.starts_with(b"DXBC"));
     }
 

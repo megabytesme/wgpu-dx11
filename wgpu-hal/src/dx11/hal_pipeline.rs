@@ -3248,22 +3248,13 @@ impl RenderPipeline {
             ));
         }
         let pixel_code = if let Some(fragment) = fragment {
-            if target.is_none() {
-                fragment
-                    .module
-                    .compile_targetless_fragment_with_bindings_and_constants(
-                        fragment.entry_point,
-                        &fragment_bindings,
-                        fragment.constants,
-                    )?
-            } else {
-                fragment.module.compile_with_bindings_and_constants(
-                    naga::ShaderStage::Fragment,
+            fragment
+                .module
+                .compile_fragment_with_synthetic_output_if_needed(
                     fragment.entry_point,
                     &fragment_bindings,
                     fragment.constants,
                 )?
-            }
         } else {
             super::shader::compile_hlsl(
                 "float4 main() : SV_Target { return float4(0, 0, 0, 0); }",
