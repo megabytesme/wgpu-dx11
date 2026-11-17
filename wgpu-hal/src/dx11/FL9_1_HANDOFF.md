@@ -1,4 +1,49 @@
+## Current coordinator handoff — outputless fragment fix and overlap fixture — 2026-11-16
+
+Branch `uwp-dx11`; HEAD `3c085af002380c043785c37a6ba62a81681554e3`. Preserve the accumulated uncommitted work (now 19 modified tracked files; no untracked files at the last check). `AGENTS.md` prohibits commits. The separate launcher Cargo build observed at the prior handoff has ended; a fresh process check found no active Cargo, CTS or Deno workload. Keep `WGPU_DX11_REQUIRE_HARDWARE=1` and verify every CTS run uses the physical RTX 3090 Ti at requested/selected FL9_1.
+
+The prior full curated strict CTS log is `E:\Temp\wgpu_dx11_curated_cts_after_copy_texture_narrowing.log`; it passed 1,031 runner unit tests and stopped at `render/draw:buffer_binding_overlap`. Diagnostics traced the direct/indexed internal error to FXC X4530: an outputless fragment shader was compiled for a target whose `writeMask` was zero. The HAL now compiles result-less fragment entry points through a synthetic zero `SV_Target0` wrapper. WebGPU permits no output for a target with a zero write mask. This fixes the shader compilation defect.
+
+The exact direct and indexed selectors were rerun independently in strict hardware mode. Their logs are `E:\Temp\wgpu_dx11_buffer_binding_overlap_draw_after_fix.log` and `E:\Temp\wgpu_dx11_buffer_binding_overlap_draw_indexed_after_fix.log`. Both proceed past pipeline creation, then fail at Core's expected `UNRESTRICTED_INDEX_BUFFER` gate because this CTS fixture aliases one buffer for `VERTEX | INDEX`. FL9_1 requires exactly one of those native buffer bindings. Thus only these two overlap fixture selectors are now `fails-if(dx11)`; this does not gate direct/indexed draw support generally. The indirect variants stay gated due absent `INDIRECT_EXECUTION`. See `FL9_1_CTS.md` for the source-backed distinction.
+
+The strict sorted-list test passed 1/1 after the overlap curation. The focused copy-texture rerun passed 78 cases with zero failures and 94 explicit compressed-format skips; its log is `E:\Temp\wgpu_dx11_copy_texture_to_texture_after_outputless_fix.log`. The resumed full strict list passed the 1,031 runner unit tests and progressed through retained operations, capability checks, texture creation and texture views. It stopped at `render/draw:index_buffer_OOB`: all four direct `drawIndexed` parameter selectors passed; four `drawIndexedIndirect` selectors failed because the fixture requires absent `INDIRECT_EXECUTION`. The family is now split to keep direct indexed validation and gate only `drawIndexedIndirect`.
+
+The focused `index_buffer_OOB` rerun passed its four direct cases; all four indirect cases were skipped through `fails-if(dx11)`. The list-order test passed after the exact split. The next full run passed that family, then stopped at `draw:unused_buffer_bound`: all eight outer cases attempted to create an `INDEX | VERTEX` buffer, which Core rejects under the FL9_1 one-binding-role contract even when that buffer is unused. Only this aggregate fixture is skipped for DX11. The subsequent full run passed it and stopped at `draw:vertex_buffer_OOB`, where all 60 outer selectors fail on a nested `snorm8x2` format subcase. The selector cannot isolate that nested format; Microsoft's FL9_1 format table omits `R8G8_SNORM` from IA vertex buffers, so this mixed family is now skipped for DX11. See `FL9_1_CTS.md` for the source and full-run log `E:\Temp\wgpu_dx11_curated_cts_after_unused_buffer_gate.log`.
+
+The next full strict run passed `vertex_buffer_OOB` after its format fixture was skipped, then passed the dynamic-state file after splitting it into individual tests and skipping only the two viewport-outside-target selectors. It stopped at `indirect_draw:indirect_buffer_state`; Core rejected the indirect operation because `INDIRECT_EXECUTION` is absent. All three curated selectors from this file invoke indirect draw methods, so each is now individually skipped for DX11. The full-run log is `E:\Temp\wgpu_dx11_curated_cts_after_viewport_gate.log`; see `FL9_1_CTS.md` for the Core evidence.
+
+The list-order test passed after the latest curation. Resume the full strict list. The suite is not complete.
+
+The strict focused reproduction command was:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE='1'
+& 'E:\Temp\wgpu_mission_cargo.bat' xtask cts --skip-checkout --backend dx11 --require-dx11-hardware --print-output-when test-fails --filter 'buffer_binding_overlap' -f cts_runner/test.lst
+```
+
+The earlier diagnostic is in `E:\Temp\wgpu_dx11_buffer_binding_overlap_repro.log`; the first detailed pipeline error was captured in `E:\Temp\wgpu_dx11_buffer_binding_overlap_pipeline_error.log`. The earlier assumption that failure happened during command replay was incorrect; it occurred during pipeline creation.
+
+The latest journal and CTS curation rationale are in `FL9_1_PROGRESS.md` and `FL9_1_CTS.md`. Mission status remains PARTIALLY COMPLETE; this checkpoint is not a full curated CTS pass and does not close historical FL9_1, Lumia/CoreWindow or physical device-removal verification.
 # FL9_1 handoff
+
+## Coordinator handoff update — BGRA8 3D formats — 2026-11-15
+
+The current branch is `uwp-dx11`, HEAD `3c085af00`. The working tree carries a
+verified BGRA8 UNORM/sRGB 3D format increment across `wgpu-types`, HAL, Core,
+public tests and the persistent capability/testing records. Strict RTX 3090
+Ti FL9_1 tests passed both HAL formats and public UNORM/sRGB sampling. The
+focused strict public case matched 64 pixels for each format; see the latest
+`FL9_1_PROGRESS.md` entry for exact commands and results. Final checks passed:
+HAL 551/551, Core fixture 155/155, Core DX12 139/139, public D3D11 176/176,
+`wgpu-types` 120 unit plus 14 doc tests, Clippy, format and diff checks. The
+public suite was rerun after adding sampled sRGB coverage and again passed
+176/176. No
+commit was made; the current repository instructions prohibit agent-created
+commits. The mission remains partially complete: broad public capability,
+Core/HAL and CTS reconciliation plus historical FL9_1, Lumia/CoreWindow and
+device-removal verification remain open. A broad 3D CTS selector with an
+invalid NPOT FL9_1 volume was correctly rejected by Core, then excluded from
+DX11's curated list; the sorted-list integration check passed.
 
 ## Coordinator status — 2026-11-14
 
@@ -4221,3 +4266,13 @@ monolithic suite instability has three later clean reruns, including this
 175-test run, but its earlier FXC/adapter/access-violation cause is unknown.
 Do not broaden derivative semantics or enable ordinary adapter enumeration
 without separate evidence.
+
+## Current handoff — 2026-11-17
+
+Branch `uwp-dx11` remains at `3c085af002380c043785c37a6ba62a81681554e3`; no commits were created. The worktree has 22 modified tracked files and no reported untracked files. Preserve all of them.
+
+The latest full strict curated CTS run completed successfully with `WGPU_DX11_REQUIRE_HARDWARE=1` and `--require-dx11-hardware`, using target directory `E:\Temp\wgpu-fl91-interstage-target-20261116`. CTS runner unit tests: 1,031 passed. Curated CTS: 1,686 summaries, 17,962 passed, 4,720 skipped, zero failed, zero warnings. Log: `E:\Temp\wgpu_dx11_curated_cts_after_texture_ok_gate_20261117.log`. A prior attempt against the shared temporary target stopped at linker unresolved-symbol errors; the isolated target was used without deleting or cleaning the shared target.
+
+Focused strict reruns also passed: shader `group_and_binding` (439 passed, 0 skipped/failed), narrowed interpolation (599 passed, 49 skipped, 0 failed), utility `texture_ok` retained selectors (2 passed, 4 capability skips, 0 failed), and `lst_files_are_sorted` (1/1). The selector changes are in `cts_runner/test.lst`; they keep supported paths selected and gate only unsupported resource declarations, sample-frequency interpolation requiring `MULTISAMPLED_SHADING`, and utility fixtures whose copy usages/formats are unavailable at FL9_1. See `FL9_1_CTS.md` for per-selector detail and log paths.
+
+No Cargo, wgpu-xtask, CTS runner, or Deno processes were active after the successful run. Continue from the current worktree without resetting, cleaning, or committing. Mission status remains PARTIALLY COMPLETE: a curated suite passing is not full FL9_1 compatibility or WebGPU conformance. Historical driver behavior, Lumia/CoreWindow runtime, device-removal recovery, and consumer-shaped application validation remain open.

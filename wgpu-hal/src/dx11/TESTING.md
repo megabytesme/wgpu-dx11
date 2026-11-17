@@ -1,5 +1,31 @@
 # Direct3D 11 validation plan
 
+## BGRA8 FL9_1 3D sampled formats
+
+The private HAL tests exercise both BGRA8 UNORM and BGRA8 sRGB through the
+existing padded 3D upload, partial update, initialization, copy/readback and
+sampling path. The public strict test verifies the selected format projection,
+upload/copy/readback and sampled rendering for both formats, including sRGB
+linearization within one 8-bit output step.
+Each hardware test requires a physical adapter when
+`WGPU_DX11_REQUIRE_HARDWARE=1`; it requests and reports FL9_1, and does not
+fall back to WARP.
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-hal --features dx11-test-fixture --lib fl91_bgra8_3d_upload_copy_readback_and_sampling -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu-hal --features dx11-test-fixture --lib fl91_bgra8_srgb_3d_upload_copy_readback_and_sampling -- --nocapture --test-threads=1
+& 'E:\Temp\wgpu_mission_cargo.bat' test --offline -j8 -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public public_dx11_bgra8_3d_upload_copy_sampling_at_fl91 -- --exact --nocapture --test-threads=1
+```
+
+On the RTX 3090 Ti (`0x10de:0x2203`, driver `32.0.16.2101`) the selected
+device reported BGRA8 UNORM format support `0x312ef3e0` and BGRA8 sRGB
+`0x112ef3e0`. The private tests matched all eight raw voxels and all 64
+sampled pixels for each format. The public UNORM test matched eight copied
+voxels and all 64 output pixels. These results describe this forced-FL9_1
+driver only; the synthetic capability test covers missing and incomplete
+format queries.
+
 ## Restricted FL9_1 fragment `textureSampleGrad`
 
 The enabled explicit-gradient cases are direct unconditional fragment samples
@@ -5812,3 +5838,38 @@ input, RG8 3D transfers, and Rg8Unorm mip support; those are not counted as
 GPU feature passes. Earlier full single-process runs had intermittent FXC
 internal errors, although this latest run succeeded. Repeat the complete
 target after future public-path changes.
+
+## FL9_1 buffer-size limit
+
+The selected adapter caps logical `maxBufferSize` at 128 MiB minus four bytes.
+Core adds its vertex sentinel and rounds allocations to four bytes, so the
+largest native D3D11 `ByteWidth` remains 128 MiB. The strict CTS selector below
+checks creation immediately below and at the reported maximum, then verifies
+that one byte above the limit is rejected by validation before HAL allocation:
+
+```powershell
+$env:WGPU_DX11_REQUIRE_HARDWARE = '1'
+$env:CARGO_NET_OFFLINE = 'true'
+$env:CARGO_TARGET_DIR = 'E:\Temp\wgpu-mission-gpu-target'
+& 'E:\Temp\wgpu_mission_cargo.bat' xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,validation,buffer,create:limit:*'
+```
+
+The prior near-4-GiB projection failed the in-range creation cases with
+`E_OUTOFMEMORY` on the selected RTX 3090 Ti. The new conservative ceiling is
+not treated as a historical FL9_1 device guarantee; the new boundary must
+pass on the selected hardware before it is considered verified.
+
+### Very large FL9_1 sampler minimum LOD
+
+The 10Level9 sampler contract requires integral `MinLOD` and `MaxLOD = FLT_MAX`.
+A direct native probe on the RTX 3090 Ti forced to FL9_1 accepted integer
+minimums through 2,147,000,000 but returned `E_INVALIDARG` for 2.2 billion and
+`4e30`; fractional 0.5 was also rejected. Since the projected maximum 2D
+texture dimension is 2048, the greatest available mip index is 11. The HAL
+therefore caps only a minimum above 11 to 11, which preserves the selected
+coarsest mip for every supported view.
+
+`hal_samplers_map_filters_and_reject_unsupported_states` creates the saturated
+sampler on the selected FL9_1 hardware and checks its native descriptor and
+mip compatibility. The focused strict CTS `createSampler:*` selector passed
+2/2 with no skips, and the complete private HAL suite passed 553/553.

@@ -1,3 +1,23 @@
+## Query-gated BGRA8 3D sampled formats — 2026-11-15
+
+The FL9_1 projection now includes BGRA8 UNORM and BGRA8 sRGB 3D format bits
+when the selected device reports `TEXTURE3D | SHADER_SAMPLE` and the shared
+3D path is enabled. Both DXGI format mappings use the native BGRA formats;
+uploads, partial updates, CPU-shadow copies/readback, and sampling reuse the
+existing format-sized 3D implementation. The global 3D mip capability still
+requires every exposed 3D format to report `MIP`. No render-attachment,
+multisample, array, or general format support is implied.
+
+Strict FL9_1 private HAL tests on the RTX 3090 Ti (`0x10de:0x2203`, driver
+`32.0.16.2101`) queried `0x312ef3e0` for BGRA8 UNORM and `0x112ef3e0` for
+BGRA8 sRGB. Both tests uploaded padded rows, copied and read back all eight
+voxels, checked untouched initialization, and sampled all eight voxels into
+64 verified pixels. A strict public test verified capability projection,
+BGRA8 UNORM and sRGB upload/copy/readback/sampling; the sRGB rendered values
+matched the expected linearized channels within one 8-bit step. Forced FL9_1
+on this modern adapter is selected-device evidence, not historical-driver
+coverage.
+
 ## Fixed integer fragment LOD on multi-mip views — 2026-11-14
 
 Added a distinct downlevel limit for direct or supported single-helper
@@ -2455,3 +2475,28 @@ pixels. A draw using the direct-gradient pipeline and
 a multi-mip view was rejected by Core before HAL. The full public target
 previously passed 169/169 in strict mode. This is selected modern-driver
 evidence, not validation on historical FL9_1 hardware.
+## Conservative FL9_1 buffer-size projection — 2026-11-15
+
+The first strict curated CTS continuation reached `GPUBuffer` limit coverage
+after passing the preceding curated selectors. The adapter advertised a
+logical `maxBufferSize` close to 4 GiB because the D3D11 `ByteWidth` field is
+32-bit, but the selected driver returned `E_OUTOFMEMORY` when CTS attempted to
+create buffers at and just below that limit. The public limit now caps FL9_x
+logical buffers at 128 MiB minus one copy-alignment unit; after Core's vertex
+sentinel byte and 4-byte rounding, the largest native buffer remains 128 MiB.
+This is an explicit conservative backend ceiling, not a claim that every
+historical FL9_1 device can allocate that size. Strict forced-FL9_1 CTS
+`create:limit:*` passed 3/3 at the new boundary with zero skips or failures.
+
+## Oversized FL9_1 sampler minimum LOD — 2026-11-15
+
+Very large finite integral `lodMinClamp` values can reach the native D3D11
+descriptor even though no FL9_1 texture can expose the requested mip index. The
+RTX 3090 Ti forced to FL9_1 returned `E_INVALIDARG` for `MinLOD = 4e30`, while
+integer values through `2.147e9` succeeded. The HAL now maps minimum LODs above
+11 to mip index 11; the public 2048 texture-dimension ceiling limits any view
+to mip indices 0 through 11, so this preserves the coarsest selected mip.
+Focused strict sampler CTS passed 2/2, the HAL sampler test passed on the
+physical adapter, and the complete private HAL suite passed 553/553. The full
+curated CTS run has moved on to a separate mip-count matrix that still assumes
+larger texture-array and format capabilities than this backend exposes.

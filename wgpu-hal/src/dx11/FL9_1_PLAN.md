@@ -1,15 +1,85 @@
+## Current CTS checkpoint — 2026-11-16
+
+The direct and indexed `buffer_binding_overlap` CTS selectors first exposed an FXC failure for an outputless fragment entry point with `writeMask: 0`. The D3D11 HAL now synthesizes a zero `SV_Target0` output for such fragments, fixing that pipeline-creation defect. Both selectors then reached Core's expected `UNRESTRICTED_INDEX_BUFFER` rejection because this fixture aliases one buffer as both vertex and index data, which FL9_1 does not allow. Only these two fixture-inapplicable selectors are gated for DX11; direct and indexed draw support remains covered by the other render tests. The resumed full run next found that `draw:index_buffer_OOB` mixes supported direct indexed calls with `drawIndexedIndirect`; its four direct selectors passed and its four indirect selectors require absent `INDIRECT_EXECUTION`. The CTS list retains direct OOB validation and skips only that indirect variant. `draw:unused_buffer_bound` unconditionally creates an `INDEX | VERTEX` buffer, so Core rejects all outer cases even when the test does not bind it; only that invalid fixture family is skipped. The next `draw:vertex_buffer_OOB` suite nests `snorm8x2` among its formats; the FL9_1 required-format table does not list `R8G8_SNORM` for IA vertex buffers, so every outer selector fails on that subcase. Since `attributeFormat` is nested and cannot be isolated by the test list, only this mixed family is skipped. The copy-texture slice passed 78 cases with 94 explicit compressed-format skips. See the top of `FL9_1_HANDOFF.md` and latest `FL9_1_PROGRESS.md` entry for exact logs and resumed validation. Mission status remains partial; this is not full CTS closure.
+The latest resumed strict run passed the vertex OOB family after curation, then found two dynamic viewport selectors that expect success for rectangles extending past the active render target. Core rejects them under `viewport_rectangles_outside_target = false`, an explicit FL9_1 downlevel limit. Only those two tests are skipped; the other six dynamic-state tests remain selected. The run then reached `render/indirect_draw:indirect_buffer_state`, where Core correctly rejected indirect execution because `INDIRECT_EXECUTION` is absent. All three curated selectors in that file exclusively exercise `drawIndirect`/`drawIndexedIndirect`, so they are now individually skipped on DX11. See the current handoff and progress entries for exact logs and the next step.
+
 # FL9_1 completion plan
 
 ## Coordinator status synthesis — current 2026-11-15
 
+### Latest in-progress increment — FL9_x buffer-size capability and CTS closure
+
+The latest strict CTS continuation exposed an overlarge reported buffer limit:
+the previous near-4-GiB limit led the NVIDIA driver to return `E_OUTOFMEMORY`
+for an in-range maximum-size buffer. The FL9_x projection now caps logical
+buffers at 128 MiB minus one 4-byte copy-alignment unit, leaving Core's vertex
+sentinel and rounding within a 128 MiB native allocation. The focused strict
+CTS `create:limit:*` passed 3/3 on the physical RTX 3090 Ti at explicitly
+requested/selected FL9_1; the HAL projection unit test also passed. The
+curated list now keeps exact supported depth comparisons and validation-error
+events while excluding aggregate tests whose shader, target or feature setup
+exceeds the advertised FL9_1 contract. The sorted-list check passed after
+narrowing buffer destroy cases; the latest strict run found the mixed
+`maxBindGroups:setBindGroup` CTS default-limit/compute assumptions and that
+selector is now gated for DX11. The curated strict run must be repeated to
+confirm closure. The broad `maxBufferSize` core-default selector also conflicts
+with this experimental adapter's documented 128 MiB ceiling; its focused
+adapter-boundary selector passed 3/3 and the broad selector is gated. This tree
+still has no historical FL9_1 or Lumia runtime evidence. The curated
+inter-stage-variable `atDefault` cases passed (104 pass, 272 feature skips);
+only its `atMaximum` selector assumes a higher core default and is gated. The
+positive basic-compute pipeline selector also correctly rejects at the
+FL9_1 `COMPUTE_SHADERS` Core gate and is excluded. In the compute override
+entry-point selector, valid `main_success` cases are excluded while invalid
+entry-point cases remain selected to preserve validation coverage. These
+compute-pipeline selectors all construct a compute pipeline, so the full CTS
+compute-pipeline family is now excluded; a targeted Core fixture verifies the
+`COMPUTE_SHADERS` rejection boundary. The compute-visible bind-group mismatch
+CTS selector combines the mismatch and valid control as inseparable runtime
+subcases, so it is excluded as a unit; Core/public mismatch tests using
+supported stages remain selected. The bind-group entry-count CTS matrix also
+uses only compute-visible storage buffers and is excluded at the Core
+capability gate; supported binding checks remain covered elsewhere. The
+binding-number CTS selector likewise uses compute visibility and is excluded
+at the same gate. The resource-type matching selector uses compute-visible
+layouts for all resource types, including unsupported storage textures, so it
+is also excluded before its intended validation check. The cross-device
+resource aggregate mixes compute-only visibility and unsupported storage
+resources, so it too is excluded before its device-identity checks. The
+storage-buffer range CTS selector is also preempted by the compute gate;
+uniform-range Core/public tests remain the applicable check.
+
+### Previous increment — BGRA8 3D sampled formats
+
+The current working tree adds query-gated BGRA8 UNORM/sRGB 3D formats to the
+shared format mask, native DXGI mapping and the FL9_1 capability projection.
+Strict HAL tests executed real forced-FL9_1 upload/copy/readback/sampling on
+the RTX 3090 Ti for both formats; public Core execution now verifies sampled
+output for both formats. Final
+verification passed HAL 551/551, Core fixture 155/155, Core DX12 139/139,
+strict public 176/176, and `wgpu-types` 120 unit plus 14 doc tests (21
+ignored), with Clippy, build, format and diff checks green. After adding public
+sRGB sampling, the focused test passed 1/1 and the full strict public suite
+passed again 176/176; the shared test checked 64 output pixels per format. The
+increment remains uncommitted. See the newest `FL9_1_PROGRESS.md` entry.
+A broad matching 3D CTS probe was confirmed inapplicable because its fixed
+100-wide volume violates the FL9_1 power-of-two 3D texture rule; Core rejected
+it correctly. The three matching CTS selectors are excluded for DX11, and the
+`cts_runner` sorted-list integrity test passed.
+Mission status stays partially complete until the remaining
+capability/Core/HAL/CTS reconciliation and external hardware gates are
+resolved or documented as genuine blockers.
+
 ### Current verification checkpoint
 
-The live branch is `uwp-dx11`; current HEAD is `8489758b0` (bounded
-coordinate-derivative `textureSampleGrad` support). The working tree is clean.
-The latest increment preserves `fragment_derivatives=false`; only exact
-matching `dpdx` / `dpdy` expressions used exclusively as the selected sample's
-gradients enter the existing single-mip lowering path. See the latest
-progress entry for the proof shape and strict GPU results.
+The live branch is `uwp-dx11`; HEAD is `3c085af00`, a documentation checkpoint
+after code checkpoint `8489758b0` (bounded coordinate-derivative
+`textureSampleGrad` support). The current working tree carries the verified
+BGRA8 3D format increment. The shader change preserves
+`fragment_derivatives=false`; only exact matching `dpdx` / `dpdy` expressions
+used exclusively as the selected sample's gradients enter the existing
+single-mip lowering path. See the latest progress entry for the BGRA8 strict
+GPU results.
 
 Committed selected-device evidence includes the public offscreen textured
 indexed cube test on the physical RTX 3090 Ti (`0x10de:0x2203`, driver
@@ -4274,3 +4344,35 @@ examples: offscreen indexed textured depth rendering with validated 1,024
 pixel readback, and 10 real HWND-presented frames. Exact commands/logs are in
 the progress journal. Lumia Device Portal remains unreachable (request timeout);
 legacy ARM32/CoreWindow runtime and historical FL9_1 hardware remain open.
+
+## Coordinator update — FL9_1 sampler LOD edge and CTS boundary — 2026-11-15
+
+A strict CTS `createSampler:lodMinAndMaxClamp` run exposed an `E_INVALIDARG`
+from native `CreateSamplerState` for a very large but finite integral minimum
+LOD. A diagnostic D3D11 program explicitly selected the RTX 3090 Ti, requested
+FL9_1 and observed success for 0, 1, 10, 1e6 and 2.147e9, but failure for 0.5,
+2.2e9 and 4e30. The backend now caps FL9_1 MinLOD values above 11 to 11. The
+selected FL9_1 contract exposes at most 2048 texels in 2D, so no supported view
+can contain a mip index greater than 11; saturation therefore selects the same
+coarsest available mip. A CPU translation test and strict hardware sampler test
+cover the mapping.
+
+The focused strict CTS sampler selectors passed 2/2, the full private D3D11
+HAL suite passed 553/553, and the focused `createTexture` dimension checks for
+RGBA8 2D/default/3D and BGRA8 2D passed 4/4. The `cts_runner` list-sort check
+passed. A full strict curated run progressed beyond the previous sampler
+failure, then stopped in `createTexture:mipLevelCount,format` at 159/333
+failures. CTS builds 2D array sizes of 31 although this adapter exposes only six
+layers for cube backing, and the matrix also includes unsupported 3D formats;
+separate Core validation is correct for those current limits. The test list
+still needs precise narrowing for the supported combinations.
+
+Last recorded broad regression baseline before this increment: HAL 551/551,
+Core fixture 155/155, Core DX12 139/139, public strict D3D11 176/176 and
+wgpu-types 120 unit plus 14 doc tests. After this increment, only the HAL
+553-test suite, focused strict sampler CTS and narrowed texture-dimension CTS
+cases have been rerun. The mission is not complete: the curated CTS set still
+has unresolved broad matrices, the shader/resource contract remains a subset,
+Horizon terrain still needs ordinary 2D-array texture support or a generic
+replacement, and historical FL9_1/Lumia/CoreWindow/TDR verification remains
+external.
