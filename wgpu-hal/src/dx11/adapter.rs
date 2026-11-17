@@ -213,23 +213,8 @@ impl crate::Adapter for Adapter {
         if !surface.supports_public_presentation() {
             return None;
         }
-        let copy_src = unsafe { self.texture_format_capabilities(wgt::TextureFormat::Bgra8Unorm) }
-            .contains(crate::TextureFormatCapabilities::COPY_SRC);
-        Some(crate::SurfaceCapabilities {
-            formats: vec![wgt::SurfaceFormatCapabilities {
-                format: wgt::TextureFormat::Bgra8Unorm,
-                color_spaces: wgt::SurfaceColorSpaces::SRGB,
-            }],
-            maximum_frame_latency: 1..=1,
-            current_extent: None,
-            usage: wgt::TextureUses::COLOR_TARGET
-                | if copy_src {
-                    wgt::TextureUses::COPY_SRC
-                } else {
-                    wgt::TextureUses::empty()
-                },
-            present_modes: vec![wgt::PresentMode::Fifo],
-            composite_alpha_modes: vec![wgt::CompositeAlphaMode::Opaque],
+        bgra8_surface_capabilities(unsafe {
+            self.texture_format_capabilities(wgt::TextureFormat::Bgra8Unorm)
         })
     }
     unsafe fn get_presentation_timestamp(&self) -> wgt::PresentationTimestamp {
@@ -240,5 +225,57 @@ impl crate::Adapter for Adapter {
     }
     fn get_ordered_texture_usages(&self) -> wgt::TextureUses {
         wgt::TextureUses::empty()
+    }
+}
+
+fn bgra8_surface_capabilities(
+    format_capabilities: crate::TextureFormatCapabilities,
+) -> Option<crate::SurfaceCapabilities> {
+    if !format_capabilities.contains(crate::TextureFormatCapabilities::COLOR_ATTACHMENT) {
+        return None;
+    }
+    let copy_src = format_capabilities.contains(crate::TextureFormatCapabilities::COPY_SRC);
+    Some(crate::SurfaceCapabilities {
+        formats: vec![wgt::SurfaceFormatCapabilities {
+            format: wgt::TextureFormat::Bgra8Unorm,
+            color_spaces: wgt::SurfaceColorSpaces::SRGB,
+        }],
+        maximum_frame_latency: 1..=1,
+        current_extent: None,
+        usage: wgt::TextureUses::COLOR_TARGET
+            | if copy_src {
+                wgt::TextureUses::COPY_SRC
+            } else {
+                wgt::TextureUses::empty()
+            },
+        present_modes: vec![wgt::PresentMode::Fifo],
+        composite_alpha_modes: vec![wgt::CompositeAlphaMode::Opaque],
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn surface_capabilities_require_bgra_render_attachment_support() {
+        assert!(bgra8_surface_capabilities(crate::TextureFormatCapabilities::empty()).is_none());
+    }
+
+    #[test]
+    fn surface_copy_usage_tracks_bgra_copy_source_support() {
+        let color_only =
+            bgra8_surface_capabilities(crate::TextureFormatCapabilities::COLOR_ATTACHMENT).unwrap();
+        assert_eq!(color_only.usage, wgt::TextureUses::COLOR_TARGET);
+
+        let color_and_copy = bgra8_surface_capabilities(
+            crate::TextureFormatCapabilities::COLOR_ATTACHMENT
+                | crate::TextureFormatCapabilities::COPY_SRC,
+        )
+        .unwrap();
+        assert_eq!(
+            color_and_copy.usage,
+            wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC
+        );
     }
 }
