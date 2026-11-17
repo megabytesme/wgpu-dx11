@@ -8,6 +8,7 @@ use std::{
     thread,
     time::Duration,
 };
+use wgpu::util::DeviceExt;
 use wgpu::*;
 
 #[test]
@@ -21433,6 +21434,7 @@ fn public_dx11_fragment_3d_texture_load_at_fl91() {
             depth_or_array_layers: 2,
         },
     );
+
     let volume_view = volume.create_view(&TextureViewDescriptor {
         dimension: Some(TextureViewDimension::D3),
         ..Default::default()
@@ -37463,7 +37465,7 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
             mip_level_count: 1,
             sample_count: 1,
             dimension: TextureDimension::D3,
-            format: TextureFormat::Bgra8Unorm,
+            format: TextureFormat::Rgba16Float,
             usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
             view_formats: &[],
         }));
@@ -38125,6 +38127,682 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
     readback.unmap();
     println!(
         "PASS: FL9_1 3D RGBA8 upload, nonzero-offset partial update, zero initialization, sparse sampled bindings and 128 readback pixels verified"
+    );
+}
+
+#[test]
+fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    let Some(adapter) = adapters.into_iter().find(|adapter| {
+        let info = adapter.get_info();
+        info.backend == Backend::Dx11
+            && info.driver_info.contains("FL9_1")
+            && info.driver_info.contains("physical")
+    }) else {
+        assert!(
+            !required,
+            "strict mode requires a physical FL9_1 D3D11 adapter"
+        );
+        println!("SKIP: no physical FL9_1 D3D11 adapter for BGRA8 3D textures");
+        return;
+    };
+    let info = adapter.get_info();
+    let downlevel = adapter.get_downlevel_capabilities();
+    for format in [TextureFormat::Bgra8Unorm, TextureFormat::Bgra8UnormSrgb] {
+        if !downlevel.limits.supports_texture_3d_format(format) {
+            assert!(
+                !required,
+                "strict FL9_1 adapter did not report required {format:?} 3D support"
+            );
+            println!("SKIP: selected FL9_1 device did not report {format:?} 3D support");
+            return;
+        }
+    }
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=BGRA8 3D upload, copy, readback and sampled render",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        label: Some("public DX11 FL9_1 BGRA8 3D texture test"),
+        required_features: Features::empty(),
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request forced FL9_1 device");
+
+    let volume = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 BGRA8 2x2x2 source volume"),
+        size: Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Bgra8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let copied_volume = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 BGRA8 2x2x2 copied volume"),
+        size: Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Bgra8Unorm,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let mut volume_data = vec![0xA5; 2 * 2 * 256];
+    for z in 0..2usize {
+        for y in 0..2usize {
+            for x in 0..2usize {
+                let rgba = [40 + x as u8 * 80, 20 + y as u8 * 90, 30 + z as u8 * 70, 255];
+                let offset = z * 512 + y * 256 + x * 4;
+                volume_data[offset..offset + 4]
+                    .copy_from_slice(&[rgba[2], rgba[1], rgba[0], rgba[3]]);
+            }
+        }
+    }
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &volume,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &volume_data,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(2),
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+    );
+
+    let srgb_volume = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 BGRA8 sRGB 2x2x2 source volume"),
+        size: Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Bgra8UnormSrgb,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let copied_srgb_volume = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 BGRA8 sRGB 2x2x2 copied volume"),
+        size: Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Bgra8UnormSrgb,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    queue.write_texture(
+        TexelCopyTextureInfo {
+            texture: &srgb_volume,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        &volume_data,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(256),
+            rows_per_image: Some(2),
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+    );
+
+    let output = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 BGRA8 volume sample output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let output_view = output.create_view(&TextureViewDescriptor::default());
+    let srgb_output = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 BGRA8 sRGB volume sample output"),
+        size: Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format: TextureFormat::Rgba8Unorm,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let srgb_output_view = srgb_output.create_view(&TextureViewDescriptor::default());
+    let volume_view = copied_volume.create_view(&TextureViewDescriptor {
+        dimension: Some(TextureViewDimension::D3),
+        ..Default::default()
+    });
+    let srgb_volume_view = copied_srgb_volume.create_view(&TextureViewDescriptor {
+        dimension: Some(TextureViewDimension::D3),
+        ..Default::default()
+    });
+    let sampler = device.create_sampler(&SamplerDescriptor {
+        address_mode_u: AddressMode::ClampToEdge,
+        address_mode_v: AddressMode::ClampToEdge,
+        address_mode_w: AddressMode::ClampToEdge,
+        mag_filter: FilterMode::Nearest,
+        min_filter: FilterMode::Nearest,
+        mipmap_filter: MipmapFilterMode::Nearest,
+        ..Default::default()
+    });
+    let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: Some("FL9_1 BGRA8 3D sample layout"),
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 7,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D3,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 42,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::NonFiltering),
+                count: None,
+            },
+        ],
+    });
+    let group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 BGRA8 3D sample resources"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&volume_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let srgb_group = device.create_bind_group(&BindGroupDescriptor {
+        label: Some("FL9_1 BGRA8 sRGB 3D sample resources"),
+        layout: &layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 7,
+                resource: BindingResource::TextureView(&srgb_volume_view),
+            },
+            BindGroupEntry {
+                binding: 42,
+                resource: BindingResource::Sampler(&sampler),
+            },
+        ],
+    });
+    let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: Some("FL9_1 BGRA8 3D pipeline layout"),
+        bind_group_layouts: &[Some(&layout)],
+        immediate_size: 0,
+    });
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 BGRA8 3D sampling shader"),
+        source: ShaderSource::Wgsl(
+            "struct Out { @builtin(position) position: vec4f, @location(0) uvw: vec3f }; \
+             @group(0) @binding(7) var image: texture_3d<f32>; \
+             @group(0) @binding(42) var image_sampler: sampler; \
+             @vertex fn vs(@location(0) position: vec2f, @location(1) uvw: vec3f) -> Out { return Out(vec4f(position, 0.5, 1.0), uvw); } \
+             @fragment fn fs(input: Out) -> @location(0) vec4f { return textureSample(image, image_sampler, input.uvw); }"
+                .into(),
+        ),
+    });
+    let mut vertices = Vec::with_capacity(8 * 6 * 5);
+    for z in 0..2usize {
+        for y in 0..2usize {
+            for x in 0..2usize {
+                let left = -1.0 + x as f32;
+                let right = left + 1.0;
+                let top = 1.0 - (y * 2 + z) as f32 * 0.5;
+                let bottom = top - 0.5;
+                let uvw = [
+                    (x as f32 + 0.5) / 2.0,
+                    (y as f32 + 0.5) / 2.0,
+                    (z as f32 + 0.5) / 2.0,
+                ];
+                for [px, py] in [
+                    [left, top],
+                    [left, bottom],
+                    [right, top],
+                    [right, top],
+                    [left, bottom],
+                    [right, bottom],
+                ] {
+                    vertices.extend_from_slice(&[px, py, uvw[0], uvw[1], uvw[2]]);
+                }
+            }
+        }
+    }
+    let vertex_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
+        label: Some("FL9_1 BGRA8 3D sampling vertices"),
+        contents: bytemuck::cast_slice(&vertices),
+        usage: BufferUsages::VERTEX,
+    });
+    let vertex_buffers = [Some(VertexBufferLayout {
+        array_stride: 20,
+        step_mode: VertexStepMode::Vertex,
+        attributes: &[
+            VertexAttribute {
+                format: VertexFormat::Float32x2,
+                offset: 0,
+                shader_location: 0,
+            },
+            VertexAttribute {
+                format: VertexFormat::Float32x3,
+                offset: 8,
+                shader_location: 1,
+            },
+        ],
+    })];
+    let targets = [Some(ColorTargetState {
+        format: TextureFormat::Rgba8Unorm,
+        blend: None,
+        write_mask: ColorWrites::ALL,
+    })];
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_1 BGRA8 3D sampling pipeline"),
+        layout: Some(&pipeline_layout),
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            buffers: &vertex_buffers,
+        },
+        primitive: PrimitiveState {
+            cull_mode: None,
+            ..Default::default()
+        },
+        depth_stencil: None,
+        multisample: MultisampleState::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: PipelineCompilationOptions::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let volume_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 BGRA8 volume readback"),
+        size: 1024,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let srgb_volume_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 BGRA8 sRGB volume readback"),
+        size: 1024,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let output_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 BGRA8 volume sample readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let srgb_output_readback = device.create_buffer(&BufferDescriptor {
+        label: Some("FL9_1 BGRA8 sRGB volume sample readback"),
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 BGRA8 3D copy and sample encoder"),
+    });
+    encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &volume,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &copied_volume,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+    );
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &copied_volume,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &volume_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(2),
+            },
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+    );
+    encoder.copy_texture_to_texture(
+        TexelCopyTextureInfo {
+            texture: &srgb_volume,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyTextureInfo {
+            texture: &copied_srgb_volume,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+    );
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &copied_srgb_volume,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &srgb_volume_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(2),
+            },
+        },
+        Extent3d {
+            width: 2,
+            height: 2,
+            depth_or_array_layers: 2,
+        },
+    );
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 BGRA8 3D sampled render pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &output_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::TRANSPARENT),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..48, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &output,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &output_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("FL9_1 BGRA8 sRGB 3D sampled render pass"),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &srgb_output_view,
+                resolve_target: None,
+                depth_slice: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::TRANSPARENT),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &srgb_group, &[]);
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.draw(0..48, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &srgb_output,
+            mip_level: 0,
+            origin: Origin3d::ZERO,
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &srgb_output_readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        Extent3d {
+            width: 8,
+            height: 8,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    volume_readback.slice(..).map_async(MapMode::Read, {
+        let sender = sender.clone();
+        move |result| sender.send((0, result)).unwrap()
+    });
+    srgb_volume_readback.slice(..).map_async(MapMode::Read, {
+        let sender = sender.clone();
+        move |result| sender.send((2, result)).unwrap()
+    });
+    output_readback.slice(..).map_async(MapMode::Read, {
+        let sender = sender.clone();
+        move |result| sender.send((1, result)).unwrap()
+    });
+    srgb_output_readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| {
+            sender.send((3, result)).unwrap()
+        });
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .expect("wait for FL9_1 BGRA8 3D upload, copy and render");
+    for _ in 0..4 {
+        let (index, result) = receiver
+            .recv_timeout(Duration::from_secs(10))
+            .expect("BGRA8 3D readback callback");
+        result.expect(if index == 2 {
+            "map BGRA8 sRGB 3D readback"
+        } else if index == 3 {
+            "map BGRA8 sRGB sampled output"
+        } else {
+            "map BGRA8 3D readback"
+        });
+    }
+    let volume_pixels = volume_readback.slice(..).get_mapped_range().unwrap();
+    for z in 0..2usize {
+        for y in 0..2usize {
+            for x in 0..2usize {
+                let rgba = [40 + x as u8 * 80, 20 + y as u8 * 90, 30 + z as u8 * 70, 255];
+                let offset = z * 512 + y * 256 + x * 4;
+                assert_eq!(
+                    &volume_pixels[offset..offset + 4],
+                    [rgba[2], rgba[1], rgba[0], rgba[3]],
+                    "BGRA8 copy/readback voxel ({x}, {y}, {z})"
+                );
+            }
+            let row_start = z * 512 + y * 256;
+            assert!(volume_pixels[row_start + 8..row_start + 256]
+                .iter()
+                .all(|byte| *byte == 0));
+        }
+    }
+    drop(volume_pixels);
+    volume_readback.unmap();
+    let srgb_pixels = srgb_volume_readback.slice(..).get_mapped_range().unwrap();
+    for z in 0..2usize {
+        for y in 0..2usize {
+            for x in 0..2usize {
+                let rgba = [40 + x as u8 * 80, 20 + y as u8 * 90, 30 + z as u8 * 70, 255];
+                let offset = z * 512 + y * 256 + x * 4;
+                assert_eq!(
+                    &srgb_pixels[offset..offset + 4],
+                    [rgba[2], rgba[1], rgba[0], rgba[3]],
+                    "BGRA8 sRGB copy/readback voxel ({x}, {y}, {z})"
+                );
+            }
+            let row_start = z * 512 + y * 256;
+            assert!(srgb_pixels[row_start + 8..row_start + 256]
+                .iter()
+                .all(|byte| *byte == 0));
+        }
+    }
+    drop(srgb_pixels);
+    srgb_volume_readback.unmap();
+    let output_pixels = output_readback.slice(..).get_mapped_range().unwrap();
+    for z in 0..2usize {
+        for y in 0..2usize {
+            for x in 0..2usize {
+                let expected = [40 + x as u8 * 80, 20 + y as u8 * 90, 30 + z as u8 * 70, 255];
+                let origin_x = x * 4;
+                let origin_y = (y * 2 + z) * 2;
+                for py in origin_y..origin_y + 2 {
+                    for px in origin_x..origin_x + 4 {
+                        let offset = py * 256 + px * 4;
+                        assert_eq!(
+                            &output_pixels[offset..offset + 4],
+                            expected,
+                            "BGRA8 sampled pixel ({px}, {py}) from voxel ({x}, {y}, {z})"
+                        );
+                    }
+                }
+            }
+        }
+    }
+    drop(output_pixels);
+    output_readback.unmap();
+    let srgb_output_pixels = srgb_output_readback.slice(..).get_mapped_range().unwrap();
+    let decode_srgb = |channel: u8| {
+        let encoded = channel as f32 / 255.0;
+        let linear = if encoded <= 0.04045 {
+            encoded / 12.92
+        } else {
+            ((encoded + 0.055) / 1.055).powf(2.4)
+        };
+        (linear * 255.0).round() as u8
+    };
+    for z in 0..2usize {
+        for y in 0..2usize {
+            for x in 0..2usize {
+                let expected = [
+                    decode_srgb(40 + x as u8 * 80),
+                    decode_srgb(20 + y as u8 * 90),
+                    decode_srgb(30 + z as u8 * 70),
+                    255,
+                ];
+                let origin_x = x * 4;
+                let origin_y = (y * 2 + z) * 2;
+                for py in origin_y..origin_y + 2 {
+                    for px in origin_x..origin_x + 4 {
+                        let offset = py * 256 + px * 4;
+                        let observed = &srgb_output_pixels[offset..offset + 4];
+                        for channel in 0..4 {
+                            assert!(
+                                observed[channel].abs_diff(expected[channel]) <= 1,
+                                "BGRA8 sRGB sampled pixel ({px}, {py}) channel {channel}: expected {:?}, observed {:?}",
+                                expected,
+                                observed
+                            );
+                        }
+                    }
+                }
+            }
+        }
+    }
+    drop(srgb_output_pixels);
+    srgb_output_readback.unmap();
+    println!(
+        "PASS: BGRA8 UNORM and sRGB 3D padded upload, full volume copy/readback and sampled rendering; each format matched 8 voxels and 64 output pixels"
     );
 }
 

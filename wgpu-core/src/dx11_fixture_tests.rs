@@ -831,15 +831,56 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
             ),
             "NPOT volume dimensions must be rejected in core: {error:?}"
         );
+        for format in [
+            wgt::TextureFormat::Bgra8Unorm,
+            wgt::TextureFormat::Bgra8UnormSrgb,
+        ] {
+            invalid = volume_desc.clone();
+            invalid.format = format;
+            let (bgra_volume, error) = global.device_create_texture(device, &invalid, None);
+            if capabilities
+                .downlevel
+                .limits
+                .supports_texture_3d_format(format)
+            {
+                assert!(
+                    error.is_none(),
+                    "queried FL9_1 {format:?} 3D creation: {error:?}"
+                );
+                let (view, error) = global.texture_create_view(
+                    bgra_volume,
+                    &crate::resource::TextureViewDescriptor {
+                        dimension: Some(wgt::TextureViewDimension::D3),
+                        ..Default::default()
+                    },
+                    None,
+                );
+                assert!(
+                    error.is_none(),
+                    "queried FL9_1 {format:?} 3D view: {error:?}"
+                );
+                global.texture_view_drop(view);
+            } else {
+                assert!(
+                    matches!(
+                        error,
+                        Some(crate::resource::CreateTextureError::UnsupportedTexture3DFormat(actual)) if actual == format
+                    ),
+                    "unqueried {format:?} volume format must be rejected in core: {error:?}"
+                );
+            }
+            global.texture_drop(bgra_volume);
+        }
+
         invalid = volume_desc.clone();
-        invalid.format = wgt::TextureFormat::Bgra8Unorm;
+        invalid.format = wgt::TextureFormat::Rgba16Float;
         let (_, error) = global.device_create_texture(device, &invalid, None);
         assert!(
             matches!(
                 error,
                 Some(crate::resource::CreateTextureError::UnsupportedTexture3DFormat(_))
             ),
-            "unqueried volume formats must be rejected in core: {error:?}"
+            "unsupported volume formats must be rejected in core: {error:?}"
         );
         invalid = volume_desc.clone();
         invalid.format = wgt::TextureFormat::R8Unorm;

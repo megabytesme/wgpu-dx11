@@ -1803,6 +1803,8 @@ impl DownlevelLimits {
             crate::TextureFormat::Rgba8Unorm => 1 << 0,
             crate::TextureFormat::R8Unorm => 1 << 1,
             crate::TextureFormat::Rg8Unorm => 1 << 2,
+            crate::TextureFormat::Bgra8Unorm => 1 << 3,
+            crate::TextureFormat::Bgra8UnormSrgb => 1 << 4,
             _ => 0,
         }
     }
@@ -2652,12 +2654,20 @@ mod tests {
         let rgba8 = DownlevelLimits::texture_3d_format_bit(crate::TextureFormat::Rgba8Unorm);
         let r8 = DownlevelLimits::texture_3d_format_bit(TextureFormat::R8Unorm);
         let rg8 = DownlevelLimits::texture_3d_format_bit(TextureFormat::Rg8Unorm);
+        let bgra8 = DownlevelLimits::texture_3d_format_bit(TextureFormat::Bgra8Unorm);
+        let bgra8_srgb = DownlevelLimits::texture_3d_format_bit(TextureFormat::Bgra8UnormSrgb);
         assert_ne!(rgba8, r8);
         assert_ne!(rgba8, rg8);
         assert_ne!(r8, rg8);
+        assert_ne!(bgra8, bgra8_srgb);
+        assert!([rgba8, r8, rg8, bgra8, bgra8_srgb]
+            .into_iter()
+            .all(|bit| bit.is_power_of_two()));
         assert_eq!(rgba8, 1 << 0);
         assert_eq!(r8, 1 << 1);
         assert_eq!(rg8, 1 << 2);
+        assert_eq!(bgra8, 1 << 3);
+        assert_eq!(bgra8_srgb, 1 << 4);
         assert_eq!(
             DownlevelLimits::texture_3d_format_bit(TextureFormat::Rgba16Float),
             0
@@ -2686,6 +2696,8 @@ mod tests {
         assert!(available.supports_texture_3d_format(TextureFormat::Rgba8Unorm));
         assert!(!available.supports_texture_3d_format(TextureFormat::R8Unorm));
         assert!(!available.supports_texture_3d_format(TextureFormat::Rg8Unorm));
+        assert!(!available.supports_texture_3d_format(TextureFormat::Bgra8Unorm));
+        assert!(!available.supports_texture_3d_format(TextureFormat::Bgra8UnormSrgb));
         assert!(!available.supports_texture_3d_format(TextureFormat::Rgba16Float));
         let rg8_available = DownlevelLimits {
             texture_3d: true,
@@ -2696,8 +2708,29 @@ mod tests {
         assert!(rg8_available.supports_texture_3d_format(TextureFormat::Rg8Unorm));
         assert!(!rg8_available.supports_texture_3d_format(TextureFormat::Rgba8Unorm));
         assert!(!rg8_available.supports_texture_3d_format(TextureFormat::R8Unorm));
+        assert!(!rg8_available.supports_texture_3d_format(TextureFormat::Bgra8Unorm));
         assert!(!rg8_available.supports_texture_3d_format(TextureFormat::Rgba16Float));
         assert!(DownlevelLimits::default().supports_texture_3d_format(TextureFormat::Rgba16Float));
+        let bgra_available = DownlevelLimits {
+            texture_3d: true,
+            texture_3d_usage_mask: supported_usage,
+            texture_3d_format_mask: bgra8 | bgra8_srgb,
+            texture_3d_mipmaps: false,
+            texture_3d_texture_copies: false,
+            npot_texture_3d: false,
+            ..DownlevelLimits::default()
+        };
+        assert!(bgra_available.supports_texture_3d_format(TextureFormat::Bgra8Unorm));
+        assert!(bgra_available.supports_texture_3d_format(TextureFormat::Bgra8UnormSrgb));
+        assert!(bgra_available.check_limits(&DownlevelLimits {
+            texture_3d: true,
+            texture_3d_usage_mask: supported_usage,
+            texture_3d_format_mask: bgra8 | bgra8_srgb,
+            texture_3d_mipmaps: false,
+            texture_3d_texture_copies: false,
+            npot_texture_3d: false,
+            ..DownlevelLimits::default()
+        }));
         assert!(!available.check_limits(&DownlevelLimits {
             texture_3d: true,
             texture_3d_usage_mask: crate::TextureUsages::STORAGE_BINDING.bits(),

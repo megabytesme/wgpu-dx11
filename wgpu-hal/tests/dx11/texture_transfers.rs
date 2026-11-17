@@ -1026,6 +1026,12 @@ fn run_fl91_padded_partial_3d_upload(
         "Hardware: {:?} ({:#06x}:{:#06x}), driver={driver:?}, software={}; requested/actual FL9_1; {format:?} format support={support:#010x}",
         identity.name, identity.vendor_id, identity.device_id, identity.software,
     );
+    let bgra_storage = matches!(
+        format,
+        wgt::TextureFormat::Bgra8Unorm | wgt::TextureFormat::Bgra8UnormSrgb
+    );
+    let srgb_sampling = format == wgt::TextureFormat::Bgra8UnormSrgb;
+    let exercise_copy_readback = bytes_per_texel <= 2 || bgra_storage;
 
     let device = Device::new(native.clone());
     let queue = Queue::new(native.clone());
@@ -1044,7 +1050,7 @@ fn run_fl91_padded_partial_3d_upload(
                 format,
                 usage: wgt::TextureUses::RESOURCE
                     | wgt::TextureUses::COPY_DST
-                    | if bytes_per_texel <= 2 {
+                    | if exercise_copy_readback {
                         wgt::TextureUses::COPY_SRC
                     } else {
                         wgt::TextureUses::empty()
@@ -1054,7 +1060,7 @@ fn run_fl91_padded_partial_3d_upload(
             })
             .unwrap()
     };
-    let copy_target = if bytes_per_texel <= 2 {
+    let copy_target = if exercise_copy_readback {
         Some(unsafe {
             device
                 .create_texture(&TextureDescriptor {
@@ -1114,7 +1120,14 @@ fn run_fl91_padded_partial_3d_upload(
                 let texel = match bytes_per_texel {
                     1 => [40 + x as u8 * 80 + y as u8 * 40 + z as u8 * 20, 0, 0, 0],
                     2 => [40 + x as u8 * 80, 20 + y as u8 * 90 + z as u8 * 20, 0, 0],
-                    4 => [40 + x as u8 * 80, 20 + y as u8 * 90, 30 + z as u8 * 70, 255],
+                    4 => {
+                        let rgba = [40 + x as u8 * 80, 20 + y as u8 * 90, 30 + z as u8 * 70, 255];
+                        if bgra_storage {
+                            [rgba[2], rgba[1], rgba[0], rgba[3]]
+                        } else {
+                            rgba
+                        }
+                    }
                     _ => {
                         return Err(windows::core::Error::from_hresult(
                             windows::Win32::Foundation::E_INVALIDARG,
@@ -1139,7 +1152,7 @@ fn run_fl91_padded_partial_3d_upload(
     native.write_byte_buffer(&input, 0, &upload_data)?;
 
     let volume_readback_size = 16 + 3 * 1024 + 3 * 256 + 4 * bytes_per_texel;
-    let volume_readback = if bytes_per_texel <= 2 {
+    let volume_readback = if exercise_copy_readback {
         let buffer = unsafe {
             device
                 .create_buffer(&BufferDescriptor {
@@ -1551,6 +1564,14 @@ fn run_fl91_padded_partial_3d_upload(
                             match bytes_per_texel {
                                 1 => [40 + x * 80 + y * 40 + z * 20, 0, 0, 0],
                                 2 => [40 + x * 80, 20 + y * 90 + z * 20, 0, 0],
+                                4 => {
+                                    let rgba = [40 + x * 80, 20 + y * 90, 30 + z * 70, 255];
+                                    if bgra_storage {
+                                        [rgba[2], rgba[1], rgba[0], rgba[3]]
+                                    } else {
+                                        rgba
+                                    }
+                                }
                                 _ => unreachable!(),
                             }
                         } else {
@@ -1582,10 +1603,23 @@ fn run_fl91_padded_partial_3d_upload(
                     let x = (voxel_x - 1) as u8;
                     let y = (voxel_y - 1) as u8;
                     let z = (z - 1) as u8;
-                    match bytes_per_texel {
+                    let rgba = match bytes_per_texel {
                         1 => [40 + x * 80 + y * 40 + z * 20, 0, 0, 255],
                         2 => [40 + x * 80, 20 + y * 90 + z * 20, 0, 255],
                         _ => [40 + x * 80, 20 + y * 90, 30 + z * 70, 255],
+                    };
+                    if srgb_sampling {
+                        rgba.map(|channel| {
+                            let encoded = channel as f32 / 255.0;
+                            let linear = if encoded <= 0.04045 {
+                                encoded / 12.92
+                            } else {
+                                ((encoded + 0.055) / 1.055).powf(2.4)
+                            };
+                            (linear * 255.0).round() as u8
+                        })
+                    } else {
+                        rgba
                     }
                 } else {
                     [0, 0, 0, if bytes_per_texel <= 2 { 255 } else { 0 }]
@@ -1594,10 +1628,20 @@ fn run_fl91_padded_partial_3d_upload(
             expected[offset..offset + 4].copy_from_slice(&pixel);
         }
     }
-    assert_eq!(
-        actual, expected,
-        "padded 3D upload sample or untouched voxel differed"
-    );
+    if srgb_sampling {
+        assert_eq!(actual.len(), expected.len());
+        for (offset, (&actual, &expected)) in actual.iter().zip(&expected).enumerate() {
+            assert!(
+                actual.abs_diff(expected) <= 1,
+                "padded {format:?} 3D sample byte {offset}: actual={actual}, expected={expected}"
+            );
+        }
+    } else {
+        assert_eq!(
+            actual, expected,
+            "padded 3D upload sample or untouched voxel differed"
+        );
+    }
     std::println!(
         "PASS: FL9_1 padded partial {label} 3D upload; 8 uploaded voxels and 56 initialized untouched voxels sampled correctly, with row/depth padding preserved"
     );
@@ -1657,5 +1701,27 @@ fn fl91_rg8_3d_upload_copy_readback_and_sampling_when_queried() -> windows::core
         2,
         "RG8",
         true,
+    )
+}
+
+#[test]
+fn fl91_bgra8_3d_upload_copy_readback_and_sampling() -> windows::core::Result<()> {
+    run_fl91_padded_partial_3d_upload(
+        wgt::TextureFormat::Bgra8Unorm,
+        windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM,
+        4,
+        "BGRA8",
+        false,
+    )
+}
+
+#[test]
+fn fl91_bgra8_srgb_3d_upload_copy_readback_and_sampling() -> windows::core::Result<()> {
+    run_fl91_padded_partial_3d_upload(
+        wgt::TextureFormat::Bgra8UnormSrgb,
+        windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+        4,
+        "BGRA8 sRGB",
+        false,
     )
 }

@@ -24,6 +24,9 @@ use windows::Win32::Graphics::{
     },
 };
 
+const FL9X_MAX_BUFFER_RESOURCE_SIZE: u64 = 128 << 20;
+const FL9X_MAX_BUFFER_SIZE: u64 = FL9X_MAX_BUFFER_RESOURCE_SIZE - wgt::COPY_BUFFER_ALIGNMENT;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct HardwareGuarantees {
     pub level: FeatureLevel,
@@ -748,6 +751,12 @@ impl Capabilities {
         }
         let guaranteed_formats = [
             (wgt::TextureFormat::Rgba8Unorm, self.driver.rgba8, true),
+            (wgt::TextureFormat::Bgra8Unorm, self.driver.bgra8, true),
+            (
+                wgt::TextureFormat::Bgra8UnormSrgb,
+                self.driver.bgra8_srgb,
+                true,
+            ),
             (
                 wgt::TextureFormat::R8Unorm,
                 self.driver.r8_unorm,
@@ -777,6 +786,8 @@ impl Capabilities {
         }
         [
             (wgt::TextureFormat::Rgba8Unorm, self.driver.rgba8),
+            (wgt::TextureFormat::Bgra8Unorm, self.driver.bgra8),
+            (wgt::TextureFormat::Bgra8UnormSrgb, self.driver.bgra8_srgb),
             (wgt::TextureFormat::R8Unorm, self.driver.r8_unorm),
             (wgt::TextureFormat::Rg8Unorm, self.driver.rg8_unorm),
         ]
@@ -912,10 +923,19 @@ impl Capabilities {
         limits.max_compute_workgroups_per_dimension = 0;
         limits.max_uniform_buffer_binding_size = 255 * 16;
         limits.max_vertex_buffers = self.backend.vertex_buffers;
-        limits.max_buffer_size = u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT;
+        limits.max_buffer_size = if self.hardware.level.as_raw() <= FeatureLevel::L9_3.as_raw() {
+            FL9X_MAX_BUFFER_SIZE
+        } else {
+            u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT
+        };
         limits.max_vertex_attributes = 16;
         limits.max_vertex_buffer_array_stride = 2048;
-        limits.max_inter_stage_shader_variables = 8;
+        // FL9_1's eight pixel-shader inputs include the fragment position builtin.
+        limits.max_inter_stage_shader_variables = if self.hardware.level == FeatureLevel::L9_1 {
+            7
+        } else {
+            8
+        };
         limits.max_color_attachments = self.backend.color_attachments;
         limits.max_color_attachment_bytes_per_sample = 8;
         limits.max_buffers_and_acceleration_structures_per_shader_stage =
@@ -2249,9 +2269,9 @@ mod tests {
             driver: DriverCapabilities {
                 timestamp_frequency: Query::Value(1_000_000_000),
                 rgba8: Query::Value(u32::MAX),
-                bgra8: Query::Value(u32::MAX),
+                bgra8: Query::Value(!(D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32)),
                 rgba8_srgb: Query::Value(u32::MAX),
-                bgra8_srgb: Query::Value(u32::MAX),
+                bgra8_srgb: Query::Value(!(D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32)),
                 depth24_stencil8: Query::Value(u32::MAX),
                 depth16_unorm: Query::Value(u32::MAX),
                 depth24_stencil8_samples: SampleCountQueries([Query::Value(0); 4]),
@@ -3046,6 +3066,77 @@ mod tests {
         }
     }
 
+    #[test]
+    fn bgra_3d_formats_require_positive_texture_sampling_queries() {
+        let bgra8 = wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Bgra8Unorm);
+        let bgra8_srgb =
+            wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Bgra8UnormSrgb);
+        let required =
+            (D3D11_FORMAT_SUPPORT_TEXTURE3D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+        let mip = D3D11_FORMAT_SUPPORT_MIP.0 as u32;
+        let mut caps = model(FeatureLevel::L9_1);
+        caps.driver.rgba8 = Query::Value(0);
+        caps.driver.r8_unorm = Query::Value(0);
+        caps.driver.rg8_unorm = Query::Value(0);
+        caps.driver.bgra8 = Query::Value(required | mip);
+        caps.driver.bgra8_srgb = Query::Unavailable(-1);
+
+        assert_eq!(caps.texture_3d_format_mask(), bgra8);
+        assert!(caps.texture_3d_mipmaps());
+        let projected = caps.wgpu_projection().expect("FL9_1 projection");
+        assert!(projected.capabilities.downlevel.limits.texture_3d);
+        assert!(projected
+            .capabilities
+            .downlevel
+            .limits
+            .supports_texture_3d_format(wgt::TextureFormat::Bgra8Unorm));
+        assert!(!projected
+            .capabilities
+            .downlevel
+            .limits
+            .supports_texture_3d_format(wgt::TextureFormat::Bgra8UnormSrgb));
+
+        caps.driver.bgra8 = Query::Unavailable(-1);
+        caps.driver.bgra8_srgb = Query::Value(required | mip);
+        assert_eq!(caps.texture_3d_format_mask(), bgra8_srgb);
+        assert!(caps.texture_3d_mipmaps());
+
+        for query in [
+            Query::Unavailable(-1),
+            Query::Value(0),
+            Query::Value(D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32),
+            Query::Value(D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32),
+            Query::Value(
+                (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32,
+            ),
+        ] {
+            let mut unavailable = model(FeatureLevel::L9_1);
+            unavailable.driver.rgba8 = Query::Value(0);
+            unavailable.driver.r8_unorm = Query::Value(0);
+            unavailable.driver.rg8_unorm = Query::Value(0);
+            unavailable.driver.bgra8 = query;
+            unavailable.driver.bgra8_srgb = query;
+            assert_eq!(unavailable.texture_3d_format_mask(), 0);
+            assert!(
+                !unavailable
+                    .wgpu_projection()
+                    .expect("FL9_1 projection")
+                    .capabilities
+                    .downlevel
+                    .limits
+                    .texture_3d
+            );
+        }
+
+        let mut missing_mips = model(FeatureLevel::L9_1);
+        missing_mips.driver.rgba8 = Query::Value(0);
+        missing_mips.driver.r8_unorm = Query::Value(0);
+        missing_mips.driver.rg8_unorm = Query::Value(0);
+        missing_mips.driver.bgra8 = Query::Value(required);
+        assert_eq!(missing_mips.texture_3d_format_mask(), bgra8);
+        assert!(!missing_mips.texture_3d_mipmaps());
+    }
+
     fn set_color_format_query(
         caps: &mut Capabilities,
         format: wgt::TextureFormat,
@@ -3387,10 +3478,7 @@ mod tests {
         assert_eq!(exposed.limits.max_uniform_buffer_binding_size, 4080);
         assert_eq!(exposed.limits.max_color_attachments, 1);
         assert_eq!(exposed.limits.max_color_attachment_bytes_per_sample, 8);
-        assert_eq!(
-            exposed.limits.max_buffer_size,
-            u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT
-        );
+        assert_eq!(exposed.limits.max_buffer_size, FL9X_MAX_BUFFER_SIZE);
         assert_eq!(exposed.downlevel.shader_model, wgt::ShaderModel::Sm2);
         assert!(exposed.downlevel.limits.shader_loops);
         assert_eq!(
