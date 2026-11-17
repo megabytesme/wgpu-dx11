@@ -76,12 +76,11 @@ fn feature_level_is_valid(value: &str) -> bool {
   .is_ok()
 }
 
-fn invalid_feature_level_issue(
-  valid: bool,
+fn strict_request_requires_physical_adapter(
   strict_dx11: bool,
-) -> Option<&'static str> {
-  (!valid && strict_dx11)
-    .then_some("strict D3D11 hardware request requires a valid feature level")
+  force_fallback_adapter: bool,
+) -> bool {
+  strict_dx11 && !force_fallback_adapter
 }
 
 fn has_verified_dx11_fl91_marker(info: &wgpu_types::AdapterInfo) -> bool {
@@ -281,9 +280,6 @@ impl GPU {
     // by the spec, we always return a core-level adapter.
     let valid_feature_level = feature_level_is_valid(&options.feature_level);
     if !valid_feature_level {
-      if let Some(issue) = invalid_feature_level_issue(false, strict_dx11) {
-        return Err(JsErrorBox::type_error(issue));
-      }
       return Ok(None);
     }
 
@@ -303,7 +299,12 @@ impl GPU {
     };
     let id = match instance.request_adapter(&descriptor, backends, None) {
       Ok(id) => id,
-      Err(error) if strict_dx11 => {
+      Err(error)
+        if strict_request_requires_physical_adapter(
+          strict_dx11,
+          options.force_fallback_adapter,
+        ) =>
+      {
         eprintln!("D3D11 strict hardware adapter request failed: {error:?}");
         return Err(JsErrorBox::type_error(format!(
           "strict D3D11 hardware request failed: {error:?}"
@@ -368,8 +369,8 @@ impl GPU {
 mod backend_selection_tests {
   use super::{
     backends_from_env, dx11_hardware_identity_issue, feature_level_is_valid,
-    has_verified_dx11_fl91_marker, invalid_feature_level_issue,
-    strict_dx11_configuration_issue,
+    has_verified_dx11_fl91_marker, strict_dx11_configuration_issue,
+    strict_request_requires_physical_adapter,
   };
   use wgpu_types::{AdapterInfo, Backend, Backends, DeviceType};
 
@@ -414,15 +415,17 @@ mod backend_selection_tests {
   }
 
   #[test]
-  fn invalid_feature_levels_reject_only_in_strict_hardware_mode() {
+  fn invalid_feature_levels_are_rejected_before_adapter_selection() {
     assert!(feature_level_is_valid("core"));
     assert!(!feature_level_is_valid("unknown"));
-    assert_eq!(invalid_feature_level_issue(false, false), None);
-    assert_eq!(
-      invalid_feature_level_issue(false, true),
-      Some("strict D3D11 hardware request requires a valid feature level")
-    );
-    assert_eq!(invalid_feature_level_issue(true, true), None);
+  }
+
+  #[test]
+  fn strict_hardware_requires_an_adapter_except_for_optional_fallback_requests()
+  {
+    assert!(strict_request_requires_physical_adapter(true, false));
+    assert!(!strict_request_requires_physical_adapter(true, true));
+    assert!(!strict_request_requires_physical_adapter(false, false));
   }
 
   #[test]
