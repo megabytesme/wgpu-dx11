@@ -4,6 +4,7 @@ use alloc::sync::Arc;
 use windows::Win32::Graphics::Direct3D11::*;
 
 pub(super) const MAX_ANISOTROPY: u16 = 2;
+const FL9_1_MAX_MIP_LOD: f32 = 11.0;
 
 #[doc(hidden)]
 #[derive(Debug)]
@@ -86,6 +87,9 @@ fn translate_sampler_with_shadow_support(
         return Err(crate::DeviceError::Unexpected);
     }
     let single_mip_only = finite_max || normalize_lod;
+    // FL9_1 exposes at most mip index 11 for its 2048-texel 2D limit.
+    let saturated_min_lod =
+        level == super::device::FeatureLevel::L9_1 && desc.lod_clamp.start > FL9_1_MAX_MIP_LOD;
     let filter = if comparison {
         match (desc.min_filter, desc.mipmap_filter) {
             (Nearest, wgt::MipmapFilterMode::Nearest) => D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT,
@@ -137,6 +141,8 @@ fn translate_sampler_with_shadow_support(
             BorderColor: border,
             MinLOD: if comparison || normalize_lod {
                 0.0
+            } else if saturated_min_lod {
+                FL9_1_MAX_MIP_LOD
             } else {
                 desc.lod_clamp.start
             },
@@ -169,7 +175,7 @@ fn sampler_lod(
     desc: &crate::SamplerDescriptor,
     native: &D3D11_SAMPLER_DESC,
 ) -> super::sampling::SamplerLod {
-    if native.MinLOD != desc.lod_clamp.start {
+    if native.MinLOD != desc.lod_clamp.start && desc.lod_clamp.start <= FL9_1_MAX_MIP_LOD {
         super::sampling::SamplerLod::SingleMip
     } else if native.MaxLOD != desc.lod_clamp.end {
         super::sampling::SamplerLod::RaisedMaximum {
@@ -570,6 +576,13 @@ mod tests {
         let (_, lod) = classify(&desc);
         assert!(lod.is_compatible_with_view_mips(1));
         assert!(!lod.is_compatible_with_view_mips(2));
+        desc.lod_clamp = 4.0e30..f32::MAX;
+        let (native, lod) = classify(&desc);
+        assert_eq!(
+            (native.MinLOD, native.MaxLOD),
+            (FL9_1_MAX_MIP_LOD, f32::MAX)
+        );
+        assert!(lod.is_compatible_with_view_mips(12));
         desc.lod_clamp = 0.0..32.0;
         desc.anisotropy_clamp = 2;
         desc.min_filter = wgt::FilterMode::Linear;
@@ -706,10 +719,16 @@ mod tests {
         use wgt::FilterMode::{Linear, Nearest};
         use wgt::MipmapFilterMode::{Linear as MipLinear, Nearest as MipNearest};
         let adapters = enumerate_native_adapters()?;
-        let Some(adapter) = adapters.iter().find(|a| !a.identity().software) else {
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|message| panic!("{message}"))
+        else {
+            std::println!("SKIP: no hardware adapter");
             return Ok(());
         };
         let owner = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert_eq!(owner.feature_level(), FeatureLevel::L9_1);
         let other = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
         let device = Device::new(owner.clone());
         let mut desc = crate::SamplerDescriptor {
@@ -822,6 +841,20 @@ mod tests {
         assert_eq!((actual.MinLOD, actual.MaxLOD), (0.0, f32::MAX));
         assert!(!normalized.lod().is_compatible_with_view_mips(2));
         unsafe { device.destroy_sampler(normalized) };
+        desc.min_filter = Nearest;
+        desc.mag_filter = Nearest;
+        desc.mipmap_filter = MipNearest;
+        desc.lod_clamp = 4.0e30..f32::MAX;
+        let saturated = unsafe { device.create_sampler(&desc).unwrap() };
+        let raw = saturated.raw_for(&owner).unwrap();
+        let mut actual = D3D11_SAMPLER_DESC::default();
+        unsafe { raw.GetDesc(&mut actual) };
+        assert_eq!(
+            (actual.MinLOD, actual.MaxLOD),
+            (FL9_1_MAX_MIP_LOD, f32::MAX)
+        );
+        assert!(saturated.lod().is_compatible_with_view_mips(12));
+        unsafe { device.destroy_sampler(saturated) };
         desc.lod_clamp.start = 0.0;
         desc.compare = Some(wgt::CompareFunction::Less);
         assert!(unsafe { device.create_sampler(&desc) }.is_err());
