@@ -148,7 +148,6 @@ dx11 = [
     "windows/Win32_Graphics_Dxgi_Common",
     "windows/Win32_System_Threading",
     "windows/Win32_System_SystemInformation",
-    "windows/Win32_UI_WindowsAndMessaging",
 ]
 
 ## Unsafe, non-enumerated D3D11 fixture for tightly controlled core tests.
@@ -170,18 +169,15 @@ dx12 = [
     "gpu-allocator/d3d12",
     "naga/hlsl-out",
     "once_cell/std",
-    "windows/Win32_Devices_DeviceAndDriverInstallation",
-    "windows/Win32_Devices_Display",
     "windows/Win32_Graphics_Direct3D_Dxc",
     "windows/Win32_Graphics_Direct3D_Fxc",
     "windows/Win32_Graphics_Direct3D",
     "windows/Win32_Graphics_Direct3D12",
     "windows/Win32_Graphics_DirectComposition",
+    "windows/Win32_Graphics_Dxgi",
     "windows/Win32_Graphics_Dxgi_Common",
     "windows/Win32_Graphics_Gdi",
     "windows/Win32_Security",
-    "windows/Win32_System_Diagnostics_Debug",
-    "windows/Win32_System_Kernel",
     "windows/Win32_System_Performance",
     "windows/Win32_System_Threading",
     "windows/Win32_UI_WindowsAndMessaging",
@@ -297,6 +293,24 @@ range-alloc = { workspace = true, optional = true }
 once_cell = { workspace = true, optional = true }
 # backend: GLES
 glutin_wgl_sys = { workspace = true, optional = true }
+
+# These desktop UI APIs are unused in UWP; keep them for desktop Dx11 builds.
+[target.'cfg(all(windows, not(target_vendor = "uwp")))'.dependencies.windows]
+workspace = true
+features = ["Win32_UI_WindowsAndMessaging"]
+optional = true
+
+# These desktop diagnostics are unavailable in the ARM32 UWP bindings. Keep
+# them on every other Windows target when the windows dependency is enabled.
+[target.'cfg(all(windows, not(all(target_vendor = "uwp", target_arch = "arm"))))'.dependencies.windows]
+workspace = true
+features = [
+    "Win32_Devices_DeviceAndDriverInstallation",
+    "Win32_Devices_Display",
+    "Win32_System_Diagnostics_Debug",
+    "Win32_System_Kernel",
+]
+optional = true
 
 ### Platform: x86/x86_64 Windows ###
 # This doesn't support aarch64. See https://github.com/gfx-rs/wgpu/issues/6860.

@@ -112,6 +112,18 @@ use windows::{
     },
 };
 
+#[cfg(target_vendor = "uwp")]
+unsafe extern "C" {
+    fn horizon_uwp_attach_game_swapchain(swap_chain: *mut core::ffi::c_void) -> i32;
+    fn horizon_uwp_detach_game_swapchain() -> i32;
+    fn horizon_uwp_get_surface_metrics(
+        width: *mut u32,
+        height: *mut u32,
+        scale_x: *mut f64,
+        scale_y: *mut f64,
+    );
+}
+
 use self::dcomp::DCompLib;
 use crate::auxil::{
     self,
@@ -131,7 +143,30 @@ impl DynLib {
     where
         P: AsRef<std::ffi::OsStr>,
     {
-        unsafe { libloading::Library::new(filename) }.map(|inner| Self { inner })
+        #[cfg(all(target_vendor = "uwp", target_arch = "arm"))]
+        {
+            use std::os::windows::ffi::OsStrExt;
+            // libloading's normal loader imports SetThreadErrorMode, which is
+            // not guaranteed on UWP until 16299. Load with the same flags but
+            // without changing the thread error mode on older Mobile builds.
+            #[link(name = "kernel32.dll", kind = "raw-dylib", modifiers = "+verbatim")]
+            unsafe extern "system" {
+                fn LoadLibraryExW(filename: *const u16, file: isize, flags: u32) -> isize;
+            }
+            let name: Vec<u16> = filename.as_ref().encode_wide().chain(Some(0)).collect();
+            let handle = unsafe { LoadLibraryExW(name.as_ptr(), 0, 0) };
+            if handle == 0 {
+                return Err(libloading::Error::LoadLibraryExWUnknown);
+            }
+            let native = unsafe { libloading::os::windows::Library::from_raw(handle) };
+            Ok(Self {
+                inner: native.into(),
+            })
+        }
+        #[cfg(not(all(target_vendor = "uwp", target_arch = "arm")))]
+        {
+            unsafe { libloading::Library::new(filename) }.map(|inner| Self { inner })
+        }
     }
 
     unsafe fn get<T>(
@@ -620,6 +655,7 @@ struct SwapChain {
 enum SurfaceTarget {
     /// Borrowed, lifetime externally managed
     WndHandle(Foundation::HWND),
+    CoreWindow(windows::core::IUnknown),
     /// `handle` is borrowed, lifetime externally managed
     VisualFromWndHandle {
         handle: Foundation::HWND,
@@ -1534,11 +1570,15 @@ impl crate::Surface for Surface {
                     },
                     BufferUsage: Dxgi::DXGI_USAGE_RENDER_TARGET_OUTPUT,
                     BufferCount: swap_chain_buffer,
-                    Scaling: Dxgi::DXGI_SCALING_STRETCH,
+                    Scaling: if matches!(&self.target, SurfaceTarget::CoreWindow(_)) {
+                        Dxgi::DXGI_SCALING_NONE
+                    } else {
+                        Dxgi::DXGI_SCALING_STRETCH
+                    },
                     SwapEffect: Dxgi::DXGI_SWAP_EFFECT_FLIP_DISCARD,
                     Flags: flags.0 as u32,
                 };
-                let swap_chain1 = match self.target {
+                let swap_chain1 = match &self.target {
                     SurfaceTarget::Visual(_)
                     | SurfaceTarget::VisualFromWndHandle { .. }
                     | SurfaceTarget::SwapChainPanel(_) => {
@@ -1561,10 +1601,21 @@ impl crate::Surface for Surface {
                                 .ok_or(crate::SurfaceError::Other("IDXGIFactoryMedia not found"))?
                                 .CreateSwapChainForCompositionSurfaceHandle(
                                     &device.present_queue,
-                                    Some(handle),
+                                    Some(*handle),
                                     &desc,
                                     None,
                                 )
+                        }
+                    }
+                    SurfaceTarget::CoreWindow(core_window) => {
+                        profiling::scope!("IDXGIFactory2::CreateSwapChainForCoreWindow");
+                        unsafe {
+                            self.factory.CreateSwapChainForCoreWindow(
+                                &device.present_queue,
+                                core_window,
+                                &desc,
+                                None,
+                            )
                         }
                     }
                     SurfaceTarget::WndHandle(hwnd) => {
@@ -1572,7 +1623,7 @@ impl crate::Surface for Surface {
                         unsafe {
                             self.factory.CreateSwapChainForHwnd(
                                 &device.present_queue,
-                                hwnd,
+                                *hwnd,
                                 &desc,
                                 None,
                                 None,
@@ -1587,7 +1638,9 @@ impl crate::Surface for Surface {
                 })?;
 
                 match &self.target {
-                    SurfaceTarget::WndHandle(_) | SurfaceTarget::SurfaceHandle(_) => {}
+                    SurfaceTarget::WndHandle(_)
+                    | SurfaceTarget::CoreWindow(_)
+                    | SurfaceTarget::SurfaceHandle(_) => {}
                     SurfaceTarget::VisualFromWndHandle {
                         handle,
                         dcomp_state,
@@ -1625,6 +1678,26 @@ impl crate::Surface for Surface {
                         }
                     }
                     SurfaceTarget::SwapChainPanel(swap_chain_panel) => {
+                        #[cfg(target_vendor = "uwp")]
+                        {
+                            use windows::core::Interface as _;
+                            let _ = swap_chain_panel;
+                            // The XAML panel belongs to the UI apartment. The UWP host
+                            // marshals this attachment back to that apartment before
+                            // querying ISwapChainPanelNative and calling SetSwapChain.
+                            let result = unsafe {
+                                horizon_uwp_attach_game_swapchain(swap_chain1.as_raw())
+                            };
+                            if result < 0 {
+                                log::error!(
+                                    "Unable to SetSwapChain on the UWP UI thread: HRESULT 0x{result:08X}"
+                                );
+                                return Err(crate::SurfaceError::Other(
+                                    "ISwapChainPanelNative::SetSwapChain on the UWP UI thread",
+                                ));
+                            }
+                        }
+                        #[cfg(not(target_vendor = "uwp"))]
                         if let Err(err) = unsafe { swap_chain_panel.SetSwapChain(&swap_chain1) } {
                             log::error!("Unable to SetSwapChain: {err}");
                             return Err(crate::SurfaceError::Other(
@@ -1640,6 +1713,33 @@ impl crate::Surface for Surface {
                 })?
             }
         };
+
+        #[cfg(target_vendor = "uwp")]
+        if matches!(&self.target, SurfaceTarget::SwapChainPanel(_)) {
+            let (mut width, mut height, mut scale_x, mut scale_y) = (0, 0, 1.0, 1.0);
+            unsafe {
+                horizon_uwp_get_surface_metrics(
+                    &mut width,
+                    &mut height,
+                    &mut scale_x,
+                    &mut scale_y,
+                );
+            }
+            if !scale_x.is_finite() || !scale_y.is_finite() || scale_x <= 0.0 || scale_y <= 0.0 {
+                return Err(crate::SurfaceError::Other("invalid UWP composition scale"));
+            }
+            // The buffers are already sized in physical pixels. Cancel XAML's
+            // scale, just as the native D3D11 composition renderer does.
+            let matrix = Dxgi::DXGI_MATRIX_3X2_F {
+                _11: (1.0 / scale_x) as f32,
+                _22: (1.0 / scale_y) as f32,
+                ..Default::default()
+            };
+            unsafe { swap_chain.SetMatrixTransform(&matrix) }.map_err(|err| {
+                log::error!("SetMatrixTransform failed: {err}");
+                crate::SurfaceError::Other("UWP swapchain composition scale")
+            })?;
+        }
 
         // Apply the color space unconditionally (even for sRGB) so that
         // reconfiguring away from HDR10 resets the swapchain's state.
@@ -1672,6 +1772,7 @@ impl crate::Surface for Surface {
             SurfaceTarget::Visual(_)
             | SurfaceTarget::VisualFromWndHandle { .. }
             | SurfaceTarget::SurfaceHandle(_)
+            | SurfaceTarget::CoreWindow(_)
             | SurfaceTarget::SwapChainPanel(_) => {}
         }
 
@@ -1708,7 +1809,22 @@ impl crate::Surface for Surface {
     }
 
     unsafe fn unconfigure(&self, device: &Device) {
-        if let Some(sc) = self.swap_chain.write().take() {
+        let mut swap_chain = self.swap_chain.write();
+        if swap_chain.is_some() {
+            // A SwapChainPanel retains its attached DXGI swap chain. Detach it
+            // on the XAML dispatcher before releasing WGPU's last COM refs;
+            // releasing first can crash D3D12Core while it still owns the chain.
+            #[cfg(target_vendor = "uwp")]
+            if matches!(&self.target, SurfaceTarget::SwapChainPanel(_)) {
+                let result = unsafe { horizon_uwp_detach_game_swapchain() };
+                if result < 0 {
+                    log::error!(
+                        "Unable to detach the UWP SwapChainPanel before releasing the DX12 surface: HRESULT 0x{result:08X}"
+                    );
+                }
+            }
+        }
+        if let Some(sc) = swap_chain.take() {
             unsafe {
                 // While `unconfigure`s contract ensures that no work on the GPU's main queues
                 // are in flight, we still need to wait for the present queue to be idle.
