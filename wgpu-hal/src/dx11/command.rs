@@ -1,6 +1,6 @@
 //! Recorded copy commands and a restricted FL9_1 render path.
 use super::{
-    buffer::{NativeBuffer, NativeBufferClear, NativeBufferCopy},
+    buffer::{BufferCpuShadow, NativeBuffer, NativeBufferClear, NativeBufferCopy},
     device::NativeDevice,
     hal_index::IndexBinding,
     hal_transfer::{
@@ -204,6 +204,7 @@ pub(super) enum NativeCommand {
     CopyQueryResults {
         queries: Vec<ID3D11Asynchronous>,
         buffer: ID3D11Buffer,
+        buffer_shadow: Option<Arc<BufferCpuShadow>>,
         offset: u32,
     },
     BufferToTexture(BufferToTexture),
@@ -656,11 +657,15 @@ impl CommandBuffer {
                             );
                             start = end;
                         }
+                        if let Some(shadow) = &clear.shadow {
+                            shadow.fill_zero(clear.start as usize, clear.end as usize);
+                        }
                     }
                     NativeCommand::WriteTimestamp(query) => context.End(query),
                     NativeCommand::CopyQueryResults {
                         queries,
                         buffer,
+                        buffer_shadow,
                         offset,
                     } => {
                         context.Flush();
@@ -693,6 +698,9 @@ impl CommandBuffer {
                                 0,
                                 0,
                             );
+                            if let Some(shadow) = buffer_shadow {
+                                shadow.write(byte_offset as usize, &value.to_ne_bytes());
+                            }
                         }
                     }
 

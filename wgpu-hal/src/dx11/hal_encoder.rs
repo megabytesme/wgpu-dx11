@@ -48,6 +48,8 @@ struct RenderState {
     active_plan: Option<Arc<super::hal_bind_group::BindingPlan>>,
     last_layout: Option<Arc<super::hal_bind_group::BindingPlan>>,
     bound_groups: Vec<Option<BoundGroup>>,
+    bindings_dirty: bool,
+    resources_validated: bool,
     sampling_pairs: Arc<Vec<super::sampling::SamplingPair>>,
     texel_load: Option<super::hal_pipeline::TexelLoadPipeline>,
     full_npot: super::capabilities::Query<bool>,
@@ -192,7 +194,8 @@ impl RenderState {
             return false;
         }
         if self.texel_load.is_some()
-            && (self.texel_load_resources().is_none() || !self.gather_sampler_binding_compatible())
+            && (self.texel_load_resources(level).is_none()
+                || !self.gather_sampler_binding_compatible())
         {
             return false;
         }
@@ -221,6 +224,7 @@ impl RenderState {
 
     fn texel_load_resources(
         &self,
+        level: super::device::FeatureLevel,
     ) -> Option<
         Vec<(
             &super::texture::SampledBinding,
@@ -229,6 +233,7 @@ impl RenderState {
     > {
         let load = self.texel_load.as_ref()?;
         let plan = self.active_plan.as_ref()?;
+        let guarantees = super::capabilities::HardwareGuarantees::for_level(level);
         let mut resources = Vec::with_capacity(1 + load.additional_bindings.len());
         for binding in
             core::iter::once(load.binding).chain(load.additional_bindings.iter().copied())
@@ -274,7 +279,11 @@ impl RenderState {
                 _ => return None,
             };
             let dimensions_3d = expected_dimension == wgt::TextureViewDimension::D3;
-            let max_dimension = if dimensions_3d { 256 } else { 2048 };
+            let max_dimension = match expected_dimension {
+                wgt::TextureViewDimension::D3 => guarantees.texture_3d_dimension,
+                wgt::TextureViewDimension::Cube => guarantees.texture_cube_dimension,
+                _ => guarantees.texture_2d_dimension,
+            };
             if !(texture.dimension == expected_dimension
                 && texture.logical_format.is_some_and(|format| {
                     fl9_texture_emulation_format_supported(load.kind, load.dimension, format)
@@ -293,7 +302,7 @@ impl RenderState {
                 && info.size[0] <= max_dimension
                 && info.size[1] <= max_dimension
                 && if dimensions_3d {
-                    info.size[2] > 0 && info.size[2] <= 256
+                    info.size[2] > 0 && info.size[2] <= max_dimension
                 } else {
                     info.size[2] == 1
                 })
@@ -485,7 +494,7 @@ impl RenderState {
             }
         }
         if let Some(load) = &self.texel_load {
-            let resources = self.texel_load_resources()?;
+            let resources = self.texel_load_resources(device.feature_level())?;
             let (texture, info) = resources.first().copied()?;
             let (width, height) = if matches!(
                 load.kind,
@@ -646,6 +655,24 @@ impl CommandEncoder {
     #[doc(hidden)]
     pub fn test_fixture_inject_device_removed(&mut self) {
         self.record(NativeCommand::InjectedDeviceRemoval);
+    }
+
+    fn flush_dirty_bindings(&mut self) -> bool {
+        let Some(render) = self.render.as_mut() else {
+            return false;
+        };
+        render.resources_validated = true;
+        if !render.bindings_dirty {
+            return true;
+        }
+        let Some(commands) = render.binding_commands(&self.device) else {
+            return false;
+        };
+        render.bindings_dirty = false;
+        for command in commands {
+            self.record(command);
+        }
+        true
     }
 
     fn viewport_buffer(
@@ -992,14 +1019,18 @@ impl crate::CommandEncoder for CommandEncoder {
                 return;
             };
             ranges.push(range);
-            let fork = match self.device.fork_uniform_binding(uniform) {
-                Ok(fork) => Arc::new(fork),
-                Err(error) => {
-                    self.failure = Some(super::hal_device::device_error(error));
-                    return;
+            let binding = if layout.dynamic {
+                match self.device.fork_uniform_binding(uniform) {
+                    Ok(fork) => Arc::new(fork),
+                    Err(error) => {
+                        self.failure = Some(super::hal_device::device_error(error));
+                        return;
+                    }
                 }
+            } else {
+                uniform.clone()
             };
-            resources.uniforms.push(fork);
+            resources.uniforms.push(binding);
         }
         if let Some(target) = &render.target {
             let Ok(target) = (unsafe { target.GetResource() }) else {
@@ -1038,6 +1069,8 @@ impl crate::CommandEncoder for CommandEncoder {
             resources,
             ranges,
         });
+        render.bindings_dirty = true;
+        render.resources_validated = false;
     }
 
     unsafe fn set_immediates(
@@ -1108,12 +1141,12 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
-        let buffer =
+        let (buffer, buffer_shadow) =
             match self
                 .device
                 .prepare_query_result_target(buffer, offset, range.end - range.start)
             {
-                Ok(buffer) => buffer,
+                Ok(target) => target,
                 Err(error) => {
                     self.failure = Some(super::hal_device::device_error(error));
                     return;
@@ -1122,6 +1155,7 @@ impl crate::CommandEncoder for CommandEncoder {
         self.record(NativeCommand::CopyQueryResults {
             queries,
             buffer,
+            buffer_shadow,
             offset: buffer_offset,
         });
     }
@@ -1387,6 +1421,8 @@ impl crate::CommandEncoder for CommandEncoder {
             active_plan: None,
             last_layout: None,
             bound_groups: (0..MAX_BIND_GROUPS).map(|_| None).collect(),
+            bindings_dirty: true,
+            resources_validated: false,
             sampling_pairs: Arc::new(Vec::new()),
             texel_load: None,
             full_npot: super::capabilities::Query::Unavailable(0),
@@ -1456,6 +1492,8 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         }
         render.pipeline = true;
+        render.bindings_dirty = true;
+        render.resources_validated = false;
         render.active_plan = Some(pipeline.bindings.clone());
         render.sampling_pairs = pipeline.sampling_pairs.clone();
         render.texel_load = pipeline.texel_load.clone();
@@ -1694,7 +1732,8 @@ impl crate::CommandEncoder for CommandEncoder {
         let vertex_index_draw = if uses_vertex_index && vertex_count != 0 {
             let max_vertex_index =
                 super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
-                    .max_vertex_index;
+                    .max_vertex_index
+                    .min(super::hal_index::MAX_IDENTITY_VERTEX_INDEX);
             let Some(last) = first_vertex.checked_add(vertex_count - 1) else {
                 self.reject();
                 return;
@@ -1722,7 +1761,8 @@ impl crate::CommandEncoder for CommandEncoder {
                     .vertex_shaders
                     .as_ref()
                     .is_none_or(|(_, adjusted)| adjusted.is_none()))
-            || !render.resources_compatible(self.device.feature_level())
+            || (!render.resources_validated
+                && !render.resources_compatible(self.device.feature_level()))
         {
             self.reject();
             return;
@@ -1737,6 +1777,9 @@ impl crate::CommandEncoder for CommandEncoder {
         };
         let hardware =
             super::capabilities::HardwareGuarantees::for_level(self.device.feature_level());
+        let max_vertex_index = hardware
+            .max_vertex_index
+            .min(super::hal_index::MAX_IDENTITY_VERTEX_INDEX);
         if topology == wgt::PrimitiveTopology::LineStrip {
             if vertex_count < 2 {
                 return;
@@ -1758,19 +1801,16 @@ impl crate::CommandEncoder for CommandEncoder {
                     return;
                 };
             }
-            let Some(binding_commands) = render.binding_commands(&self.device) else {
+            if !self.flush_dirty_bindings() {
                 self.reject();
                 return;
-            };
-            for command in binding_commands {
-                self.record(command);
             }
             self.record(NativeCommand::DrawLineStrip {
                 vertices,
                 first_vertex,
                 count: vertex_count,
                 max_vertices,
-                max_vertex_index: hardware.max_vertex_index,
+                max_vertex_index,
                 vertex_index: if uses_vertex_index {
                     vertex_index
                 } else {
@@ -1805,18 +1845,15 @@ impl crate::CommandEncoder for CommandEncoder {
                     return;
                 };
             }
-            let Some(binding_commands) = render.binding_commands(&self.device) else {
+            if !self.flush_dirty_bindings() {
                 self.reject();
                 return;
-            };
-            for command in binding_commands {
-                self.record(command);
             }
             self.record(NativeCommand::DrawStrip {
                 vertices,
                 first_vertex,
                 count: vertex_count,
-                max_vertex_index: hardware.max_vertex_index,
+                max_vertex_index,
                 vertex_index: if uses_vertex_index {
                     vertex_index
                 } else {
@@ -1827,10 +1864,6 @@ impl crate::CommandEncoder for CommandEncoder {
             });
             return;
         }
-        let Some(binding_commands) = render.binding_commands(&self.device) else {
-            self.reject();
-            return;
-        };
         let max_vertices = match topology {
             wgt::PrimitiveTopology::TriangleList => {
                 hardware.max_direct_triangle_vertices_per_draw()
@@ -1854,8 +1887,9 @@ impl crate::CommandEncoder for CommandEncoder {
                 };
                 *offset = start;
             }
-            for command in binding_commands {
-                self.record(command);
+            if !self.flush_dirty_bindings() {
+                self.reject();
+                return;
             }
             self.record(NativeCommand::DrawPoints {
                 vertices,
@@ -1863,7 +1897,7 @@ impl crate::CommandEncoder for CommandEncoder {
                 count: vertex_count,
                 instances: instance_count,
                 max_points: max_vertices,
-                max_vertex_index: hardware.max_vertex_index,
+                max_vertex_index,
                 vertex_index: if uses_vertex_index {
                     vertex_index
                 } else {
@@ -1891,15 +1925,16 @@ impl crate::CommandEncoder for CommandEncoder {
                     return;
                 };
             }
-            for command in binding_commands {
-                self.record(command);
+            if !self.flush_dirty_bindings() {
+                self.reject();
+                return;
             }
             self.record(NativeCommand::DrawLines {
                 vertices,
                 first_vertex,
                 count: vertex_count,
                 max_vertices,
-                max_vertex_index: hardware.max_vertex_index,
+                max_vertex_index,
                 vertex_index: if uses_vertex_index {
                     vertex_index
                 } else {
@@ -1910,8 +1945,9 @@ impl crate::CommandEncoder for CommandEncoder {
             });
             return;
         }
-        for command in binding_commands {
-            self.record(command);
+        if !self.flush_dirty_bindings() {
+            self.reject();
+            return;
         }
         let zero_input = vertices.is_empty();
         for (slot, buffer, offset, stride) in vertices {
@@ -1964,7 +2000,8 @@ impl crate::CommandEncoder for CommandEncoder {
                         .vertex_shaders
                         .as_ref()
                         .is_none_or(|(_, adjusted)| adjusted.is_none()))
-                || !render.resources_compatible(self.device.feature_level())
+                || (!render.resources_validated
+                    && !render.resources_compatible(self.device.feature_level()))
                 || !index.contains_range(first_index, index_count)
             {
                 self.reject();
@@ -2000,30 +2037,24 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            let Some(binding_commands) = render.binding_commands(&self.device) else {
+            let index = index.clone();
+            if !self.flush_dirty_bindings() {
                 self.reject();
                 return;
-            };
-            let index = index.clone();
-            for command in binding_commands {
-                self.record(command);
             }
-            let max_indices =
-                super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
-                    .max_indexed_line_list_indices_per_draw();
+            let hardware =
+                super::capabilities::HardwareGuarantees::for_level(self.device.feature_level());
+            let max_indices = hardware.max_indexed_line_list_indices_per_draw();
             if vertices.is_empty() && !uses_vertex_index {
-                let max_vertices =
-                    super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
-                        .max_direct_line_list_vertices_per_draw();
+                let max_vertices = hardware.max_direct_line_list_vertices_per_draw();
                 self.record(NativeCommand::DrawLines {
                     vertices: Vec::new(),
                     first_vertex: 0,
                     count: index_count,
                     max_vertices,
-                    max_vertex_index: super::capabilities::HardwareGuarantees::for_level(
-                        self.device.feature_level(),
-                    )
-                    .max_vertex_index,
+                    max_vertex_index: hardware
+                        .max_vertex_index
+                        .min(super::hal_index::MAX_IDENTITY_VERTEX_INDEX),
                     vertex_index: None,
                     instances: instance_count,
                     instance_bindings,
@@ -2063,7 +2094,8 @@ impl crate::CommandEncoder for CommandEncoder {
                         .vertex_shaders
                         .as_ref()
                         .is_none_or(|(_, adjusted)| adjusted.is_none()))
-                || !render.resources_compatible(self.device.feature_level())
+                || (!render.resources_validated
+                    && !render.resources_compatible(self.device.feature_level()))
                 || !index.contains_range(first_index, index_count)
             {
                 self.reject();
@@ -2099,13 +2131,10 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            let Some(binding_commands) = render.binding_commands(&self.device) else {
+            let index = index.clone();
+            if !self.flush_dirty_bindings() {
                 self.reject();
                 return;
-            };
-            let index = index.clone();
-            for command in binding_commands {
-                self.record(command);
             }
             let max_indices =
                 super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
@@ -2140,7 +2169,8 @@ impl crate::CommandEncoder for CommandEncoder {
                         .vertex_shaders
                         .as_ref()
                         .is_none_or(|(_, adjusted)| adjusted.is_none()))
-                || !render.resources_compatible(self.device.feature_level())
+                || (!render.resources_validated
+                    && !render.resources_compatible(self.device.feature_level()))
                 || !index.contains_range(first_index, index_count)
             {
                 self.reject();
@@ -2176,13 +2206,10 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            let Some(binding_commands) = render.binding_commands(&self.device) else {
+            let index = index.clone();
+            if !self.flush_dirty_bindings() {
                 self.reject();
                 return;
-            };
-            let index = index.clone();
-            for command in binding_commands {
-                self.record(command);
             }
             let max_vertices =
                 super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
@@ -2215,7 +2242,8 @@ impl crate::CommandEncoder for CommandEncoder {
                         .vertex_shaders
                         .as_ref()
                         .is_none_or(|(_, adjusted)| adjusted.is_none()))
-                || !render.resources_compatible(self.device.feature_level())
+                || (!render.resources_validated
+                    && !render.resources_compatible(self.device.feature_level()))
                 || !index.contains_range(first_index, index_count)
             {
                 self.reject();
@@ -2251,22 +2279,22 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            let Some(binding_commands) = render.binding_commands(&self.device) else {
-                self.reject();
-                return;
-            };
             let constant_ranges =
                 constant_point_vertex_ranges(vertices.iter().map(|v| (v.3, v.4, v.5)));
             if constant_ranges == Some(false) {
                 return;
             }
             let index = index.clone();
-            for command in binding_commands {
-                self.record(command);
+            if !self.flush_dirty_bindings() {
+                self.reject();
+                return;
             }
-            let max_points =
-                super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
-                    .max_primitives_per_draw;
+            let hardware =
+                super::capabilities::HardwareGuarantees::for_level(self.device.feature_level());
+            let max_points = hardware.max_primitives_per_draw;
+            let max_vertex_index = hardware
+                .max_vertex_index
+                .min(super::hal_index::MAX_IDENTITY_VERTEX_INDEX);
             if constant_ranges == Some(true) && !uses_vertex_index {
                 self.record(NativeCommand::DrawPoints {
                     vertices: vertices
@@ -2277,10 +2305,7 @@ impl crate::CommandEncoder for CommandEncoder {
                     count: index_count,
                     instances: instance_count,
                     max_points,
-                    max_vertex_index: super::capabilities::HardwareGuarantees::for_level(
-                        self.device.feature_level(),
-                    )
-                    .max_vertex_index,
+                    max_vertex_index,
                     vertex_index: None,
                     instance_bindings,
                 });
@@ -2292,10 +2317,7 @@ impl crate::CommandEncoder for CommandEncoder {
                     count: index_count,
                     base_vertex,
                     max_points,
-                    max_vertex_index: super::capabilities::HardwareGuarantees::for_level(
-                        self.device.feature_level(),
-                    )
-                    .max_vertex_index,
+                    max_vertex_index,
                     vertex_index,
                     instances: instance_count,
                     instance_bindings,
@@ -2329,7 +2351,8 @@ impl crate::CommandEncoder for CommandEncoder {
                         .vertex_shaders
                         .as_ref()
                         .is_none_or(|(_, adjusted)| adjusted.is_none()))
-                || !render.resources_compatible(self.device.feature_level())
+                || (!render.resources_validated
+                    && !render.resources_compatible(self.device.feature_level()))
                 || !index.contains_range(first_index, index_count)
             {
                 self.reject();
@@ -2366,17 +2389,14 @@ impl crate::CommandEncoder for CommandEncoder {
                 self.reject();
                 return;
             };
-            let Some(binding_commands) = render.binding_commands(&self.device) else {
+            let index = index.clone();
+            if !self.flush_dirty_bindings() {
                 self.reject();
                 return;
-            };
-            let index = index.clone();
-            for command in binding_commands {
-                self.record(command);
             }
-            let max_vertices =
-                super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
-                    .max_triangle_vertices_per_draw();
+            let hardware =
+                super::capabilities::HardwareGuarantees::for_level(self.device.feature_level());
+            let max_vertices = hardware.max_triangle_vertices_per_draw();
             if vertices.is_empty() {
                 if uses_vertex_index {
                     self.record(NativeCommand::DrawIndexedMulti {
@@ -2395,10 +2415,7 @@ impl crate::CommandEncoder for CommandEncoder {
                         first: 0,
                         count: index_count,
                         instances: instance_count,
-                        max_vertices: super::capabilities::HardwareGuarantees::for_level(
-                            self.device.feature_level(),
-                        )
-                        .max_direct_triangle_vertices_per_draw(),
+                        max_vertices: hardware.max_direct_triangle_vertices_per_draw(),
                         zero_input: true,
                         vertex_index: None,
                         instance_bindings,
@@ -2439,7 +2456,8 @@ impl crate::CommandEncoder for CommandEncoder {
                     .vertex_shaders
                     .as_ref()
                     .is_none_or(|(_, adjusted)| adjusted.is_none()))
-            || !render.resources_compatible(self.device.feature_level())
+            || (!render.resources_validated
+                && !render.resources_compatible(self.device.feature_level()))
             || !index.contains_range(first_index, index_count)
         {
             self.reject();
@@ -2452,17 +2470,14 @@ impl crate::CommandEncoder for CommandEncoder {
         let offset = *offset;
         let vertex_bytes = *vertex_bytes;
         let index = index.clone();
-        let Some(binding_commands) = render.binding_commands(&self.device) else {
-            self.reject();
-            return;
-        };
         let Some(instance_bindings) = render.instance_bindings(first_instance, instance_count)
         else {
             self.reject();
             return;
         };
-        for command in binding_commands {
-            self.record(command);
+        if !self.flush_dirty_bindings() {
+            self.reject();
+            return;
         }
         let max_vertices =
             super::capabilities::HardwareGuarantees::for_level(self.device.feature_level())
@@ -5936,6 +5951,363 @@ mod uniform_tests {
             unsafe {
                 crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(commands));
             }
+        }
+        Ok(())
+    }
+
+    #[test]
+    fn default_dx11_adapter_unlocks_high_resolution_and_fast_indexed_draws() -> windows::core::Result<()> {
+        use crate::Instance as _;
+        if std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1") {
+            return Ok(());
+        }
+        let instance = super::super::Instance;
+        let adapters = unsafe { instance.enumerate_adapters(None) };
+        let Some(exposed) = adapters.first() else {
+            return Ok(());
+        };
+        assert!(exposed.info.driver_info.contains("FL9_1"));
+        assert!(!exposed.info.driver_info.to_ascii_lowercase().contains("software"));
+        let level = exposed.adapter.feature_level();
+        let expected_max =
+            super::super::capabilities::HardwareGuarantees::for_level(level).texture_2d_dimension;
+        assert_eq!(
+            exposed.capabilities.limits.max_texture_dimension_2d,
+            expected_max
+        );
+        if level.as_raw() >= FeatureLevel::L9_3.as_raw() {
+            assert!(exposed.capabilities.limits.max_texture_dimension_2d >= 4096);
+        }
+
+        let open = unsafe {
+            crate::Adapter::open(
+                &exposed.adapter,
+                exposed.features,
+                &exposed.capabilities.limits,
+                &wgt::MemoryHints::Performance,
+            )
+            .unwrap()
+        };
+        let device = open.device;
+        let queue = open.queue;
+        let shader_src = "
+struct U { color: vec4<f32>, }
+@group(0) @binding(0) var<uniform> u: U;
+struct VOut { @builtin(position) pos: vec4<f32>, @location(0) color: vec4<f32>, }
+@vertex fn vs(@location(0) p: vec2<f32>, @location(1) inst_off: vec2<f32>) -> VOut {
+    var o: VOut;
+    o.pos = vec4<f32>(p + inst_off, 0.0, 1.0);
+    o.color = u.color;
+    return o;
+}
+@fragment fn fs(@location(0) color: vec4<f32>) -> @location(0) vec4<f32> {
+    return color;
+}
+";
+        let module = naga::front::wgsl::parse_str(shader_src).unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let shader = unsafe {
+            crate::Device::create_shader_module(
+                &device,
+                &crate::ShaderModuleDescriptor {
+                    label: None,
+                    runtime_checks: wgt::ShaderRuntimeChecks::unchecked(),
+                },
+                crate::ShaderInput::Naga(crate::NagaShader {
+                    module: Cow::Owned(module),
+                    info,
+                    debug_source: None,
+                }),
+            )
+            .unwrap()
+        };
+        let bgl = unsafe {
+            crate::Device::create_bind_group_layout(
+                &device,
+                &crate::BindGroupLayoutDescriptor {
+                    label: None,
+                    flags: crate::BindGroupLayoutFlags::empty(),
+                    entries: &[wgt::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgt::ShaderStages::VERTEX_FRAGMENT,
+                        ty: wgt::BindingType::Buffer {
+                            ty: wgt::BufferBindingType::Uniform,
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    }],
+                },
+            )
+            .unwrap()
+        };
+        let layout = unsafe {
+            crate::Device::create_pipeline_layout(
+                &device,
+                &crate::PipelineLayoutDescriptor {
+                    label: None,
+                    flags: crate::PipelineLayoutFlags::empty(),
+                    bind_group_layouts: &[Some(&bgl)],
+                    immediate_size: 0,
+                },
+            )
+            .unwrap()
+        };
+        let target_spec: wgt::ColorTargetState = wgt::TextureFormat::Rgba8Unorm.into();
+        let pipeline = unsafe {
+            crate::Device::create_render_pipeline(
+                &device,
+                &crate::RenderPipelineDescriptor {
+                    label: None,
+                    layout: &layout,
+                    vertex_processor: crate::VertexProcessor::Standard {
+                        vertex_buffers: &[
+                            Some(crate::VertexBufferLayout {
+                                array_stride: 8,
+                                step_mode: wgt::VertexStepMode::Vertex,
+                                attributes: &[wgt::VertexAttribute {
+                                    format: wgt::VertexFormat::Float32x2,
+                                    offset: 0,
+                                    shader_location: 0,
+                                }],
+                            }),
+                            Some(crate::VertexBufferLayout {
+                                array_stride: 8,
+                                step_mode: wgt::VertexStepMode::Instance,
+                                attributes: &[wgt::VertexAttribute {
+                                    format: wgt::VertexFormat::Float32x2,
+                                    offset: 0,
+                                    shader_location: 1,
+                                }],
+                            }),
+                        ],
+                        vertex_stage: crate::ProgrammableStage {
+                            module: &shader,
+                            entry_point: "vs",
+                            constants: &Default::default(),
+                            zero_initialize_workgroup_memory: false,
+                        },
+                    },
+                    primitive: wgt::PrimitiveState::default(),
+                    depth_stencil: None,
+                    multisample: wgt::MultisampleState::default(),
+                    fragment_stage: Some(crate::ProgrammableStage {
+                        module: &shader,
+                        entry_point: "fs",
+                        constants: &Default::default(),
+                        zero_initialize_workgroup_memory: false,
+                    }),
+                    color_targets: &[Some(target_spec)],
+                    multiview_mask: None,
+                    cache: None,
+                },
+            )
+            .unwrap()
+        };
+        let uniform = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &crate::BufferDescriptor {
+                    label: None,
+                    size: 16,
+                    usage: wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let vertex = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &crate::BufferDescriptor {
+                    label: None,
+                    size: 24,
+                    usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let instance_buf = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &crate::BufferDescriptor {
+                    label: None,
+                    size: 16,
+                    usage: wgt::BufferUses::VERTEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let index = unsafe {
+            crate::Device::create_buffer(
+                &device,
+                &crate::BufferDescriptor {
+                    label: None,
+                    size: 4096,
+                    usage: wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+                    memory_flags: crate::MemoryFlags::empty(),
+                },
+            )
+            .unwrap()
+        };
+        let native = device.native();
+        let color_bytes: vec::Vec<u8> = [0f32, 1.0, 0.0, 1.0]
+            .into_iter()
+            .flat_map(f32::to_ne_bytes)
+            .collect();
+        native.write_byte_buffer(&uniform, 0, &color_bytes)?;
+        let tri_verts: vec::Vec<u8> = [-1f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+            .into_iter()
+            .flat_map(f32::to_ne_bytes)
+            .collect();
+        native.write_byte_buffer(&vertex, 0, &tri_verts)?;
+        native.write_byte_buffer(&instance_buf, 0, &[0u8; 16])?;
+        let mut indices = vec::Vec::with_capacity(4096);
+        for _ in 0..(4096 / 12) {
+            for v in [0u32, 1, 2] {
+                indices.extend_from_slice(&v.to_ne_bytes());
+            }
+        }
+        native.write_byte_buffer(&index, 0, &indices)?;
+
+        let bg = unsafe {
+            crate::Device::create_bind_group(
+                &device,
+                &crate::BindGroupDescriptor {
+                    label: None,
+                    layout: &bgl,
+                    buffers: &[crate::BufferBinding::new_unchecked(&uniform, 0, None)],
+                    samplers: &[],
+                    textures: &[],
+                    entries: &[crate::BindGroupEntry {
+                        binding: 0,
+                        resource_index: 0,
+                        count: 1,
+                    }],
+                    acceleration_structures: &[],
+                    external_textures: &[],
+                },
+            )
+            .unwrap()
+        };
+        let extent = wgt::Extent3d {
+            width: 16,
+            height: 16,
+            depth_or_array_layers: 1,
+        };
+        let target = unsafe {
+            crate::Device::create_texture(
+                &device,
+                &crate::TextureDescriptor {
+                    label: None,
+                    size: extent,
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension: wgt::TextureDimension::D2,
+                    format: wgt::TextureFormat::Rgba8Unorm,
+                    usage: wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::COPY_SRC,
+                    memory_flags: crate::MemoryFlags::empty(),
+                    view_formats: vec::Vec::new(),
+                },
+            )
+            .unwrap()
+        };
+        let view = unsafe {
+            crate::Device::create_texture_view(
+                &device,
+                &target,
+                &crate::TextureViewDescriptor {
+                    label: None,
+                    format: wgt::TextureFormat::Rgba8Unorm,
+                    dimension: wgt::TextureViewDimension::D2,
+                    usage: wgt::TextureUses::COLOR_TARGET,
+                    range: wgt::ImageSubresourceRange::default(),
+                },
+            )
+            .unwrap()
+        };
+        let mut encoder = unsafe {
+            crate::Device::create_command_encoder(
+                &device,
+                &crate::CommandEncoderDescriptor {
+                    label: None,
+                    queue: &queue,
+                },
+            )
+            .unwrap()
+        };
+        let fence = native.create_native_fence();
+        let started = std::time::Instant::now();
+        let color_att = [Some(crate::ColorAttachment {
+            target: crate::Attachment {
+                view: &view,
+                usage: wgt::TextureUses::COLOR_TARGET,
+            },
+            depth_slice: None,
+            resolve_target: None,
+            ops: crate::AttachmentOps::LOAD_CLEAR | crate::AttachmentOps::STORE,
+            clear_value: wgt::Color::BLACK,
+        })];
+        let pass = crate::RenderPassDescriptor {
+            label: None,
+            extent,
+            sample_count: 1,
+            color_attachments: &color_att,
+            depth_stencil_attachment: None,
+            multiview_mask: None,
+            timestamp_writes: None,
+            occlusion_query_set: None,
+        };
+        let cb = unsafe {
+            crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+            crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+            crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &bg, &[]);
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                0,
+                crate::BufferBinding::new_unchecked(&vertex, 0, None),
+            );
+            crate::CommandEncoder::set_vertex_buffer(
+                &mut encoder,
+                1,
+                crate::BufferBinding::new_unchecked(&instance_buf, 0, None),
+            );
+            crate::CommandEncoder::set_index_buffer(
+                &mut encoder,
+                crate::BufferBinding::new_unchecked(&index, 0, None),
+                wgt::IndexFormat::Uint32,
+            );
+            for _ in 0..500 {
+                crate::CommandEncoder::draw_indexed(&mut encoder, 0, 1020, 0, 0, 1);
+            }
+            crate::CommandEncoder::end_render_pass(&mut encoder);
+            crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+        };
+        unsafe { crate::Queue::submit(&queue, &[&cb], &[], (&fence, 1)).unwrap() };
+        assert!(native.wait_native_fence(&fence, 1, Some(core::time::Duration::from_secs(5)))?);
+        let elapsed = started.elapsed();
+        std::println!(
+            "PASS: {:?} 500x DrawIndexedMulti (Uint32) completed in {:?} (max_2d={})",
+            level,
+            elapsed,
+            exposed.capabilities.limits.max_texture_dimension_2d
+        );
+        let pixels = native.read_rgba_texture(&target, 0, 0)?;
+        assert_eq!(&pixels[0..4], &[0, 255, 0, 255]);
+        assert!(
+            elapsed < core::time::Duration::from_millis(500),
+            "500 indexed draws took too long: {elapsed:?}"
+        );
+        unsafe {
+            crate::CommandEncoder::reset_all(&mut encoder, core::iter::once(cb));
         }
         Ok(())
     }

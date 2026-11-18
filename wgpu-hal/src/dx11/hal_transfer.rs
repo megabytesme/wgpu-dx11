@@ -1,12 +1,14 @@
 //! Checked, retained FL9 transfers between buffers and color textures.
 use super::{
-    buffer::NativeBuffer,
+    buffer::{BufferCpuShadow, NativeBuffer},
     device::NativeDevice,
     texture::{
         format_block_layout, texture_3d_dxgi_format, texture_formats_copy_compatible,
         NativeTexture, Texture2DShadow, Texture3DShadow, TextureBlockLayout,
     },
 };
+use alloc::sync::Arc;
+use parking_lot::Mutex;
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
@@ -150,8 +152,8 @@ pub(super) struct TextureToTexture {
 
 #[derive(Debug)]
 struct Texture2DShadowCopy {
-    source: alloc::sync::Arc<Texture2DShadow>,
-    destination: Option<alloc::sync::Arc<Texture2DShadow>>,
+    source: Arc<Texture2DShadow>,
+    destination: Option<Arc<Texture2DShadow>>,
     source_mip: u32,
     source_layer: u32,
     source_origin: [u32; 2],
@@ -222,12 +224,13 @@ impl TextureToTexture {
     }
 }
 
-/// A checked operation retaining the source, destination and staging buffer.
+/// A checked operation retaining the source, destination and lazy staging fallback.
 #[allow(dead_code)] // The command encoder will retain and replay this operation.
 #[derive(Debug)]
 pub(super) struct BufferToTexture {
     source: ID3D11Buffer,
-    staging: ID3D11Buffer,
+    source_shadow: Option<Arc<BufferCpuShadow>>,
+    staging: Mutex<Option<ID3D11Buffer>>,
     texture: ID3D11Texture2D,
     destination_subresource: u32,
     source_box: D3D11_BOX,
@@ -239,7 +242,7 @@ pub(super) struct BufferToTexture {
 
 #[derive(Debug)]
 struct Texture2DShadowWrite {
-    shadow: alloc::sync::Arc<Texture2DShadow>,
+    shadow: Arc<Texture2DShadow>,
     mip: u32,
     layer: u32,
     origin: [u32; 2],
@@ -249,9 +252,10 @@ struct Texture2DShadowWrite {
 #[derive(Debug)]
 pub(super) struct BufferToTexture3D {
     source: ID3D11Buffer,
-    staging: ID3D11Buffer,
+    source_shadow: Option<Arc<BufferCpuShadow>>,
+    staging: Mutex<Option<ID3D11Buffer>>,
     texture: ID3D11Texture3D,
-    shadow: Option<alloc::sync::Arc<Texture3DShadow>>,
+    shadow: Option<Arc<Texture3DShadow>>,
     mip_level: u32,
     source_box: D3D11_BOX,
     destination_box: D3D11_BOX,
@@ -262,8 +266,9 @@ pub(super) struct BufferToTexture3D {
 
 #[derive(Debug)]
 pub(super) struct Texture3DToBuffer {
-    shadow: alloc::sync::Arc<Texture3DShadow>,
+    shadow: Arc<Texture3DShadow>,
     destination: ID3D11Buffer,
+    destination_shadow: Option<Arc<BufferCpuShadow>>,
     mip_level: u32,
     source_origin: [u32; 3],
     extent: [u32; 3],
@@ -277,8 +282,8 @@ pub(super) struct Texture3DToBuffer {
 pub(super) struct Texture3DToTexture3D {
     _source: ID3D11Texture3D,
     destination: ID3D11Texture3D,
-    source_shadow: alloc::sync::Arc<Texture3DShadow>,
-    destination_shadow: Option<alloc::sync::Arc<Texture3DShadow>>,
+    source_shadow: Arc<Texture3DShadow>,
+    destination_shadow: Option<Arc<Texture3DShadow>>,
     source_mip: u32,
     destination_mip: u32,
     source_origin: [u32; 3],
@@ -295,6 +300,7 @@ pub(super) struct Texture3DToTexture3D {
 pub(super) struct TextureToBuffer {
     source: TextureToBufferSource,
     destination: ID3D11Buffer,
+    destination_shadow: Option<Arc<BufferCpuShadow>>,
     destination_offset: u32,
     row_pitch: u32,
     row_bytes: u32,
@@ -310,7 +316,7 @@ enum TextureToBufferSource {
         source_box: D3D11_BOX,
     },
     Shadow {
-        shadow: alloc::sync::Arc<Texture2DShadow>,
+        shadow: Arc<Texture2DShadow>,
         mip: u32,
         layer: u32,
         origin: [u32; 2],
@@ -467,20 +473,10 @@ impl NativeDevice {
             .ok_or_else(invalid)?;
         let end = offset.checked_add(total).ok_or_else(invalid)?;
         let native_source = self.texture_copy_source(source, u64::from(offset), total as usize)?;
-        let staging_desc = D3D11_BUFFER_DESC {
-            ByteWidth: total,
-            Usage: D3D11_USAGE_STAGING,
-            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-            ..Default::default()
-        };
-        let mut staging = None;
-        unsafe {
-            self.raw_device()
-                .CreateBuffer(&staging_desc, None, Some(&mut staging))?;
-        }
         Ok(BufferToTexture3D {
             source: native_source,
-            staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+            source_shadow: source.cpu_shadow(),
+            staging: Mutex::new(None),
             texture: texture.raw.as_3d()?.clone(),
             shadow: texture.cpu_shadow.clone(),
             mip_level: base.mip_level,
@@ -555,11 +551,16 @@ impl NativeDevice {
             .and_then(|offset| offset.checked_add(slice_total))
             .ok_or_else(invalid)?;
         offset.checked_add(total).ok_or_else(invalid)?;
-        let native_destination =
-            self.texture_copy_buffer_destination(destination, u64::from(offset), total as usize)?;
+        let (native_destination, destination_shadow) =
+            self.texture_copy_buffer_destination_with_shadow(
+                destination,
+                u64::from(offset),
+                total as usize,
+            )?;
         Ok(Texture3DToBuffer {
             shadow,
             destination: native_destination,
+            destination_shadow,
             mip_level: base.mip_level,
             source_origin: [base.origin.x, base.origin.y, base.origin.z],
             extent: [size.width, size.height, size.depth],
@@ -684,8 +685,12 @@ impl NativeDevice {
         }
         let (offset, pitch, row_bytes, total) =
             copy_layout(layout, size.width, size.height, block)?;
-        let native_destination =
-            self.texture_copy_buffer_destination(destination, u64::from(offset), total as usize)?;
+        let (native_destination, destination_shadow) =
+            self.texture_copy_buffer_destination_with_shadow(
+                destination,
+                u64::from(offset),
+                total as usize,
+            )?;
         let source = if let Some(shadow) = copy_shadow {
             TextureToBufferSource::Shadow {
                 shadow,
@@ -724,6 +729,7 @@ impl NativeDevice {
         Ok(TextureToBuffer {
             source,
             destination: native_destination,
+            destination_shadow,
             destination_offset: offset,
             row_pitch: pitch,
             row_bytes,
@@ -758,20 +764,10 @@ impl NativeDevice {
             copy_layout(layout, size.width, size.height, block)?;
         let end = offset.checked_add(total).ok_or_else(invalid)?;
         let native_source = self.texture_copy_source(source, u64::from(offset), total as usize)?;
-        let staging_desc = D3D11_BUFFER_DESC {
-            ByteWidth: total,
-            Usage: D3D11_USAGE_STAGING,
-            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-            ..Default::default()
-        };
-        let mut staging = None;
-        unsafe {
-            self.raw_device()
-                .CreateBuffer(&staging_desc, None, Some(&mut staging))?;
-        }
         Ok(BufferToTexture {
             source: native_source,
-            staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+            source_shadow: source.cpu_shadow(),
+            staging: Mutex::new(None),
             texture: destination,
             destination_subresource,
             source_box: D3D11_BOX {
@@ -844,6 +840,7 @@ impl TextureToBuffer {
                 write_packed_rows(
                     context,
                     &self.destination,
+                    self.destination_shadow.as_deref(),
                     self.destination_offset,
                     self.row_pitch,
                     self.row_bytes,
@@ -886,6 +883,7 @@ impl TextureToBuffer {
                     write_packed_rows(
                         context,
                         &self.destination,
+                        self.destination_shadow.as_deref(),
                         self.destination_offset,
                         self.row_pitch,
                         self.row_bytes,
@@ -904,6 +902,7 @@ impl TextureToBuffer {
 fn write_packed_rows(
     context: &ID3D11DeviceContext,
     destination: &ID3D11Buffer,
+    destination_shadow: Option<&BufferCpuShadow>,
     destination_offset: u32,
     destination_pitch: u32,
     row_bytes: u32,
@@ -942,138 +941,165 @@ fn write_packed_rows(
             front: 0,
             back: 1,
         };
+        let row_slice = &source[source_left..source_right];
         unsafe {
             context.UpdateSubresource(
                 destination,
                 0,
                 Some(&area),
-                source[source_left..source_right].as_ptr().cast(),
+                row_slice.as_ptr().cast(),
                 0,
                 0,
             );
+        }
+        if let Some(shadow) = destination_shadow {
+            shadow.write(destination_left as usize, row_slice);
         }
     }
     Ok(())
 }
 
+fn read_staging_prefix(
+    context: &ID3D11DeviceContext,
+    staging_slot: &Mutex<Option<ID3D11Buffer>>,
+    source: &ID3D11Buffer,
+    source_box: &D3D11_BOX,
+    source_size: usize,
+) -> Result<alloc::vec::Vec<u8>> {
+    let mut staging_guard = staging_slot.lock();
+    if staging_guard.is_none() {
+        let staging_desc = D3D11_BUFFER_DESC {
+            ByteWidth: source_box.right - source_box.left,
+            Usage: D3D11_USAGE_STAGING,
+            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+            ..Default::default()
+        };
+        let device = unsafe { context.GetDevice()? };
+        let mut staging = None;
+        unsafe { device.CreateBuffer(&staging_desc, None, Some(&mut staging))? };
+        *staging_guard = Some(staging.ok_or_else(|| Error::from_hresult(E_FAIL))?);
+    }
+    let staging = staging_guard.as_ref().unwrap();
+    unsafe {
+        context.CopySubresourceRegion(staging, 0, 0, 0, 0, source, 0, Some(source_box));
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        context.Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+        if mapped.pData.is_null() {
+            context.Unmap(staging, 0);
+            return Err(Error::from_hresult(E_FAIL));
+        }
+        let copied = alloc::vec::Vec::from(core::slice::from_raw_parts(
+            mapped.pData.cast::<u8>(),
+            source_size,
+        ));
+        context.Unmap(staging, 0);
+        Ok(copied)
+    }
+}
+
 impl BufferToTexture {
+    fn upload_bytes(&self, context: &ID3D11DeviceContext, source: &[u8]) -> Result<()> {
+        if let Some(write) = &self.shadow_write {
+            write.shadow.write_region(
+                write.mip,
+                write.layer,
+                write.origin,
+                write.extent,
+                self.row_pitch,
+                source,
+            )?;
+        }
+        unsafe {
+            context.UpdateSubresource(
+                &self.texture,
+                self.destination_subresource,
+                self.destination_box.as_ref().map(core::ptr::from_ref),
+                source.as_ptr().cast(),
+                self.row_pitch,
+                0,
+            );
+        }
+        Ok(())
+    }
+
     /// Replay under the owning device's immediate-context lock.
     #[allow(dead_code)]
     pub(super) fn execute(&self, context: &ID3D11DeviceContext) -> Result<()> {
-        unsafe {
-            context.CopySubresourceRegion(
-                &self.staging,
-                0,
-                0,
-                0,
-                0,
-                &self.source,
-                0,
-                Some(&self.source_box),
-            );
-            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-            if mapped.pData.is_null() {
-                context.Unmap(&self.staging, 0);
-                return Err(Error::from_hresult(E_FAIL));
-            }
-            if let Some(write) = &self.shadow_write {
-                let source =
-                    core::slice::from_raw_parts(mapped.pData.cast::<u8>(), self.source_size);
-                if let Err(error) = write.shadow.write_region(
-                    write.mip,
-                    write.layer,
-                    write.origin,
-                    write.extent,
-                    self.row_pitch,
-                    source,
-                ) {
-                    context.Unmap(&self.staging, 0);
-                    return Err(error);
+        if let Some(shadow) = &self.source_shadow {
+            return shadow.with_bytes(context, &self.source, |bytes, _| {
+                let slice = bytes
+                    .get(self.source_box.left as usize..self.source_box.right as usize)
+                    .ok_or_else(invalid)?;
+                if slice.len() < self.source_size {
+                    return Err(invalid());
                 }
-            }
-            if self.destination_box.is_none() {
-                let source = alloc::vec::Vec::from(core::slice::from_raw_parts(
-                    mapped.pData.cast::<u8>(),
-                    self.source_size,
-                ));
-                context.UpdateSubresource(
-                    &self.texture,
-                    self.destination_subresource,
-                    None,
-                    source.as_ptr().cast(),
-                    self.row_pitch,
-                    0,
-                );
-            } else {
-                context.UpdateSubresource(
-                    &self.texture,
-                    self.destination_subresource,
-                    self.destination_box.as_ref().map(core::ptr::from_ref),
-                    mapped.pData,
-                    self.row_pitch,
-                    0,
-                );
-            }
-            context.Unmap(&self.staging, 0);
-            Ok(())
+                self.upload_bytes(context, &slice[..self.source_size])
+            });
         }
+        let copied = read_staging_prefix(
+            context,
+            &self.staging,
+            &self.source,
+            &self.source_box,
+            self.source_size,
+        )?;
+        self.upload_bytes(context, &copied)
     }
 }
 
 impl BufferToTexture3D {
-    pub(super) fn execute(&self, context: &ID3D11DeviceContext) -> Result<()> {
+    fn upload_bytes(&self, context: &ID3D11DeviceContext, source: &[u8]) -> Result<()> {
+        if let Some(shadow) = &self.shadow {
+            shadow.write_region(
+                self.mip_level,
+                [
+                    self.destination_box.left,
+                    self.destination_box.top,
+                    self.destination_box.front,
+                ],
+                [
+                    self.destination_box.right - self.destination_box.left,
+                    self.destination_box.bottom - self.destination_box.top,
+                    self.destination_box.back - self.destination_box.front,
+                ],
+                self.row_pitch,
+                self.depth_pitch,
+                source,
+            )?;
+        }
         unsafe {
-            context.CopySubresourceRegion(
-                &self.staging,
-                0,
-                0,
-                0,
-                0,
-                &self.source,
-                0,
-                Some(&self.source_box),
-            );
-            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-            if mapped.pData.is_null() {
-                context.Unmap(&self.staging, 0);
-                return Err(Error::from_hresult(E_FAIL));
-            }
-            if let Some(shadow) = &self.shadow {
-                let source =
-                    core::slice::from_raw_parts(mapped.pData.cast::<u8>(), self.source_size);
-                if let Err(error) = shadow.write_region(
-                    self.mip_level,
-                    [
-                        self.destination_box.left,
-                        self.destination_box.top,
-                        self.destination_box.front,
-                    ],
-                    [
-                        self.destination_box.right - self.destination_box.left,
-                        self.destination_box.bottom - self.destination_box.top,
-                        self.destination_box.back - self.destination_box.front,
-                    ],
-                    self.row_pitch,
-                    self.depth_pitch,
-                    source,
-                ) {
-                    context.Unmap(&self.staging, 0);
-                    return Err(error);
-                }
-            }
             context.UpdateSubresource(
                 &self.texture,
                 self.mip_level,
                 Some(&self.destination_box),
-                mapped.pData,
+                source.as_ptr().cast(),
                 self.row_pitch,
                 self.depth_pitch,
             );
-            context.Unmap(&self.staging, 0);
-            Ok(())
         }
+        Ok(())
+    }
+
+    pub(super) fn execute(&self, context: &ID3D11DeviceContext) -> Result<()> {
+        if let Some(shadow) = &self.source_shadow {
+            return shadow.with_bytes(context, &self.source, |bytes, _| {
+                let slice = bytes
+                    .get(self.source_box.left as usize..self.source_box.right as usize)
+                    .ok_or_else(invalid)?;
+                if slice.len() < self.source_size {
+                    return Err(invalid());
+                }
+                self.upload_bytes(context, &slice[..self.source_size])
+            });
+        }
+        let copied = read_staging_prefix(
+            context,
+            &self.staging,
+            &self.source,
+            &self.source_box,
+            self.source_size,
+        )?;
+        self.upload_bytes(context, &copied)
     }
 }
 
@@ -1102,14 +1128,18 @@ impl Texture3DToBuffer {
                         front: 0,
                         back: 1,
                     };
+                    let row_slice = &bytes[source_offset..source_offset + row_bytes];
                     context.UpdateSubresource(
                         &self.destination,
                         0,
                         Some(&area),
-                        bytes.as_ptr().add(source_offset).cast(),
+                        row_slice.as_ptr().cast(),
                         0,
                         0,
                     );
+                    if let Some(shadow) = &self.destination_shadow {
+                        shadow.write(destination_offset as usize, row_slice);
+                    }
                     source_offset += row_bytes;
                 }
             }

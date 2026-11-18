@@ -1,10 +1,16 @@
-//! Checked, correctness-first indexed draws for the private D3D11 HAL.
+//! Checked indexed draws for the private D3D11 HAL.
 //!
-//! GPU index data is copied to staging and checked at replay time, after all
-//! earlier commands. This preserves command ordering but may stall the CPU.
-use super::{buffer::NativeBuffer, device::NativeDevice};
-use alloc::vec::Vec;
+//! Index validation reads from `NativeBuffer`'s CPU shadow when available
+//! rather than staging and mapping on the GPU every draw. On FL9_2+ without
+//! `@builtin(vertex_index)` emulation, in-bounds `Uint32` triangle lists bind
+//! `DXGI_FORMAT_R32_UINT` natively without CPU index rewriting.
+use super::{
+    buffer::{BufferCpuShadow, NativeBuffer},
+    device::{FeatureLevel, NativeDevice},
+};
+use alloc::{sync::Arc, vec::Vec};
 use core::num::NonZeroU64;
+use parking_lot::Mutex;
 use windows::{
     core::{Error, Result},
     Win32::{
@@ -16,18 +22,23 @@ use windows::{
                 D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_SUBRESOURCE_DATA,
                 D3D11_USAGE_DEFAULT, D3D11_USAGE_IMMUTABLE, D3D11_USAGE_STAGING,
             },
-            Dxgi::Common::DXGI_FORMAT_R16_UINT,
+            Dxgi::Common::{DXGI_FORMAT_R16_UINT, DXGI_FORMAT_R32_UINT},
         },
     },
 };
 
+pub(super) const MAX_IDENTITY_VERTEX_INDEX: u32 = 65_534;
+
 #[derive(Debug)]
 pub(super) struct IndexBinding {
     buffer: ID3D11Buffer,
-    staging: ID3D11Buffer,
+    cpu_shadow: Option<Arc<BufferCpuShadow>>,
+    staging: Mutex<Option<ID3D11Buffer>>,
     offset: u32,
     length: u64,
     max_index: u16,
+    hardware_max_index: u32,
+    feature_level: FeatureLevel,
     format: wgt::IndexFormat,
 }
 
@@ -40,27 +51,16 @@ impl NativeDevice {
         format: wgt::IndexFormat,
     ) -> Result<IndexBinding> {
         let (raw, length) = self.index_buffer(buffer, offset, size, format)?;
-        let mut source_desc = D3D11_BUFFER_DESC::default();
-        unsafe { raw.GetDesc(&mut source_desc) };
-        let desc = D3D11_BUFFER_DESC {
-            ByteWidth: source_desc.ByteWidth,
-            Usage: D3D11_USAGE_STAGING,
-            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-            ..Default::default()
-        };
-        let mut staging = None;
-        unsafe {
-            self.raw_device()
-                .CreateBuffer(&desc, None, Some(&mut staging))?;
-        }
+        let hardware = super::capabilities::HardwareGuarantees::for_level(self.feature_level());
         Ok(IndexBinding {
             buffer: raw,
-            staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+            cpu_shadow: buffer.cpu_shadow(),
+            staging: Mutex::new(None),
             offset: u32::try_from(offset).map_err(|_| Error::from_hresult(E_INVALIDARG))?,
             length,
-            max_index: super::capabilities::HardwareGuarantees::for_level(self.feature_level())
-                .max_vertex_index
-                .min(u32::from(u16::MAX)) as u16,
+            max_index: hardware.max_vertex_index.min(u32::from(u16::MAX)) as u16,
+            hardware_max_index: hardware.max_vertex_index,
+            feature_level: self.feature_level(),
             format,
         })
     }
@@ -132,6 +132,24 @@ fn create_vertex_index_values_buffer(
     buffer.ok_or_else(|| Error::from_hresult(E_FAIL))
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum NativeU32Outcome {
+    DrawNative,
+    DiscardOutOfBounds,
+    Fallback,
+}
+
+#[inline]
+fn read_index_at(bytes: &[u8], start: usize, is_u32: bool, index: usize) -> u32 {
+    if is_u32 {
+        let pos = start + index * 4;
+        u32::from_ne_bytes([bytes[pos], bytes[pos + 1], bytes[pos + 2], bytes[pos + 3]])
+    } else {
+        let pos = start + index * 2;
+        u32::from(u16::from_ne_bytes([bytes[pos], bytes[pos + 1]]))
+    }
+}
+
 impl IndexBinding {
     pub(super) fn contains_range(&self, first: u32, count: u32) -> bool {
         let end = u64::from(first) + u64::from(count);
@@ -152,6 +170,106 @@ impl IndexBinding {
 
     pub(super) fn format(&self) -> wgt::IndexFormat {
         self.format
+    }
+
+    fn with_index_bytes<R>(
+        &self,
+        context: &ID3D11DeviceContext,
+        f: impl FnOnce(&[u8]) -> Result<R>,
+    ) -> Result<R> {
+        if let Some(cpu_shadow) = &self.cpu_shadow {
+            return cpu_shadow.with_bytes(context, &self.buffer, |bytes, _| f(bytes));
+        }
+        let mut staging_guard = self.staging.lock();
+        if staging_guard.is_none() {
+            let mut source_desc = D3D11_BUFFER_DESC::default();
+            unsafe { self.buffer.GetDesc(&mut source_desc) };
+            let desc = D3D11_BUFFER_DESC {
+                ByteWidth: source_desc.ByteWidth,
+                Usage: D3D11_USAGE_STAGING,
+                CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+                ..Default::default()
+            };
+            let device = unsafe { context.GetDevice()? };
+            let mut staging = None;
+            unsafe { device.CreateBuffer(&desc, None, Some(&mut staging))? };
+            *staging_guard = Some(staging.ok_or_else(|| Error::from_hresult(E_FAIL))?);
+        }
+        let staging = staging_guard.as_ref().unwrap();
+        let mut source_desc = D3D11_BUFFER_DESC::default();
+        unsafe { self.buffer.GetDesc(&mut source_desc) };
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        unsafe {
+            context.CopyResource(staging, &self.buffer);
+            context.Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+            if mapped.pData.is_null() {
+                context.Unmap(staging, 0);
+                return Err(Error::from_hresult(E_FAIL));
+            }
+            let bytes = core::slice::from_raw_parts(
+                mapped.pData.cast::<u8>(),
+                source_desc.ByteWidth as usize,
+            );
+            let result = f(bytes);
+            context.Unmap(staging, 0);
+            result
+        }
+    }
+
+    fn try_native_u32_bounds(
+        &self,
+        context: &ID3D11DeviceContext,
+        first: u32,
+        count: u32,
+        base_vertex: i32,
+        layouts: impl Iterator<Item = (u64, u32, u32)>,
+        empty_vertices: bool,
+        vertex_index_none: bool,
+    ) -> Result<NativeU32Outcome> {
+        if !self.is_u32()
+            || !vertex_index_none
+            || self.feature_level.as_raw() < FeatureLevel::L9_2.as_raw()
+        {
+            return Ok(NativeU32Outcome::Fallback);
+        }
+        let Some(cpu_shadow) = &self.cpu_shadow else {
+            return Ok(NativeU32Outcome::Fallback);
+        };
+        let start = usize::try_from(self.offset)
+            .ok()
+            .and_then(|offset| {
+                usize::try_from(first)
+                    .ok()?
+                    .checked_mul(4)
+                    .and_then(|first| offset.checked_add(first))
+            })
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        let (min_raw, max_raw) =
+            cpu_shadow.u32_range_minmax(context, &self.buffer, start, count as usize)?;
+        let min_effective = i64::from(min_raw) + i64::from(base_vertex);
+        let max_effective = i64::from(max_raw) + i64::from(base_vertex);
+        if min_effective < 0 {
+            return Ok(NativeU32Outcome::DiscardOutOfBounds);
+        }
+        if empty_vertices && max_effective > i64::from(self.hardware_max_index) {
+            return Ok(NativeU32Outcome::DiscardOutOfBounds);
+        }
+        let max_index_u64 = max_effective as u64;
+        for (vertex_bytes, stride, extent) in layouts {
+            let end = max_index_u64
+                .checked_mul(u64::from(stride))
+                .and_then(|bytes| bytes.checked_add(u64::from(extent)));
+            if end.is_none_or(|end| end > vertex_bytes) {
+                return Ok(NativeU32Outcome::DiscardOutOfBounds);
+            }
+        }
+        if max_raw == u32::MAX
+            || max_raw > self.hardware_max_index
+            || max_effective > i64::from(self.hardware_max_index)
+        {
+            return Ok(NativeU32Outcome::Fallback);
+        }
+        Ok(NativeU32Outcome::DrawNative)
     }
 
     #[expect(
@@ -177,7 +295,8 @@ impl IndexBinding {
             return Ok(Vec::new());
         }
 
-        let index_size = if self.is_u32() { 4usize } else { 2usize };
+        let is_u32 = self.is_u32();
+        let index_size = if is_u32 { 4usize } else { 2usize };
         let start = usize::try_from(self.offset)
             .ok()
             .and_then(|offset| {
@@ -188,33 +307,17 @@ impl IndexBinding {
             })
             .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
 
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        unsafe {
-            context.CopyResource(&self.staging, &self.buffer);
-            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-            if mapped.pData.is_null() {
-                context.Unmap(&self.staging, 0);
-                return Err(Error::from_hresult(E_FAIL));
-            }
-            let read = |i: usize| {
-                let ptr = mapped.pData.cast::<u8>().add(start + i * index_size);
-                if self.is_u32() {
-                    core::ptr::read_unaligned(ptr.cast::<u32>())
-                } else {
-                    u32::from(core::ptr::read_unaligned(ptr.cast::<u16>()))
-                }
-            };
-            let counts = plan_indexed_strip_draw_counts(
+        self.with_index_bytes(context, |bytes| {
+            let read = |i: usize| read_index_at(bytes, start, is_u32, i);
+            plan_indexed_strip_draw_counts(
                 read,
                 count as usize,
                 base,
                 restart,
                 min_vertices,
                 max_vertices,
-            );
-            context.Unmap(&self.staging, 0);
-            counts
-        }
+            )
+        })
     }
 
     #[expect(
@@ -256,27 +359,15 @@ impl IndexBinding {
             .try_reserve_exact(vertices.len())
             .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
         layouts.extend(vertices.iter().map(|v| (v.2, v.3, v.4, v.5)));
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        let is_u32 = self.is_u32();
+        let size = if is_u32 { 4 } else { 2 };
+        let start = self.offset as usize + first as usize * size;
+        let plan = self.with_index_bytes(context, |bytes| {
+            let read = |i: usize| read_index_at(bytes, start, is_u32, i);
+            plan_point_runs(read, count as usize, base, max_points, &layouts)
+        })?;
         unsafe {
-            context.CopyResource(&self.staging, &self.buffer);
-            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-            if mapped.pData.is_null() {
-                context.Unmap(&self.staging, 0);
-                return Err(Error::from_hresult(E_FAIL));
-            }
-            let size = if self.is_u32() { 4 } else { 2 };
-            let start = self.offset as usize + first as usize * size;
-            let read = |i: usize| {
-                let ptr = mapped.pData.cast::<u8>().add(start + i * size);
-                if self.is_u32() {
-                    core::ptr::read_unaligned(ptr.cast::<u32>())
-                } else {
-                    u32::from(core::ptr::read_unaligned(ptr.cast::<u16>()))
-                }
-            };
-            let plan = plan_point_runs(read, count as usize, base, max_points, &layouts);
-            context.Unmap(&self.staging, 0);
-            let Some(plan) = plan? else {
+            let Some(plan) = plan else {
                 if let Some((slot, identity)) = vertex_index {
                     context.IASetVertexBuffers(
                         *slot,
@@ -417,31 +508,17 @@ impl IndexBinding {
                 .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
             layouts.push((4, 0, 4));
         }
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        unsafe {
-            context.CopyResource(&self.staging, &self.buffer);
-            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-            if mapped.pData.is_null() {
-                context.Unmap(&self.staging, 0);
-                return Err(Error::from_hresult(E_FAIL));
-            }
-            let index_size = if self.is_u32() { 4 } else { 2 };
-            let start = self.offset as usize + first as usize * index_size;
-            let read = |index: usize| {
-                let ptr = mapped.pData.cast::<u8>().add(start + index * index_size);
-                if self.is_u32() {
-                    core::ptr::read_unaligned(ptr.cast::<u32>())
-                } else {
-                    u32::from(core::ptr::read_unaligned(ptr.cast::<u16>()))
-                }
-            };
+        let is_u32 = self.is_u32();
+        let index_size = if is_u32 { 4 } else { 2 };
+        let start = self.offset as usize + first as usize * index_size;
+        let plan = self.with_index_bytes(context, |bytes| {
+            let read = |index: usize| read_index_at(bytes, start, is_u32, index);
             if vertex_index.is_some()
                 && !indexed_vertex_index_values_fit_u32(&read, count as usize, base, restart)
             {
-                context.Unmap(&self.staging, 0);
                 return Err(Error::from_hresult(E_INVALIDARG));
             }
-            let plan = plan_indexed_line_strips(
+            plan_indexed_line_strips(
                 read,
                 count as usize,
                 base,
@@ -449,9 +526,10 @@ impl IndexBinding {
                 self.max_index,
                 max_indices,
                 &layouts,
-            );
-            context.Unmap(&self.staging, 0);
-            let Some(plan) = plan? else { return Ok(()) };
+            )
+        })?;
+        unsafe {
+            let Some(plan) = plan else { return Ok(()) };
             if plan.is_empty() {
                 return Ok(());
             }
@@ -762,25 +840,12 @@ impl IndexBinding {
                 .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
             layouts.push((4, 0, 4));
         }
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        unsafe {
-            context.CopyResource(&self.staging, &self.buffer);
-            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-            if mapped.pData.is_null() {
-                context.Unmap(&self.staging, 0);
-                return Err(Error::from_hresult(E_FAIL));
-            }
-            let index_size = if self.is_u32() { 4 } else { 2 };
-            let start = self.offset as usize + first as usize * index_size;
-            let read = |index: usize| {
-                let ptr = mapped.pData.cast::<u8>().add(start + index * index_size);
-                if self.is_u32() {
-                    core::ptr::read_unaligned(ptr.cast::<u32>())
-                } else {
-                    u32::from(core::ptr::read_unaligned(ptr.cast::<u16>()))
-                }
-            };
-            let result = for_each_indexed_triangle_strip_batch(
+        let is_u32 = self.is_u32();
+        let index_size = if is_u32 { 4 } else { 2 };
+        let start = self.offset as usize + first as usize * index_size;
+        self.with_index_bytes(context, |bytes| {
+            let read = |index: usize| read_index_at(bytes, start, is_u32, index);
+            for_each_indexed_triangle_strip_batch(
                 read,
                 count as usize,
                 base,
@@ -799,10 +864,8 @@ impl IndexBinding {
                         vertex_index,
                     )
                 },
-            );
-            context.Unmap(&self.staging, 0);
-            result?;
-        }
+            )
+        })?;
         Ok(())
     }
 
@@ -861,34 +924,22 @@ impl IndexBinding {
             },
         }
 
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        unsafe {
-            context.CopyResource(&self.staging, &self.buffer);
-            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-            if mapped.pData.is_null() {
-                context.Unmap(&self.staging, 0);
-                return Err(Error::from_hresult(E_FAIL));
-            }
-            let index_size = if self.is_u32() { 4 } else { 2 };
-            let start = self.offset as usize + first as usize * index_size;
-            let read = |index: usize| {
-                let ptr = mapped.pData.cast::<u8>().add(start + index * index_size);
-                if self.is_u32() {
-                    core::ptr::read_unaligned(ptr.cast::<u32>())
-                } else {
-                    u32::from(core::ptr::read_unaligned(ptr.cast::<u16>()))
-                }
-            };
-            let plan = plan_indexed_lines(
+        let is_u32 = self.is_u32();
+        let index_size = if is_u32 { 4 } else { 2 };
+        let start = self.offset as usize + first as usize * index_size;
+        let plan = self.with_index_bytes(context, |bytes| {
+            let read = |index: usize| read_index_at(bytes, start, is_u32, index);
+            plan_indexed_lines(
                 read,
                 complete_count as usize,
                 base,
                 self.max_index,
                 max_indices,
                 &layouts,
-            );
-            context.Unmap(&self.staging, 0);
-            let Some(plan) = plan? else { return Ok(()) };
+            )
+        })?;
+        unsafe {
+            let Some(plan) = plan else { return Ok(()) };
             if plan.is_empty() {
                 return Ok(());
             }
@@ -1149,75 +1200,102 @@ impl IndexBinding {
         if count == 0 || instances == 0 {
             return Ok(());
         }
+        match self.try_native_u32_bounds(
+            context,
+            first,
+            count,
+            base,
+            vertices.iter().map(|v| (v.3, v.4, v.5)),
+            vertices.is_empty(),
+            vertex_index.is_none(),
+        )? {
+            NativeU32Outcome::DrawNative => {
+                let complete = count - count % 3;
+                if complete == 0 {
+                    return Ok(());
+                }
+                unsafe {
+                    for (slot, buffer, offset, _, stride, _) in vertices {
+                        context.IASetVertexBuffers(
+                            *slot,
+                            1,
+                            Some(&Some(buffer.clone())),
+                            Some(stride),
+                            Some(offset),
+                        );
+                    }
+                    context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R32_UINT, self.offset);
+                    for instance in 0..instances {
+                        instance_bindings.bind(context, instance)?;
+                        super::command::draw_batches(first, complete, 1, max_vertices, |first, count| {
+                            context.DrawIndexed(count, first, base);
+                        })?;
+                    }
+                }
+                return Ok(());
+            }
+            NativeU32Outcome::DiscardOutOfBounds => return Ok(()),
+            NativeU32Outcome::Fallback => {}
+        }
         let mut effective_values = Vec::new();
         if vertex_index.is_some() {
             effective_values
                 .try_reserve_exact(count as usize)
                 .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
         }
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        unsafe {
-            context.CopyResource(&self.staging, &self.buffer);
-            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-            if mapped.pData.is_null() {
-                context.Unmap(&self.staging, 0);
-                return Err(Error::from_hresult(E_FAIL));
-            }
-            let size = if self.is_u32() { 4 } else { 2 };
-            let start = self.offset as usize + first as usize * size;
-            let read = |i: usize| {
-                let ptr = mapped.pData.cast::<u8>().add(start + i * size);
-                if self.is_u32() {
-                    core::ptr::read_unaligned(ptr.cast::<u32>())
-                } else {
-                    u32::from(core::ptr::read_unaligned(ptr.cast::<u16>()))
+        let is_u32 = self.is_u32();
+        let size = if is_u32 { 4 } else { 2 };
+        let start = self.offset as usize + first as usize * size;
+        let (valid, native, signed_vertex_indices, plan) =
+            self.with_index_bytes(context, |bytes| {
+                let read = |i: usize| read_index_at(bytes, start, is_u32, i);
+                let mut native = !is_u32;
+                let mut valid = true;
+                for i in 0..count as usize {
+                    let value = read(i);
+                    let effective = i64::from(value) + i64::from(base);
+                    if vertex_index.is_some() {
+                        effective_values.push(effective);
+                        valid &= multi_vertex_index_in_bounds(
+                            effective,
+                            vertices.iter().map(|v| (v.3, v.4, v.5)),
+                        );
+                    } else {
+                        valid &= multi_u32_index_in_bounds(
+                            value,
+                            base,
+                            vertices.iter().map(|v| (v.3, v.4, v.5)),
+                        );
+                    }
+                    native &= value <= u32::from(self.max_index)
+                        && effective <= i64::from(self.max_index)
+                        && (vertex_index.is_none() || effective >= 0);
+                    if vertices.is_empty() && vertex_index.is_none() {
+                        valid &= (0..=i64::from(self.max_index)).contains(&effective);
+                    }
                 }
-            };
-            let mut native = !self.is_u32();
-            let mut valid = true;
-            for i in 0..count as usize {
-                let value = read(i);
-                let effective = i64::from(value) + i64::from(base);
-                if vertex_index.is_some() {
-                    effective_values.push(effective);
-                    valid &= multi_vertex_index_in_bounds(
-                        effective,
-                        vertices.iter().map(|v| (v.3, v.4, v.5)),
-                    );
-                } else {
-                    valid &= multi_u32_index_in_bounds(
-                        value,
+                let signed_vertex_indices =
+                    vertex_index.is_some() && effective_values.iter().any(|&effective| effective < 0);
+                let plan = if valid && !native && !signed_vertex_indices {
+                    let (vertex_offset, vertex_bytes, stride, extent) = vertices
+                        .first()
+                        .map(|vertex| (vertex.2, vertex.3, vertex.4, vertex.5))
+                        .unwrap_or((0, 4, 0, 4));
+                    Some(plan_u32_windows(
+                        read,
+                        count as usize,
                         base,
-                        vertices.iter().map(|v| (v.3, v.4, v.5)),
-                    );
-                }
-                native &= value <= u32::from(self.max_index)
-                    && effective <= i64::from(self.max_index)
-                    && (vertex_index.is_none() || effective >= 0);
-                if vertices.is_empty() && vertex_index.is_none() {
-                    valid &= (0..=i64::from(self.max_index)).contains(&effective);
-                }
-            }
-            let signed_vertex_indices =
-                vertex_index.is_some() && effective_values.iter().any(|&effective| effective < 0);
-            let plan = if valid && !native && !signed_vertex_indices {
-                let (vertex_offset, vertex_bytes, stride, extent) = vertices
-                    .first()
-                    .map(|vertex| (vertex.2, vertex.3, vertex.4, vertex.5))
-                    .unwrap_or((0, 4, 0, 4));
-                Some(plan_u32_windows(
-                    read,
-                    count as usize,
-                    base,
-                    self.max_index,
-                    vertex_offset,
-                    (vertex_bytes, stride, extent),
-                    max_vertices,
-                ))
-            } else {
-                None
-            };
-            context.Unmap(&self.staging, 0);
+                        self.max_index,
+                        vertex_offset,
+                        (vertex_bytes, stride, extent),
+                        max_vertices,
+                    ))
+                } else {
+                    None
+                };
+                Ok((valid, native, signed_vertex_indices, plan))
+            })?;
+        unsafe {
             if !valid {
                 return Ok(());
             }
@@ -1555,26 +1633,46 @@ impl IndexBinding {
         if count == 0 || instances == 0 {
             return Ok(());
         }
-        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-        unsafe {
-            context.CopyResource(&self.staging, &self.buffer);
-            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-            if mapped.pData.is_null() {
-                context.Unmap(&self.staging, 0);
-                return Err(Error::from_hresult(E_FAIL));
+        match self.try_native_u32_bounds(
+            context,
+            first,
+            count,
+            base_vertex,
+            core::iter::once(vertex_layout),
+            false,
+            vertex_index.is_none(),
+        )? {
+            NativeU32Outcome::DrawNative => {
+                let complete = count - count % 3;
+                if complete == 0 {
+                    return Ok(());
+                }
+                unsafe {
+                    context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R32_UINT, self.offset);
+                    for instance in 0..instances {
+                        instance_bindings.bind(context, instance)?;
+                        super::command::draw_batches(
+                            first,
+                            complete,
+                            1,
+                            max_vertices,
+                            |first, count| {
+                                context.DrawIndexed(count, first, base_vertex);
+                            },
+                        )?;
+                    }
+                }
+                return Ok(());
             }
-            let size = if self.is_u32() { 4 } else { 2 };
-            let start = self.offset as usize + first as usize * size;
-            let plan = if self.is_u32() {
-                let read = |index: usize| {
-                    core::ptr::read_unaligned(
-                        mapped
-                            .pData
-                            .cast::<u8>()
-                            .add(start + index * 4)
-                            .cast::<u32>(),
-                    )
-                };
+            NativeU32Outcome::DiscardOutOfBounds => return Ok(()),
+            NativeU32Outcome::Fallback => {}
+        }
+        let is_u32 = self.is_u32();
+        let size = if is_u32 { 4 } else { 2 };
+        let start = self.offset as usize + first as usize * size;
+        let plan = self.with_index_bytes(context, |bytes| {
+            if is_u32 {
+                let read = |index: usize| read_index_at(bytes, start, true, index);
                 plan_u32_windows(
                     read,
                     count as usize,
@@ -1586,15 +1684,7 @@ impl IndexBinding {
                 )
                 .map(|plan| plan.map(IndexPlan::Rewritten))
             } else {
-                let read = |index: usize| {
-                    core::ptr::read_unaligned(
-                        mapped
-                            .pData
-                            .cast::<u8>()
-                            .add(start + index * 2)
-                            .cast::<u16>(),
-                    )
-                };
+                let read = |index: usize| read_index_at(bytes, start, false, index) as u16;
                 plan_u16_draw(
                     read,
                     count as usize,
@@ -1604,9 +1694,10 @@ impl IndexBinding {
                     vertex_layout,
                     max_vertices,
                 )
-            };
-            context.Unmap(&self.staging, 0);
-            let Some(plan) = plan? else { return Ok(()) };
+            }
+        })?;
+        unsafe {
+            let Some(plan) = plan else { return Ok(()) };
             match plan {
                 IndexPlan::NativeU16 => {
                     if let Some((slot, buffer)) = vertex_index {
@@ -2029,8 +2120,13 @@ fn for_each_indexed_triangle_strip_batch(
     }
 
     let mut batch = Vec::new();
+    let capacity = count
+        .saturating_sub(2)
+        .saturating_mul(3)
+        .min(max_vertices as usize)
+        .min(65_535);
     batch
-        .try_reserve_exact(max_vertices as usize)
+        .try_reserve_exact(capacity)
         .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
     let mut first = 0u32;
     let mut second = 0u32;

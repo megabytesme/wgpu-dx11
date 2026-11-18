@@ -83,6 +83,12 @@ impl crate::Instance for Instance {
                 return Vec::new();
             }
         };
+        let force_fl91 = std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1");
+        let requested: &[super::FeatureLevel] = if force_fl91 {
+            &[super::FeatureLevel::L9_1]
+        } else {
+            &super::FeatureLevel::ALL_DESCENDING
+        };
         adapters
             .into_iter()
             .filter_map(|adapter| {
@@ -91,17 +97,17 @@ impl crate::Instance for Instance {
                 }
                 let identity = adapter.identity().clone();
                 let driver_version = adapter.driver_version();
-                let native = match adapter.open_device(&[super::FeatureLevel::L9_1]) {
+                let native = match adapter.open_device(requested) {
                     Ok(native) => native,
                     Err(error) => {
                         log::debug!(
-                            "D3D11 adapter {:?} cannot create the required FL9_1 device: {error}",
+                            "D3D11 adapter {:?} cannot create a supported device: {error}",
                             identity.name
                         );
                         return None;
                     }
                 };
-                if native.feature_level() != super::FeatureLevel::L9_1 {
+                if force_fl91 && native.feature_level() != super::FeatureLevel::L9_1 {
                     log::warn!(
                         "D3D11 adapter {:?} returned {:?} for an explicit FL9_1 request",
                         identity.name,
@@ -163,7 +169,9 @@ mod tests {
                         crate::TextureFormatCapabilities::SAMPLED
                             | crate::TextureFormatCapabilities::COPY_DST
                     ));
-                    assert!(!rg16.contains(crate::TextureFormatCapabilities::SAMPLED_LINEAR));
+                    if adapter.adapter.feature_level() == crate::dx11::FeatureLevel::L9_1 {
+                        assert!(!rg16.contains(crate::TextureFormatCapabilities::SAMPLED_LINEAR));
+                    }
                 }
                 assert!(!adapter.capabilities.downlevel.is_webgpu_compliant());
             }

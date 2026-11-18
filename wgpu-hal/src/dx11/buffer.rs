@@ -3,20 +3,256 @@
 //! The backend supports restricted buffer usage and CPU-shadow mappings.
 //! Core handles WebGPU validation and initialization before HAL operations.
 use super::device::{FeatureLevel, NativeDevice};
-use alloc::{boxed::Box, vec::Vec};
+use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use core::num::NonZeroU64;
 use parking_lot::Mutex;
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
-        Foundation::{E_FAIL, E_INVALIDARG},
+        Foundation::{E_FAIL, E_INVALIDARG, E_OUTOFMEMORY},
         Graphics::Direct3D11::{
-            ID3D11Buffer, ID3D11Device, D3D11_BIND_INDEX_BUFFER, D3D11_BIND_VERTEX_BUFFER,
-            D3D11_BOX, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE,
-            D3D11_MAP_READ, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
+            ID3D11Buffer, ID3D11Device, ID3D11DeviceContext, D3D11_BIND_INDEX_BUFFER,
+            D3D11_BIND_VERTEX_BUFFER, D3D11_BOX, D3D11_BUFFER_DESC, D3D11_CPU_ACCESS_READ,
+            D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
         },
     },
 };
+
+const U32_MINMAX_BLOCK_ELEMENTS: usize = 256;
+const U32_MINMAX_BLOCK_BYTES: usize = U32_MINMAX_BLOCK_ELEMENTS * 4;
+
+#[derive(Debug)]
+pub(super) struct BufferCpuShadow {
+    state: Mutex<BufferCpuShadowState>,
+}
+
+#[derive(Debug)]
+struct BufferCpuShadowState {
+    bytes: Vec<u8>,
+    dirty_from_gpu: bool,
+    generation: u64,
+    u32_block_minmax: Vec<Option<(u32, u32)>>,
+}
+
+impl BufferCpuShadowState {
+    fn invalidate_blocks(&mut self, start: usize, end: usize) {
+        if self.u32_block_minmax.is_empty() || start >= end {
+            return;
+        }
+        let first = start / U32_MINMAX_BLOCK_BYTES;
+        let last = (end - 1) / U32_MINMAX_BLOCK_BYTES;
+        let bound = (last + 1).min(self.u32_block_minmax.len());
+        if first < bound {
+            self.u32_block_minmax[first..bound].fill(None);
+        }
+    }
+
+    fn ensure_clean(
+        &mut self,
+        context: &ID3D11DeviceContext,
+        raw: &ID3D11Buffer,
+    ) -> Result<()> {
+        if !self.dirty_from_gpu {
+            return Ok(());
+        }
+        let byte_width =
+            u32::try_from(self.bytes.len()).map_err(|_| Error::from_hresult(E_INVALIDARG))?;
+        if byte_width == 0 {
+            self.dirty_from_gpu = false;
+            return Ok(());
+        }
+        let device = unsafe { context.GetDevice()? };
+        let desc = D3D11_BUFFER_DESC {
+            ByteWidth: byte_width,
+            Usage: D3D11_USAGE_STAGING,
+            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+            ..Default::default()
+        };
+        let mut staging = None;
+        unsafe { device.CreateBuffer(&desc, None, Some(&mut staging))? };
+        let staging = staging.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+        unsafe {
+            context.CopyResource(&staging, raw);
+            context.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+            if mapped.pData.is_null() {
+                context.Unmap(&staging, 0);
+                return Err(Error::from_hresult(E_FAIL));
+            }
+            core::ptr::copy_nonoverlapping(
+                mapped.pData.cast::<u8>(),
+                self.bytes.as_mut_ptr(),
+                self.bytes.len(),
+            );
+            context.Unmap(&staging, 0);
+        }
+        self.u32_block_minmax.fill(None);
+        self.dirty_from_gpu = false;
+        self.generation = self.generation.wrapping_add(1);
+        Ok(())
+    }
+}
+
+fn scan_u32_minmax(bytes: &[u8]) -> (u32, u32) {
+    let mut min_val = u32::MAX;
+    let mut max_val = 0u32;
+    for chunk in bytes.chunks_exact(4) {
+        let value = u32::from_ne_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]);
+        min_val = min_val.min(value);
+        max_val = max_val.max(value);
+    }
+    (min_val, max_val)
+}
+
+impl BufferCpuShadow {
+    fn new(size: u32) -> Result<Self> {
+        let mut bytes = Vec::new();
+        bytes
+            .try_reserve_exact(size as usize)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        bytes.resize(size as usize, 0);
+        Ok(Self {
+            state: Mutex::new(BufferCpuShadowState {
+                bytes,
+                dirty_from_gpu: false,
+                generation: 1,
+                u32_block_minmax: Vec::new(),
+            }),
+        })
+    }
+
+    pub(super) fn write(&self, offset: usize, data: &[u8]) {
+        if data.is_empty() {
+            return;
+        }
+        let Some(end) = offset.checked_add(data.len()) else {
+            return;
+        };
+        let mut state = self.state.lock();
+        if end > state.bytes.len() {
+            state.dirty_from_gpu = true;
+            return;
+        }
+        state.bytes[offset..end].copy_from_slice(data);
+        state.invalidate_blocks(offset, end);
+        state.generation = state.generation.wrapping_add(1);
+    }
+
+    pub(super) fn fill_zero(&self, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+        let mut state = self.state.lock();
+        if end > state.bytes.len() {
+            state.dirty_from_gpu = true;
+            return;
+        }
+        state.bytes[start..end].fill(0);
+        state.invalidate_blocks(start, end);
+        state.generation = state.generation.wrapping_add(1);
+    }
+
+    pub(super) fn copy_clean_slice(&self, offset: usize, len: usize) -> Option<Vec<u8>> {
+        let end = offset.checked_add(len)?;
+        let state = self.state.lock();
+        if state.dirty_from_gpu || end > state.bytes.len() {
+            return None;
+        }
+        let mut copy = Vec::new();
+        copy.try_reserve_exact(len).ok()?;
+        copy.extend_from_slice(&state.bytes[offset..end]);
+        Some(copy)
+    }
+
+    pub(super) fn mark_dirty_from_gpu(&self) {
+        let mut state = self.state.lock();
+        state.dirty_from_gpu = true;
+        state.u32_block_minmax.clear();
+        state.generation = state.generation.wrapping_add(1);
+    }
+
+    pub(super) fn with_bytes<R>(
+        &self,
+        context: &ID3D11DeviceContext,
+        raw: &ID3D11Buffer,
+        f: impl FnOnce(&[u8], u64) -> Result<R>,
+    ) -> Result<R> {
+        let mut state = self.state.lock();
+        state.ensure_clean(context, raw)?;
+        f(&state.bytes, state.generation)
+    }
+
+    pub(super) fn u32_range_minmax(
+        &self,
+        context: &ID3D11DeviceContext,
+        raw: &ID3D11Buffer,
+        byte_offset: usize,
+        count: usize,
+    ) -> Result<(u32, u32)> {
+        if count == 0 {
+            return Ok((0, 0));
+        }
+        let byte_len = count
+            .checked_mul(4)
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        let end_byte = byte_offset
+            .checked_add(byte_len)
+            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+        let mut state = self.state.lock();
+        state.ensure_clean(context, raw)?;
+        if end_byte > state.bytes.len() {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        if !byte_offset.is_multiple_of(4) {
+            return Ok(scan_u32_minmax(&state.bytes[byte_offset..end_byte]));
+        }
+        let mut cursor = byte_offset;
+        let mut min_val = u32::MAX;
+        let mut max_val = 0u32;
+        if count >= U32_MINMAX_BLOCK_ELEMENTS && state.u32_block_minmax.is_empty() {
+            let block_count = state.bytes.len() / U32_MINMAX_BLOCK_BYTES;
+            if state.u32_block_minmax.try_reserve_exact(block_count).is_ok() {
+                state.u32_block_minmax.resize(block_count, None);
+            }
+        }
+        let block_count = state.u32_block_minmax.len();
+        if block_count != 0 {
+            let first_aligned = (cursor + U32_MINMAX_BLOCK_BYTES - 1) & !(U32_MINMAX_BLOCK_BYTES - 1);
+            let head_end = first_aligned.min(end_byte);
+            if cursor < head_end {
+                let (hmin, hmax) = scan_u32_minmax(&state.bytes[cursor..head_end]);
+                min_val = min_val.min(hmin);
+                max_val = max_val.max(hmax);
+                cursor = head_end;
+            }
+            while cursor + U32_MINMAX_BLOCK_BYTES <= end_byte {
+                let block_idx = cursor / U32_MINMAX_BLOCK_BYTES;
+                if block_idx >= block_count {
+                    break;
+                }
+                let (bmin, bmax) = match state.u32_block_minmax[block_idx] {
+                    Some(cached) => cached,
+                    None => {
+                        let computed = scan_u32_minmax(
+                            &state.bytes[cursor..cursor + U32_MINMAX_BLOCK_BYTES],
+                        );
+                        state.u32_block_minmax[block_idx] = Some(computed);
+                        computed
+                    }
+                };
+                min_val = min_val.min(bmin);
+                max_val = max_val.max(bmax);
+                cursor += U32_MINMAX_BLOCK_BYTES;
+            }
+        }
+        if cursor < end_byte {
+            let (tmin, tmax) = scan_u32_minmax(&state.bytes[cursor..end_byte]);
+            min_val = min_val.min(tmin);
+            max_val = max_val.max(tmax);
+        }
+        Ok((min_val, max_val))
+    }
+}
 
 /// An uninitialized D3D11 byte buffer tied to the creating native device.
 #[allow(dead_code)]
@@ -28,6 +264,7 @@ pub struct NativeBuffer {
     size: u32,
     usage: wgt::BufferUses,
     mapping: Mutex<Option<ShadowMapping>>,
+    cpu_shadow: Option<Arc<BufferCpuShadow>>,
     #[cfg(feature = "dx11-test-fixture")]
     fail_next_invalidate: core::sync::atomic::AtomicBool,
     #[cfg(feature = "dx11-test-fixture")]
@@ -39,6 +276,10 @@ pub struct NativeBuffer {
 impl NativeBuffer {
     pub(super) fn logical_size(&self) -> u32 {
         self.size
+    }
+
+    pub(super) fn cpu_shadow(&self) -> Option<Arc<BufferCpuShadow>> {
+        self.cpu_shadow.clone()
     }
 
     #[cfg(feature = "dx11-test-fixture")]
@@ -108,6 +349,7 @@ impl crate::DynBuffer for NativeBuffer {}
 #[derive(Debug)]
 pub(super) struct NativeBufferClear {
     pub(super) buffer: ID3D11Buffer,
+    pub(super) shadow: Option<Arc<BufferCpuShadow>>,
     pub(super) start: u32,
     pub(super) end: u32,
 }
@@ -117,16 +359,15 @@ pub(super) struct NativeBufferClear {
 pub(super) struct NativeBufferCopy {
     source: ID3D11Buffer,
     destination: ID3D11Buffer,
+    source_shadow: Option<Arc<BufferCpuShadow>>,
+    destination_shadow: Option<Arc<BufferCpuShadow>>,
     destination_offset: u32,
     source_box: D3D11_BOX,
 }
 
 impl NativeBufferCopy {
     /// The caller must hold this device's immediate-context mutex.
-    pub(super) fn execute(
-        &self,
-        context: &windows::Win32::Graphics::Direct3D11::ID3D11DeviceContext,
-    ) {
+    pub(super) fn execute(&self, context: &ID3D11DeviceContext) {
         unsafe {
             context.CopySubresourceRegion(
                 &self.destination,
@@ -139,6 +380,19 @@ impl NativeBufferCopy {
                 Some(&self.source_box),
             );
         }
+        if let Some(dst_shadow) = &self.destination_shadow {
+            let src_offset = self.source_box.left as usize;
+            let dst_offset = self.destination_offset as usize;
+            let len = (self.source_box.right - self.source_box.left) as usize;
+            let copied = self
+                .source_shadow
+                .as_ref()
+                .and_then(|src_shadow| src_shadow.copy_clean_slice(src_offset, len));
+            match copied {
+                Some(slice) => dst_shadow.write(dst_offset, &slice),
+                None => dst_shadow.mark_dirty_from_gpu(),
+            }
+        }
     }
 }
 
@@ -148,7 +402,7 @@ impl NativeDevice {
         buffer: &NativeBuffer,
         offset: u64,
         query_count: u32,
-    ) -> Result<ID3D11Buffer> {
+    ) -> Result<(ID3D11Buffer, Option<Arc<BufferCpuShadow>>)> {
         let length = u64::from(query_count)
             .checked_mul(u64::from(wgt::QUERY_SIZE))
             .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
@@ -162,7 +416,7 @@ impl NativeDevice {
             offset,
             usize::try_from(length).map_err(|_| Error::from_hresult(E_INVALIDARG))?,
         )?;
-        Ok(buffer.raw.clone())
+        Ok((buffer.raw.clone(), buffer.cpu_shadow()))
     }
 
     #[allow(dead_code)] // Used when recording buffer initialization clears.
@@ -182,22 +436,23 @@ impl NativeDevice {
         let (start, end) = self.checked_buffer_range(buffer, range.start, length)?;
         Ok(NativeBufferClear {
             buffer: buffer.raw.clone(),
+            shadow: buffer.cpu_shadow(),
             start,
             end,
         })
     }
 
-    pub(super) fn texture_copy_buffer_destination(
+    pub(super) fn texture_copy_buffer_destination_with_shadow(
         &self,
         buffer: &NativeBuffer,
         offset: u64,
         length: usize,
-    ) -> Result<ID3D11Buffer> {
+    ) -> Result<(ID3D11Buffer, Option<Arc<BufferCpuShadow>>)> {
         if !buffer.usage.contains(wgt::BufferUses::COPY_DST) {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
         self.checked_buffer_range(buffer, offset, length)?;
-        Ok(buffer.raw.clone())
+        Ok((buffer.raw.clone(), buffer.cpu_shadow()))
     }
 
     pub(super) fn texture_copy_source(
@@ -234,6 +489,13 @@ impl NativeDevice {
             BindFlags: native_buffer_bind_flags(self.feature_level(), usage)?,
             ..Default::default()
         };
+        let cpu_shadow = if usage.intersects(
+            wgt::BufferUses::INDEX | wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_SRC,
+        ) {
+            Some(Arc::new(BufferCpuShadow::new(size)?))
+        } else {
+            None
+        };
         let mut raw = None;
         unsafe {
             self.raw_device()
@@ -245,6 +507,7 @@ impl NativeDevice {
             size,
             usage,
             mapping: Mutex::new(None),
+            cpu_shadow,
             #[cfg(feature = "dx11-test-fixture")]
             fail_next_invalidate: core::sync::atomic::AtomicBool::new(false),
             #[cfg(feature = "dx11-test-fixture")]
@@ -372,6 +635,10 @@ impl NativeDevice {
                         0,
                         0,
                     );
+                    if let Some(cpu_shadow) = &buffer.cpu_shadow {
+                        let data = core::slice::from_raw_parts(pointer, length);
+                        cpu_shadow.write(start as usize, data);
+                    }
                 }
             } else {
                 let bytes = self.read_byte_buffer(buffer, start, length)?;
@@ -488,6 +755,9 @@ impl NativeDevice {
         unsafe {
             context.UpdateSubresource(&buffer.raw, 0, Some(&area), data.as_ptr().cast(), 0, 0);
         }
+        if let Some(cpu_shadow) = &buffer.cpu_shadow {
+            cpu_shadow.write(start as usize, data);
+        }
         Ok(())
     }
 
@@ -528,6 +798,8 @@ impl NativeDevice {
         Ok(NativeBufferCopy {
             source: source.raw.clone(),
             destination: destination.raw.clone(),
+            source_shadow: source.cpu_shadow(),
+            destination_shadow: destination.cpu_shadow(),
             destination_offset: dst_start,
             source_box: D3D11_BOX {
                 left: src_start,
@@ -623,7 +895,7 @@ fn zeroed_readback(len: usize) -> Result<Vec<u8>> {
     let mut bytes = Vec::new();
     bytes
         .try_reserve_exact(len)
-        .map_err(|_| Error::from_hresult(windows::Win32::Foundation::E_OUTOFMEMORY))?;
+        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
     bytes.resize(len, 0);
     Ok(bytes)
 }
@@ -639,7 +911,7 @@ mod tests {
     #[test]
     fn readback_allocation_reports_out_of_memory_without_panicking() {
         let error = zeroed_readback(usize::MAX).unwrap_err();
-        assert_eq!(error.code(), windows::Win32::Foundation::E_OUTOFMEMORY);
+        assert_eq!(error.code(), E_OUTOFMEMORY);
     }
 
     #[test]
@@ -831,6 +1103,41 @@ mod tests {
         assert!(other
             .copy_byte_buffer(&buffer, &destination, &region)
             .is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn cpu_shadow_caches_u32_blocks_and_tracks_partial_invalidation() -> Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let Some(adapter) = adapters.iter().find(|adapter| !adapter.identity().software) else {
+            return Ok(());
+        };
+        let device = adapter.open_device(&FeatureLevel::ALL_DESCENDING)?;
+        let buffer = device.create_buffer_with_usage(
+            4096,
+            wgt::BufferUses::INDEX | wgt::BufferUses::COPY_DST,
+        )?;
+        let shadow = buffer.cpu_shadow().expect("INDEX buffer gets CPU shadow");
+        let mut initial = Vec::with_capacity(4096);
+        for i in 0..1024u32 {
+            initial.extend_from_slice(&(i + 10).to_ne_bytes());
+        }
+        device.write_byte_buffer(&buffer, 0, &initial)?;
+        let context = device.immediate_context();
+        assert_eq!(shadow.u32_range_minmax(&context, &buffer.raw, 0, 1024)?, (10, 1033));
+        assert_eq!(shadow.u32_range_minmax(&context, &buffer.raw, 512, 300)?, (138, 437));
+        drop(context);
+
+        device.write_byte_buffer(&buffer, 1020, &5000u32.to_ne_bytes())?;
+        device.write_byte_buffer(&buffer, 1024, &2u32.to_ne_bytes())?;
+        let context = device.immediate_context();
+        assert_eq!(shadow.u32_range_minmax(&context, &buffer.raw, 0, 1024)?, (2, 5000));
+        assert_eq!(shadow.u32_range_minmax(&context, &buffer.raw, 2048, 512)?, (522, 1033));
+        shadow.fill_zero(1020, 1028);
+        assert_eq!(shadow.u32_range_minmax(&context, &buffer.raw, 1020, 2)?, (0, 0));
+        assert!(shadow.copy_clean_slice(0, 8).is_some());
+        shadow.mark_dirty_from_gpu();
+        assert!(shadow.copy_clean_slice(0, 8).is_none());
         Ok(())
     }
 }

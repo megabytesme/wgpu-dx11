@@ -1,12 +1,14 @@
 //! Uniform ranges materialized as D3D11 constant buffers.
 //!
 //! Ordinary logical buffers remain copyable/updatable in arbitrary checked
-//! ranges. At binding time the requested range is staged to the CPU,
-//! then written in full to a separate D3D constant buffer: D3D11 does not
-//! permit partial UpdateSubresource writes to constant buffers. This is a
-//! correctness-first prototype and can stall the CPU.
-use super::{buffer::NativeBuffer, device::NativeDevice};
-use alloc::vec::Vec;
+//! ranges. Because D3D11 does not permit partial `UpdateSubresource` writes to
+//! constant buffers, binding materializes the validated CPU-shadow slice and
+//! uploads only when the source generation or byte range changes.
+use super::{
+    buffer::{BufferCpuShadow, NativeBuffer},
+    device::NativeDevice,
+};
+use alloc::{sync::Arc, vec::Vec};
 use parking_lot::Mutex;
 use windows::{
     core::{Error, Interface, Result},
@@ -20,16 +22,18 @@ use windows::{
     },
 };
 
-/// Retains a checked source range, staging buffer and native constant buffer.
+/// Retains a checked source range, optional CPU shadow, lazy staging fallback, and constant buffer.
 #[allow(dead_code)]
 #[derive(Debug)]
 pub(super) struct UniformBinding {
     source: ID3D11Buffer,
-    staging: ID3D11Buffer,
+    cpu_shadow: Option<Arc<BufferCpuShadow>>,
+    staging: Mutex<Option<ID3D11Buffer>>,
     constant: ID3D11Buffer,
     source_box: D3D11_BOX,
     source_size: u32,
     scratch: Mutex<Vec<u8>>,
+    uploaded: Mutex<Option<(u64, u32, u32)>>,
 }
 
 impl NativeDevice {
@@ -49,6 +53,7 @@ impl NativeDevice {
             .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
         self.create_uniform_binding(
             source_buffer,
+            source.cpu_shadow(),
             D3D11_BOX {
                 left: start,
                 right: end,
@@ -68,6 +73,7 @@ impl NativeDevice {
         }
         self.create_uniform_binding(
             original.source.clone(),
+            original.cpu_shadow.clone(),
             original.source_box,
             original.source_size,
         )
@@ -76,6 +82,7 @@ impl NativeDevice {
     fn create_uniform_binding(
         &self,
         source: ID3D11Buffer,
+        cpu_shadow: Option<Arc<BufferCpuShadow>>,
         source_box: D3D11_BOX,
         source_size: u32,
     ) -> Result<UniformBinding> {
@@ -86,33 +93,26 @@ impl NativeDevice {
             .try_reserve_exact(native_length as usize)
             .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
         scratch.resize(native_length as usize, 0);
-        let staging_desc = D3D11_BUFFER_DESC {
-            ByteWidth: native_length,
-            Usage: D3D11_USAGE_STAGING,
-            CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
-            ..Default::default()
-        };
         let constant_desc = D3D11_BUFFER_DESC {
             ByteWidth: native_length,
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: D3D11_BIND_CONSTANT_BUFFER.0 as u32,
             ..Default::default()
         };
-        let mut staging = None;
         let mut constant = None;
         unsafe {
-            self.raw_device()
-                .CreateBuffer(&staging_desc, None, Some(&mut staging))?;
             self.raw_device()
                 .CreateBuffer(&constant_desc, None, Some(&mut constant))?;
         }
         Ok(UniformBinding {
             source,
-            staging: staging.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+            cpu_shadow,
+            staging: Mutex::new(None),
             constant: constant.ok_or_else(|| Error::from_hresult(E_FAIL))?,
             source_box,
             source_size,
             scratch: Mutex::new(scratch),
+            uploaded: Mutex::new(None),
         })
     }
 }
@@ -126,7 +126,7 @@ impl UniformBinding {
         shifted_range(self.source_box, self.source_size, dynamic_offset)
     }
 
-    /// Copy the source range and bind it to each requested stage slot.
+    /// Copy the source range (from the CPU shadow when available) and bind it to each requested stage slot.
     /// The caller holds the owning device's immediate-context lock.
     #[allow(dead_code)]
     pub(super) fn execute(
@@ -147,30 +147,73 @@ impl UniformBinding {
         {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
-        let mut scratch = self.scratch.lock();
-        unsafe {
-            context.CopySubresourceRegion(
-                &self.staging,
-                0,
-                0,
-                0,
-                0,
-                &self.source,
-                0,
-                Some(source_box),
-            );
-            let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
-            context.Map(&self.staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-            if mapped.pData.is_null() {
-                context.Unmap(&self.staging, 0);
-                return Err(Error::from_hresult(E_FAIL));
+        let len = self.len() as usize;
+        if let Some(cpu_shadow) = &self.cpu_shadow {
+            cpu_shadow.with_bytes(context, &self.source, |bytes, generation| {
+                let mut uploaded = self.uploaded.lock();
+                if *uploaded != Some((generation, source_box.left, source_box.right)) {
+                    let slice = bytes
+                        .get(source_box.left as usize..source_box.right as usize)
+                        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                    let mut scratch = self.scratch.lock();
+                    scratch[..len].copy_from_slice(slice);
+                    unsafe {
+                        context.UpdateSubresource(
+                            &self.constant,
+                            0,
+                            None,
+                            scratch.as_ptr().cast(),
+                            0,
+                            0,
+                        );
+                    }
+                    *uploaded = Some((generation, source_box.left, source_box.right));
+                }
+                Ok(())
+            })?;
+        } else {
+            let mut staging_guard = self.staging.lock();
+            if staging_guard.is_none() {
+                let native_length = constant_buffer_length(self.len() as u32)?;
+                let staging_desc = D3D11_BUFFER_DESC {
+                    ByteWidth: native_length,
+                    Usage: D3D11_USAGE_STAGING,
+                    CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+                    ..Default::default()
+                };
+                let device = unsafe { context.GetDevice()? };
+                let mut staging = None;
+                unsafe { device.CreateBuffer(&staging_desc, None, Some(&mut staging))? };
+                *staging_guard = Some(staging.ok_or_else(|| Error::from_hresult(E_FAIL))?);
             }
-            scratch[..self.len() as usize].copy_from_slice(core::slice::from_raw_parts(
-                mapped.pData.cast::<u8>(),
-                self.len() as usize,
-            ));
-            context.Unmap(&self.staging, 0);
-            context.UpdateSubresource(&self.constant, 0, None, scratch.as_ptr().cast(), 0, 0);
+            let staging = staging_guard.as_ref().unwrap();
+            let mut scratch = self.scratch.lock();
+            unsafe {
+                context.CopySubresourceRegion(
+                    staging,
+                    0,
+                    0,
+                    0,
+                    0,
+                    &self.source,
+                    0,
+                    Some(source_box),
+                );
+                let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+                context.Map(staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+                if mapped.pData.is_null() {
+                    context.Unmap(staging, 0);
+                    return Err(Error::from_hresult(E_FAIL));
+                }
+                scratch[..len].copy_from_slice(core::slice::from_raw_parts(
+                    mapped.pData.cast::<u8>(),
+                    len,
+                ));
+                context.Unmap(staging, 0);
+                context.UpdateSubresource(&self.constant, 0, None, scratch.as_ptr().cast(), 0, 0);
+            }
+        }
+        unsafe {
             if let Some(slot) = vertex_slot {
                 context.VSSetConstantBuffers(slot, Some(&[Some(self.constant.clone())]));
             }

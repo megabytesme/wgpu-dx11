@@ -27,11 +27,19 @@ impl Adapter {
         info.vendor = identity.vendor_id;
         info.device = identity.device_id;
         info.driver = String::from("D3D11");
+        let level = native.feature_level();
+        let level_tag = if level == super::FeatureLevel::L9_1 {
+            String::from("FL9_1")
+        } else {
+            alloc::format!("FL9_1 (hardware {level:?})")
+        };
         info.driver_info = match driver_version {
             Some(version) => {
-                alloc::format!("FL9_1; physical DXGI adapter; driver version {version}")
+                alloc::format!("{level_tag}; physical DXGI adapter; driver version {version}")
             }
-            None => String::from("FL9_1; physical DXGI adapter; driver version unavailable"),
+            None => {
+                alloc::format!("{level_tag}; physical DXGI adapter; driver version unavailable")
+            }
         };
 
         Some(crate::ExposedAdapter {
@@ -164,9 +172,6 @@ impl Adapter {
         _instance: &super::Instance,
         native: Arc<super::NativeDevice>,
     ) -> Result<Self, crate::DeviceError> {
-        if native.feature_level() != super::FeatureLevel::L9_1 {
-            return Err(crate::DeviceError::Unexpected);
-        }
         Ok(Self {
             inner: AdapterInner::Fixture(native),
         })

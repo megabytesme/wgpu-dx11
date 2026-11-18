@@ -21,7 +21,7 @@ use windows::{
 };
 
 #[cfg(target_vendor = "uwp")]
-use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_9_1};
+use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
 #[cfg(not(target_vendor = "uwp"))]
 use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory2, DXGI_CREATE_FACTORY_FLAGS};
 
@@ -149,7 +149,7 @@ impl NativeAdapter {
         } else {
             D3D11_CREATE_DEVICE_BGRA_SUPPORT
         };
-        unsafe {
+        let create_result = unsafe {
             D3D11CreateDevice(
                 &adapter,
                 D3D_DRIVER_TYPE_UNKNOWN,
@@ -160,7 +160,32 @@ impl NativeAdapter {
                 Some(&mut device),
                 Some(&mut selected),
                 Some(&mut context),
-            )?;
+            )
+        };
+        if let Err(error) = create_result {
+            if error.code() == E_INVALIDARG
+                && requested.first() == Some(&D3D_FEATURE_LEVEL(FeatureLevel::L11_1.as_raw() as i32))
+                && requested.len() > 1
+            {
+                device = None;
+                context = None;
+                selected = D3D_FEATURE_LEVEL::default();
+                unsafe {
+                    D3D11CreateDevice(
+                        &adapter,
+                        D3D_DRIVER_TYPE_UNKNOWN,
+                        HMODULE::default(),
+                        flags,
+                        Some(&requested[1..]),
+                        D3D11_SDK_VERSION,
+                        Some(&mut device),
+                        Some(&mut selected),
+                        Some(&mut context),
+                    )?;
+                }
+            } else {
+                return Err(error);
+            }
         }
         let level = levels
             .iter()
@@ -391,7 +416,8 @@ pub fn enumerate_native_adapters() -> Result<Vec<NativeAdapter>> {
 /// Enumerate owned native adapters on UWP without statically importing `dxgi.dll`.
 #[cfg(target_vendor = "uwp")]
 pub fn enumerate_native_adapters() -> Result<Vec<NativeAdapter>> {
-    let requested = [D3D_FEATURE_LEVEL_9_1];
+    let requested =
+        FeatureLevel::ALL_DESCENDING.map(|level| D3D_FEATURE_LEVEL(level.as_raw() as i32));
     let mut device = None;
     let create = unsafe {
         D3D11CreateDevice(
@@ -406,8 +432,27 @@ pub fn enumerate_native_adapters() -> Result<Vec<NativeAdapter>> {
             None,
         )
     };
+    let create = match create {
+        Err(error) if error.code() == E_INVALIDARG && requested.len() > 1 => {
+            device = None;
+            unsafe {
+                D3D11CreateDevice(
+                    None,
+                    D3D_DRIVER_TYPE_HARDWARE,
+                    HMODULE::default(),
+                    D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                    Some(&requested[1..]),
+                    D3D11_SDK_VERSION,
+                    Some(&mut device),
+                    None,
+                    None,
+                )
+            }
+        }
+        other => other,
+    };
     if let Err(error) = create {
-        log::debug!("UWP D3D11CreateDevice hardware FL9_1 probe failed: {error}");
+        log::debug!("UWP D3D11CreateDevice hardware probe failed: {error}");
         return Ok(Vec::new());
     }
     let device = device.ok_or_else(|| Error::from_hresult(E_FAIL))?;

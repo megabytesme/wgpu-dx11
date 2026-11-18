@@ -649,25 +649,21 @@ impl Capabilities {
     }
 
     pub fn private_fl91_depth_comparison_sampling(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self.backend.fl91_depth_comparison_sampling
+        self.backend.fl91_depth_comparison_sampling
             && self.driver.comparison_shadow == Query::Value(true)
     }
 
     pub fn private_fl91_fragment_texture_load_2d_float(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self.backend.fl91_fragment_texture_load_2d_float
+        self.backend.fl91_fragment_texture_load_2d_float
     }
 
     pub fn private_fl91_fragment_frexp_fraction_only(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1 && self.backend.fl91_fragment_frexp_fraction_only
+        self.backend.fl91_fragment_frexp_fraction_only
     }
 
     pub fn private_fl91_fragment_texture_sample_bias_offset_2d_single_mip(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self
-                .backend
-                .fragment_texture_sample_bias_offset_2d_single_mip
+        self.backend
+            .fragment_texture_sample_bias_offset_2d_single_mip
     }
 
     pub fn private_fl91_fragment_texture_sample_compare_offset_2d_single_mip(&self) -> bool {
@@ -678,66 +674,52 @@ impl Capabilities {
     }
 
     pub fn private_fl91_fragment_texture_sample_level_zero_2d_single_mip(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self
-                .backend
-                .fragment_texture_sample_level_zero_2d_single_mip
+        self.backend
+            .fragment_texture_sample_level_zero_2d_single_mip
     }
 
     pub fn private_fl91_fragment_texture_sample_level_integer_2d(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self.backend.fragment_texture_sample_level_integer_2d
+        self.backend.fragment_texture_sample_level_integer_2d
     }
 
     pub fn private_fl91_fragment_texture_sample_grad_2d_single_mip(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self.backend.fragment_texture_sample_grad_2d_single_mip
+        self.backend.fragment_texture_sample_grad_2d_single_mip
     }
 
     pub fn private_fl91_fragment_texture_load_3d_float(&self) -> bool {
         let rgba8 = wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Rgba8Unorm);
-        self.hardware.level == FeatureLevel::L9_1
-            && self.backend.fl91_fragment_texture_load_3d_float
+        self.backend.fl91_fragment_texture_load_3d_float
             && self.texture_3d_format_mask() & rgba8 != 0
     }
 
     pub fn private_fl91_fragment_texture_dimensions_2d_float(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self.backend.fl91_fragment_texture_dimensions_2d_float
+        self.backend.fl91_fragment_texture_dimensions_2d_float
     }
 
     pub fn private_fl91_fragment_texture_dimensions_3d_float(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self.backend.fl91_fragment_texture_dimensions_3d_float
+        self.backend.fl91_fragment_texture_dimensions_3d_float
             && self.texture_3d_format_mask() != 0
     }
 
     pub fn private_fl91_fragment_texture_dimensions_cube_float(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self.backend.fl91_fragment_texture_dimensions_cube_float
-            && self.cube_texture_sampling()
+        self.backend.fl91_fragment_texture_dimensions_cube_float && self.cube_texture_sampling()
     }
 
     pub fn private_fl91_fragment_texture_num_levels_2d_float(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self.backend.fl91_fragment_texture_num_levels_2d_float
+        self.backend.fl91_fragment_texture_num_levels_2d_float
     }
 
     pub fn private_fl91_fragment_texture_num_levels_3d_float(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self.backend.fl91_fragment_texture_num_levels_3d_float
+        self.backend.fl91_fragment_texture_num_levels_3d_float
             && self.texture_3d_format_mask() != 0
     }
 
     pub fn private_fl91_fragment_texture_num_levels_cube_float(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self.backend.fl91_fragment_texture_num_levels_cube_float
-            && self.cube_texture_sampling()
+        self.backend.fl91_fragment_texture_num_levels_cube_float && self.cube_texture_sampling()
     }
 
     pub fn private_fl91_fragment_texture_base_clamp_2d_float(&self) -> bool {
-        self.hardware.level == FeatureLevel::L9_1
-            && self.backend.fl91_fragment_texture_base_clamp_2d_float
+        self.backend.fl91_fragment_texture_base_clamp_2d_float
     }
 
     pub fn texture_3d_format_mask(&self) -> u32 {
@@ -873,10 +855,6 @@ impl Capabilities {
     }
 
     pub fn wgpu_projection(&self) -> Option<WgpuCapabilityProjection> {
-        if self.hardware.level != FeatureLevel::L9_1 {
-            return None;
-        }
-
         let cube_texture_format_mask = self.cube_texture_format_mask();
         let rgba8_cube =
             wgt::DownlevelLimits::texture_cube_format_bit(wgt::TextureFormat::Rgba8Unorm);
@@ -930,12 +908,8 @@ impl Capabilities {
         };
         limits.max_vertex_attributes = 16;
         limits.max_vertex_buffer_array_stride = 2048;
-        // FL9_1's eight pixel-shader inputs include the fragment position builtin.
-        limits.max_inter_stage_shader_variables = if self.hardware.level == FeatureLevel::L9_1 {
-            7
-        } else {
-            8
-        };
+        // FL9_1 compiled pixel shaders accept eight inputs total, including SV_Position.
+        limits.max_inter_stage_shader_variables = 7;
         limits.max_color_attachments = self.backend.color_attachments;
         limits.max_color_attachment_bytes_per_sample = 8;
         limits.max_buffers_and_acceleration_structures_per_shader_stage =
@@ -1035,13 +1009,15 @@ impl Capabilities {
                 max_vertex_shader_uniform_vectors: self
                     .hardware
                     .legacy_vertex_shader_constant_vectors
-                    .expect("FL9_1 must have a legacy vertex constant guarantee")
-                    .min(self.backend.max_vertex_shader_uniform_vectors),
+                    .map_or(self.backend.max_vertex_shader_uniform_vectors, |limit| {
+                        limit.min(self.backend.max_vertex_shader_uniform_vectors)
+                    }),
                 max_fragment_shader_uniform_vectors: self
                     .hardware
                     .legacy_fragment_shader_constant_vectors
-                    .expect("FL9_1 must have a legacy fragment constant guarantee")
-                    .min(self.backend.max_fragment_shader_uniform_vectors),
+                    .map_or(self.backend.max_fragment_shader_uniform_vectors, |limit| {
+                        limit.min(self.backend.max_fragment_shader_uniform_vectors)
+                    }),
                 unrestricted_npot_texture_sampling: self.unrestricted_npot_texture_sampling(),
                 max_texture_repeat_per_primitive: self.hardware.max_texture_repeat_per_primitive,
                 max_sampler_anisotropy: self.backend.max_sampler_anisotropy,
@@ -2380,8 +2356,16 @@ mod tests {
             FeatureLevel::L11_0,
             FeatureLevel::L11_1,
         ] {
-            assert!(!model(level).private_fl91_fragment_texture_load_2d_float());
-            assert!(model(level).wgpu_projection().is_none());
+            let caps = model(level);
+            assert!(caps.private_fl91_fragment_texture_load_2d_float());
+            let projected = caps
+                .wgpu_projection()
+                .expect("higher feature levels expose the FL9_1 shader projection")
+                .capabilities;
+            assert_eq!(
+                projected.limits.max_texture_dimension_2d,
+                caps.hardware.texture_2d_dimension
+            );
         }
     }
 
@@ -2419,7 +2403,7 @@ mod tests {
             FeatureLevel::L11_0,
             FeatureLevel::L11_1,
         ] {
-            assert!(!model(level).private_fl91_fragment_frexp_fraction_only());
+            assert!(model(level).private_fl91_fragment_frexp_fraction_only());
         }
     }
 
@@ -2471,8 +2455,9 @@ mod tests {
             FeatureLevel::L11_0,
             FeatureLevel::L11_1,
         ] {
-            assert!(!model(level).private_fl91_fragment_texture_load_3d_float());
-            assert!(model(level).wgpu_projection().is_none());
+            let caps = model(level);
+            assert!(caps.private_fl91_fragment_texture_load_3d_float());
+            assert!(caps.wgpu_projection().is_some());
         }
     }
 
@@ -2673,13 +2658,14 @@ mod tests {
             FeatureLevel::L11_0,
             FeatureLevel::L11_1,
         ] {
-            assert!(!model(level).private_fl91_fragment_texture_num_levels_2d_float());
-            assert!(!model(level).private_fl91_fragment_texture_num_levels_3d_float());
-            assert!(!model(level).private_fl91_fragment_texture_num_levels_cube_float());
-            assert!(!model(level).private_fl91_fragment_texture_dimensions_3d_float());
-            assert!(!model(level).private_fl91_fragment_texture_dimensions_cube_float());
-            assert!(!model(level).private_fl91_fragment_texture_base_clamp_2d_float());
-            assert!(model(level).wgpu_projection().is_none());
+            let caps = model(level);
+            assert!(caps.private_fl91_fragment_texture_num_levels_2d_float());
+            assert!(caps.private_fl91_fragment_texture_num_levels_3d_float());
+            assert!(caps.private_fl91_fragment_texture_num_levels_cube_float());
+            assert!(caps.private_fl91_fragment_texture_dimensions_3d_float());
+            assert!(caps.private_fl91_fragment_texture_dimensions_cube_float());
+            assert!(caps.private_fl91_fragment_texture_base_clamp_2d_float());
+            assert!(caps.wgpu_projection().is_some());
         }
     }
 
@@ -2721,7 +2707,7 @@ mod tests {
 
         caps.backend.fl91_depth_comparison_sampling = true;
         caps.hardware = HardwareGuarantees::for_level(FeatureLevel::L9_2);
-        assert!(!caps.private_fl91_depth_comparison_sampling());
+        assert!(caps.private_fl91_depth_comparison_sampling());
     }
 
     #[test]
@@ -3657,18 +3643,22 @@ mod tests {
     #[test]
     fn wgpu_projection_requires_the_selected_fl91_execution_path() {
         for level in FeatureLevel::ALL_DESCENDING {
-            let projection = model(level).wgpu_projection();
-            assert_eq!(projection.is_some(), level == FeatureLevel::L9_1);
-            if let Some(projection) = projection {
-                assert!(!projection.capabilities.downlevel.limits.texture_gather);
-                assert!(
-                    projection
-                        .capabilities
-                        .downlevel
-                        .limits
-                        .texture_gather_2d_float_fragment
-                );
-            }
+            let hardware = HardwareGuarantees::for_level(level);
+            let projection = model(level)
+                .wgpu_projection()
+                .expect("all hardware feature levels expose the FL9_1 shader projection");
+            assert_eq!(
+                projection.capabilities.limits.max_texture_dimension_2d,
+                hardware.texture_2d_dimension
+            );
+            assert!(!projection.capabilities.downlevel.limits.texture_gather);
+            assert!(
+                projection
+                    .capabilities
+                    .downlevel
+                    .limits
+                    .texture_gather_2d_float_fragment
+            );
         }
 
         let mut disabled = model(FeatureLevel::L9_1);
@@ -5174,8 +5164,9 @@ mod tests {
             FeatureLevel::L11_0,
             FeatureLevel::L11_1,
         ] {
-            assert!(!model(level).private_fl91_fragment_texture_sample_bias_offset_2d_single_mip());
-            assert!(model(level).wgpu_projection().is_none());
+            let caps = model(level);
+            assert!(caps.private_fl91_fragment_texture_sample_bias_offset_2d_single_mip());
+            assert!(caps.wgpu_projection().is_some());
         }
     }
 
@@ -5212,7 +5203,7 @@ mod tests {
             FeatureLevel::L11_0,
             FeatureLevel::L11_1,
         ] {
-            assert!(!model(level).private_fl91_fragment_texture_sample_level_zero_2d_single_mip());
+            assert!(model(level).private_fl91_fragment_texture_sample_level_zero_2d_single_mip());
         }
     }
 
@@ -5248,7 +5239,7 @@ mod tests {
             FeatureLevel::L11_0,
             FeatureLevel::L11_1,
         ] {
-            assert!(!model(level).private_fl91_fragment_texture_sample_level_integer_2d());
+            assert!(model(level).private_fl91_fragment_texture_sample_level_integer_2d());
         }
     }
 
@@ -5284,7 +5275,7 @@ mod tests {
             FeatureLevel::L11_0,
             FeatureLevel::L11_1,
         ] {
-            assert!(!model(level).private_fl91_fragment_texture_sample_grad_2d_single_mip());
+            assert!(model(level).private_fl91_fragment_texture_sample_grad_2d_single_mip());
         }
     }
 
@@ -5333,8 +5324,8 @@ mod tests {
             FeatureLevel::L11_1,
         ] {
             let caps = model(level);
-            assert!(!caps.private_fl91_fragment_texture_sample_compare_offset_2d_single_mip());
-            assert!(caps.wgpu_projection().is_none());
+            assert!(caps.private_fl91_fragment_texture_sample_compare_offset_2d_single_mip());
+            assert!(caps.wgpu_projection().is_some());
         }
     }
 

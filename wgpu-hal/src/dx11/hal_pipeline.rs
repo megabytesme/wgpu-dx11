@@ -3407,7 +3407,8 @@ impl RenderPipeline {
             if uses_vertex_index {
                 let max_vertex_index =
                     super::capabilities::HardwareGuarantees::for_level(owner.feature_level())
-                        .max_vertex_index;
+                        .max_vertex_index
+                        .min(super::hal_index::MAX_IDENTITY_VERTEX_INDEX);
                 let mut ids = alloc::vec::Vec::new();
                 ids.try_reserve_exact(max_vertex_index as usize + 1)
                     .map_err(|_| crate::PipelineError::Device(crate::DeviceError::OutOfMemory))?;

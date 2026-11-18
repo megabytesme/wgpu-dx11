@@ -42,8 +42,7 @@ fn translate_sampler_with_shadow_support(
     use wgt::FilterMode::{Linear, Nearest};
     use wgt::MipmapFilterMode::{Linear as MipLinear, Nearest as MipNearest};
     let comparison = desc.compare.is_some();
-    let border_addressing_supported =
-        comparison && shadow_supported && level == super::device::FeatureLevel::L9_1;
+    let border_addressing_supported = comparison && shadow_supported;
     let address = |mode| match mode {
         wgt::AddressMode::ClampToEdge => Ok(D3D11_TEXTURE_ADDRESS_CLAMP),
         wgt::AddressMode::Repeat => Ok(D3D11_TEXTURE_ADDRESS_WRAP),
@@ -55,7 +54,6 @@ fn translate_sampler_with_shadow_support(
     };
     if (comparison
         && (!shadow_supported
-            || level != super::device::FeatureLevel::L9_1
             || desc.compare != Some(wgt::CompareFunction::LessEqual)
             || desc.min_filter != desc.mag_filter
             || desc.anisotropy_clamp != 1))
@@ -434,7 +432,10 @@ mod tests {
         desc.mag_filter = wgt::FilterMode::Linear;
         assert!(translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_1, true).is_err());
         desc.mag_filter = desc.min_filter;
-        assert!(translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_3, true).is_err());
+        let (higher_level, _) =
+            translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_3, true)
+                .expect("comparison sampler stays supported across L9_1..=L11_1");
+        assert_eq!(higher_level.Filter, D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT);
     }
 
     #[test]

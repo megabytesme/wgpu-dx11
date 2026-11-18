@@ -2201,8 +2201,11 @@ mod tests {
                 wgt::IndexFormat::Uint32
             )
             .is_err());
+        let (_, empty_length) =
+            native.index_buffer(index_native, 16, None, wgt::IndexFormat::Uint16)?;
+        assert_eq!(empty_length, 0);
         assert!(native
-            .index_buffer(index_native, 16, None, wgt::IndexFormat::Uint16)
+            .index_buffer(index_native, 18, None, wgt::IndexFormat::Uint16)
             .is_err());
         assert!(native
             .index_buffer(source_native, 0, None, wgt::IndexFormat::Uint16)
