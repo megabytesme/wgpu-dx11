@@ -12219,14 +12219,9 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                             || supported_texture_load_coordinate_conversion)
                             && (integer(expr) || integer(handle))
                     }
-                    naga::Expression::Math {
-                        arg,
-                        arg1,
-                        arg2,
-                        arg3,
-                        ..
-                    } if function_handle.is_none()
-                        && frexp_fraction_only_result == Some(handle) =>
+                    naga::Expression::Math { .. }
+                        if function_handle.is_none()
+                            && frexp_fraction_only_result == Some(handle) =>
                     {
                         false
                     }

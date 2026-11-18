@@ -43,6 +43,41 @@ impl Adapter {
             capabilities: projection.capabilities,
         })
     }
+
+    /// Returns the D3D11 feature level active on this adapter's native device.
+    pub fn feature_level(&self) -> super::FeatureLevel {
+        match &self.inner {
+            AdapterInner::Native(native) => native.feature_level(),
+            #[cfg(feature = "dx11-test-fixture")]
+            AdapterInner::Fixture(native) => native.feature_level(),
+        }
+    }
+
+    /// Returns whether DXGI identifies the live device's adapter as software.
+    pub fn is_software(&self) -> bool {
+        use windows::core::Interface as _;
+        use windows::Win32::Graphics::Dxgi::{
+            IDXGIAdapter1, IDXGIDevice, DXGI_ADAPTER_FLAG_SOFTWARE,
+        };
+        let native = match &self.inner {
+            AdapterInner::Native(native) => native,
+            #[cfg(feature = "dx11-test-fixture")]
+            AdapterInner::Fixture(native) => native,
+        };
+        let Ok(dxgi_device) = native.raw_device().cast::<IDXGIDevice>() else {
+            return true;
+        };
+        let Ok(dxgi_adapter) = (unsafe { dxgi_device.GetAdapter() }) else {
+            return true;
+        };
+        let Ok(adapter1) = dxgi_adapter.cast::<IDXGIAdapter1>() else {
+            return true;
+        };
+        let Ok(desc) = (unsafe { adapter1.GetDesc1() }) else {
+            return true;
+        };
+        (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32) != 0
+    }
 }
 
 #[cfg(feature = "dx11-test-fixture")]
