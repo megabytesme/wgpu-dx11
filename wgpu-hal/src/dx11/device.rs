@@ -13,12 +13,17 @@ use windows::{
                 D3D11_QUERY_DESC, D3D11_QUERY_EVENT, D3D11_SDK_VERSION,
             },
             Dxgi::{
-                CreateDXGIFactory2, IDXGIAdapter, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1,
-                DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_CREATE_FACTORY_FLAGS, DXGI_ERROR_NOT_FOUND,
+                IDXGIAdapter, IDXGIAdapter1, IDXGIDevice, IDXGIFactory1,
+                DXGI_ADAPTER_FLAG_SOFTWARE, DXGI_ERROR_NOT_FOUND,
             },
         },
     },
 };
+
+#[cfg(target_vendor = "uwp")]
+use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_9_1};
+#[cfg(not(target_vendor = "uwp"))]
+use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory2, DXGI_CREATE_FACTORY_FLAGS};
 
 #[cfg(test)]
 use core::mem::size_of;
@@ -343,9 +348,25 @@ impl NativeDevice {
     }
 }
 
-/// Enumerate owned native adapters without exposing any wgpu adapter.
-pub fn enumerate_native_adapters() -> Result<Vec<NativeAdapter>> {
-    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0))? };
+fn native_adapter_from_dxgi(raw: IDXGIAdapter1) -> Result<NativeAdapter> {
+    let desc = unsafe { raw.GetDesc1()? };
+    let end = desc
+        .Description
+        .iter()
+        .position(|&c| c == 0)
+        .unwrap_or(desc.Description.len());
+    Ok(NativeAdapter {
+        raw,
+        identity: AdapterIdentity {
+            name: String::from_utf16_lossy(&desc.Description[..end]),
+            vendor_id: desc.VendorId,
+            device_id: desc.DeviceId,
+            software: desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0,
+        },
+    })
+}
+
+fn enumerate_adapters_from_factory(factory: &IDXGIFactory1) -> Result<Vec<NativeAdapter>> {
     let mut adapters = Vec::new();
     let mut index = 0;
     loop {
@@ -354,24 +375,49 @@ pub fn enumerate_native_adapters() -> Result<Vec<NativeAdapter>> {
             Err(error) if error.code() == DXGI_ERROR_NOT_FOUND => break,
             Err(error) => return Err(error),
         };
-        let desc = unsafe { raw.GetDesc1()? };
-        let end = desc
-            .Description
-            .iter()
-            .position(|&c| c == 0)
-            .unwrap_or(desc.Description.len());
-        adapters.push(NativeAdapter {
-            raw,
-            identity: AdapterIdentity {
-                name: String::from_utf16_lossy(&desc.Description[..end]),
-                vendor_id: desc.VendorId,
-                device_id: desc.DeviceId,
-                software: desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0,
-            },
-        });
+        adapters.push(native_adapter_from_dxgi(raw)?);
         index += 1;
     }
     Ok(adapters)
+}
+
+/// Enumerate owned native adapters without exposing any wgpu adapter.
+#[cfg(not(target_vendor = "uwp"))]
+pub fn enumerate_native_adapters() -> Result<Vec<NativeAdapter>> {
+    let factory: IDXGIFactory1 = unsafe { CreateDXGIFactory2(DXGI_CREATE_FACTORY_FLAGS(0))? };
+    enumerate_adapters_from_factory(&factory)
+}
+
+/// Enumerate owned native adapters on UWP without statically importing `dxgi.dll`.
+#[cfg(target_vendor = "uwp")]
+pub fn enumerate_native_adapters() -> Result<Vec<NativeAdapter>> {
+    let requested = [D3D_FEATURE_LEVEL_9_1];
+    let mut device = None;
+    let create = unsafe {
+        D3D11CreateDevice(
+            None,
+            D3D_DRIVER_TYPE_HARDWARE,
+            HMODULE::default(),
+            D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+            Some(&requested),
+            D3D11_SDK_VERSION,
+            Some(&mut device),
+            None,
+            None,
+        )
+    };
+    if let Err(error) = create {
+        log::debug!("UWP D3D11CreateDevice hardware FL9_1 probe failed: {error}");
+        return Ok(Vec::new());
+    }
+    let device = device.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+    let dxgi_device: IDXGIDevice = device.cast()?;
+    let adapter: IDXGIAdapter = unsafe { dxgi_device.GetAdapter()? };
+    if let Ok(factory) = unsafe { adapter.GetParent::<IDXGIFactory1>() } {
+        return enumerate_adapters_from_factory(&factory);
+    }
+    let adapter1: IDXGIAdapter1 = adapter.cast()?;
+    Ok(alloc::vec![native_adapter_from_dxgi(adapter1)?])
 }
 
 #[cfg(test)]

@@ -1,15 +1,16 @@
 //! In-memory FXC shader compilation. WGSL lowering is not implemented here.
 use alloc::{ffi::CString, format, string::String, vec::Vec};
+#[cfg(not(target_vendor = "uwp"))]
+use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
 use windows::{
     core::PCSTR,
     Win32::{
         Foundation::E_INVALIDARG,
-        Graphics::Direct3D::{
-            Fxc::{D3DCompile, D3DCOMPILE_ENABLE_STRICTNESS},
-            ID3DBlob, ID3DInclude,
-        },
+        Graphics::Direct3D::{Fxc::D3DCOMPILE_ENABLE_STRICTNESS, ID3DBlob},
     },
 };
+#[cfg(not(target_vendor = "uwp"))]
+use windows::Win32::Graphics::Direct3D::ID3DInclude;
 
 /// Explicit shader targets supported by this diagnostic compiler seam.
 #[allow(dead_code)]
@@ -76,6 +77,50 @@ fn blob_bytes(blob: &ID3DBlob) -> &[u8] {
     unsafe { core::slice::from_raw_parts(ptr, size) }
 }
 
+#[cfg(target_vendor = "uwp")]
+type D3DCompileFn = unsafe extern "system" fn(
+    psrcdata: *const core::ffi::c_void,
+    srcdatasize: usize,
+    psourcename: PCSTR,
+    pdefines: *const core::ffi::c_void,
+    pinclude: *mut core::ffi::c_void,
+    pentrypoint: PCSTR,
+    ptarget: PCSTR,
+    flags1: u32,
+    flags2: u32,
+    ppcode: *mut Option<ID3DBlob>,
+    pperrormsgs: *mut Option<ID3DBlob>,
+) -> windows::core::HRESULT;
+
+#[cfg(target_vendor = "uwp")]
+fn dynamic_d3d_compile() -> Option<D3DCompileFn> {
+    static D3D_COMPILE: std::sync::OnceLock<Option<D3DCompileFn>> = std::sync::OnceLock::new();
+    *D3D_COMPILE.get_or_init(|| {
+        #[link(name = "WindowsApp")]
+        unsafe extern "system" {
+            fn LoadPackagedLibrary(filename: *const u16, reserved: u32) -> isize;
+            fn GetProcAddress(module: isize, proc_name: *const u8) -> *const core::ffi::c_void;
+        }
+        #[link(name = "kernel32.dll", kind = "raw-dylib", modifiers = "+verbatim")]
+        unsafe extern "system" {
+            fn LoadLibraryExW(filename: *const u16, file: isize, flags: u32) -> isize;
+        }
+        let name: Vec<u16> = "d3dcompiler_47.dll".encode_utf16().chain(Some(0)).collect();
+        let mut module = unsafe { LoadPackagedLibrary(name.as_ptr(), 0) };
+        if module == 0 {
+            module = unsafe { LoadLibraryExW(name.as_ptr(), 0, 0) };
+        }
+        if module == 0 {
+            return None;
+        }
+        let symbol = unsafe { GetProcAddress(module, c"D3DCompile".as_ptr().cast()) };
+        if symbol.is_null() {
+            return None;
+        }
+        Some(unsafe { core::mem::transmute::<*const core::ffi::c_void, D3DCompileFn>(symbol) })
+    })
+}
+
 /// Compile HLSL in memory to DXBC without file access or include handlers.
 ///
 /// This does not translate WGSL or validate WebGPU capabilities.
@@ -91,6 +136,7 @@ pub(crate) fn compile_hlsl(
     })?;
     let mut code = None;
     let mut messages = None;
+    #[cfg(not(target_vendor = "uwp"))]
     let result = unsafe {
         D3DCompile(
             source.as_ptr().cast(),
@@ -105,6 +151,31 @@ pub(crate) fn compile_hlsl(
             &mut code,
             Some(&mut messages),
         )
+    };
+    #[cfg(target_vendor = "uwp")]
+    let result = {
+        let Some(d3d_compile) = dynamic_d3d_compile() else {
+            return Err(ShaderCompileError {
+                code: windows::Win32::Foundation::E_NOTIMPL.0,
+                message: String::from("d3dcompiler_47.dll is unavailable in this UWP environment"),
+            });
+        };
+        unsafe {
+            d3d_compile(
+                source.as_ptr().cast(),
+                source.len(),
+                PCSTR::null(),
+                core::ptr::null(),
+                core::ptr::null_mut(),
+                PCSTR(entry.as_ptr().cast()),
+                profile.target(),
+                D3DCOMPILE_ENABLE_STRICTNESS,
+                0,
+                &mut code,
+                &mut messages,
+            )
+        }
+        .ok()
     };
     if let Err(error) = result {
         let message = messages
