@@ -23,13 +23,41 @@ use windows::{
                 Common::{DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC},
                 IDXGIDevice, IDXGIFactory2, IDXGISwapChain2, DXGI_ERROR_INVALID_CALL, DXGI_PRESENT,
                 DXGI_SCALING_NONE, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1,
-                DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT,
+                DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT,
                 DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT,
             },
         },
         System::Threading::{WaitForSingleObjectEx, INFINITE},
     },
 };
+
+#[cfg(target_vendor = "uwp")]
+unsafe extern "C" {
+    fn horizon_uwp_attach_game_swapchain(swap_chain: *mut core::ffi::c_void) -> i32;
+    fn horizon_uwp_get_surface_metrics(
+        width: *mut u32,
+        height: *mut u32,
+        scale_x: *mut f64,
+        scale_y: *mut f64,
+    );
+}
+
+#[cfg(target_vendor = "uwp")]
+fn apply_uwp_panel_scale(swapchain: &IDXGISwapChain2) -> Result<()> {
+    let (mut width, mut height, mut scale_x, mut scale_y) = (0, 0, 1.0, 1.0);
+    unsafe {
+        horizon_uwp_get_surface_metrics(&mut width, &mut height, &mut scale_x, &mut scale_y);
+    }
+    if !scale_x.is_finite() || !scale_y.is_finite() || scale_x <= 0.0 || scale_y <= 0.0 {
+        return Err(Error::from_hresult(E_INVALIDARG));
+    }
+    let matrix = windows::Win32::Graphics::Dxgi::DXGI_MATRIX_3X2_F {
+        _11: (1.0 / scale_x) as f32,
+        _22: (1.0 / scale_y) as f32,
+        ..Default::default()
+    };
+    unsafe { swapchain.SetMatrixTransform(&matrix) }
+}
 
 #[derive(Debug, Default)]
 struct State {
@@ -80,7 +108,9 @@ struct Inner {
     device: Arc<NativeDevice>,
     _window: Option<AgileReference<windows::UI::Core::ICoreWindow>>,
     swapchain: IDXGISwapChain2,
-    frame_latency_waitable: OwnedHandle,
+    frame_latency_waitable: Option<OwnedHandle>,
+    flags: u32,
+    is_swap_chain_panel: bool,
     state: Mutex<State>,
     #[cfg(feature = "dx11-test-fixture")]
     test_next_present: AtomicI32,
@@ -118,7 +148,11 @@ impl CoreWindowSwapchain {
         if (width == 0) != (height == 0) {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
-        let desc = DXGI_SWAP_CHAIN_DESC1 {
+        let is_swap_chain_panel = surface.is_swap_chain_panel();
+        #[cfg_attr(not(target_vendor = "uwp"), allow(unused_mut))]
+        let mut flags = DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT.0 as u32;
+        #[cfg_attr(not(target_vendor = "uwp"), allow(unused_mut))]
+        let mut desc = DXGI_SWAP_CHAIN_DESC1 {
             Width: width,
             Height: height,
             Format: DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -128,14 +162,14 @@ impl CoreWindowSwapchain {
             },
             BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
             BufferCount: 2,
-            Scaling: if surface.hwnd().is_some() {
+            Scaling: if surface.hwnd().is_some() || is_swap_chain_panel {
                 DXGI_SCALING_STRETCH
             } else {
                 DXGI_SCALING_NONE
             },
             SwapEffect: DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
             AlphaMode: DXGI_ALPHA_MODE_IGNORE,
-            Flags: DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT.0 as u32,
+            Flags: flags,
             ..Default::default()
         };
         let (swapchain, frame_latency_waitable, retained_window) = {
@@ -147,6 +181,44 @@ impl CoreWindowSwapchain {
                     factory.CreateSwapChainForHwnd(device.raw_device(), hwnd, &desc, None, None)?
                 };
                 (swapchain, None)
+            } else if is_swap_chain_panel {
+                #[cfg(target_vendor = "uwp")]
+                {
+                    let created = unsafe {
+                        factory.CreateSwapChainForComposition(
+                            device.raw_device(),
+                            &desc,
+                            None,
+                        )
+                    };
+                    let swapchain = match created {
+                        Ok(sc) => sc,
+                        Err(err)
+                            if err.code() == E_INVALIDARG
+                                || err.code() == DXGI_ERROR_INVALID_CALL =>
+                        {
+                            flags = 0;
+                            desc.Flags = 0;
+                            unsafe {
+                                factory.CreateSwapChainForComposition(
+                                    device.raw_device(),
+                                    &desc,
+                                    None,
+                                )?
+                            }
+                        }
+                        Err(err) => return Err(err),
+                    };
+                    let hr = unsafe { horizon_uwp_attach_game_swapchain(swapchain.as_raw()) };
+                    if hr < 0 {
+                        return Err(Error::from_hresult(HRESULT(hr)));
+                    }
+                    (swapchain, None)
+                }
+                #[cfg(not(target_vendor = "uwp"))]
+                {
+                    return Err(Error::from_hresult(E_INVALIDARG));
+                }
             } else {
                 let window = surface.core_window()?;
                 let retained_window = AgileReference::new(&window)?;
@@ -161,13 +233,21 @@ impl CoreWindowSwapchain {
                 (swapchain, Some(retained_window))
             };
             let swapchain: IDXGISwapChain2 = swapchain.cast()?;
-            unsafe { swapchain.SetMaximumFrameLatency(1)? };
-            let handle = unsafe { swapchain.GetFrameLatencyWaitableObject() };
-            if handle.is_invalid() {
-                return Err(Error::from_hresult(E_FAIL));
+            let frame_latency_waitable = if flags != 0 {
+                unsafe { swapchain.SetMaximumFrameLatency(1)? };
+                let handle = unsafe { swapchain.GetFrameLatencyWaitableObject() };
+                if handle.is_invalid() {
+                    return Err(Error::from_hresult(E_FAIL));
+                }
+                Some(unsafe { OwnedHandle::from_raw_handle(handle.0) })
+            } else {
+                None
+            };
+            #[cfg(target_vendor = "uwp")]
+            if is_swap_chain_panel {
+                apply_uwp_panel_scale(&swapchain)?;
             }
-            let handle = unsafe { OwnedHandle::from_raw_handle(handle.0) };
-            (swapchain, handle, retained_window)
+            (swapchain, frame_latency_waitable, retained_window)
         };
         Ok(Self {
             inner: Arc::new(Inner {
@@ -175,6 +255,8 @@ impl CoreWindowSwapchain {
                 _window: retained_window,
                 swapchain,
                 frame_latency_waitable,
+                flags,
+                is_swap_chain_panel,
                 state: Mutex::new(State::default()),
                 #[cfg(feature = "dx11-test-fixture")]
                 test_next_present: AtomicI32::new(0),
@@ -334,10 +416,11 @@ impl CoreWindowSwapchain {
     }
 
     fn wait_for_frame_latency(&self, timeout: Option<core::time::Duration>) -> Result<bool> {
+        let Some(ref waitable) = self.inner.frame_latency_waitable else {
+            return Ok(true);
+        };
         let timeout = timeout.map_or(INFINITE, duration_to_timeout_ms);
-        let handle = windows::Win32::Foundation::HANDLE(
-            self.inner.frame_latency_waitable.as_raw_handle().cast(),
-        );
+        let handle = windows::Win32::Foundation::HANDLE(waitable.as_raw_handle().cast());
         let result = unsafe { WaitForSingleObjectEx(handle, timeout, false) };
         if result == windows::Win32::Foundation::WAIT_OBJECT_0 {
             return Ok(true);
@@ -391,9 +474,15 @@ impl CoreWindowSwapchain {
                 width,
                 height,
                 DXGI_FORMAT_B8G8R8A8_UNORM,
-                DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT,
+                DXGI_SWAP_CHAIN_FLAG(self.inner.flags as i32),
             )?;
         }
+        #[cfg(target_vendor = "uwp")]
+        if self.inner.is_swap_chain_panel {
+            apply_uwp_panel_scale(&self.inner.swapchain)?;
+        }
+        #[cfg(not(target_vendor = "uwp"))]
+        let _ = self.inner.is_swap_chain_panel;
         drop(context);
         Ok(())
     }

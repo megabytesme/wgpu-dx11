@@ -841,7 +841,7 @@ impl dispatch::InstanceInterface for ContextWgpuCore {
                     .instance_create_surface_from_surface_handle(surface_handle, None)
             },
 
-            #[cfg(dx12)]
+            #[cfg(any(dx12, dx11))]
             SurfaceTargetUnsafe::SwapChainPanel(swap_chain_panel) => unsafe {
                 self.0
                     .instance_create_surface_from_swap_chain_panel(swap_chain_panel, None)

@@ -463,7 +463,7 @@ pub enum SurfaceTargetUnsafe {
     /// # Safety
     ///
     /// - visual must be a valid SwapChainPanel to create a surface upon.  Its refcount will be incremented internally and kept live as long as the resulting [`Surface`] is live.
-    #[cfg(dx12)]
+    #[cfg(any(dx12, dx11))]
     SwapChainPanel(*mut core::ffi::c_void),
 }
 

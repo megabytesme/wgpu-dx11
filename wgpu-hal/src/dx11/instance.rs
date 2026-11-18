@@ -3,11 +3,37 @@
 use alloc::{string::String, sync::Arc, vec::Vec};
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 
+#[cfg(target_vendor = "uwp")]
+unsafe extern "C" {
+    fn horizon_uwp_acquire_game_swapchain_panel() -> *mut core::ffi::c_void;
+    fn horizon_uwp_release_game_swapchain_panel(panel: *mut core::ffi::c_void);
+}
+
 /// Experimental D3D11 instance exposing only physical adapters with the FL9_1 path.
 #[derive(Debug)]
 pub struct Instance;
 
 crate::impl_dyn_resource!(Instance);
+
+impl Instance {
+    #[cfg_attr(not(target_vendor = "uwp"), allow(dead_code))]
+    pub unsafe fn create_surface_from_swap_chain_panel(
+        &self,
+        swap_chain_panel: *mut core::ffi::c_void,
+    ) -> Result<super::Surface, crate::InstanceError> {
+        #[cfg(target_vendor = "uwp")]
+        {
+            unsafe { super::Surface::from_swap_chain_panel(swap_chain_panel) }
+        }
+        #[cfg(not(target_vendor = "uwp"))]
+        {
+            let _ = swap_chain_panel;
+            Err(crate::InstanceError::new(String::from(
+                "D3D11 SwapChainPanel surfaces are only supported on UWP",
+            )))
+        }
+    }
+}
 
 impl crate::Instance for Instance {
     type A = super::Api;
@@ -27,9 +53,18 @@ impl crate::Instance for Instance {
             )));
         }
         match window {
-            RawWindowHandle::WinRt(window) => unsafe {
-                super::Surface::from_core_window(window.core_window.as_ptr())
-            },
+            RawWindowHandle::WinRt(window) => {
+                #[cfg(target_vendor = "uwp")]
+                {
+                    let panel = unsafe { horizon_uwp_acquire_game_swapchain_panel() };
+                    if !panel.is_null() {
+                        let res = unsafe { super::Surface::from_swap_chain_panel(panel) };
+                        unsafe { horizon_uwp_release_game_swapchain_panel(panel) };
+                        return res;
+                    }
+                }
+                unsafe { super::Surface::from_core_window(window.core_window.as_ptr()) }
+            }
             RawWindowHandle::Win32(window) => Ok(super::Surface::from_hwnd(window.hwnd)),
             _ => Err(crate::InstanceError::new(String::from(
                 "D3D11 requires a Windows window handle",

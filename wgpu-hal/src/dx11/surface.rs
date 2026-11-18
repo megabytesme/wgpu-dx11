@@ -49,12 +49,19 @@ fn is_current_thread(owner: &ThreadId) -> bool {
     std::thread::current().id() == *owner
 }
 
+#[cfg(target_vendor = "uwp")]
+unsafe extern "C" {
+    fn horizon_uwp_detach_game_swapchain() -> i32;
+}
+
 #[derive(Debug)]
 enum Window {
     Core {
         window: AgileReference<ICoreWindow>,
         owner_thread: ThreadId,
     },
+    #[cfg(target_vendor = "uwp")]
+    SwapChainPanel,
     Hwnd(NonZeroIsize),
 }
 
@@ -214,6 +221,20 @@ impl Surface {
             test_next_unconfigure_error: AtomicI32::new(0),
         })
     }
+    #[cfg(target_vendor = "uwp")]
+    pub(super) unsafe fn from_swap_chain_panel(raw: *mut c_void) -> Result<Self, crate::InstanceError> {
+        let _unknown = unsafe { IUnknown::from_raw_borrowed(&raw) }
+            .ok_or_else(|| crate::InstanceError::new("null SwapChainPanel".into()))?;
+        Ok(Self {
+            window: Window::SwapChainPanel,
+            configured: Mutex::new(SurfaceState::default()),
+            operation_complete: Condvar::new(),
+            #[cfg(feature = "dx11-test-fixture")]
+            test_next_configure_error: AtomicI32::new(0),
+            #[cfg(feature = "dx11-test-fixture")]
+            test_next_unconfigure_error: AtomicI32::new(0),
+        })
+    }
     pub(super) fn from_hwnd(hwnd: NonZeroIsize) -> Self {
         Self {
             window: Window::Hwnd(hwnd),
@@ -225,31 +246,68 @@ impl Surface {
             test_next_unconfigure_error: AtomicI32::new(0),
         }
     }
+    pub(super) fn is_swap_chain_panel(&self) -> bool {
+        #[cfg(target_vendor = "uwp")]
+        {
+            matches!(self.window, Window::SwapChainPanel)
+        }
+        #[cfg(not(target_vendor = "uwp"))]
+        {
+            false
+        }
+    }
     pub(super) fn hwnd(&self) -> Option<windows::Win32::Foundation::HWND> {
         match self.window {
             Window::Hwnd(hwnd) => Some(windows::Win32::Foundation::HWND(hwnd.get() as *mut _)),
             Window::Core { .. } => None,
+            #[cfg(target_vendor = "uwp")]
+            Window::SwapChainPanel => None,
         }
     }
     pub(super) fn supports_public_presentation(&self) -> bool {
         match &self.window {
             Window::Core { .. } => true,
-            Window::Hwnd(hwnd) => unsafe {
-                windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(
-                    windows::Win32::Foundation::HWND(hwnd.get() as *mut _),
-                    None,
-                ) != 0
-            },
+            #[cfg(target_vendor = "uwp")]
+            Window::SwapChainPanel => true,
+            Window::Hwnd(hwnd) => {
+                #[cfg(not(target_vendor = "uwp"))]
+                {
+                    unsafe {
+                        windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(
+                            windows::Win32::Foundation::HWND(hwnd.get() as *mut _),
+                            None,
+                        ) != 0
+                    }
+                }
+                #[cfg(target_vendor = "uwp")]
+                {
+                    let _ = hwnd;
+                    false
+                }
+            }
         }
     }
     fn is_window_thread(&self) -> bool {
         match self.hwnd() {
-            Some(hwnd) => unsafe {
-                windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(hwnd, None)
-                    == windows::Win32::System::Threading::GetCurrentThreadId()
-            },
+            Some(hwnd) => {
+                #[cfg(not(target_vendor = "uwp"))]
+                {
+                    unsafe {
+                        windows::Win32::UI::WindowsAndMessaging::GetWindowThreadProcessId(
+                            hwnd, None,
+                        ) == windows::Win32::System::Threading::GetCurrentThreadId()
+                    }
+                }
+                #[cfg(target_vendor = "uwp")]
+                {
+                    let _ = hwnd;
+                    false
+                }
+            }
             None => match &self.window {
                 Window::Core { owner_thread, .. } => is_current_thread(owner_thread),
+                #[cfg(target_vendor = "uwp")]
+                Window::SwapChainPanel => true,
                 Window::Hwnd(_) => false,
             },
         }
@@ -258,6 +316,10 @@ impl Surface {
         match &self.window {
             Window::Core { window, .. } => window.resolve(),
             Window::Hwnd(_) => Err(windows::core::Error::from_hresult(
+                windows::Win32::Foundation::E_INVALIDARG,
+            )),
+            #[cfg(target_vendor = "uwp")]
+            Window::SwapChainPanel => Err(windows::core::Error::from_hresult(
                 windows::Win32::Foundation::E_INVALIDARG,
             )),
         }
@@ -1043,6 +1105,15 @@ impl crate::Surface for Surface {
             }
             return Err(error);
         }
+        #[cfg(target_vendor = "uwp")]
+        if self.is_swap_chain_panel() {
+            let result = unsafe { horizon_uwp_detach_game_swapchain() };
+            if result < 0 {
+                log::error!(
+                    "Unable to detach the UWP SwapChainPanel before releasing the D3D11 surface: HRESULT 0x{result:08X}"
+                );
+            }
+        }
         let old = self.configured.lock().current.take();
         drop(old);
         drop(config);
@@ -1097,7 +1168,7 @@ impl crate::Surface for Surface {
     }
 }
 
-#[cfg(test)]
+#[cfg(all(test, not(target_vendor = "uwp")))]
 #[path = "../../tests/dx11/hwnd_surface.rs"]
 mod hwnd_surface_tests;
 
@@ -1116,6 +1187,7 @@ mod tests {
         assert!(!is_current_thread(&other));
     }
 
+    #[cfg(not(target_vendor = "uwp"))]
     #[test]
     fn hwnd_present_thread_check_is_owner_thread_only() {
         use windows::{

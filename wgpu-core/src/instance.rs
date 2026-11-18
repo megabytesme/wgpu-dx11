@@ -411,7 +411,7 @@ impl Instance {
         })
     }
 
-    #[cfg(dx12)]
+    #[cfg(any(dx12, dx11))]
     /// # Safety
     ///
     /// The swap_chain_panel must be valid and able to be used to make a swapchain with.
@@ -420,8 +420,40 @@ impl Instance {
         swap_chain_panel: *mut core::ffi::c_void,
     ) -> Result<Surface, CreateSurfaceError> {
         profiling::scope!("Instance::instance_create_surface_from_swap_chain_panel");
-        self.create_surface_dx12(|inst| unsafe {
-            inst.create_surface_from_swap_chain_panel(swap_chain_panel)
+        let mut errors = HashMap::default();
+        let mut surface_per_backend: HashMap<Backend, Box<dyn hal::DynSurface>> =
+            HashMap::default();
+        #[cfg(dx12)]
+        if let Some(instance) = unsafe { self.as_hal::<hal::api::Dx12>() } {
+            surface_per_backend.insert(
+                Backend::Dx12,
+                Box::new(unsafe {
+                    instance.create_surface_from_swap_chain_panel(swap_chain_panel)
+                }),
+            );
+        }
+        #[cfg(dx11)]
+        if let Some(instance) = unsafe { self.as_hal::<hal::api::Dx11>() } {
+            match unsafe { instance.create_surface_from_swap_chain_panel(swap_chain_panel) } {
+                Ok(raw) => {
+                    surface_per_backend.insert(Backend::Dx11, Box::new(raw));
+                }
+                Err(err) => {
+                    errors.insert(Backend::Dx11, err);
+                }
+            }
+        }
+        if surface_per_backend.is_empty() {
+            if errors.is_empty() {
+                return Err(CreateSurfaceError::BackendNotEnabled(Backend::Dx12));
+            }
+            return Err(CreateSurfaceError::FailedToCreateSurfaceForAnyBackend(
+                errors,
+            ));
+        }
+        Ok(Surface {
+            presentation: Mutex::new(rank::SURFACE_PRESENTATION, None),
+            surface_per_backend,
         })
     }
 
@@ -1129,7 +1161,7 @@ impl Global {
         Ok(id)
     }
 
-    #[cfg(dx12)]
+    #[cfg(any(dx12, dx11))]
     /// # Safety
     ///
     /// The swap_chain_panel must be valid and able to be used to make a swapchain with.
