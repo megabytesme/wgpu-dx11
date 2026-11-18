@@ -101,7 +101,19 @@ fn dynamic_d3d_compile() -> Option<D3DCompileFn> {
             fn LoadPackagedLibrary(filename: *const u16, reserved: u32) -> isize;
             fn GetProcAddress(module: isize, proc_name: *const u8) -> *const core::ffi::c_void;
         }
-        #[link(name = "kernel32.dll", kind = "raw-dylib", modifiers = "+verbatim")]
+        #[cfg_attr(
+            not(target_arch = "x86"),
+            link(name = "kernel32.dll", kind = "raw-dylib", modifiers = "+verbatim")
+        )]
+        #[cfg_attr(
+            target_arch = "x86",
+            link(
+                name = "kernel32.dll",
+                kind = "raw-dylib",
+                modifiers = "+verbatim",
+                import_name_type = "undecorated"
+            )
+        )]
         unsafe extern "system" {
             fn LoadLibraryExW(filename: *const u16, file: isize, flags: u32) -> isize;
         }
