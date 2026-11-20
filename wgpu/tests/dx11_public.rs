@@ -27683,6 +27683,197 @@ fn public_dx11_fragment_depth_controls_depth_test_at_fl91() {
 }
 
 #[test]
+fn public_dx11_depthless_pass_ignores_prior_depth_attachment() {
+    let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let instance = Instance::new(InstanceDescriptor {
+        backends: Backends::DX11,
+        ..InstanceDescriptor::new_without_display_handle()
+    });
+    let Some(adapter) = poll_ready(instance.enumerate_adapters(Backends::DX11))
+        .into_iter()
+        .next()
+    else {
+        assert!(!required, "this test requires a physical D3D11 adapter");
+        println!("SKIP: no physical D3D11 adapter");
+        return;
+    };
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    println!("Adapter: {info:?}");
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("request D3D11 device");
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("depthless D3D11 pass regression"),
+        source: ShaderSource::Wgsl(
+            "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p, 0.0, 1.0); }\n\
+             @fragment fn scene() -> @location(0) vec4f { return vec4f(0.0, 0.0, 1.0, 1.0); }\n\
+             @fragment fn overlay() -> @location(0) vec4f { return vec4f(0.0, 1.0, 0.0, 1.0); }"
+                .into(),
+        ),
+    });
+    const FORMAT: TextureFormat = TextureFormat::Bgra8Unorm;
+    const DEPTH_FORMAT: TextureFormat = TextureFormat::Depth24Plus;
+    let make_pipeline = |fragment_entry, depth_stencil| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(fragment_entry),
+            layout: None,
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: Default::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &vertex_attr_array![0 => Float32x2],
+                })],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(fragment_entry),
+                compilation_options: Default::default(),
+                targets: &[Some(FORMAT.into())],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let scene = make_pipeline(
+        "scene",
+        Some(DepthStencilState {
+            format: DEPTH_FORMAT,
+            depth_write_enabled: Some(false),
+            depth_compare: Some(CompareFunction::Always),
+            stencil: StencilState::default(),
+            bias: DepthBiasState::default(),
+        }),
+    );
+    let overlay = make_pipeline("overlay", None);
+    let positions = [[-1.0f32, -1.0], [3.0, -1.0], [-1.0, 3.0]];
+    let vertex = device.create_buffer_init(&util::BufferInitDescriptor {
+        label: Some("fullscreen triangle"),
+        contents: bytemuck::cast_slice(&positions),
+        usage: BufferUsages::VERTEX,
+    });
+    let size = Extent3d {
+        width: 32,
+        height: 32,
+        depth_or_array_layers: 1,
+    };
+    let make_texture = |format, usage| {
+        device.create_texture(&TextureDescriptor {
+            label: None,
+            size,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage,
+            view_formats: &[],
+        })
+    };
+    let color = make_texture(
+        FORMAT,
+        TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+    );
+    let depth = make_texture(DEPTH_FORMAT, TextureUsages::RENDER_ATTACHMENT);
+    let color_view = color.create_view(&TextureViewDescriptor::default());
+    let depth_view = depth.create_view(&TextureViewDescriptor::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: Some("overlay pixel"),
+        size: u64::from(COPY_BYTES_PER_ROW_ALIGNMENT),
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    let attachment = |load| RenderPassColorAttachment {
+        view: &color_view,
+        depth_slice: None,
+        resolve_target: None,
+        ops: Operations {
+            load,
+            store: StoreOp::Store,
+        },
+    };
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("scene with depth"),
+            color_attachments: &[Some(attachment(LoadOp::Clear(Color::BLACK)))],
+            depth_stencil_attachment: Some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(0.0),
+                    store: StoreOp::Discard,
+                }),
+                stencil_ops: None,
+            }),
+            ..Default::default()
+        });
+        pass.set_pipeline(&scene);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some("overlay without depth"),
+            color_attachments: &[Some(attachment(LoadOp::Load))],
+            ..Default::default()
+        });
+        pass.set_pipeline(&overlay);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.draw(0..3, 0..1);
+    }
+    encoder.copy_texture_to_buffer(
+        TexelCopyTextureInfo {
+            texture: &color,
+            mip_level: 0,
+            origin: Origin3d { x: 16, y: 16, z: 0 },
+            aspect: TextureAspect::All,
+        },
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(COPY_BYTES_PER_ROW_ALIGNMENT),
+                rows_per_image: Some(1),
+            },
+        },
+        Extent3d {
+            width: 1,
+            height: 1,
+            depth_or_array_layers: 1,
+        },
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let (send, receive) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| send.send(result).unwrap());
+    let timeout = Duration::from_secs(10);
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(timeout),
+        })
+        .expect("poll overlay readback");
+    receive
+        .recv_timeout(timeout)
+        .expect("receive overlay readback")
+        .expect("map overlay readback");
+    let pixels = readback.slice(..).get_mapped_range().expect("overlay pixel");
+    assert_eq!(
+        &pixels[..4],
+        &[0, 255, 0, 255],
+        "the depthless overlay should draw over the blue scene even when its depth equals the previous DSV"
+    );
+}
+
+#[test]
 fn public_dx11_textured_depth_test_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
