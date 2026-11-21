@@ -1,8 +1,10 @@
 use alloc::{borrow::ToOwned, string::String, sync::Arc, vec::Vec};
 
+#[cfg(target_vendor = "uwp")]
+use parking_lot::Mutex;
 use parking_lot::RwLock;
-use windows::Win32::{Foundation, Graphics::Dxgi};
 use windows::core::{IUnknown, Interface};
+use windows::Win32::{Foundation, Graphics::Dxgi};
 
 use super::SurfaceTarget;
 use crate::{
@@ -157,10 +159,9 @@ impl crate::Instance for super::Instance {
                             "UWP game SwapChainPanel is unavailable".into(),
                         ));
                     }
-                    let owned_panel = unsafe {
-                        super::types::ISwapChainPanelNative::from_raw_borrowed(&panel)
-                    }
-                    .map(|panel| panel.to_owned());
+                    let owned_panel =
+                        unsafe { super::types::ISwapChainPanelNative::from_raw_borrowed(&panel) }
+                            .map(|panel| panel.to_owned());
                     unsafe { horizon_uwp_release_game_swapchain_panel(panel) };
                     let owned_panel = owned_panel.ok_or_else(|| {
                         crate::InstanceError::new("UWP game SwapChainPanel is invalid".into())
@@ -171,6 +172,7 @@ impl crate::Instance for super::Instance {
                         target: SurfaceTarget::SwapChainPanel(owned_panel),
                         supports_allow_tearing: self.supports_allow_tearing,
                         swap_chain: RwLock::new(None),
+                        pending_panel_detach: Mutex::new(None),
                         options: self.options.clone(),
                         hdr_source: None,
                     });
@@ -212,6 +214,8 @@ impl crate::Instance for super::Instance {
                     target,
                     supports_allow_tearing: self.supports_allow_tearing,
                     swap_chain: RwLock::new(None),
+                    #[cfg(target_vendor = "uwp")]
+                    pending_panel_detach: Mutex::new(None),
                     options: self.options.clone(),
                     hdr_source: Some(auxil::dxgi::hdr::DxgiHdrSource::new(handle)),
                 })

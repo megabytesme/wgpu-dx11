@@ -609,6 +609,8 @@ impl Instance {
             target: SurfaceTarget::Visual(visual.to_owned()),
             supports_allow_tearing: self.supports_allow_tearing,
             swap_chain: RwLock::new(None),
+            #[cfg(target_vendor = "uwp")]
+            pending_panel_detach: Mutex::new(None),
             options: self.options.clone(),
             hdr_source: None,
         }
@@ -628,6 +630,8 @@ impl Instance {
             target: SurfaceTarget::SurfaceHandle(surface_handle),
             supports_allow_tearing: self.supports_allow_tearing,
             swap_chain: RwLock::new(None),
+            #[cfg(target_vendor = "uwp")]
+            pending_panel_detach: Mutex::new(None),
             options: self.options.clone(),
             hdr_source: None,
         }
@@ -646,6 +650,8 @@ impl Instance {
             target: SurfaceTarget::SwapChainPanel(swap_chain_panel.to_owned()),
             supports_allow_tearing: self.supports_allow_tearing,
             swap_chain: RwLock::new(None),
+            #[cfg(target_vendor = "uwp")]
+            pending_panel_detach: Mutex::new(None),
             options: self.options.clone(),
             hdr_source: None,
         }
@@ -690,6 +696,8 @@ pub struct Surface {
     target: SurfaceTarget,
     supports_allow_tearing: bool,
     swap_chain: RwLock<Option<SwapChain>>,
+    #[cfg(target_vendor = "uwp")]
+    pending_panel_detach: Mutex<Option<Dxgi::IDXGISwapChain3>>,
     options: wgt::Dx12BackendOptions,
     /// HDR-info source for HWND-backed targets; `None` for composition /
     /// SwapChainPanel / surface-handle targets, which have no monitor identity.
@@ -708,6 +716,26 @@ impl Surface {
     /// Handle is only valid while the swap chain is alive.
     pub unsafe fn waitable_handle(&self) -> Option<Foundation::HANDLE> {
         self.swap_chain.read().as_ref()?.waitable
+    }
+
+    unsafe fn release_swap_chain(device: &Device, swap_chain: Option<SwapChain>) {
+        if let Some(swap_chain) = swap_chain {
+            unsafe {
+                // The present queue may still be busy. Continue cleanup on device loss.
+                let _ = device.wait_for_present_queue_idle();
+                let _raw = swap_chain.release_resources();
+            }
+        }
+    }
+
+    #[cfg(target_vendor = "uwp")]
+    fn retry_pending_panel_detach(&self) -> Result<(), crate::SurfaceError> {
+        let mut pending = self.pending_panel_detach.lock();
+        if pending.is_some() {
+            detach_uwp_panel()?;
+            pending.take();
+        }
+        Ok(())
     }
 }
 
@@ -1501,6 +1529,33 @@ impl SwapChain {
     }
 }
 
+#[cfg(target_vendor = "uwp")]
+fn detach_uwp_panel() -> Result<(), crate::SurfaceError> {
+    let result = unsafe { horizon_uwp_detach_game_swapchain() };
+    if result < 0 {
+        log::error!("Unable to detach the UWP DX12 SwapChainPanel: HRESULT 0x{result:08X}");
+        return Err(crate::SurfaceError::Other("UWP DX12 SwapChainPanel detach"));
+    }
+    Ok(())
+}
+
+#[cfg(target_vendor = "uwp")]
+struct PanelResizeRollback<'a> {
+    surface: &'a Surface,
+    attached_chain: Option<Dxgi::IDXGISwapChain3>,
+}
+
+#[cfg(target_vendor = "uwp")]
+impl Drop for PanelResizeRollback<'_> {
+    fn drop(&mut self) {
+        if let Some(chain) = self.attached_chain.take() {
+            if detach_uwp_panel().is_err() {
+                *self.surface.pending_panel_detach.lock() = Some(chain);
+            }
+        }
+    }
+}
+
 fn map_surface_color_space(
     color_space: wgt::SurfaceColorSpace,
 ) -> Dxgi::Common::DXGI_COLOR_SPACE_TYPE {
@@ -1542,6 +1597,16 @@ impl crate::Surface for Surface {
         // are in flight, we still need to wait for the present queue to be idle.
         unsafe { device.wait_for_present_queue_idle() }?;
 
+        #[cfg(target_vendor = "uwp")]
+        let uwp_panel = matches!(&self.target, SurfaceTarget::SwapChainPanel(_));
+        #[cfg(target_vendor = "uwp")]
+        self.retry_pending_panel_detach()?;
+        #[cfg(target_vendor = "uwp")]
+        let mut rollback = PanelResizeRollback {
+            surface: self,
+            attached_chain: None,
+        };
+
         let non_srgb_format = auxil::dxgi::conv::map_texture_format_nosrgb(config.format);
 
         // The range for `SetMaximumFrameLatency` is 1-16 so the maximum latency requested should be 15 because we add 1.
@@ -1557,6 +1622,10 @@ impl crate::Surface for Surface {
             //Note: this path doesn't properly re-initialize all of the things
             Some(sc) => {
                 let raw = unsafe { sc.release_resources() };
+                #[cfg(target_vendor = "uwp")]
+                if uwp_panel {
+                    rollback.attached_chain = Some(raw.clone());
+                }
                 let result = unsafe {
                     raw.ResizeBuffers(
                         swap_chain_buffer,
@@ -1694,33 +1763,19 @@ impl crate::Surface for Surface {
                             ));
                         }
                     }
+                    #[cfg(not(target_vendor = "uwp"))]
                     SurfaceTarget::SwapChainPanel(swap_chain_panel) => {
-                        #[cfg(target_vendor = "uwp")]
-                        {
-                            use windows::core::Interface as _;
-                            let _ = swap_chain_panel;
-                            // The XAML panel belongs to the UI apartment. The UWP host
-                            // marshals this attachment back to that apartment before
-                            // querying ISwapChainPanelNative and calling SetSwapChain.
-                            let result = unsafe {
-                                horizon_uwp_attach_game_swapchain(swap_chain1.as_raw())
-                            };
-                            if result < 0 {
-                                log::error!(
-                                    "Unable to SetSwapChain on the UWP UI thread: HRESULT 0x{result:08X}"
-                                );
-                                return Err(crate::SurfaceError::Other(
-                                    "ISwapChainPanelNative::SetSwapChain on the UWP UI thread",
-                                ));
-                            }
-                        }
-                        #[cfg(not(target_vendor = "uwp"))]
                         if let Err(err) = unsafe { swap_chain_panel.SetSwapChain(&swap_chain1) } {
                             log::error!("Unable to SetSwapChain: {err}");
                             return Err(crate::SurfaceError::Other(
                                 "ISwapChainPanelNative::SetSwapChain",
                             ));
                         }
+                    }
+                    #[cfg(target_vendor = "uwp")]
+                    SurfaceTarget::SwapChainPanel(swap_chain_panel) => {
+                        // The host performs attachment; retain the native panel on the surface.
+                        let _ = swap_chain_panel;
                     }
                 }
 
@@ -1732,7 +1787,7 @@ impl crate::Surface for Surface {
         };
 
         #[cfg(target_vendor = "uwp")]
-        if matches!(&self.target, SurfaceTarget::SwapChainPanel(_)) {
+        if uwp_panel {
             let (mut width, mut height, mut scale_x, mut scale_y) = (0, 0, 1.0, 1.0);
             unsafe {
                 horizon_uwp_get_surface_metrics(
@@ -1765,8 +1820,6 @@ impl crate::Surface for Surface {
         // The UWP panel uses this path for actual HDR presentation only.
         let color_space = map_surface_color_space(config.color_space);
         #[cfg(target_vendor = "uwp")]
-        let uwp_panel = matches!(&self.target, SurfaceTarget::SwapChainPanel(_));
-        #[cfg(target_vendor = "uwp")]
         if uwp_panel && config.color_space != wgt::SurfaceColorSpace::Srgb {
             let support = unsafe { swap_chain.CheckColorSpaceSupport(color_space) };
             let present = Dxgi::DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT.0 as u32;
@@ -1780,7 +1833,6 @@ impl crate::Surface for Surface {
         let color_result = unsafe { swap_chain.SetColorSpace1(color_space) };
         #[cfg(target_vendor = "uwp")]
         if uwp_panel {
-            use windows::core::Interface as _;
             let status = color_result
                 .as_ref()
                 .err()
@@ -1815,6 +1867,25 @@ impl crate::Surface for Surface {
         unsafe { swap_chain.SetMaximumFrameLatency(config.maximum_frame_latency) }
             .into_device_result("SetMaximumFrameLatency")?;
 
+        let mut resources = Vec::with_capacity(swap_chain_buffer as usize);
+        for i in 0..swap_chain_buffer {
+            let resource = unsafe { swap_chain.GetBuffer(i) }
+                .into_device_result("Failed to get swapchain buffer")?;
+            resources.push(resource);
+        }
+
+        #[cfg(target_vendor = "uwp")]
+        if uwp_panel && rollback.attached_chain.is_none() {
+            // The UWP host dispatches attachment to the XAML panel's owning thread.
+            let result = unsafe { horizon_uwp_attach_game_swapchain(swap_chain.as_raw()) };
+            if result < 0 {
+                log::error!("Unable to SetSwapChain on the UWP UI thread: HRESULT 0x{result:08X}");
+                return Err(crate::SurfaceError::Other(
+                    "ISwapChainPanelNative::SetSwapChain on the UWP UI thread",
+                ));
+            }
+        }
+
         let waitable = match device.options.latency_waitable_object {
             wgt::Dx12UseFrameLatencyWaitableObject::None => None,
             wgt::Dx12UseFrameLatencyWaitableObject::Wait
@@ -1822,13 +1893,6 @@ impl crate::Surface for Surface {
                 Some(unsafe { swap_chain.GetFrameLatencyWaitableObject() })
             }
         };
-
-        let mut resources = Vec::with_capacity(swap_chain_buffer as usize);
-        for i in 0..swap_chain_buffer {
-            let resource = unsafe { swap_chain.GetBuffer(i) }
-                .into_device_result("Failed to get swapchain buffer")?;
-            resources.push(resource);
-        }
 
         let mut swapchain = self.swap_chain.write();
         *swapchain = Some(SwapChain {
@@ -1840,39 +1904,32 @@ impl crate::Surface for Surface {
             format: config.format,
             size: config.extent,
         });
+        #[cfg(target_vendor = "uwp")]
+        {
+            rollback.attached_chain = None;
+        }
 
         Ok(())
     }
 
     unsafe fn unconfigure(&self, device: &Device) {
+        if unsafe { self.unconfigure_with_result(device) }.is_err() {
+            let swap_chain = self.swap_chain.write().take();
+            unsafe { Self::release_swap_chain(device, swap_chain) };
+        }
+    }
+
+    unsafe fn unconfigure_with_result(&self, device: &Device) -> Result<(), crate::SurfaceError> {
+        #[cfg(target_vendor = "uwp")]
+        self.retry_pending_panel_detach()?;
         let mut swap_chain = self.swap_chain.write();
-        if swap_chain.is_some() {
-            // A SwapChainPanel retains its attached DXGI swap chain. Detach it
-            // on the XAML dispatcher before releasing WGPU's last COM refs;
-            // releasing first can crash D3D12Core while it still owns the chain.
-            #[cfg(target_vendor = "uwp")]
-            if matches!(&self.target, SurfaceTarget::SwapChainPanel(_)) {
-                let result = unsafe { horizon_uwp_detach_game_swapchain() };
-                if result < 0 {
-                    log::error!(
-                        "Unable to detach the UWP SwapChainPanel before releasing the DX12 surface: HRESULT 0x{result:08X}"
-                    );
-                }
-            }
+        #[cfg(target_vendor = "uwp")]
+        if swap_chain.is_some() && matches!(&self.target, SurfaceTarget::SwapChainPanel(_)) {
+            // Keep the chain available for another attempt if the host cannot detach it.
+            detach_uwp_panel()?;
         }
-        if let Some(sc) = swap_chain.take() {
-            unsafe {
-                // While `unconfigure`s contract ensures that no work on the GPU's main queues
-                // are in flight, we still need to wait for the present queue to be idle.
-
-                // The major failure mode of this function is device loss,
-                // which if we have lost the device, we should just continue
-                // cleaning up, without error.
-                let _ = device.wait_for_present_queue_idle();
-
-                let _raw = sc.release_resources();
-            }
-        }
+        unsafe { Self::release_swap_chain(device, swap_chain.take()) };
+        Ok(())
     }
 
     unsafe fn acquire_texture(
@@ -1881,7 +1938,7 @@ impl crate::Surface for Surface {
         _fence: &Fence,
     ) -> Result<crate::AcquiredSurfaceTexture<Api>, crate::SurfaceError> {
         let mut swapchain = self.swap_chain.write();
-        let sc = swapchain.as_mut().unwrap();
+        let sc = swapchain.as_mut().ok_or(crate::SurfaceError::Lost)?;
 
         match self.options.latency_waitable_object {
             wgt::Dx12UseFrameLatencyWaitableObject::None
