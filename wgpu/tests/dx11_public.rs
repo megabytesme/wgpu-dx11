@@ -1816,7 +1816,7 @@ fn public_dx11_hwnd_surface_presents_on_its_window_thread() {
         Ok(adapter) => adapter,
         Err(error) => {
             assert!(
-                required,
+                !required,
                 "strict mode requires a physical FL9_1 surface adapter: {error}"
             );
             println!("SKIP: no physical D3D11 adapter supports the HWND surface: {error}");
@@ -2191,7 +2191,7 @@ fn public_dx11_enforces_fl91_aggregate_uniform_constants() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -20251,7 +20251,7 @@ fn public_dx11_splits_point_and_triangle_draws_at_fl91_limits() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -21188,7 +21188,7 @@ fn public_dx11_rejects_fragment_depth_without_color_target_0_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -21274,7 +21274,7 @@ fn public_dx11_rejects_fragment_sample_mask_io_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -22084,7 +22084,7 @@ fn public_dx11_rejects_sample_index_without_multisampled_shading() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -22152,7 +22152,7 @@ fn public_dx11_fragment_interpolation_profile_boundaries_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -22361,7 +22361,7 @@ fn public_dx11_srgb_texture_copies_preserve_bits_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -22617,7 +22617,7 @@ fn public_dx11_srgb_texture_sampling_and_rendering() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -23183,7 +23183,7 @@ fn public_dx11_srgb_mip_chain_sampling_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -27456,7 +27456,7 @@ fn public_dx11_fragment_depth_controls_depth_test_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -27882,7 +27882,7 @@ fn public_dx11_textured_depth_test_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -29309,7 +29309,7 @@ fn public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -29501,7 +29501,7 @@ fn public_dx11_render_bundle_executes_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -30008,7 +30008,7 @@ fn public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -30291,7 +30291,7 @@ fn public_dx11_indexed_line_strip_restart_render_bundle_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -30570,7 +30570,7 @@ fn public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -30846,7 +30846,7 @@ fn public_dx11_render_bundle_transitions_multiple_bind_groups_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -31172,7 +31172,7 @@ fn public_dx11_render_bundle_dynamic_uniform_offsets_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -31421,7 +31421,7 @@ fn public_dx11_render_bundle_pipeline_layout_transition_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -31727,7 +31727,7 @@ fn public_dx11_render_bundle_depth_attachment_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -33200,7 +33200,7 @@ fn public_dx11_render_bundle_preserves_pass_blend_and_scissor_state_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -33425,7 +33425,7 @@ fn public_dx11_render_bundle_preserves_pass_stencil_reference_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -33754,33 +33754,33 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     let limits = adapter.limits();
-    assert_eq!(limits.max_inter_stage_shader_variables, 8);
+    assert_eq!(limits.max_inter_stage_shader_variables, 7);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; inter_stage_variables=8",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; inter_stage_variables=7",
         info.name, info.vendor, info.device, info.driver_info
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
-        label: Some("public D3D11 FL9_1 eight inter-stage varyings"),
+        label: Some("public D3D11 FL9_1 seven inter-stage varyings"),
         required_features: Features::empty(),
         required_limits: limits,
         ..Default::default()
     }))
     .expect("request a device within the public FL9_1 projection");
 
-    let positive_fields = (0..8)
+    let positive_fields = (0..7)
         .map(|location| format!("@location({location}) value{location}: vec4f"))
         .collect::<Vec<_>>()
         .join(", ");
-    let positive_values = (0..8)
+    let positive_values = (0..7)
         .map(|_| "vec4f(0.03125, 0.015625, 0.0078125, 0.125)")
         .collect::<Vec<_>>()
         .join(", ");
-    let positive_sum = (0..8)
+    let positive_sum = (0..7)
         .map(|location| format!("input.value{location}"))
         .collect::<Vec<_>>()
         .join(" + ");
     let positive_shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 eight matched inter-stage vec4 varyings"),
+        label: Some("FL9_1 seven matched inter-stage vec4 varyings"),
         source: ShaderSource::Wgsl(
             format!(
                 "struct VertexOut {{ @builtin(position) position: vec4f, {positive_fields} }}\n\
@@ -33811,7 +33811,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
         write_mask: ColorWrites::ALL,
     })];
     let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 eight varying boundary pipeline"),
+        label: Some("FL9_1 seven varying boundary pipeline"),
         layout: None,
         vertex: VertexState {
             module: &positive_shader,
@@ -33837,7 +33837,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
         .flat_map(f32::to_ne_bytes)
         .collect();
     let vertex = device.create_buffer(&BufferDescriptor {
-        label: Some("FL9_1 eight varying fullscreen triangle"),
+        label: Some("FL9_1 seven varying fullscreen triangle"),
         size: vertex_bytes.len() as u64,
         usage: BufferUsages::VERTEX,
         mapped_at_creation: true,
@@ -33845,11 +33845,11 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
     vertex
         .slice(..)
         .get_mapped_range_mut()
-        .expect("map eight varying fullscreen triangle")
+        .expect("map seven varying fullscreen triangle")
         .copy_from_slice(&vertex_bytes);
     vertex.unmap();
     let target = device.create_texture(&TextureDescriptor {
-        label: Some("FL9_1 eight varying output"),
+        label: Some("FL9_1 seven varying output"),
         size: Extent3d {
             width: 8,
             height: 8,
@@ -33864,17 +33864,17 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
     });
     let target_view = target.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
-        label: Some("FL9_1 eight varying readback"),
+        label: Some("FL9_1 seven varying readback"),
         size: 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-        label: Some("FL9_1 eight varying render and readback"),
+        label: Some("FL9_1 seven varying render and readback"),
     });
     {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("FL9_1 eight varying render pass"),
+            label: Some("FL9_1 seven varying render pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: &target_view,
                 depth_slice: None,
@@ -33924,38 +33924,38 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
             submission_index: Some(submission),
             timeout: Some(Duration::from_secs(10)),
         })
-        .expect("wait for eight varying rendering");
+        .expect("wait for seven varying rendering");
     receiver
         .recv_timeout(Duration::from_secs(10))
-        .expect("eight varying readback callback")
-        .expect("map eight varying readback");
+        .expect("seven varying readback callback")
+        .expect("map seven varying readback");
     {
         let pixels = readback
             .slice(..)
             .get_mapped_range()
-            .expect("mapped eight varying readback");
+            .expect("mapped seven varying readback");
         for y in 0..8 {
             for x in 0..8 {
                 let offset = y * 256 + x * 4;
                 assert_eq!(
                     &pixels[offset..offset + 4],
-                    [64, 32, 16, 255],
-                    "eight varying output pixel ({x}, {y})"
+                    [56, 28, 14, 223],
+                    "seven varying output pixel ({x}, {y})"
                 );
             }
         }
     }
     readback.unmap();
 
-    let over_limit_fields = (0..9)
+    let over_limit_fields = (0..8)
         .map(|location| format!("@location({location}) value{location}: vec4f"))
         .collect::<Vec<_>>()
         .join(", ");
-    let over_limit_values = (0..9)
+    let over_limit_values = (0..8)
         .map(|_| "vec4f(0.015625, 0.0078125, 0.00390625, 0.0625)")
         .collect::<Vec<_>>()
         .join(", ");
-    let over_limit_sum = (0..9)
+    let over_limit_sum = (0..8)
         .map(|location| format!("input.value{location}"))
         .collect::<Vec<_>>()
         .join(" + ");
@@ -33971,15 +33971,15 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
     );
     expect_validation_error_containing(
         &device,
-        "ninth inter-stage varying at location 8",
+        "eighth inter-stage varying at location 7",
         "max_inter_stage_shader_variables",
         || {
             let shader = device.create_shader_module(ShaderModuleDescriptor {
-                label: Some("FL9_1 ninth inter-stage varying"),
+                label: Some("FL9_1 eighth inter-stage varying"),
                 source: ShaderSource::Wgsl(over_limit_wgsl.into()),
             });
             let _ = device.create_render_pipeline(&RenderPipelineDescriptor {
-                label: Some("FL9_1 nine varying over-limit pipeline"),
+                label: Some("FL9_1 eight varying over-limit pipeline"),
                 layout: None,
                 vertex: VertexState {
                     module: &shader,
@@ -34002,7 +34002,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
         },
     );
     println!(
-        "PASS: eight matched vec4 varyings at locations 0–7 rendered [64, 32, 16, 255] in 64/64 pixels; Core rejected location 8 against max_inter_stage_shader_variables before HAL"
+        "PASS: seven matched vec4 varyings at locations 0–6 rendered [56, 28, 14, 223] in 64/64 pixels; Core rejected location 7 against max_inter_stage_shader_variables before HAL"
     );
 }
 
@@ -36770,7 +36770,7 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -38323,6 +38323,24 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
 
 #[test]
 fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
+    check_public_dx11_3d_upload_copy_sampling_at_fl91(
+        TextureFormat::Bgra8Unorm,
+        TextureFormat::Bgra8UnormSrgb,
+    );
+}
+
+#[test]
+fn public_dx11_rgba8_srgb_3d_upload_copy_sampling_at_fl91() {
+    check_public_dx11_3d_upload_copy_sampling_at_fl91(
+        TextureFormat::Rgba8Unorm,
+        TextureFormat::Rgba8UnormSrgb,
+    );
+}
+
+fn check_public_dx11_3d_upload_copy_sampling_at_fl91(
+    unorm_format: TextureFormat,
+    srgb_format: TextureFormat,
+) {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
@@ -38338,12 +38356,12 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
             !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
-        println!("SKIP: no physical FL9_1 D3D11 adapter for BGRA8 3D textures");
+        println!("SKIP: no physical FL9_1 D3D11 adapter for {unorm_format:?} and {srgb_format:?} 3D textures");
         return;
     };
     let info = adapter.get_info();
     let downlevel = adapter.get_downlevel_capabilities();
-    for format in [TextureFormat::Bgra8Unorm, TextureFormat::Bgra8UnormSrgb] {
+    for format in [unorm_format, srgb_format] {
         if !downlevel.limits.supports_texture_3d_format(format) {
             assert!(
                 !required,
@@ -38354,11 +38372,11 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
         }
     }
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; operation=BGRA8 3D upload, copy, readback and sampled render",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; formats={unorm_format:?},{srgb_format:?}; operation=3D upload, copy, readback and sampled render",
         info.name, info.vendor, info.device, info.driver_info
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
-        label: Some("public DX11 FL9_1 BGRA8 3D texture test"),
+        label: Some("public DX11 FL9_1 3D texture test"),
         required_features: Features::empty(),
         required_limits: adapter.limits(),
         ..Default::default()
@@ -38366,7 +38384,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
     .expect("request forced FL9_1 device");
 
     let volume = device.create_texture(&TextureDescriptor {
-        label: Some("FL9_1 BGRA8 2x2x2 source volume"),
+        label: Some("FL9_1 2x2x2 source volume"),
         size: Extent3d {
             width: 2,
             height: 2,
@@ -38375,12 +38393,12 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D3,
-        format: TextureFormat::Bgra8Unorm,
+        format: unorm_format,
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
         view_formats: &[],
     });
     let copied_volume = device.create_texture(&TextureDescriptor {
-        label: Some("FL9_1 BGRA8 2x2x2 copied volume"),
+        label: Some("FL9_1 2x2x2 copied volume"),
         size: Extent3d {
             width: 2,
             height: 2,
@@ -38389,18 +38407,28 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D3,
-        format: TextureFormat::Bgra8Unorm,
+        format: unorm_format,
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
         view_formats: &[],
     });
+    let to_texel_bytes = |mut rgba: [u8; 4]| {
+        if unorm_format == TextureFormat::Bgra8Unorm {
+            rgba.swap(0, 2);
+        }
+        rgba
+    };
+    let unorm_rgba = |x, y, z| [40 + x as u8 * 80, 20 + y as u8 * 90, 30 + z as u8 * 70, 255];
+    let srgb_rgba = |x, y, z| [55 + x as u8 * 80, 37 + y as u8 * 90, 80 + z as u8 * 70, 230];
     let mut volume_data = vec![0xA5; 2 * 2 * 256];
+    let mut srgb_volume_data = volume_data.clone();
     for z in 0..2usize {
         for y in 0..2usize {
             for x in 0..2usize {
-                let rgba = [40 + x as u8 * 80, 20 + y as u8 * 90, 30 + z as u8 * 70, 255];
                 let offset = z * 512 + y * 256 + x * 4;
                 volume_data[offset..offset + 4]
-                    .copy_from_slice(&[rgba[2], rgba[1], rgba[0], rgba[3]]);
+                    .copy_from_slice(&to_texel_bytes(unorm_rgba(x, y, z)));
+                srgb_volume_data[offset..offset + 4]
+                    .copy_from_slice(&to_texel_bytes(srgb_rgba(x, y, z)));
             }
         }
     }
@@ -38425,7 +38453,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
     );
 
     let srgb_volume = device.create_texture(&TextureDescriptor {
-        label: Some("FL9_1 BGRA8 sRGB 2x2x2 source volume"),
+        label: Some("FL9_1 sRGB 2x2x2 source volume"),
         size: Extent3d {
             width: 2,
             height: 2,
@@ -38434,12 +38462,12 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D3,
-        format: TextureFormat::Bgra8UnormSrgb,
+        format: srgb_format,
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
         view_formats: &[],
     });
     let copied_srgb_volume = device.create_texture(&TextureDescriptor {
-        label: Some("FL9_1 BGRA8 sRGB 2x2x2 copied volume"),
+        label: Some("FL9_1 sRGB 2x2x2 copied volume"),
         size: Extent3d {
             width: 2,
             height: 2,
@@ -38448,7 +38476,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D3,
-        format: TextureFormat::Bgra8UnormSrgb,
+        format: srgb_format,
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
         view_formats: &[],
     });
@@ -38459,7 +38487,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
             origin: Origin3d::ZERO,
             aspect: TextureAspect::All,
         },
-        &volume_data,
+        &srgb_volume_data,
         TexelCopyBufferLayout {
             offset: 0,
             bytes_per_row: Some(256),
@@ -38473,7 +38501,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
     );
 
     let output = device.create_texture(&TextureDescriptor {
-        label: Some("FL9_1 BGRA8 volume sample output"),
+        label: Some("FL9_1 volume sample output"),
         size: Extent3d {
             width: 8,
             height: 8,
@@ -38488,7 +38516,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
     });
     let output_view = output.create_view(&TextureViewDescriptor::default());
     let srgb_output = device.create_texture(&TextureDescriptor {
-        label: Some("FL9_1 BGRA8 sRGB volume sample output"),
+        label: Some("FL9_1 sRGB volume sample output"),
         size: Extent3d {
             width: 8,
             height: 8,
@@ -38520,7 +38548,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
         ..Default::default()
     });
     let layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
-        label: Some("FL9_1 BGRA8 3D sample layout"),
+        label: Some("FL9_1 3D sample layout"),
         entries: &[
             BindGroupLayoutEntry {
                 binding: 7,
@@ -38541,7 +38569,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
         ],
     });
     let group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("FL9_1 BGRA8 3D sample resources"),
+        label: Some("FL9_1 3D sample resources"),
         layout: &layout,
         entries: &[
             BindGroupEntry {
@@ -38555,7 +38583,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
         ],
     });
     let srgb_group = device.create_bind_group(&BindGroupDescriptor {
-        label: Some("FL9_1 BGRA8 sRGB 3D sample resources"),
+        label: Some("FL9_1 sRGB 3D sample resources"),
         layout: &layout,
         entries: &[
             BindGroupEntry {
@@ -38569,12 +38597,12 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
         ],
     });
     let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
-        label: Some("FL9_1 BGRA8 3D pipeline layout"),
+        label: Some("FL9_1 3D pipeline layout"),
         bind_group_layouts: &[Some(&layout)],
         immediate_size: 0,
     });
     let shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 BGRA8 3D sampling shader"),
+        label: Some("FL9_1 3D sampling shader"),
         source: ShaderSource::Wgsl(
             "struct Out { @builtin(position) position: vec4f, @location(0) uvw: vec3f }; \
              @group(0) @binding(7) var image: texture_3d<f32>; \
@@ -38611,7 +38639,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
         }
     }
     let vertex_buffer = device.create_buffer_init(&util::BufferInitDescriptor {
-        label: Some("FL9_1 BGRA8 3D sampling vertices"),
+        label: Some("FL9_1 3D sampling vertices"),
         contents: bytemuck::cast_slice(&vertices),
         usage: BufferUsages::VERTEX,
     });
@@ -38637,7 +38665,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
         write_mask: ColorWrites::ALL,
     })];
     let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 BGRA8 3D sampling pipeline"),
+        label: Some("FL9_1 3D sampling pipeline"),
         layout: Some(&pipeline_layout),
         vertex: VertexState {
             module: &shader,
@@ -38661,115 +38689,80 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
         cache: None,
     });
     let volume_readback = device.create_buffer(&BufferDescriptor {
-        label: Some("FL9_1 BGRA8 volume readback"),
-        size: 1024,
+        label: Some("FL9_1 volume readback"),
+        size: 2 * 1024,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let srgb_volume_readback = device.create_buffer(&BufferDescriptor {
-        label: Some("FL9_1 BGRA8 sRGB volume readback"),
-        size: 1024,
+        label: Some("FL9_1 sRGB volume readback"),
+        size: 2 * 1024,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let output_readback = device.create_buffer(&BufferDescriptor {
-        label: Some("FL9_1 BGRA8 volume sample readback"),
+        label: Some("FL9_1 volume sample readback"),
         size: 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let srgb_output_readback = device.create_buffer(&BufferDescriptor {
-        label: Some("FL9_1 BGRA8 sRGB volume sample readback"),
+        label: Some("FL9_1 sRGB volume sample readback"),
         size: 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-        label: Some("FL9_1 BGRA8 3D copy and sample encoder"),
+        label: Some("FL9_1 3D copy and sample encoder"),
     });
-    encoder.copy_texture_to_texture(
+    fn volume_copy(texture: &Texture) -> TexelCopyTextureInfo<'_> {
         TexelCopyTextureInfo {
-            texture: &volume,
+            texture,
             mip_level: 0,
             origin: Origin3d::ZERO,
             aspect: TextureAspect::All,
-        },
-        TexelCopyTextureInfo {
-            texture: &copied_volume,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        Extent3d {
-            width: 2,
-            height: 2,
-            depth_or_array_layers: 2,
-        },
-    );
-    encoder.copy_texture_to_buffer(
-        TexelCopyTextureInfo {
-            texture: &copied_volume,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        TexelCopyBufferInfo {
-            buffer: &volume_readback,
-            layout: TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(256),
-                rows_per_image: Some(2),
-            },
-        },
-        Extent3d {
-            width: 2,
-            height: 2,
-            depth_or_array_layers: 2,
-        },
-    );
-    encoder.copy_texture_to_texture(
-        TexelCopyTextureInfo {
-            texture: &srgb_volume,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        TexelCopyTextureInfo {
-            texture: &copied_srgb_volume,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        Extent3d {
-            width: 2,
-            height: 2,
-            depth_or_array_layers: 2,
-        },
-    );
-    encoder.copy_texture_to_buffer(
-        TexelCopyTextureInfo {
-            texture: &copied_srgb_volume,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        TexelCopyBufferInfo {
-            buffer: &srgb_volume_readback,
-            layout: TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(256),
-                rows_per_image: Some(2),
-            },
-        },
-        Extent3d {
-            width: 2,
-            height: 2,
-            depth_or_array_layers: 2,
-        },
-    );
+        }
+    }
+    let extent = Extent3d {
+        width: 2,
+        height: 2,
+        depth_or_array_layers: 2,
+    };
+    for (offset, copies) in [
+        (
+            0,
+            [
+                (&volume, &copied_volume, &volume_readback),
+                (&srgb_volume, &copied_srgb_volume, &srgb_volume_readback),
+            ],
+        ),
+        (
+            1024,
+            [
+                (&srgb_volume, &copied_volume, &volume_readback),
+                (&volume, &copied_srgb_volume, &srgb_volume_readback),
+            ],
+        ),
+    ] {
+        for (source, destination, readback) in copies {
+            encoder.copy_texture_to_texture(volume_copy(source), volume_copy(destination), extent);
+            encoder.copy_texture_to_buffer(
+                volume_copy(destination),
+                TexelCopyBufferInfo {
+                    buffer: readback,
+                    layout: TexelCopyBufferLayout {
+                        offset,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(2),
+                    },
+                },
+                extent,
+            );
+        }
+    }
     {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("FL9_1 BGRA8 3D sampled render pass"),
+            label: Some("FL9_1 3D sampled render pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: &output_view,
                 resolve_target: None,
@@ -38812,7 +38805,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
     );
     {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("FL9_1 BGRA8 sRGB 3D sampled render pass"),
+            label: Some("FL9_1 sRGB 3D sampled render pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: &srgb_output_view,
                 resolve_target: None,
@@ -38877,64 +38870,54 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
             submission_index: Some(submission),
             timeout: Some(Duration::from_secs(10)),
         })
-        .expect("wait for FL9_1 BGRA8 3D upload, copy and render");
+        .expect("wait for FL9_1 3D upload, copy and render");
     for _ in 0..4 {
         let (index, result) = receiver
             .recv_timeout(Duration::from_secs(10))
-            .expect("BGRA8 3D readback callback");
+            .expect("3D readback callback");
         result.expect(if index == 2 {
-            "map BGRA8 sRGB 3D readback"
+            "map sRGB 3D readback"
         } else if index == 3 {
-            "map BGRA8 sRGB sampled output"
+            "map sRGB sampled output"
         } else {
-            "map BGRA8 3D readback"
+            "map 3D readback"
         });
     }
-    let volume_pixels = volume_readback.slice(..).get_mapped_range().unwrap();
-    for z in 0..2usize {
-        for y in 0..2usize {
-            for x in 0..2usize {
-                let rgba = [40 + x as u8 * 80, 20 + y as u8 * 90, 30 + z as u8 * 70, 255];
-                let offset = z * 512 + y * 256 + x * 4;
+    for (format, readback, expected) in [
+        (
+            unorm_format,
+            &volume_readback,
+            [&volume_data, &srgb_volume_data],
+        ),
+        (
+            srgb_format,
+            &srgb_volume_readback,
+            [&srgb_volume_data, &volume_data],
+        ),
+    ] {
+        let pixels = readback.slice(..).get_mapped_range().unwrap();
+        for (copy, source_data) in expected.into_iter().enumerate() {
+            for row in 0..4 {
+                let source_offset = row * 256;
+                let destination_offset = copy * 1024 + source_offset;
                 assert_eq!(
-                    &volume_pixels[offset..offset + 4],
-                    [rgba[2], rgba[1], rgba[0], rgba[3]],
-                    "BGRA8 copy/readback voxel ({x}, {y}, {z})"
+                    &pixels[destination_offset..destination_offset + 8],
+                    &source_data[source_offset..source_offset + 8],
+                    "{format:?} copy {copy}, padded row {row}",
                 );
+                assert!(pixels[destination_offset + 8..destination_offset + 256]
+                    .iter()
+                    .all(|byte| *byte == 0));
             }
-            let row_start = z * 512 + y * 256;
-            assert!(volume_pixels[row_start + 8..row_start + 256]
-                .iter()
-                .all(|byte| *byte == 0));
         }
+        drop(pixels);
+        readback.unmap();
     }
-    drop(volume_pixels);
-    volume_readback.unmap();
-    let srgb_pixels = srgb_volume_readback.slice(..).get_mapped_range().unwrap();
-    for z in 0..2usize {
-        for y in 0..2usize {
-            for x in 0..2usize {
-                let rgba = [40 + x as u8 * 80, 20 + y as u8 * 90, 30 + z as u8 * 70, 255];
-                let offset = z * 512 + y * 256 + x * 4;
-                assert_eq!(
-                    &srgb_pixels[offset..offset + 4],
-                    [rgba[2], rgba[1], rgba[0], rgba[3]],
-                    "BGRA8 sRGB copy/readback voxel ({x}, {y}, {z})"
-                );
-            }
-            let row_start = z * 512 + y * 256;
-            assert!(srgb_pixels[row_start + 8..row_start + 256]
-                .iter()
-                .all(|byte| *byte == 0));
-        }
-    }
-    drop(srgb_pixels);
-    srgb_volume_readback.unmap();
     let output_pixels = output_readback.slice(..).get_mapped_range().unwrap();
     for z in 0..2usize {
         for y in 0..2usize {
             for x in 0..2usize {
-                let expected = [40 + x as u8 * 80, 20 + y as u8 * 90, 30 + z as u8 * 70, 255];
+                let expected = srgb_rgba(x, y, z);
                 let origin_x = x * 4;
                 let origin_y = (y * 2 + z) * 2;
                 for py in origin_y..origin_y + 2 {
@@ -38943,7 +38926,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
                         assert_eq!(
                             &output_pixels[offset..offset + 4],
                             expected,
-                            "BGRA8 sampled pixel ({px}, {py}) from voxel ({x}, {y}, {z})"
+                            "sampled pixel ({px}, {py}) from voxel ({x}, {y}, {z})"
                         );
                     }
                 }
@@ -38965,12 +38948,8 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
     for z in 0..2usize {
         for y in 0..2usize {
             for x in 0..2usize {
-                let expected = [
-                    decode_srgb(40 + x as u8 * 80),
-                    decode_srgb(20 + y as u8 * 90),
-                    decode_srgb(30 + z as u8 * 70),
-                    255,
-                ];
+                let [r, g, b, a] = unorm_rgba(x, y, z);
+                let expected = [decode_srgb(r), decode_srgb(g), decode_srgb(b), a];
                 let origin_x = x * 4;
                 let origin_y = (y * 2 + z) * 2;
                 for py in origin_y..origin_y + 2 {
@@ -38980,7 +38959,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
                         for channel in 0..4 {
                             assert!(
                                 observed[channel].abs_diff(expected[channel]) <= 1,
-                                "BGRA8 sRGB sampled pixel ({px}, {py}) channel {channel}: expected {:?}, observed {:?}",
+                                "sRGB sampled pixel ({px}, {py}) channel {channel}: expected {:?}, observed {:?}",
                                 expected,
                                 observed
                             );
@@ -38993,7 +38972,7 @@ fn public_dx11_bgra8_3d_upload_copy_sampling_at_fl91() {
     drop(srgb_output_pixels);
     srgb_output_readback.unmap();
     println!(
-        "PASS: BGRA8 UNORM and sRGB 3D padded upload, full volume copy/readback and sampled rendering; each format matched 8 voxels and 64 output pixels"
+        "PASS: {unorm_format:?} and {srgb_format:?} 3D padded upload, same-format and cross-encoding volume copies preserved all 8 voxels per copy; each cross-encoding destination matched 64 sampled GPU pixels"
     );
 }
 
@@ -41237,7 +41216,7 @@ fn public_dx11_front_face_and_backface_culling_at_fl91() {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
@@ -44796,7 +44775,7 @@ fn run_public_dx11_texture_load_and_dimensions(use_uniform: bool) {
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
-            required,
+            !required,
             "strict mode requires physical FL9_1 D3D11 hardware"
         );
         println!("SKIP: no physical FL9_1 adapter for combined textureLoad/dimensions test");

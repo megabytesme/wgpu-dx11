@@ -54,6 +54,7 @@ Bottom level categories:
 
 #### Hal
 
+- Support RGBA8 sRGB volume textures on compatible D3D11 FL9_1 adapters and preserve texel bytes when copying between linear and sRGB volumes of the same format family.
 - Accept alpha-equivalent color and alpha blend equations in the opt-in FL9_1 D3D11 backend without enabling separate-alpha blending.
 - Emulate the direct single-mip fragment `textureSampleGrad` subset in the opt-in FL9_1 D3D11 backend.
 - Extend the opt-in FL9_1 D3D11 literal-zero texture-sampling subset to support bounded helper coordinate arithmetic and validate render-bundle view compatibility.

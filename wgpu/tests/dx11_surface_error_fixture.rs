@@ -452,7 +452,7 @@ fn public_dx11_hwnd_present_device_loss_reaches_callback() {
         Ok(adapter) => adapter,
         Err(error) => {
             assert!(
-                required,
+                !required,
                 "strict mode requires a physical FL9_1 adapter: {error}"
             );
             println!("SKIP: no physical D3D11 surface adapter: {error}");
