@@ -1,0 +1,231 @@
+{
+  "schema_version": 1,
+  "tier_state": "INCOMPLETE",
+  "source_sha": "8a58a3a57320d6278bdd97485211809a03467629",
+  "opt_in": {
+    "feature": "dx11-fl11_0",
+    "WGPU_DX11_EXACT_FEATURE_LEVEL": "11_0",
+    "WGPU_DX11_EXPERIMENTAL_FL11_0": "1"
+  },
+  "results": {
+    "x64": {
+      "receipt": "evidence/portable/x64/results.json",
+      "host": "BEN-DESKTOP",
+      "toolchain": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+      "suites": {
+        "hal-fl11_0": {
+          "requested": "11_0",
+          "portable_fl11_0": false,
+          "passed": 5,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "cd7c80b410a39e4f9b0817f585387bd4377b83985a82329cd5d60a7ecb316190"
+        },
+        "hal-selector": {
+          "requested": "11_0",
+          "portable_fl11_0": false,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "c50d5fedf440cda8bcaca6547522aa0c2e7bed2322d913392aafed04c7a222b7"
+        },
+        "public-fl11_0": {
+          "requested": "11_0",
+          "portable_fl11_0": false,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "90d0eb3330cbbb6aba28a75faddddde0c270d65ce7e9734b2c4fcd1e07358c71"
+        },
+        "portable-fl11_0": {
+          "requested": "11_0",
+          "portable_fl11_0": true,
+          "passed": 3,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "2d6637af6bf9962520d0cd996dc5b49250f64df4b741d1580b1044e7be5f02d7"
+        },
+        "public-fl10_1": {
+          "requested": "10_1",
+          "portable_fl11_0": true,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "41a1b6917ec48b4565d66f86520502f8638ad004dfc53d34b17289a3e4863c86"
+        },
+        "public-fl9_1": {
+          "requested": "9_1",
+          "portable_fl11_0": false,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "1758b34854aac3d8fb7bf937bab490c3e472bb807f1070ea1e17aec41196cdc3"
+        },
+        "public-invalid": {
+          "requested": "12_0",
+          "portable_fl11_0": false,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "efab26f9ff9c7bff3f3c3d26a9be577c019350c72cd3a03b7bdf80ce7de071dd"
+        },
+        "fl91-public-all": {
+          "requested": null,
+          "portable_fl11_0": false,
+          "passed": 176,
+          "failed": 1,
+          "skipped": 4,
+          "exit_code": 101,
+          "log_sha256": "9d614f64cfeca6e04461a28b30c74d744528c824169df9cae1f53b2bc9c68b71"
+        }
+      }
+    },
+    "x86": {
+      "receipt": "evidence/portable/x86/results.json",
+      "host": "BEN-DESKTOP",
+      "toolchain": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+      "suites": {
+        "hal-fl11_0": {
+          "requested": "11_0",
+          "portable_fl11_0": false,
+          "passed": 5,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "c4b7d51b190914e9070a899cf98c4d2439bc9ed65dc06512974e03c1397e8d1d"
+        },
+        "hal-selector": {
+          "requested": "11_0",
+          "portable_fl11_0": false,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "c50d5fedf440cda8bcaca6547522aa0c2e7bed2322d913392aafed04c7a222b7"
+        },
+        "public-fl11_0": {
+          "requested": "11_0",
+          "portable_fl11_0": false,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "95e2579770f34e113d3944ee984bd1ed0581691911eb3429fc6ea1089938e23a"
+        },
+        "portable-fl11_0": {
+          "requested": "11_0",
+          "portable_fl11_0": true,
+          "passed": 3,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "f2fbb79bce5aa91ddbda18c6730deb92da1e6603e4c56a88691a55bbfd2bd1d2"
+        },
+        "public-fl10_1": {
+          "requested": "10_1",
+          "portable_fl11_0": true,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "25fe0e5943ebe7cd25e27788d4d863034181614bb31a9869a766b6bacf7efd23"
+        },
+        "public-fl9_1": {
+          "requested": "9_1",
+          "portable_fl11_0": false,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "5cabac6244afd7e30d52286e841ab40d4eb3c9086226805ac1ce7fdf2bde2511"
+        },
+        "public-invalid": {
+          "requested": "12_0",
+          "portable_fl11_0": false,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "exit_code": 0,
+          "log_sha256": "efab26f9ff9c7bff3f3c3d26a9be577c019350c72cd3a03b7bdf80ce7de071dd"
+        },
+        "fl91-public-all": {
+          "requested": null,
+          "portable_fl11_0": false,
+          "passed": 127,
+          "failed": 50,
+          "skipped": 20,
+          "exit_code": 101,
+          "log_sha256": "fdbe9ece2b7a69793912788321605f339dafe05d36e8e9eb68e0b6d52737ad00"
+        }
+      }
+    },
+    "cts": {
+      "pin": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "runner_sha256": "46d96f22c9f935ee8604fbaafe2d80ccf45fea05f76f380ec2fae02bbed58b4f",
+      "receipt": "evidence/portable/cts/results.json",
+      "selectors": {
+        "command-buffer-basic": {
+          "listed": 3,
+          "passed": 3,
+          "failed": 0,
+          "skipped": 0,
+          "warned": 0,
+          "exact_hardware": true,
+          "exit_code": 0,
+          "log_sha256": "a2ec08eca37fc996743d692c353962b24e3b9b0ae1b530bc6f574b5b21e7d198"
+        },
+        "workgroup-size-z": {
+          "listed": 1,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "warned": 0,
+          "exact_hardware": true,
+          "exit_code": 0,
+          "log_sha256": "59743df4b0d88f0ad101c37ab7cd77a796324306d3854c87418f3ead73db6e93"
+        },
+        "workgroups-per-dimension": {
+          "listed": 1,
+          "passed": 1,
+          "failed": 0,
+          "skipped": 0,
+          "warned": 0,
+          "exact_hardware": true,
+          "exit_code": 0,
+          "log_sha256": "a11911575f819c0949990b53737d8caaa06d7a7fe10cec0bb35b316b060dad82"
+        },
+        "storage-buffer-binding-size": {
+          "listed": 2,
+          "passed": 2,
+          "failed": 0,
+          "skipped": 0,
+          "warned": 0,
+          "exact_hardware": true,
+          "exit_code": 0,
+          "log_sha256": "fcbca36289891a2ac14c8bd2b6f841d677b624a7b54890620ba357a2dc99e0db"
+        }
+      }
+    }
+  },
+  "fl91_x86_comparison": {
+    "receipt": "evidence/portable/fl91-x86-comparison/results.json",
+    "baseline_full": {
+      "source_sha": "483c3e69ab0220c2c9d0ca390d4af8dc3a6b0d67",
+      "passed": 123,
+      "failed": 54,
+      "skip_messages": 10
+    },
+    "candidate_in_fresh_processes": {
+      "passed": 176,
+      "failed": 1,
+      "skip_messages": 4
+    }
+  }
+}

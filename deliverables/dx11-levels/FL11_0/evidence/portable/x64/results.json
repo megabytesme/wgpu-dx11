@@ -1,0 +1,238 @@
+{
+  "results": [
+    {
+      "failed": 0,
+      "requested": "11_0",
+      "binary_sha256": "59472f292a1093ca83060f458f20455850f3a5f51886231dff92969f39913897",
+      "suite": "hal-fl11_0",
+      "command": [
+        "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11-portable-Nov21\\target\\debug\\deps\\wgpu_hal-6f6bbb0d9c91dd96.exe",
+        "--nocapture",
+        "--test-threads=1",
+        "tier_fl11_0"
+      ],
+      "log": "hal-fl11_0.txt",
+      "ignored": 0,
+      "portable_fl11_0": false,
+      "force_fl9_1": null,
+      "log_sha256": "cd7c80b410a39e4f9b0817f585387bd4377b83985a82329cd5d60a7ecb316190",
+      "skipped": 0,
+      "passed": 5,
+      "exit_code": 0
+    },
+    {
+      "failed": 0,
+      "requested": "11_0",
+      "binary_sha256": "59472f292a1093ca83060f458f20455850f3a5f51886231dff92969f39913897",
+      "suite": "hal-selector",
+      "command": [
+        "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11-portable-Nov21\\target\\debug\\deps\\wgpu_hal-6f6bbb0d9c91dd96.exe",
+        "--nocapture",
+        "--test-threads=1",
+        "exact_selector"
+      ],
+      "log": "hal-selector.txt",
+      "ignored": 0,
+      "portable_fl11_0": false,
+      "force_fl9_1": null,
+      "log_sha256": "c50d5fedf440cda8bcaca6547522aa0c2e7bed2322d913392aafed04c7a222b7",
+      "skipped": 0,
+      "passed": 1,
+      "exit_code": 0
+    },
+    {
+      "failed": 0,
+      "requested": "11_0",
+      "binary_sha256": "f6a940434ec3785c825c56e7d54b9d8741f888728e09fbb7fb53eae9d7a43138",
+      "suite": "public-fl11_0",
+      "command": [
+        "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11-portable-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe",
+        "--nocapture",
+        "--test-threads=1",
+        "public_exact_selection"
+      ],
+      "log": "public-fl11_0.txt",
+      "ignored": 0,
+      "portable_fl11_0": false,
+      "force_fl9_1": null,
+      "log_sha256": "90d0eb3330cbbb6aba28a75faddddde0c270d65ce7e9734b2c4fcd1e07358c71",
+      "skipped": 0,
+      "passed": 1,
+      "exit_code": 0
+    },
+    {
+      "failed": 0,
+      "requested": "11_0",
+      "binary_sha256": "f6a940434ec3785c825c56e7d54b9d8741f888728e09fbb7fb53eae9d7a43138",
+      "suite": "portable-fl11_0",
+      "command": [
+        "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11-portable-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe",
+        "--nocapture",
+        "--test-threads=1",
+        "tier_fl11_0_portable"
+      ],
+      "log": "portable-fl11_0.txt",
+      "ignored": 0,
+      "portable_fl11_0": true,
+      "force_fl9_1": null,
+      "log_sha256": "2d6637af6bf9962520d0cd996dc5b49250f64df4b741d1580b1044e7be5f02d7",
+      "skipped": 0,
+      "passed": 3,
+      "exit_code": 0
+    },
+    {
+      "failed": 0,
+      "requested": "10_1",
+      "binary_sha256": "f6a940434ec3785c825c56e7d54b9d8741f888728e09fbb7fb53eae9d7a43138",
+      "suite": "public-fl10_1",
+      "command": [
+        "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11-portable-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe",
+        "--nocapture",
+        "--test-threads=1",
+        "public_exact_selection"
+      ],
+      "log": "public-fl10_1.txt",
+      "ignored": 0,
+      "portable_fl11_0": true,
+      "force_fl9_1": null,
+      "log_sha256": "41a1b6917ec48b4565d66f86520502f8638ad004dfc53d34b17289a3e4863c86",
+      "skipped": 0,
+      "passed": 1,
+      "exit_code": 0
+    },
+    {
+      "failed": 0,
+      "requested": "9_1",
+      "binary_sha256": "f6a940434ec3785c825c56e7d54b9d8741f888728e09fbb7fb53eae9d7a43138",
+      "suite": "public-fl9_1",
+      "command": [
+        "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11-portable-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe",
+        "--nocapture",
+        "--test-threads=1",
+        "public_exact_selection"
+      ],
+      "log": "public-fl9_1.txt",
+      "ignored": 0,
+      "portable_fl11_0": false,
+      "force_fl9_1": null,
+      "log_sha256": "1758b34854aac3d8fb7bf937bab490c3e472bb807f1070ea1e17aec41196cdc3",
+      "skipped": 0,
+      "passed": 1,
+      "exit_code": 0
+    },
+    {
+      "failed": 0,
+      "requested": "12_0",
+      "binary_sha256": "f6a940434ec3785c825c56e7d54b9d8741f888728e09fbb7fb53eae9d7a43138",
+      "suite": "public-invalid",
+      "command": [
+        "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11-portable-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe",
+        "--nocapture",
+        "--test-threads=1",
+        "public_exact_selection"
+      ],
+      "log": "public-invalid.txt",
+      "ignored": 0,
+      "portable_fl11_0": false,
+      "force_fl9_1": null,
+      "log_sha256": "efab26f9ff9c7bff3f3c3d26a9be577c019350c72cd3a03b7bdf80ce7de071dd",
+      "skipped": 0,
+      "passed": 1,
+      "exit_code": 0
+    },
+    {
+      "failed": 1,
+      "requested": null,
+      "binary_sha256": "7d207354661db6af8ba64b33fab66b24a21ba6adeb2cfdced31e594b7fb17386",
+      "suite": "fl91-public-all",
+      "command": [
+        "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11-portable-Nov21\\target\\debug\\deps\\dx11_public-fa43eb6c1f2344b5.exe",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "log": "fl91-public-all.txt",
+      "ignored": 0,
+      "portable_fl11_0": false,
+      "force_fl9_1": "1",
+      "log_sha256": "9d614f64cfeca6e04461a28b30c74d744528c824169df9cae1f53b2bc9c68b71",
+      "skipped": 4,
+      "passed": 176,
+      "exit_code": 101
+    }
+  ],
+  "architecture": "x64",
+  "source_sha": "8a58a3a57320d6278bdd97485211809a03467629",
+  "host": "BEN-DESKTOP",
+  "os": "Microsoft Windows 11 Pro",
+  "rustc": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "worktree": "C:\\dev\\personal\\wgpu-dx11-FL11_0-Nov21",
+  "source_changes": [],
+  "os_build": "26300",
+  "target_directory": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11-portable-Nov21\\target",
+  "d3dcompiler_version": "10.0.26100.9818 (WinBuild.160101.0800)",
+  "builds": [
+    {
+      "suite": "hal",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--no-run",
+        "--message-format=json",
+        "-p",
+        "wgpu-hal",
+        "--lib",
+        "--no-default-features",
+        "--features",
+        "dx11-fl11_0"
+      ],
+      "exit_code": 0
+    },
+    {
+      "suite": "exact",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--no-run",
+        "--message-format=json",
+        "-p",
+        "wgpu",
+        "--no-default-features",
+        "--features",
+        "dx11-fl11_0,wgsl,std",
+        "--test",
+        "dx11_fl11_0"
+      ],
+      "exit_code": 0
+    },
+    {
+      "suite": "fl91-public",
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--no-run",
+        "--message-format=json",
+        "-p",
+        "wgpu",
+        "--no-default-features",
+        "--features",
+        "dx11,wgsl,std",
+        "--test",
+        "dx11_public"
+      ],
+      "exit_code": 0
+    }
+  ],
+  "utc": "2026-11-21T22:19:58.2476861Z",
+  "driver_packages": [
+    {
+      "Name": "NVIDIA GeForce RTX 3090 Ti",
+      "DriverVersion": "32.0.16.2101"
+    }
+  ]
+}

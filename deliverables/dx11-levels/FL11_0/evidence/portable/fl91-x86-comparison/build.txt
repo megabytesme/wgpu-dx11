@@ -1,0 +1,72 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling quote v1.0.45
+   Compiling unicode-ident v1.0.24
+   Compiling cfg_aliases v0.2.2
+   Compiling windows-link v0.2.1
+   Compiling autocfg v1.5.1
+   Compiling thiserror v2.0.18
+   Compiling libm v0.2.16
+   Compiling foldhash v0.2.0
+   Compiling zerocopy v0.8.52
+   Compiling equivalent v1.0.2
+   Compiling cfg-if v1.0.4
+   Compiling bitflags v2.13.0
+   Compiling rustc-hash v1.1.0
+   Compiling bit-vec v0.9.1
+   Compiling parking_lot_core v0.9.12
+   Compiling raw-window-handle v0.6.2
+   Compiling log v0.4.32
+   Compiling unicode-width v0.2.2
+   Compiling static_assertions v1.1.0
+   Compiling arrayvec v0.7.6
+   Compiling smallvec v1.15.2
+   Compiling once_cell v1.21.4
+   Compiling scopeguard v1.2.0
+   Compiling windows_i686_msvc v0.52.6
+   Compiling renderdoc-sys v1.1.0
+   Compiling litrs v1.0.0
+   Compiling profiling v1.0.18
+   Compiling pin-project-lite v0.2.17
+   Compiling tracing-core v0.1.36
+   Compiling cursor-icon v1.2.0
+   Compiling naga v30.0.1 (C:\Users\ben\AppData\Local\Temp\wgpu-fl11-portable-Nov21\fl91-x86-baseline-root\naga)
+   Compiling windows-result v0.4.1
+   Compiling windows-strings v0.5.1
+   Compiling windows-threading v0.2.1
+   Compiling wgpu-hal v30.0.1 (C:\Users\ben\AppData\Local\Temp\wgpu-fl11-portable-Nov21\fl91-x86-baseline-root\wgpu-hal)
+   Compiling hashbrown v0.17.1
+   Compiling libloading v0.8.9
+   Compiling wgpu-core v30.0.1 (C:\Users\ben\AppData\Local\Temp\wgpu-fl11-portable-Nov21\fl91-x86-baseline-root\wgpu-core)
+   Compiling bit-set v0.10.0
+   Compiling lock_api v0.4.14
+   Compiling wgpu v30.0.1 (C:\Users\ben\AppData\Local\Temp\wgpu-fl11-portable-Nov21\fl91-x86-baseline-root\wgpu)
+   Compiling winit v0.30.13
+   Compiling dpi v0.1.2
+   Compiling smol_str v0.2.2
+   Compiling unicode-segmentation v1.13.3
+   Compiling codespan-reporting v0.13.1
+   Compiling num-traits v0.2.19
+   Compiling tracing v0.1.44
+   Compiling windows-targets v0.52.6
+   Compiling document-features v0.2.12
+   Compiling parking_lot v0.12.5
+   Compiling windows-sys v0.52.0
+   Compiling indexmap v2.14.0
+   Compiling syn v2.0.118
+   Compiling windows-implement v0.60.2
+   Compiling thiserror-impl v2.0.18
+   Compiling windows-interface v0.59.3
+   Compiling zerocopy-derive v0.8.52
+   Compiling bytemuck_derive v1.10.2
+   Compiling windows-core v0.62.2
+   Compiling bytemuck v1.25.0
+   Compiling naga-types v30.0.1 (C:\Users\ben\AppData\Local\Temp\wgpu-fl11-portable-Nov21\fl91-x86-baseline-root\naga-types)
+   Compiling windows-collections v0.3.2
+   Compiling windows-numerics v0.3.1
+   Compiling windows-future v0.3.2
+   Compiling wgpu-types v30.0.1 (C:\Users\ben\AppData\Local\Temp\wgpu-fl11-portable-Nov21\fl91-x86-baseline-root\wgpu-types)
+   Compiling windows v0.62.2
+   Compiling half v2.7.1
+   Compiling wgpu-naga-bridge v30.0.1 (C:\Users\ben\AppData\Local\Temp\wgpu-fl11-portable-Nov21\fl91-x86-baseline-root\wgpu-naga-bridge)
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1 (C:\Users\ben\AppData\Local\Temp\wgpu-fl11-portable-Nov21\fl91-x86-baseline-root\wgpu-core\platform-deps\windows-linux-android)
+    Finished `test` profile [unoptimized] target(s) in 53.46s

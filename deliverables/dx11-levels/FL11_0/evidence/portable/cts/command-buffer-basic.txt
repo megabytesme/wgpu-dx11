@@ -1,0 +1,14 @@
+[WARN  wgpu_core::instance] DX11 is experimental and exposes a restricted FL9_1 graphics backend with constrained owner-thread HWND and CoreWindow surfaces
+D3D11 strict hardware selection: backend=Dx11 name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 device_type=Other driver="D3D11" driver_info="FL11_0 experimental; physical DXGI adapter; driver version 32.0.16.2101; requested 11_0; active 11_0; LUID 00000000:00014a80" verified_FL9_1_marker=false
+D3D11 strict exact hardware selection: FL11_0
+D3D11 strict hardware selection: backend=Dx11 name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 device_type=Other driver="D3D11" driver_info="FL11_0 experimental; physical DXGI adapter; driver version 32.0.16.2101; requested 11_0; active 11_0; LUID 00000000:00014a80" verified_FL9_1_marker=false
+D3D11 strict exact hardware selection: FL11_0
+[pass] webgpu:api,operation,command_buffer,basic:empty: (420ms). Log:
+[pass] webgpu:api,operation,command_buffer,basic:b2t2b: (46ms). Log:
+[pass] webgpu:api,operation,command_buffer,basic:b2t2t2b: (30ms). Log:
+
+** Summary **
+Passed  w/o warnings = 3 / 3 = 100.00%
+Passed with warnings = 0 / 3 =   0.00%
+Skipped              = 0 / 3 =   0.00%
+Failed               = 0 / 3 =   0.00%

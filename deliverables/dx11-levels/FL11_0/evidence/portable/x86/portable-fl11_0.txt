@@ -1,0 +1,11 @@
+
+running 3 tests
+test tier_fl11_0_portable_atomics_in_disjoint_storage_ranges ... SM5 1,024-thread, 32 KiB workgroup produced atomic results in disjoint buffer ranges: 7, 13
+ok
+test tier_fl11_0_portable_rgba8uint_copy_chain ... Rgba8Uint copy chain verified both pitched rows
+ok
+test tier_fl11_0_portable_sm5_storage_and_gpu_written_indirect_dispatch ... SM5 indirect storage readback with dynamic offsets and over-limit dispatch rejection: [0, 0, 0, 0, 249, 239, 269, 259]
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 19.24s
+

@@ -1,0 +1,41 @@
+
+running 5 tests
+test dx11::fl11_0::tests::tier_fl11_0_bc6h_bc7_typeless_views_mips_copy_and_decode ... exact requested FL11_0, active L11_0, GetFeatureLevel 0xb000: "NVIDIA GeForce RTX 3090 Ti", PCI 10de:2203, LUID 00000000:00014a80, driver Some("32.0.16.2101"), arch x86_64
+FXC decode_blocks: cs_5_0; 1224 bytes DXBC
+  dcl_uav_structured u0, 16
+  dcl_thread_group 1, 1, 1
+DXGI format 98 support flags 0x009213e0
+DXGI format 99 support flags 0x009213e0
+DXGI format 95 support flags 0x009213e0
+DXGI format 96 support flags 0x009213e0
+compressed copy and shader readback: [[0.25490198, 0.25490198, 0.25490198, 1.0], [0.5058824, 0.5058824, 0.5058824, 1.0], [0.21972656, 0.21972656, 0.21972656, 1.0], [0.0, 0.0, 0.0, 1.0], [0.0, 0.0, 0.0, 1.0]]
+ok
+test dx11::fl11_0::tests::tier_fl11_0_compiler_rejects_excess_threads_and_bad_entry ... ok
+test dx11::fl11_0::tests::tier_fl11_0_compute_uav_atomic_barrier_and_indirect_readback ... exact requested FL11_0, active L11_0, GetFeatureLevel 0xb000: "NVIDIA GeForce RTX 3090 Ti", PCI 10de:2203, LUID 00000000:00014a80, driver Some("32.0.16.2101"), arch x86_64
+FXC produce: cs_5_0; 1168 bytes DXBC
+  dcl_uav_raw u0
+  dcl_uav_structured u7, 4
+  dcl_tgsm_structured g0, 4, 8192
+  dcl_thread_group 16, 1, 64
+FXC consume: cs_5_0; 792 bytes DXBC
+  dcl_uav_typed_buffer (uint,uint,uint,uint) u7
+  dcl_thread_group 1, 1, 1
+indirect dispatch and typed/structured/raw UAV readback: 4218889
+ok
+test dx11::fl11_0::tests::tier_fl11_0_geometry_and_triangle_tessellation_readback ... exact requested FL11_0, active L11_0, GetFeatureLevel 0xb000: "NVIDIA GeForce RTX 3090 Ti", PCI 10de:2203, LUID 00000000:00014a80, driver Some("32.0.16.2101"), arch x86_64
+FXC vertex: vs_5_0; 592 bytes DXBC
+FXC produce_draws: cs_5_0; 588 bytes DXBC
+  dcl_uav_raw u0
+  dcl_thread_group 1, 1, 1
+FXC hull: hs_5_0; 796 bytes DXBC
+FXC domain: ds_5_0; 752 bytes DXBC
+FXC geometry: gs_5_0; 620 bytes DXBC
+FXC pixel: ps_5_0; 452 bytes DXBC
+GPU-written indirect draw, indexed draw with base vertex -1 and first instance 1, and zero-count draw: triangle tessellation 64/64 pixels; HS 2, DS 38, GS 48
+ok
+test dx11::fl11_0::tests::tier_fl11_0_native_queue_rejects_foreign_lists_and_reports_device_loss ... exact requested FL11_0, active L11_0, GetFeatureLevel 0xb000: "NVIDIA GeForce RTX 3090 Ti", PCI 10de:2203, LUID 00000000:00014a80, driver Some("32.0.16.2101"), arch x86_64
+foreign command list rejected, recording error discarded, injected device loss propagated
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 558 filtered out; finished in 1.33s
+

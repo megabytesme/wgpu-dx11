@@ -1,0 +1,205 @@
+
+running 50 tests
+test public_dx11_query_gated_fl91_d24s8_depth_comparison_sampling ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; comparison_functions=0x0008 independent_filters=false max_comparison_anisotropy=1 sample_compare_offset=true depth_format=Depth24PlusStencil8 features=TextureFormatFeatures { allowed_usages: TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY) }
+PASS: public FL9_1 Depth24PlusStencil8 LessEqual depth comparison matched 64 pixels; invalid function, mismatched filters and anisotropy were rejected before HAL
+ok
+test public_dx11_query_gated_fl91_depth24plus_comparison_sampling ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; comparison_functions=0x0008 independent_filters=false max_comparison_anisotropy=1 sample_compare_offset=true depth_format=Depth24Plus features=TextureFormatFeatures { allowed_usages: TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY) }
+PASS: public FL9_1 Depth24Plus LessEqual depth comparison matched 64 pixels; invalid function, mismatched filters and anisotropy were rejected before HAL
+ok
+test public_dx11_query_gated_fl91_depth_comparison_level_zero ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; comparison_functions=0x0008 independent_filters=false max_comparison_anisotropy=1 sample_compare_offset=true depth_format=Depth16Unorm features=TextureFormatFeatures { allowed_usages: TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY) }
+PASS: public FL9_1 Depth16Unorm LessEqual depth comparison matched 64 pixels; invalid function, mismatched filters and anisotropy were rejected before HAL
+ok
+test public_dx11_query_gated_npot_mip_chain_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; unrestricted_npot=true npot_mip_flag=true
+PASS: query-gated NPOT 6x10 four-mip texture sampled at forced FL9_1; all 64 pixels matched mip 2
+ok
+test public_dx11_query_gated_rg8_3d_upload_copy_and_readback_at_fl91 ... SKIP: selected FL9_1 device did not report optional RG8 3D transfer support
+ok
+test public_dx11_query_gated_wireframe_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; polygon_mode_line=true
+PASS: query-gated FL9_1 wireframe rasterizer matched explicit triangle edge lines; 17 of 256 pixels were green
+ok
+test public_dx11_r8_3d_upload_copy_and_readback_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=public R8 3D upload, partial copy and padded readback
+PASS: public R8 3D upload, partial 3D copy and padded readback; 64/64 texels matched with untouched texels and padding preserved
+ok
+test public_dx11_r8_multimip_texture_copy_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; R8_UNORM=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | BLENDABLE) }
+PASS: public FL9_1 partial R8 mip-1 copy preserved its destination border (16/16 texels), mip-1->mip-2 copy matched all 4 texels, and all 16 offset cross-level mip pairs plus four final mip images matched with row-padding sentinels preserved
+ok
+test public_dx11_r8_rg8_rgb565_copy_and_readback_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: R8Unorm FL9_1 partial GPU texture copy and padded CPU readback; 24 texels, 6 copied and 18 preserved
+PASS: Rg8Unorm FL9_1 partial GPU texture copy and padded CPU readback; 24 texels, 6 copied and 18 preserved
+PASS: Rgb5g6b5Unorm FL9_1 partial GPU texture copy and padded CPU readback; 24 texels, 6 copied and 18 preserved
+ok
+test public_dx11_r8_rg8_rgb565_render_attachments_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+Public R8Unorm reports query-gated blending support
+Public R8Unorm format projection: TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | BLENDABLE) }
+Public Rg8Unorm reports query-gated blending support
+Public Rg8Unorm format projection: TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | BLENDABLE | SINGLE_MIP_ONLY) }
+Public Rgb5g6b5Unorm reports query-gated blending support
+Public Rgb5g6b5Unorm format projection: TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE) }
+PASS: query-gated R8Unorm color attachment accepted alpha blending
+PASS: FL9_1 R8Unorm attachment draw sampled within expected quantization of [160, 0, 0, 255]; first pixel [160, 0, 0, 255]; 64/64 sampled pixels and 64/64 copied attachment texels matched
+PASS: query-gated Rg8Unorm color attachment accepted alpha blending
+PASS: FL9_1 Rg8Unorm attachment draw sampled within expected quantization of [160, 65, 0, 255]; first pixel [160, 65, 0, 255]; 64/64 sampled pixels and 64/64 copied attachment texels matched
+PASS: query-gated Rgb5g6b5Unorm color attachment accepted alpha blending
+PASS: FL9_1 Rgb5g6b5Unorm attachment draw sampled within expected quantization of [164, 65, 66, 255]; first pixel [165, 65, 66, 255]; 64/64 sampled pixels and 64/64 copied attachment texels matched
+ok
+test public_dx11_r8_sampled_mip_chain_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; unrestricted_npot_mips=true; R8_UNORM=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | BLENDABLE) }
+PASS: public FL9_1 R8 four-mip 6x10 sampled, render-attachment and copy-source usage; mip 2 sampling matched 64/64 RGBA pixels and mip 0 readback matched 60 R8 texels
+ok
+test public_dx11_r8_sampled_upload_renders_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+Public R8Unorm format projection: TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | BLENDABLE) }
+PASS: public FL9_1 R8Unorm upload and nearest sample; 32 left pixels were [64, 0, 0, 255] and 32 right pixels were [192, 0, 0, 255]
+Public Rg8Unorm format projection: TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | BLENDABLE | SINGLE_MIP_ONLY) }
+PASS: public FL9_1 Rg8Unorm upload and nearest sample; 32 left pixels were [64, 0, 0, 255] and 32 right pixels were [192, 0, 0, 255]
+PASS: public FL9_1 Rg8Unorm linear filtering produced the expected 8-column gradient across 64 pixels
+PASS: public FL9_1 R8Unorm linear filtering produced the expected 8-column gradient across 64 pixels
+ok
+test public_dx11_read_only_depth_render_bundle_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; workload=read-only D16 bundle draw and writable-bundle rejection
+PASS: the read-only D16 bundle and depth-disabled pipeline rendered; a later Greater probe confirmed the bundle preserved depth (64 red pixels), and Core rejected a writable bundle in the same read-only pass
+ok
+test public_dx11_read_only_stencil_render_bundle_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; workload=read-only D24S8 stencil bundle and preservation probe
+PASS: the read-only D24S8 bundle and follow-up stencil probe both observed stencil value 7; all 64 pixels were green/red by half, and Core rejected a writable stencil bundle in a read-only stencil pass
+ok
+test public_dx11_rejects_compute_pipelines_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false compute_shaders=false
+PASS: public core rejected a compute pipeline before any unsupported D3D11 compute method could execute
+ok
+test public_dx11_rejects_fragment_depth_without_color_target_0_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: core rejected direct-only frag_depth before FXC and accepted the structured color+depth output
+ok
+test public_dx11_rejects_fragment_sample_mask_io_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: core rejected fragment sample-mask input and output before FXC and accepted the color-only sibling
+ok
+test public_dx11_rejects_indirect_buffers_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false indirect_execution=false
+PASS: public core rejected INDIRECT usage before any D3D11 HAL indirect draw path could execute
+ok
+test public_dx11_rejects_mutable_format_views_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; VIEW_FORMATS=false
+PASS: core rejected both compatible mutable sRGB view pairs before HAL at FL9_1
+ok
+test public_dx11_rejects_sample_index_without_multisampled_shading ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: core rejected sample_index and sample-qualified interpolation through Naga's multisampled-shading capability and accepted perspective interpolation
+ok
+test public_dx11_rejects_unavailable_primitive_index_feature ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; PRIMITIVE_INDEX=false
+PASS: core rejected PRIMITIVE_INDEX before device creation
+ok
+test public_dx11_rejects_unimplemented_hal_features_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: public adapter withheld PIPELINE_CACHE, EXPERIMENTAL_RAY_QUERY, CLIP_DISTANCES, and SHADER_F16; clip-distance and quantizeToF16 shader modules failed Core validation
+ok
+test public_dx11_render_bundle_depth_attachment_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: two depth-enabled render bundles retained writable D16 state; the later far green draw failed depth everywhere, and all 64 pixels remained red after dropping the vertex buffer
+ok
+test public_dx11_render_bundle_dynamic_uniform_offsets_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: consecutive render bundles selected distinct 256-byte dynamic uniform offsets; all 64 pixels matched both expected colors after source resources were dropped
+ok
+test public_dx11_render_bundle_executes_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: public render bundle executed one indexed-free triangle and all 64 pixels read back as [255, 64, 0, 255]
+ok
+test public_dx11_render_bundle_pipeline_layout_transition_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: consecutive bundles switched from a uniform-only layout to a texture/sampler-only layout; 64/64 output pixels were red/green as expected after source resources were dropped
+ok
+test public_dx11_render_bundle_preserves_pass_blend_and_scissor_state_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: one render bundle used pass-level scissor and changing blend constants on consecutive executions; all 64 left/right pixels matched red/green
+ok
+test public_dx11_render_bundle_preserves_pass_stencil_reference_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: two executions of one render bundle stored distinct pass stencil references; comparison draws produced red/green halves and all 64 pixels matched
+ok
+test public_dx11_render_bundle_transitions_multiple_bind_groups_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: consecutive render bundles rebound both sparse uniform and sampled groups; all 64 pixels matched the left/right expected colors
+ok
+test public_dx11_repeat_sampler_limit_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; max_texture_repeat_per_primitive=128
+PASS: public Core rejected repeat and mirror-repeat sampler creation using the projected FL9_1 limit before HAL
+ok
+test public_dx11_resolves_four_sample_rgba8_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; RGBA8 features=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE) }
+Depth format Depth24PlusStencil8 features=TextureFormatFeatures { allowed_usages: TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY) }
+Depth format Depth24Plus features=TextureFormatFeatures { allowed_usages: TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY) }
+Depth format Depth16Unorm features=TextureFormatFeatures { allowed_usages: TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY) }
+PASS: FL9_1 4x Depth24PlusStencil8 depth test checked 64 resolved pixels (28 near red, 8 partial coverage, 28 clear); farther green draw was rejected
+PASS: FL9_1 4x targetless Depth24PlusStencil8 depth prepass blocked the later green draw; 64/64 resolved pixels remained blue
+PASS: FL9_1 4x Depth24Plus depth test checked 64 resolved pixels (28 near red, 8 partial coverage, 28 clear); farther green draw was rejected
+PASS: FL9_1 4x targetless Depth24Plus depth prepass blocked the later green draw; 64/64 resolved pixels remained blue
+PASS: FL9_1 4x Depth16Unorm depth test checked 64 resolved pixels (28 near red, 8 partial coverage, 28 clear); farther green draw was rejected
+PASS: FL9_1 4x targetless Depth16Unorm depth prepass blocked the later green draw; 64/64 resolved pixels remained blue
+PASS: FL9_1 RGBA8 4x mask 0x0 changed 0/64 pixels; covered output matched [0, 0, 255, 255]
+PASS: FL9_1 RGBA8 4x mask 0x1 changed 64/64 pixels; covered output matched [64, 64, 255, 255]
+PASS: FL9_1 RGBA8 4x mask 0x3 changed 64/64 pixels; covered output matched [128, 128, 255, 255]
+PASS: FL9_1 RGBA8 4x mask 0x10 changed 0/64 pixels; covered output matched [0, 0, 255, 255]
+PASS: FL9_1 RGBA8 4x mask 0x100000000 changed 0/64 pixels; covered output matched [0, 0, 255, 255]
+ok
+test public_dx11_resolves_optional_fl91_sample_counts ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; queried RGBA8 sample counts=[2, 8]
+PASS: FL9_1 2x RGBA8 Depth24PlusStencil8 resolved all pixels; near draw survived and farther draw failed; matching and mismatched stencil comparisons passed
+PASS: FL9_1 2x RGBA8 Depth24Plus resolved all pixels; near draw survived and farther draw failed
+PASS: FL9_1 2x RGBA8 Depth16Unorm resolved all pixels; near draw survived and farther draw failed
+PASS: FL9_1 8x RGBA8 Depth24PlusStencil8 resolved all pixels; near draw survived and farther draw failed; matching and mismatched stencil comparisons passed
+PASS: FL9_1 8x RGBA8 Depth24Plus resolved all pixels; near draw survived and farther draw failed
+PASS: FL9_1 8x RGBA8 Depth16Unorm resolved all pixels; near draw survived and farther draw failed
+ok
+test public_dx11_resolves_query_supported_rgb565_samples_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; RGB565 multisample counts=[2, 4, 8]
+PASS: query-supported RGB565 2x render/resolve/sample produced the expected packed color in all 64 readback pixels
+PASS: query-supported RGB565 4x render/resolve/sample produced the expected packed color in all 64 readback pixels
+PASS: query-supported RGB565 8x render/resolve/sample produced the expected packed color in all 64 readback pixels
+ok
+test public_dx11_resolves_supported_bgra8_sample_counts_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; BGRA8 features=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE) }
+PASS: FL9_1 BGRA8 2x resolve matched 64 BGRA pixels [191, 128, 64, 255] within one byte
+Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; BGRA8 features=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE) }
+PASS: FL9_1 BGRA8 4x resolve matched 64 BGRA pixels [191, 128, 64, 255] within one byte
+Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; BGRA8 features=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE) }
+PASS: FL9_1 BGRA8 8x resolve matched 64 BGRA pixels [191, 128, 64, 255] within one byte
+ok
+test public_dx11_rg16_snorm_mip_chain_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; Rg16Snorm=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(0x0) }
+PASS: public FL9_1 Rg16Snorm three-level upload and point-sampled mip 1; all 16 pixels matched mip-1 values [159, 96, 0, 255]
+ok
+test public_dx11_rg16_snorm_mip_copy_and_readback_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; Rg16Snorm=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(0x0) }
+PASS: uploaded Rg16Snorm mip 1, copied a partial region at nonzero origins, and verified 4 exact texels plus row padding and sentinels
+ok
+test public_dx11_rg8_snorm_mip_chain_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; Rg8Snorm=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(FILTERABLE) }
+PASS: public FL9_1 Rg8Snorm three-level upload and biased mip sampling; all 16 pixels matched mip-1 values [192, 64, 0, 255]
+ok
+test public_dx11_rg8_snorm_shadow_copy_and_readback_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; Rg8Snorm=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(FILTERABLE) }; operations=ordered-padded-upload→partial-shadow-copy→exact-buffer-readback→sampled-render
+PASS: RG8_SNORM exact raw source/destination bytes, padded rows, partial-copy borders, and copied/untouched GPU samples verified
+ok
+test public_dx11_rg8_unorm_mip_chain_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; Rg8Unorm=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | BLENDABLE | SINGLE_MIP_ONLY) }
+SKIP: selected FL9_1 device did not expose optional Rg8Unorm MIP support
+ok
+test public_dx11_rgb565_sampled_upload_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="D3D11" requested=FL9_1 actual=FL9_1 software=false; packed formats=[TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE) }, TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(FILTERABLE) }, TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(FILTERABLE) }]
+PASS: FL9_1 RGB565 padded upload, nearest and linear native SRV sampling, RGBA8 readback; mip-1 sampled=true, all 128 output pixels matched
+PASS: FL9_1 RGB5A1 padded upload, nearest and linear native SRV sampling, RGBA8 readback; mip-1 sampled=false, all 128 output pixels matched
+PASS: FL9_1 RGBA4 padded upload, nearest and linear native SRV sampling, RGBA8 readback; mip-1 sampled=false, all 128 output pixels matched
+ok
+test public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: FL9_1 RGB5A1 padded upload, partial GPU copy, sampled output and raw shadow readback; pixels, words, row padding and sentinels matched
+PASS: FL9_1 RGBA4 padded upload, partial GPU copy, sampled output and raw shadow readback; pixels, words, row padding and sentinels matched
+PASS: FL9_1 RGB5A1 four-level texture uploaded mip 1, copied a partial mip-1 region, sampled its single-mip view and verified padded raw readback
+PASS: FL9_1 RGBA4 four-level texture uploaded mip 1, copied a partial mip-1 region, sampled its single-mip view and verified padded raw readback
+ok
+test public_dx11_rgba8_snorm_mip_chain_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; Rgba8Snorm=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(FILTERABLE) }
+PASS: public FL9_1 Rgba8Snorm three-level upload and biased mip sampling; all 16 pixels matched mip-1 values [192, 64, 160, 96]
+ok
+test public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false statically_unrolled_loops=true dynamic_loops=false
+PASS: FL9_1 bounded vertex/fragment loops and three patterned texture samples inside the fragment loop rendered 64/64 expected pixels; core rejected dynamic loops before FXC
+ok
+test public_dx11_sampled_mip_chain_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; RGBA8=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE) }; R8_UNORM=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | BLENDABLE) }
+PASS: direct and single-helper FL9_1 textureSampleGrad rendering matched every checked pixel; unsupported sample-gradient forms were rejected
+ok
+test public_dx11_scissor_and_viewport_validation_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: public core rejected an out-of-target viewport before HAL
+PASS: public FL9_1 scissor output; 24 green pixels inside and 40 blue pixels outside
+ok
+test public_dx11_snorm_sampled_uploads_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; Rg8Snorm=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(FILTERABLE) }; Rg16Snorm=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(0x0) }; Rgba8Snorm=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(FILTERABLE) }
+PASS: core rejected filtering sampler use for point-only Rg16Snorm
+PASS: Rg16Snorm partial GPU copy read back 64 exact raw texels; offset, row padding and trailing sentinel were preserved
+PASS: public FL9_1 Rg8Snorm and Rgba8Snorm used linear interpolation across a sign-changing texel boundary; Rg16Snorm remains point sampled (sampled=true); all 64 pixels matched
+ok
+test public_dx11_sparse_multi_texture_sampling_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: public FL9_1 sparse pairs across groups 1/4 and 6/7; replacing only group 7 from linear to nearest changed the right half; all 128 pixels matched
+ok
+test public_dx11_splits_nonindexed_line_list_at_fl91_vertex_limit ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; max_direct_line_list_vertices=65536
+PASS: public FL9_1 nonindexed line-list draw crossed the 65536-vertex chunk boundary; the final pair rendered 6 red pixel(s), and all other pixels stayed blue
+ok
+test public_dx11_splits_point_and_triangle_draws_at_fl91_limits ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; point_limit=65535
+PASS: public FL9_1 point-list draw split 65,536 primitives at the 65,535 limit; the final vertex rendered 1 red pixel(s) and all other target pixels stayed blue
+PASS: public FL9_1 triangle-list draw split after 65,535 vertices; the final triangle rendered 32 red pixel(s), and 32 pixels stayed blue
+ok
+test public_dx11_srgb_mip_chain_sampling_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; RGBA8_SRGB=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE) }; BGRA8_SRGB=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE) }
+PASS: implicit LOD selected mip 1 for both sRGB formats; 128/128 pixels decoded to [55, 13, 134, 255]
+ok
+
+test result: ok. 50 passed; 0 failed; 0 ignored; 0 measured; 127 filtered out; finished in 8.15s
+

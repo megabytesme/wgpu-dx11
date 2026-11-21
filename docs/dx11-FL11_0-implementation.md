@@ -63,10 +63,27 @@ The pinned CTS checkout is `3fdd32363410f2bd4e3e2f046980967e6abc27e6`. The archi
 
 Scoped rustfmt and HAL Clippy completed. The whole-workspace rustfmt check still finds formatting differences in the pinned baseline files. Clippy reported 30 warnings in existing code.
 
+## Portable candidate results
+
+Source commit `8a58a3a57320d6278bdd97485211809a03467629` passed three portable fixtures, five native fixtures and all exact-selection controls in both x64 and x86 processes on the physical RTX 3090 Ti. Portable readback verified `num_workgroups`, dynamic storage ranges, sampled data and rejection of an over-limit GPU-written dispatch. The 1,024-thread, 32 KiB workgroup produced atomic results of 7 and 13 in two ranges of one buffer. The typed `Rgba8Uint` copy chain reproduced both pitched rows byte for byte.
+
+The pinned x64 CTS selection passed all seven cases with zero warnings or skips. Both `b2t2b` and `b2t2t2b` passed after enabling the native integer format in both transfer allowlists. CTS also verified the storage binding size alignment and compute workgroup limits.
+
+The forced FL9_1 public suite returned 176 passing functions and one failure on x64. The single-process x86 run returned 127 passing functions and 50 failures after adapter selection started failing partway through. The same adapter-selection failure occurred on the pre-change revision, which returned 123 passing functions and 54 failures. Splitting the exact candidate into four fresh x86 processes returned 176 passing functions and one failure. Both the x64 and split x86 runs include four conditional skip messages and retain the existing varying-limit failure at seven versus eight. [Portable test manifest](../deliverables/dx11-levels/FL11_0/portable-tests.json)
+
+```powershell
+$scratch = Join-Path $env:TEMP 'wgpu-fl11-portable'
+pwsh -NoProfile -File deliverables/dx11-levels/FL11_0/run-desktop.ps1 -Architecture x64 -ScratchDirectory $scratch -OutputDirectory "$scratch/desktop-x64" -IncludeFl91Public
+pwsh -NoProfile -File deliverables/dx11-levels/FL11_0/run-desktop.ps1 -Architecture x86 -ScratchDirectory $scratch -OutputDirectory "$scratch/desktop-x86" -IncludeFl91Public
+$env:CARGO_TARGET_DIR = "$scratch/cts-target"
+cargo rustc -p cts_runner --bin cts_runner --features deno_webgpu/dx11-fl11_0 --locked --offline -- -C link-arg=/DEBUG:NONE
+pwsh -NoProfile -File deliverables/dx11-levels/FL11_0/run-cts.ps1 -Portable -Runner "$env:CARGO_TARGET_DIR/debug/cts_runner.exe" -CtsCheckout $pinnedCtsCheckout -OutputDirectory "$scratch/cts"
+```
+
 ## Remaining qualification
 
 - The FL9_1 public regression and certification status are separate from the higher-tier native fixtures. See the exact-candidate results and inherited failures in [the test manifest](../deliverables/dx11-levels/FL11_0/tests.json).
-- Portable SM5 pipeline creation, storage bindings and hazards, public indirect draws and dispatch, public query semantics, expanded dimensions and formats, shared RTV/UAV allocation and all inherited operations need implementation or qualification. Native-only tests still need stream output, remaining tessellation domains and boundaries, indirect argument rejection cases, sample positions, complete query and format-use matrices, and swapchain lifetime and resize.
+- Portable storage textures, indirect draws, public query semantics, expanded dimensions and formats, shared RTV/UAV allocation and all inherited operations need implementation or qualification. Native-only tests still need stream output, remaining tessellation domains and boundaries, indirect argument rejection cases, sample positions, complete query and format-use matrices, and swapchain lifetime and resize.
 - Signed exact-level Surface ARM64, Lumia ARM32 capability and deployment, and independent native-ceiling hardware results remain open. The roadmap's older results provide device controls.
 - HorizonUWP shader packs, DRS, HUD, mod markers, presentation and matched performance need a signed build pinned to the qualifying fork SHA. The [benchmark manifest](../deliverables/dx11-levels/FL11_0/benchmarks.json) records the outstanding comparisons.
 
