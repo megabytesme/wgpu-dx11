@@ -44,6 +44,11 @@ Bottom level categories:
 
 ### Added/New Features
 
+#### DX11
+
+- Allow Repeat and MirrorRepeat at FL9_1 for draws whose texture coordinates Core can prove stay within the native repeat limit.
+- Allow single-sample sRGB blending at FL9_1 when a readback probe verifies linear-space blending for the selected device and format.
+
 #### General
 
 - Treat blend factors with identical alpha-channel projections as coupled on downlevel adapters.

@@ -1,6 +1,7 @@
 //! Native DXGI adapter and D3D11 device ownership for the experimental FL9_1 HAL.
 use alloc::{string::String, vec::Vec};
 use parking_lot::{Mutex, MutexGuard};
+use std::sync::OnceLock;
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
@@ -216,6 +217,7 @@ impl NativeAdapter {
             immediate: Mutex::new(immediate),
             idle_query: Mutex::new(Some(idle_query)),
             level,
+            srgb_blend: OnceLock::new(),
             timestamp_frequency,
             debug_info_queue,
             #[cfg(any(test, feature = "dx11-test-fixture"))]
@@ -235,6 +237,7 @@ pub struct NativeDevice {
     immediate: Mutex<ID3D11DeviceContext>,
     pub(super) idle_query: Mutex<Option<ID3D11Asynchronous>>,
     level: FeatureLevel,
+    srgb_blend: OnceLock<super::srgb_blend::SelectedSrgbBlend>,
     timestamp_frequency: Option<u64>,
     #[cfg_attr(not(test), allow(dead_code))]
     debug_info_queue: Option<ID3D11InfoQueue>,
@@ -247,6 +250,19 @@ pub struct NativeDevice {
 }
 
 impl NativeDevice {
+    pub(super) fn initialize_srgb_blend(&self) -> Result<()> {
+        if self.level != FeatureLevel::L9_1 {
+            return Ok(());
+        }
+        self.srgb_blend
+            .get_or_init(|| super::srgb_blend::SelectedSrgbBlend::probe(self));
+        self.check_device_removed_reason()
+    }
+
+    pub(super) fn selected_srgb_blend(&self) -> super::srgb_blend::SelectedSrgbBlend {
+        self.srgb_blend.get().copied().unwrap_or_default()
+    }
+
     #[cfg(test)]
     pub(super) fn open_default_hardware_for_test(level: FeatureLevel) -> Result<Self> {
         use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
@@ -275,6 +291,7 @@ impl NativeDevice {
             immediate: Mutex::new(context.ok_or_else(|| Error::from_hresult(E_FAIL))?),
             idle_query: Mutex::new(None),
             level,
+            srgb_blend: OnceLock::new(),
             timestamp_frequency: None,
             debug_info_queue: None,
             injected_oom_check_status: Mutex::new(None),

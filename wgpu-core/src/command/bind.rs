@@ -558,6 +558,28 @@ impl Binder {
         })
     }
 
+    pub(super) fn check_bounded_repeat(&self, pipeline: &RenderPipeline) -> Result<(), DrawError> {
+        for &naga::ResourceBinding { group, binding } in &pipeline.unproven_repeat_samplers {
+            let periodic = self
+                .list_valid()
+                .find_map(|(index, bind_group, _)| (index == group as usize).then_some(bind_group))
+                .and_then(|bind_group| bind_group.sampler_uses_repeat.get(&binding))
+                .ok_or(DrawError::MissingSamplingBindingMetadata { group, binding })?;
+            if periodic.iter().any(|&uses_periodic| uses_periodic) {
+                return Err(DrawError::UnprovenTextureRepeat {
+                    group,
+                    binding,
+                    maximum: pipeline
+                        .device
+                        .downlevel
+                        .limits
+                        .max_texture_repeat_per_primitive,
+                });
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn check_npot_sampling(&self, pipeline: &RenderPipeline) -> Result<(), DrawError> {
         if pipeline
             .device

@@ -74,6 +74,12 @@ pub enum DrawError {
     },
     #[error("The number of bind groups + vertex buffers {given} exceeds the limit {limit}")]
     TooManyBindGroupsPlusVertexBuffers { given: u32, limit: u32 },
+    #[error("Sampler group {group} binding {binding} uses Repeat or MirrorRepeat without a proven coordinate bound (device limit {maximum} repeats per primitive)")]
+    UnprovenTextureRepeat {
+        group: u32,
+        binding: u32,
+        maximum: u32,
+    },
     #[error("Non-power-of-two texture group {texture_group} binding {texture_binding} cannot be sampled with repeating sampler group {sampler_group} binding {sampler_binding} on this device")]
     NpotTextureWithRepeatSampler {
         texture_group: u32,

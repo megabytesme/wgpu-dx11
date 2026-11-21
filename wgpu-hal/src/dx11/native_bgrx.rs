@@ -797,7 +797,13 @@ mod render_tests {
         core::PCSTR,
         Win32::Graphics::{
             Direct3D::D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
-            Dxgi::{Common::DXGI_FORMAT_R32G32_FLOAT, IDXGIDevice},
+            Dxgi::{
+                Common::{
+                    DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_R32G32_FLOAT,
+                    DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                },
+                IDXGIDevice,
+            },
         },
     };
 
@@ -938,8 +944,26 @@ mod render_tests {
             let subresource = BgrxSubresource::default();
             let view = output.create_render_target_view(device, subresource, 0)?;
             device.clear_bgrx_render_target(output, subresource, &[0.0, 1.0, 0.0, 0.0])?;
+            self.draw(device, view, shader, parameters, sample, None)?;
+            let pixels = device.read_bgrx_subresource(output, subresource)?;
+            assert_eq!(pixels.len(), 64);
+            Ok(pixels[4 * 8 + 4])
+        }
+
+        fn draw(
+            &self,
+            device: &NativeDevice,
+            view: ID3D11RenderTargetView,
+            shader: &ID3D11PixelShader,
+            parameters: [f32; 4],
+            sample: Option<(&ID3D11ShaderResourceView, &ID3D11SamplerState)>,
+            clear: Option<&[f32; 4]>,
+        ) -> Result<()> {
             unsafe {
                 device.with_native_context(|_, context| {
+                    if let Some(clear) = clear {
+                        context.ClearRenderTargetView(&view, clear);
+                    }
                     context.UpdateSubresource(
                         &self.constants,
                         0,
@@ -977,11 +1001,8 @@ mod render_tests {
                     }
                     context.Draw(3, 0);
                     Ok(())
-                })?;
+                })
             }
-            let pixels = device.read_bgrx_subresource(output, subresource)?;
-            assert_eq!(pixels.len(), 64);
-            Ok(pixels[4 * 8 + 4])
         }
     }
 
@@ -996,7 +1017,7 @@ mod render_tests {
         })
     }
 
-    fn matches_pixel(actual: [u8; 3], expected: [u8; 3]) -> bool {
+    fn matches_pixel<const N: usize>(actual: [u8; N], expected: [u8; N]) -> bool {
         actual
             .into_iter()
             .zip(expected)
@@ -1214,11 +1235,140 @@ mod render_tests {
     fn diagnose_srgb_blend(device: &NativeDevice, creation: &str) -> Result<u64> {
         let luid = adapter_luid(device)?;
         let fixture = DrawFixture::new(device)?;
-        let target = device.create_bgrx_texture(output_descriptor(BgrxFormat::Srgb))?;
         let shader = blend_shader(device)?;
-        let pixel = fixture.draw_and_read(device, &target, &shader, [1.0, 0.0, 0.5, 0.5], None)?;
-        let encoded_space = [94, 128, 128];
-        let linear_space = [137, 188, 188];
+        let source = [1.0, 0.0, 0.5, 0.5];
+        std::println!(
+            "sRGB blend diagnostic: {creation}; actual level={:#06x}; adapter LUID={luid:#018x}",
+            device.feature_level().as_raw(),
+        );
+        let bgrx = (|| {
+            let target = device.create_bgrx_texture(output_descriptor(BgrxFormat::Srgb))?;
+            fixture.draw_and_read(device, &target, &shader, source, None)
+        })();
+        let mut first_error = None;
+        match bgrx {
+            Ok(pixel) => {
+                report_blend_model("BGRX8_SRGB BGR", pixel, [94, 128, 128], [137, 188, 188])
+            }
+            Err(error) => {
+                std::println!("sRGB blend diagnostic: BGRX8_SRGB failed: {error}");
+                first_error = Some(error);
+            }
+        }
+
+        // The same SrcAlpha/InvSrcAlpha equation is required for RGB and A at FL9_1.
+        // Alpha stays linear: 0.5 * 0.5 + 0.75 * 0.5 = 0.625 (159/255).
+        for (format, name, encoded, linear) in [
+            (
+                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                "RGBA8_SRGB RGBA",
+                [128, 128, 94, 159],
+                [188, 188, 137, 159],
+            ),
+            (
+                DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+                "BGRA8_SRGB BGRA",
+                [94, 128, 128, 159],
+                [137, 188, 188, 159],
+            ),
+        ] {
+            match read_alpha_blend_pixel(device, &fixture, &shader, source, format) {
+                Ok(pixel) => {
+                    report_blend_model(name, pixel, encoded, linear);
+                    if pixel[3].abs_diff(159) > 2 {
+                        std::println!(
+                            "sRGB blend diagnostic: {name} expected linear alpha near 159, got {}",
+                            pixel[3]
+                        );
+                        first_error.get_or_insert_with(|| Error::from_hresult(E_FAIL));
+                    }
+                }
+                Err(error) => {
+                    std::println!("sRGB blend diagnostic: {name} failed: {error}");
+                    first_error.get_or_insert(error);
+                }
+            }
+        }
+        first_error.map_or(Ok(luid), Err)
+    }
+
+    fn read_alpha_blend_pixel(
+        device: &NativeDevice,
+        fixture: &DrawFixture,
+        shader: &ID3D11PixelShader,
+        source: [f32; 4],
+        format: DXGI_FORMAT,
+    ) -> Result<[u8; 4]> {
+        let flags = device.check_format_support(format)?;
+        let required =
+            support(D3D11_FORMAT_SUPPORT_RENDER_TARGET) | support(D3D11_FORMAT_SUPPORT_BLENDABLE);
+        if flags & required != required {
+            std::println!("sRGB blend diagnostic: {format:?} RENDER_TARGET/BLENDABLE missing; flags={flags:#010x}");
+            return Err(invalid_arg());
+        }
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: 8,
+            Height: 8,
+            MipLevels: 1,
+            ArraySize: 1,
+            Format: format,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_DEFAULT,
+            BindFlags: D3D11_BIND_RENDER_TARGET.0 as u32,
+            ..Default::default()
+        };
+        let raw_device = device.raw_device();
+        let target = create_2d(raw_device, &desc)?;
+        let mut view = None;
+        unsafe { raw_device.CreateRenderTargetView(&target, None, Some(&mut view))? };
+        fixture.draw(
+            device,
+            view.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+            shader,
+            source,
+            None,
+            Some(&[0.0, 1.0, 0.0, 0.75]),
+        )?;
+        let staging = create_2d(
+            raw_device,
+            &D3D11_TEXTURE2D_DESC {
+                Usage: D3D11_USAGE_STAGING,
+                BindFlags: 0,
+                CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+                ..desc
+            },
+        )?;
+        unsafe {
+            device.with_native_context(|_, context| {
+                context.CopyResource(&staging, &target);
+                let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+                context.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+                let pixel = if mapped.pData.is_null() || mapped.RowPitch < desc.Width * 4 {
+                    Err(Error::from_hresult(E_FAIL))
+                } else {
+                    let offset = 4 * mapped.RowPitch as usize + 16;
+                    Ok(mapped
+                        .pData
+                        .cast::<u8>()
+                        .add(offset)
+                        .cast::<[u8; 4]>()
+                        .read())
+                };
+                context.Unmap(&staging, 0);
+                pixel
+            })
+        }
+    }
+
+    fn report_blend_model<const N: usize>(
+        name: &str,
+        pixel: [u8; N],
+        encoded_space: [u8; N],
+        linear_space: [u8; N],
+    ) {
         let model = if matches_pixel(pixel, encoded_space) {
             "encoded-space"
         } else if matches_pixel(pixel, linear_space) {
@@ -1227,10 +1377,8 @@ mod render_tests {
             "neither model"
         };
         std::println!(
-            "sRGB blend diagnostic: {creation}; actual level={:#06x}; adapter LUID={luid:#018x}; BGR={pixel:?}; model={model}; encoded-space model={encoded_space:?}; linear-space model={linear_space:?}",
-            device.feature_level().as_raw()
+            "sRGB blend diagnostic: {name}={pixel:?}; model={model}; encoded-space model={encoded_space:?}; linear-space model={linear_space:?}",
         );
-        Ok(luid)
     }
 
     #[test]

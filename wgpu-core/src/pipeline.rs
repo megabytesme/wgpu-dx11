@@ -1267,6 +1267,7 @@ pub struct RenderPipeline {
     pub(crate) late_sized_buffer_groups: ArrayVec<LateSizedBufferGroup, { hal::MAX_BIND_GROUPS }>,
     pub(crate) immediate_slots_required: naga::valid::ImmediateSlots,
     pub(crate) sampling_pairs: Vec<validation::SamplingPair>,
+    pub(crate) unproven_repeat_samplers: Vec<naga::ResourceBinding>,
     pub(crate) fl9_texture_sample_level_zero_pairs: Vec<validation::TextureSampleLevelZeroPair>,
     pub(crate) fl9_texture_sample_grad_single_mip_pairs:
         Vec<validation::TextureSampleGradSingleMipPair>,
@@ -1365,6 +1366,7 @@ impl RenderPipeline {
             late_sized_buffer_groups: ArrayVec::new(),
             immediate_slots_required: naga::valid::ImmediateSlots::default(),
             sampling_pairs: Vec::new(),
+            unproven_repeat_samplers: Vec::new(),
             fl9_texture_sample_level_zero_pairs: Vec::new(),
             fl9_texture_sample_grad_single_mip_pairs: Vec::new(),
             fl9_texture_gather_pair: None,

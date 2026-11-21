@@ -3132,16 +3132,30 @@ impl Device {
         Ok(external_texture)
     }
 
+    fn checks_bounded_repeat_on_draw(&self) -> bool {
+        self.backend() == wgt::Backend::Dx11
+            && (128..u32::MAX).contains(&self.downlevel.limits.max_texture_repeat_per_primitive)
+            && !self
+                .downlevel
+                .flags
+                .contains(wgt::DownlevelFlags::COMPUTE_SHADERS)
+            && !self
+                .features
+                .contains(wgt::Features::EXPERIMENTAL_MESH_SHADER)
+    }
+
     pub fn create_sampler(
         self: &Arc<Self>,
         desc: &resource::SamplerDescriptor,
     ) -> Result<Arc<Sampler>, resource::CreateSamplerError> {
         self.check_is_valid()?;
 
-        validate_texture_repeat_limit(
-            desc.address_modes,
-            self.downlevel.limits.max_texture_repeat_per_primitive,
-        )?;
+        if !self.checks_bounded_repeat_on_draw() {
+            validate_texture_repeat_limit(
+                desc.address_modes,
+                self.downlevel.limits.max_texture_repeat_per_primitive,
+            )?;
+        }
 
         if desc
             .address_modes
@@ -3373,7 +3387,12 @@ impl Device {
             })
         })?;
 
-        let interface = validation::Interface::new(&module, &info, self.limits.clone());
+        let interface = validation::Interface::new_with_bounded_repeat(
+            &module,
+            &info,
+            self.limits.clone(),
+            self.checks_bounded_repeat_on_draw(),
+        );
         let hal_shader = hal::ShaderInput::Naga(hal::NagaShader {
             module,
             info,
@@ -4373,6 +4392,12 @@ impl Device {
         let mut sampled_texture_formats = FastHashMap::default();
         let mut fl9_texture_load_compatible = FastHashMap::default();
         let mut sampler_uses_repeat = FastHashMap::default();
+        let bounded_repeat_on_draw = self.checks_bounded_repeat_on_draw();
+        let sampler_repeats = |address_modes: &[wgt::AddressMode; 3]| {
+            address_modes.contains(&wgt::AddressMode::Repeat)
+                || (bounded_repeat_on_draw
+                    && address_modes.contains(&wgt::AddressMode::MirrorRepeat))
+        };
         let mut sampler_clamp_to_edge = FastHashMap::default();
         let mut sampler_mip_compatibility = FastHashMap::default();
         let mut sampler_texture_sample_bias_compatible = FastHashMap::default();
@@ -4438,7 +4463,7 @@ impl Device {
                     (res_index, num_bindings)
                 }
                 Br::Sampler(ref sampler) => {
-                    let uses_repeat = sampler.address_modes.contains(&wgt::AddressMode::Repeat);
+                    let uses_repeat = sampler_repeats(&sampler.address_modes);
                     let clamp_to_edge = sampler_clamps_to_edge_u_v(&sampler.address_modes);
                     let bias_compatible = sampler.texture_sample_bias_compatible;
                     sampler_mip_compatibility.insert(binding, vec![sampler.mip_compatibility]);
@@ -4461,9 +4486,7 @@ impl Device {
                         binding,
                         samplers
                             .iter()
-                            .map(|sampler| {
-                                sampler.address_modes.contains(&wgt::AddressMode::Repeat)
-                            })
+                            .map(|sampler| sampler_repeats(&sampler.address_modes))
                             .collect(),
                     );
                     sampler_clamp_to_edge.insert(
@@ -6369,6 +6392,18 @@ impl Device {
             }
         }
 
+        let bounded_repeat_on_draw = self.checks_bounded_repeat_on_draw();
+        let mut unproven_repeat_samplers: Vec<_> = if bounded_repeat_on_draw {
+            sampling_pairs
+                .iter()
+                .map(|pair| naga::ResourceBinding {
+                    group: pair.sampler_group,
+                    binding: pair.sampler_binding,
+                })
+                .collect()
+        } else {
+            Vec::new()
+        };
         let fragment_entry_point_name;
         let fragment_stage = match desc.fragment {
             Some(ref fragment_state) => {
@@ -6932,6 +6967,13 @@ impl Device {
                             },
                         );
                     }
+                    if bounded_repeat_on_draw {
+                        unproven_repeat_samplers.extend(
+                            interface
+                                .unproven_repeat_samplers_used(&fragment_entry_point_name)
+                                .map_err(stage_err)?,
+                        );
+                    }
                     sampling_pairs.extend(stage_sampling_pairs);
                     requires_texture_sample_bias_compatible_samplers = interface
                         .entry_point_uses_texture_sample_bias(
@@ -7189,6 +7231,8 @@ impl Device {
         };
         sampling_pairs.sort_unstable();
         sampling_pairs.dedup();
+        unproven_repeat_samplers.sort_unstable_by_key(|sampler| (sampler.group, sampler.binding));
+        unproven_repeat_samplers.dedup();
         fl9_texture_sample_grad_single_mip_pairs.sort_unstable();
         fl9_texture_sample_grad_single_mip_pairs.dedup();
 
@@ -7209,6 +7253,7 @@ impl Device {
             late_sized_buffer_groups,
             immediate_slots_required,
             sampling_pairs,
+            unproven_repeat_samplers,
             fl9_texture_sample_level_zero_pairs,
             fl9_texture_sample_grad_single_mip_pairs,
             fl9_texture_gather_pair,

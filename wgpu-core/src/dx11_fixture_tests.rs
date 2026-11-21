@@ -3197,18 +3197,12 @@ fn fl91_core_buffer_and_offscreen_render_on_hardware() {
         };
         let (sampler, error) = global.device_create_sampler(device, &sampler_desc, None);
         assert!(
-            matches!(
-                error,
-                Some(crate::resource::CreateSamplerError::TextureRepeatLimitExceeded {
-                    address_mode: given,
-                    maximum: 128,
-                }) if given == address_mode
-            ),
-            "FL9_1 must reject {address_mode:?} samplers without coordinate-range proof: {error:?}"
+            error.is_none(),
+            "FL9_1 validates the bound when the {address_mode:?} sampler is used: {error:?}"
         );
         global.sampler_drop(sampler);
     }
-    std::println!("PASS: FL9_1 core repeat and mirrored-repeat sampler limit enforced");
+    std::println!("PASS: FL9_1 creates repeat and mirror-repeat samplers for draw-time proof");
     for (visibility, read_only, required_flags) in [
         (
             wgt::ShaderStages::VERTEX,
