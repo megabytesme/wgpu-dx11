@@ -1,7 +1,10 @@
 //! In-memory FXC shader compilation. WGSL lowering is not implemented here.
 use alloc::{ffi::CString, format, string::String, vec::Vec};
+use core::ffi::CStr;
 #[cfg(not(target_vendor = "uwp"))]
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
+#[cfg(not(target_vendor = "uwp"))]
+use windows::Win32::Graphics::Direct3D::ID3DInclude;
 use windows::{
     core::PCSTR,
     Win32::{
@@ -9,8 +12,6 @@ use windows::{
         Graphics::Direct3D::{Fxc::D3DCOMPILE_ENABLE_STRICTNESS, ID3DBlob},
     },
 };
-#[cfg(not(target_vendor = "uwp"))]
-use windows::Win32::Graphics::Direct3D::ID3DInclude;
 
 /// Explicit shader targets supported by this diagnostic compiler seam.
 #[allow(dead_code)]
@@ -26,15 +27,15 @@ pub(crate) enum ShaderProfile {
 }
 
 impl ShaderProfile {
-    fn target(self) -> PCSTR {
+    fn target(self) -> &'static CStr {
         match self {
-            Self::VertexLevel9_1 => PCSTR(c"vs_4_0_level_9_1".as_ptr().cast()),
-            Self::PixelLevel9_1 => PCSTR(c"ps_4_0_level_9_1".as_ptr().cast()),
-            Self::PixelLevel9_3 => PCSTR(c"ps_4_0_level_9_3".as_ptr().cast()),
-            Self::Pixel4_1 => PCSTR(c"ps_4_1".as_ptr().cast()),
-            Self::Vertex5_0 => PCSTR(c"vs_5_0".as_ptr().cast()),
-            Self::Pixel5_0 => PCSTR(c"ps_5_0".as_ptr().cast()),
-            Self::Compute5_0 => PCSTR(c"cs_5_0".as_ptr().cast()),
+            Self::VertexLevel9_1 => c"vs_4_0_level_9_1",
+            Self::PixelLevel9_1 => c"ps_4_0_level_9_1",
+            Self::PixelLevel9_3 => c"ps_4_0_level_9_3",
+            Self::Pixel4_1 => c"ps_4_1",
+            Self::Vertex5_0 => c"vs_5_0",
+            Self::Pixel5_0 => c"ps_5_0",
+            Self::Compute5_0 => c"cs_5_0",
         }
     }
 }
@@ -142,12 +143,21 @@ pub(crate) fn compile_hlsl(
     entry: &str,
     profile: ShaderProfile,
 ) -> Result<Vec<u8>, ShaderCompileError> {
+    compile_hlsl_target(source, entry, profile.target())
+}
+
+pub(super) fn compile_hlsl_target(
+    source: &str,
+    entry: &str,
+    target: &CStr,
+) -> Result<Vec<u8>, ShaderCompileError> {
     let entry = CString::new(entry).map_err(|_| ShaderCompileError {
         code: E_INVALIDARG.0,
         message: String::from("shader entry point contains a NUL byte"),
     })?;
     let mut code = None;
     let mut messages = None;
+    let target = PCSTR(target.as_ptr().cast());
     #[cfg(not(target_vendor = "uwp"))]
     let result = unsafe {
         D3DCompile(
@@ -157,7 +167,7 @@ pub(crate) fn compile_hlsl(
             None,
             None::<&ID3DInclude>,
             PCSTR(entry.as_ptr().cast()),
-            profile.target(),
+            target,
             D3DCOMPILE_ENABLE_STRICTNESS,
             0,
             &mut code,
@@ -180,7 +190,7 @@ pub(crate) fn compile_hlsl(
                 core::ptr::null(),
                 core::ptr::null_mut(),
                 PCSTR(entry.as_ptr().cast()),
-                profile.target(),
+                target,
                 D3DCOMPILE_ENABLE_STRICTNESS,
                 0,
                 &mut code,

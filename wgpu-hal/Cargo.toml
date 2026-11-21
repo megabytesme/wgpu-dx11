@@ -153,6 +153,9 @@ dx11 = [
 ## Unsafe, non-enumerated D3D11 fixture for tightly controlled core tests.
 dx11-test-fixture = ["dx11"]
 
+## Enables the native exact-tier D3D11 development interface.
+dx11-experimental-fl10 = ["dx11"]
+
 ## Enables the DX12 backend when targeting Windows.
 dx12 = [
     "dep:arrayvec",

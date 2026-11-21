@@ -9,6 +9,8 @@ mod buffer;
 mod capabilities;
 mod command;
 mod device;
+#[cfg(feature = "dx11-experimental-fl10")]
+pub mod exact;
 mod fence;
 mod hal_bind_group;
 mod hal_device;
