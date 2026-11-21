@@ -64,10 +64,27 @@ fn public_dx11_textured_depth_tested_3d_scene_at_fl91() {
     };
     let info = adapter.get_info();
     assert_eq!(info.backend, Backend::Dx11);
-    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
+    let actual = {
+        let native = unsafe { adapter.as_hal::<hal::api::Dx11>() }.expect("D3D11 adapter");
+        assert!(!native.is_software());
+        native.feature_level()
+    };
+    let requested = std::env::var("WGPU_DX11_FEATURE_LEVEL").ok();
+    if let Some(requested) = &requested {
+        use hal::dx11::FeatureLevel::*;
+        assert_eq!(
+            actual,
+            match requested.as_str() {
+                "9_1" => L9_1,
+                "9_2" => L9_2,
+                "9_3" => L9_3,
+                _ => panic!("unsupported exact scene level {requested}"),
+            }
+        );
+    }
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=textured perspective cube with D16 depth",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested={requested:?} actual={actual:?} software=false; workload=textured perspective cube with D16 depth",
         info.name, info.vendor, info.device, info.driver_info
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -436,6 +453,7 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         mapped_at_creation: false,
     });
 
+    let render_start = std::time::Instant::now();
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 render scene in opposite primitive orders"),
     });
@@ -528,6 +546,10 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         .recv_timeout(Duration::from_secs(10))
         .expect("FL9_1 scene readback callback")
         .expect("map FL9_1 scene readback");
+    println!(
+        "scene_record_submit_map_ms={:.6}",
+        render_start.elapsed().as_secs_f64() * 1_000.0
+    );
     let data = readback
         .slice(..)
         .get_mapped_range()
@@ -577,6 +599,6 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
     drop(data);
     readback.unmap();
     println!(
-        "PASS: public FL9_1 perspective cube sampled a 2x2 face texture and used D16 depth; depth-tested opposite face orders matched all 1,024 pixels, while painter-order controls differed at {painter_order_differences} pixels; clear/red/green/blue/yellow={colors:?}"
+        "PASS: public D3D11 perspective cube sampled a 2x2 face texture and used D16 depth; depth-tested opposite face orders matched all 1,024 pixels, while painter-order controls differed at {painter_order_differences} pixels; clear/red/green/blue/yellow={colors:?}"
     );
 }

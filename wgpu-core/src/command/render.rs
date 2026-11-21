@@ -830,6 +830,11 @@ pub enum ColorAttachmentError {
     TooMany { given: usize, limit: usize },
     #[error("The total number of bytes per sample in color attachments {total} exceeds the limit {limit}")]
     TooManyBytesPerSample { total: u32, limit: u32 },
+    #[error("Color attachment formats {first:?} and {other:?} have different native bit depths")]
+    MismatchedBitDepth {
+        first: wgt::TextureFormat,
+        other: wgt::TextureFormat,
+    },
     #[error("Depth slice must be less than {limit} but is {given}")]
     DepthSliceLimit { given: u32, limit: u32 },
     #[error("Color attachment's view is 3D and requires depth slice to be provided")]
@@ -1496,6 +1501,7 @@ impl RenderPassInfo {
                     .flatten()
                     .map(|at| at.view.desc.format),
                 device.limits.max_color_attachment_bytes_per_sample,
+                device.downlevel.limits.color_attachments_same_bit_depth,
             )
             .map_err(RenderPassErrorInner::ColorAttachment)?;
 

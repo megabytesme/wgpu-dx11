@@ -137,6 +137,7 @@ gles = [
 ## Enables the experimental FL9_1 D3D11 HAL and restricted public rendering
 ## backend on Windows.
 dx11 = [
+    "dep:arrayvec",
     "dep:parking_lot",
     "windows/UI_Core",
     "naga/hlsl-out",

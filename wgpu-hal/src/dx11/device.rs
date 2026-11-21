@@ -82,6 +82,8 @@ pub struct AdapterIdentity {
     pub vendor_id: u32,
     /// PCI device identifier.
     pub device_id: u32,
+    /// Locally unique DXGI identifier for this adapter.
+    pub luid: u64,
     /// Whether DXGI identifies this as a software adapter.
     pub software: bool,
 }
@@ -164,7 +166,8 @@ impl NativeAdapter {
         };
         if let Err(error) = create_result {
             if error.code() == E_INVALIDARG
-                && requested.first() == Some(&D3D_FEATURE_LEVEL(FeatureLevel::L11_1.as_raw() as i32))
+                && requested.first()
+                    == Some(&D3D_FEATURE_LEVEL(FeatureLevel::L11_1.as_raw() as i32))
                 && requested.len() > 1
             {
                 device = None;
@@ -193,7 +196,15 @@ impl NativeAdapter {
             .find(|level| level.as_raw() == selected.0 as u32)
             .ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let raw = device.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        if unsafe { raw.GetFeatureLevel() } != selected {
+            return Err(Error::from_hresult(E_FAIL));
+        }
         let immediate = context.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        let native_sampler_lod_clamp = match level {
+            FeatureLevel::L9_1 | FeatureLevel::L9_2 => false,
+            FeatureLevel::L9_3 => super::hal_sampler::supports_native_lod_clamp(&raw),
+            _ => true,
+        };
         let idle_query = {
             let desc = D3D11_QUERY_DESC {
                 Query: D3D11_QUERY_EVENT,
@@ -216,6 +227,8 @@ impl NativeAdapter {
             immediate: Mutex::new(immediate),
             idle_query: Mutex::new(Some(idle_query)),
             level,
+            experimental_fl93: false,
+            native_sampler_lod_clamp,
             timestamp_frequency,
             debug_info_queue,
             #[cfg(any(test, feature = "dx11-test-fixture"))]
@@ -235,6 +248,8 @@ pub struct NativeDevice {
     immediate: Mutex<ID3D11DeviceContext>,
     pub(super) idle_query: Mutex<Option<ID3D11Asynchronous>>,
     level: FeatureLevel,
+    experimental_fl93: bool,
+    pub(super) native_sampler_lod_clamp: bool,
     timestamp_frequency: Option<u64>,
     #[cfg_attr(not(test), allow(dead_code))]
     debug_info_queue: Option<ID3D11InfoQueue>,
@@ -318,6 +333,23 @@ impl NativeDevice {
         self.level
     }
 
+    pub(super) fn enable_experimental_fl93(&mut self) {
+        assert_eq!(self.level, FeatureLevel::L9_3);
+        self.experimental_fl93 = true;
+    }
+
+    pub(super) fn experimental_fl93(&self) -> bool {
+        self.experimental_fl93
+    }
+
+    pub(super) fn color_attachment_limit(&self) -> usize {
+        if self.experimental_fl93() {
+            4
+        } else {
+            1
+        }
+    }
+
     /// Query native format support. This does not include HAL or wgpu support.
     pub fn check_format_support(
         &self,
@@ -386,6 +418,8 @@ fn native_adapter_from_dxgi(raw: IDXGIAdapter1) -> Result<NativeAdapter> {
             name: String::from_utf16_lossy(&desc.Description[..end]),
             vendor_id: desc.VendorId,
             device_id: desc.DeviceId,
+            luid: (u64::from(desc.AdapterLuid.HighPart as u32) << 32)
+                | u64::from(desc.AdapterLuid.LowPart),
             software: desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0,
         },
     })

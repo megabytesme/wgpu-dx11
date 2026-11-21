@@ -2,6 +2,8 @@
 use alloc::{ffi::CString, format, string::String, vec::Vec};
 #[cfg(not(target_vendor = "uwp"))]
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
+#[cfg(not(target_vendor = "uwp"))]
+use windows::Win32::Graphics::Direct3D::ID3DInclude;
 use windows::{
     core::PCSTR,
     Win32::{
@@ -9,14 +11,13 @@ use windows::{
         Graphics::Direct3D::{Fxc::D3DCOMPILE_ENABLE_STRICTNESS, ID3DBlob},
     },
 };
-#[cfg(not(target_vendor = "uwp"))]
-use windows::Win32::Graphics::Direct3D::ID3DInclude;
 
 /// Explicit shader targets supported by this diagnostic compiler seam.
 #[allow(dead_code)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum ShaderProfile {
     VertexLevel9_1,
+    VertexLevel9_3,
     PixelLevel9_1,
     PixelLevel9_3,
     Pixel4_1,
@@ -26,9 +27,22 @@ pub(crate) enum ShaderProfile {
 }
 
 impl ShaderProfile {
+    pub(super) fn is_level_9_vertex(self) -> bool {
+        matches!(self, Self::VertexLevel9_1 | Self::VertexLevel9_3)
+    }
+
+    pub(super) fn is_level_9_pixel(self) -> bool {
+        matches!(self, Self::PixelLevel9_1 | Self::PixelLevel9_3)
+    }
+
+    pub(super) fn is_level_9(self) -> bool {
+        self.is_level_9_vertex() || self.is_level_9_pixel()
+    }
+
     fn target(self) -> PCSTR {
         match self {
             Self::VertexLevel9_1 => PCSTR(c"vs_4_0_level_9_1".as_ptr().cast()),
+            Self::VertexLevel9_3 => PCSTR(c"vs_4_0_level_9_3".as_ptr().cast()),
             Self::PixelLevel9_1 => PCSTR(c"ps_4_0_level_9_1".as_ptr().cast()),
             Self::PixelLevel9_3 => PCSTR(c"ps_4_0_level_9_3".as_ptr().cast()),
             Self::Pixel4_1 => PCSTR(c"ps_4_1".as_ptr().cast()),
@@ -459,7 +473,9 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
 ) -> Result<(String, String), NagaCompileError> {
     use naga::back::hlsl;
     let expected = match profile {
-        ShaderProfile::VertexLevel9_1 | ShaderProfile::Vertex5_0 => naga::ShaderStage::Vertex,
+        ShaderProfile::VertexLevel9_1
+        | ShaderProfile::VertexLevel9_3
+        | ShaderProfile::Vertex5_0 => naga::ShaderStage::Vertex,
         ShaderProfile::PixelLevel9_1
         | ShaderProfile::PixelLevel9_3
         | ShaderProfile::Pixel4_1
@@ -563,10 +579,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         texture.slot = 0;
     }
     let bindings = remapped_bindings.as_slice();
-    let level_9 = matches!(
-        profile,
-        ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1 | ShaderProfile::PixelLevel9_3
-    );
+    let level_9 = profile.is_level_9();
     let mut options = hlsl::Options {
         shader_model: hlsl::ShaderModel::V5_0,
         fake_missing_bindings: false,
@@ -600,19 +613,13 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         fl9_texture_sample_compare_offset_proof: input_options
             .texture_sample_compare_offset_binding,
         fl9_uniform_index_arguments: uniform_index_arguments.to_vec(),
-        signed_function_restrict_indexing: matches!(
-            profile,
-            ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
-        ) && input_options.vertex_index_input,
+        signed_function_restrict_indexing: level_9 && input_options.vertex_index_input,
         // Keep these guarantees explicit even if Naga's defaults change.
         restrict_indexing: true,
         // FXC rejects Naga's dynamic loop guard at FL9_1. Without the guard,
         // FXC accepts statically bounded loops by unrolling them and rejects
         // dynamic loop control for these profiles.
-        force_loop_bounding: !matches!(
-            profile,
-            ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
-        ),
+        force_loop_bounding: !level_9,
         ray_query_initialization_tracking: true,
         ..Default::default()
     };
@@ -658,10 +665,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
             hlsl::BindTarget {
                 register: mapping.slot,
                 restrict_indexing: mapping.kind == ShaderBindingKind::Uniform,
-                signed_restrict_indexing: matches!(
-                    profile,
-                    ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
-                ) && mapping.kind == ShaderBindingKind::Uniform,
+                signed_restrict_indexing: level_9 && mapping.kind == ShaderBindingKind::Uniform,
                 ..Default::default()
             },
         );
@@ -732,7 +736,28 @@ pub(super) fn compile_naga_with_synthetic_fragment_output(
             candidate.stage == naga::ShaderStage::Fragment && candidate.name == entry
         })
         .ok_or_else(|| NagaCompileError::Translation(String::from("entry point not found")))?;
-    if module.entry_points[entry_index].function.result.is_some() {
+    let result = &module.entry_points[entry_index].function.result;
+    let missing_colors = match result {
+        None => 1,
+        Some(result) if matches!(profile, ShaderProfile::PixelLevel9_3) => {
+            let color_bit = |binding: Option<&naga::Binding>| match binding {
+                Some(naga::Binding::Location { location, .. }) if *location < 4 => {
+                    1u32 << *location
+                }
+                _ => 0,
+            };
+            let mask = match &module.types[result.ty].inner {
+                naga::TypeInner::Struct { members, .. } => members
+                    .iter()
+                    .fold(0, |mask, member| mask | color_bit(member.binding.as_ref())),
+                _ => color_bit(result.binding.as_ref()),
+            };
+            let required = (1u32 << (u32::BITS - mask.leading_zeros())).saturating_sub(1) | 1;
+            required & !mask
+        }
+        Some(_) => 0,
+    };
+    if missing_colors == 0 {
         return compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
             module,
             info,
@@ -746,7 +771,7 @@ pub(super) fn compile_naga_with_synthetic_fragment_output(
     }
 
     let mut module = module.clone();
-    synthesize_fragment_color_output(&mut module, entry_index)?;
+    synthesize_fragment_color_outputs(&mut module, entry_index, missing_colors)?;
     // The original module passed core validation; the new validation pass rebuilds only
     // Naga's analysis metadata after changing the entry-point call graph and interface.
     let info = naga::valid::Validator::new(
@@ -767,91 +792,145 @@ pub(super) fn compile_naga_with_synthetic_fragment_output(
     )
 }
 
-fn synthesize_fragment_color_output(
+fn synthesize_fragment_color_outputs(
     module: &mut naga::Module,
     entry_index: usize,
+    missing_colors: u32,
 ) -> Result<(), NagaCompileError> {
-    let entry = module
-        .entry_points
-        .get_mut(entry_index)
-        .ok_or_else(|| NagaCompileError::Translation(String::from("entry point not found")))?;
-    if entry.stage != naga::ShaderStage::Fragment || entry.function.result.is_some() {
-        return Err(NagaCompileError::Translation(String::from(
-            "synthetic color output requires an outputless fragment entry point",
-        )));
-    }
+    let entry = &mut module.entry_points[entry_index];
+    let sp = naga::Span::UNDEFINED;
     let mut body = core::mem::take(&mut entry.function);
     let arguments = body.arguments.clone();
     for argument in &mut body.arguments {
         argument.binding = None;
     }
-    let body_function = module.functions.append(body, naga::Span::UNDEFINED);
+    let original = body.result.clone();
+    if let Some(result) = &mut body.result {
+        result.binding = None;
+    }
+    let body_function = module.functions.append(body, sp);
     let color_type = module.types.insert(
         naga::Type {
             name: None,
             inner: naga::TypeInner::Vector {
                 size: naga::VectorSize::Quad,
-                scalar: naga::Scalar {
-                    kind: naga::ScalarKind::Float,
-                    width: 4,
-                },
+                scalar: naga::Scalar::F32,
             },
         },
-        naga::Span::UNDEFINED,
+        sp,
     );
+    let color_binding = |location| naga::Binding::Location {
+        location,
+        interpolation: None,
+        sampling: None,
+        blend_src: None,
+        per_primitive: false,
+    };
     let mut wrapper = naga::Function {
         arguments,
-        result: Some(naga::FunctionResult {
-            ty: color_type,
-            binding: Some(naga::Binding::Location {
-                location: 0,
-                interpolation: None,
-                sampling: None,
-                blend_src: None,
-                per_primitive: false,
-            }),
-        }),
         ..naga::Function::default()
     };
-    let mut call_arguments = Vec::with_capacity(wrapper.arguments.len());
-    for index in 0..wrapper.arguments.len() {
-        let index = u32::try_from(index).map_err(|_| {
-            NagaCompileError::Translation(String::from("too many fragment arguments"))
-        })?;
-        call_arguments.push(wrapper.expressions.append(
-            naga::Expression::FunctionArgument(index),
-            naga::Span::UNDEFINED,
-        ));
-    }
-    let zero = wrapper.expressions.append(
-        naga::Expression::Literal(naga::Literal::F32(0.0)),
-        naga::Span::UNDEFINED,
-    );
-    let color = wrapper.expressions.append(
-        naga::Expression::Compose {
-            ty: color_type,
-            components: alloc::vec![zero; 4],
-        },
-        naga::Span::UNDEFINED,
-    );
-    // FL9_1 FXC requires SV_Target0. The caller binds no RTV, so this value is not observable.
+    let call_arguments = (0..wrapper.arguments.len())
+        .map(|index| {
+            wrapper
+                .expressions
+                .append(naga::Expression::FunctionArgument(index as u32), sp)
+        })
+        .collect();
+    let call_result = original.as_ref().map(|_| {
+        wrapper
+            .expressions
+            .append(naga::Expression::CallResult(body_function), sp)
+    });
     wrapper.body.push(
         naga::Statement::Call {
             function: body_function,
             arguments: call_arguments,
-            result: None,
+            result: call_result,
         },
-        naga::Span::UNDEFINED,
+        sp,
     );
+    let zero = wrapper
+        .expressions
+        .append(naga::Expression::Literal(naga::Literal::F32(0.0)), sp);
+    let emit_start = wrapper.expressions.len();
+    let zero_color = wrapper.expressions.append(
+        naga::Expression::Compose {
+            ty: color_type,
+            components: alloc::vec![zero; 4],
+        },
+        sp,
+    );
+    let value = if let Some((original, call_result)) = original.zip(call_result) {
+        let (mut members, mut components) = match &module.types[original.ty].inner {
+            naga::TypeInner::Struct { members, .. } => {
+                let components = (0..members.len())
+                    .map(|index| {
+                        wrapper.expressions.append(
+                            naga::Expression::AccessIndex {
+                                base: call_result,
+                                index: index as u32,
+                            },
+                            sp,
+                        )
+                    })
+                    .collect();
+                (members.clone(), components)
+            }
+            _ => (
+                alloc::vec![naga::StructMember {
+                    name: None,
+                    ty: original.ty,
+                    binding: original.binding,
+                    offset: 0,
+                }],
+                alloc::vec![call_result],
+            ),
+        };
+        for slot in 0..4 {
+            if missing_colors & (1 << slot) != 0 {
+                members.push(naga::StructMember {
+                    name: None,
+                    ty: color_type,
+                    binding: Some(color_binding(slot)),
+                    offset: 0,
+                });
+                components.push(zero_color);
+            }
+        }
+        // FXC requires contiguous color semantics. Core exposes only the original outputs.
+        for (index, member) in members.iter_mut().enumerate() {
+            member.offset = index as u32 * 16;
+        }
+        let ty = module.types.insert(
+            naga::Type {
+                name: None,
+                inner: naga::TypeInner::Struct {
+                    span: members.len() as u32 * 16,
+                    members,
+                },
+            },
+            sp,
+        );
+        wrapper.result = Some(naga::FunctionResult { ty, binding: None });
+        wrapper
+            .expressions
+            .append(naga::Expression::Compose { ty, components }, sp)
+    } else {
+        wrapper.result = Some(naga::FunctionResult {
+            ty: color_type,
+            binding: Some(color_binding(0)),
+        });
+        zero_color
+    };
     wrapper.body.push(
-        naga::Statement::Emit(wrapper.expressions.range_from(color.index())),
-        naga::Span::UNDEFINED,
+        naga::Statement::Emit(wrapper.expressions.range_from(emit_start)),
+        sp,
     );
-    wrapper.body.push(
-        naga::Statement::Return { value: Some(color) },
-        naga::Span::UNDEFINED,
-    );
-    module.entry_points[entry_index].function = wrapper;
+    wrapper
+        .body
+        .push(naga::Statement::Return { value: Some(value) }, sp);
+    entry.function = wrapper;
     Ok(())
 }
 

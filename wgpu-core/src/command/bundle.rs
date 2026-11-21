@@ -222,6 +222,7 @@ fn validate_render_bundle_encoder_descriptor(
         validate_color_attachment_bytes_per_sample(
             desc.color_formats.iter().flatten().copied(),
             device.limits.max_color_attachment_bytes_per_sample,
+            device.downlevel.limits.color_attachments_same_bit_depth,
         )?;
     }
 

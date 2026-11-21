@@ -1550,6 +1550,15 @@ pub struct DownlevelLimits {
     /// Whether fragment shaders may use derivatives or explicit texture gradients.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub fragment_derivatives: bool,
+    /// Restricts explicit fragment derivatives to the default precision.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub fragment_derivatives_default_only: bool,
+    /// Permits different color write masks while sharing the blend state across color attachments.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub independent_color_write_masks: bool,
+    /// Requires all color attachments to have the same native bytes per texel.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub color_attachments_same_bit_depth: bool,
     /// Bit mask of vertex formats supported by the adapter.
     ///
     /// Bit `n` corresponds to the discriminant of [`VertexFormat`] with value `n`. This lets
@@ -1727,6 +1736,9 @@ impl Default for DownlevelLimits {
             fragment_texture_sample_compare_offset_2d_single_mip: false,
             texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: true,
+            fragment_derivatives_default_only: false,
+            independent_color_write_masks: false,
+            color_attachments_same_bit_depth: false,
             vertex_format_mask: Self::webgpu_vertex_format_mask(),
         }
     }
@@ -2044,7 +2056,12 @@ impl DownlevelLimits {
                 || self.fragment_texture_sample_compare_offset_2d_single_mip)
             && (!self.texture_sample_bias_requires_compatible_sampler
                 || required.texture_sample_bias_requires_compatible_sampler)
-            && (!required.fragment_derivatives || self.fragment_derivatives)
+            && (!required.fragment_derivatives
+                || (self.fragment_derivatives
+                    && (!self.fragment_derivatives_default_only
+                        || required.fragment_derivatives_default_only)))
+            && (!required.independent_color_write_masks || self.independent_color_write_masks)
+            && (!self.color_attachments_same_bit_depth || required.color_attachments_same_bit_depth)
             && self.vertex_format_mask & required.vertex_format_mask == required.vertex_format_mask
     }
 }
@@ -2159,6 +2176,8 @@ impl DownlevelCapabilities {
             && self.limits.texture_sample_compare_offset
             && !self.limits.texture_sample_bias_requires_compatible_sampler
             && self.limits.fragment_derivatives
+            && !self.limits.fragment_derivatives_default_only
+            && !self.limits.color_attachments_same_bit_depth
             && self.limits.vertex_format_mask & DownlevelLimits::webgpu_vertex_format_mask()
                 == DownlevelLimits::webgpu_vertex_format_mask()
             && self.shader_model >= ShaderModel::Sm5

@@ -20,6 +20,7 @@ impl Adapter {
         identity: &super::AdapterIdentity,
         driver_version: Option<&str>,
         native: Arc<super::NativeDevice>,
+        requested: Option<super::FeatureLevel>,
     ) -> Option<crate::ExposedAdapter<super::Api>> {
         let projection = super::capabilities::Capabilities::query(&native).wgpu_projection()?;
         let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
@@ -28,7 +29,9 @@ impl Adapter {
         info.device = identity.device_id;
         info.driver = String::from("D3D11");
         let level = native.feature_level();
-        let level_tag = if level == super::FeatureLevel::L9_1 {
+        let level_tag = if native.experimental_fl93() {
+            String::from("FL9_3 (experimental)")
+        } else if level == super::FeatureLevel::L9_1 {
             String::from("FL9_1")
         } else {
             alloc::format!("FL9_1 (hardware {level:?})")
@@ -41,6 +44,15 @@ impl Adapter {
                 alloc::format!("{level_tag}; physical DXGI adapter; driver version unavailable")
             }
         };
+
+        if let Some(requested) = requested {
+            use core::fmt::Write as _;
+            let _ = write!(
+                info.driver_info,
+                "; requested {requested:?}; actual {level:?}; LUID {:016x}",
+                identity.luid
+            );
+        }
 
         Some(crate::ExposedAdapter {
             adapter: Self {

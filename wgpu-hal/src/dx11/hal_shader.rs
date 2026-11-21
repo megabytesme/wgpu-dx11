@@ -170,7 +170,7 @@ mod tests {
                     | "integer_input"
                     | "static_local_array_index"
             );
-            let profile = selected_shader_profile(entry.stage).unwrap();
+            let profile = selected_shader_profile(entry.stage, false).unwrap();
             assert_eq!(
                 has_unsafe_integer_semantics(
                     &module,
@@ -333,7 +333,7 @@ mod tests {
         .expect("validate FL9_1 frexp forms");
 
         for (index, entry) in module.entry_points.iter().enumerate() {
-            let profile = selected_shader_profile(entry.stage).unwrap();
+            let profile = selected_shader_profile(entry.stage, false).unwrap();
             let has_direct_projection =
                 matches!(entry.name.as_str(), "fraction_only" | "additional_integer");
             let entry_is_supported = entry.name == "fraction_only";
@@ -459,7 +459,7 @@ mod tests {
                     | "biased_offset_helper"
             );
             for level in FeatureLevel::ALL_DESCENDING {
-                let profile = selected_shader_profile(entry.stage).unwrap();
+                let profile = selected_shader_profile(entry.stage, false).unwrap();
                 assert_eq!(
                     has_unsupported_sample_bias(&module, &entry.function, profile, false),
                     uses_bias,
@@ -11308,10 +11308,15 @@ where
     )
 }
 
-fn selected_shader_profile(stage: naga::ShaderStage) -> Option<ShaderProfile> {
-    match stage {
-        naga::ShaderStage::Vertex => Some(ShaderProfile::VertexLevel9_1),
-        naga::ShaderStage::Fragment => Some(ShaderProfile::PixelLevel9_1),
+fn selected_shader_profile(
+    stage: naga::ShaderStage,
+    experimental_fl93: bool,
+) -> Option<ShaderProfile> {
+    match (stage, experimental_fl93) {
+        (naga::ShaderStage::Vertex, true) => Some(ShaderProfile::VertexLevel9_3),
+        (naga::ShaderStage::Fragment, true) => Some(ShaderProfile::PixelLevel9_3),
+        (naga::ShaderStage::Vertex, false) => Some(ShaderProfile::VertexLevel9_1),
+        (naga::ShaderStage::Fragment, false) => Some(ShaderProfile::PixelLevel9_1),
         _ => None,
     }
 }
@@ -11634,17 +11639,17 @@ fn has_unsafe_integer_semantics_with_fl9_inputs_and_uniform_indices_and_sample_o
         naga::Handle<naga::Expression>,
     )>,
 ) -> bool {
-    let fragment_index_proof = if matches!(profile, ShaderProfile::PixelLevel9_1) {
+    let fragment_index_proof = if profile.is_level_9_pixel() {
         supported_fragment_uniform_array_indexing(module, info, function, function_info)
     } else {
         None
     };
-    let vertex_index_proof = if matches!(profile, ShaderProfile::VertexLevel9_1) {
+    let vertex_index_proof = if profile.is_level_9_vertex() {
         supported_vertex_uniform_array_indexing(module, function, function_info)
     } else {
         None
     };
-    let frexp_fraction_only_result = if matches!(profile, ShaderProfile::PixelLevel9_1) {
+    let frexp_fraction_only_result = if profile.is_level_9_pixel() {
         supported_fragment_frexp_fraction_only_result(
             module,
             function,
@@ -11807,10 +11812,7 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
         naga::Handle<naga::Expression>,
     )>,
 ) -> bool {
-    if !matches!(
-        profile,
-        ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
-    ) {
+    if !profile.is_level_9() {
         return false;
     }
     let allowed_local_array_access = supported_vertex_index_local_array_access(
@@ -11833,7 +11835,7 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
     budget.set(remaining);
     for (index, argument) in function.arguments.iter().enumerate() {
         if type_may_contain_integer(module, &module.types[argument.ty].inner, &budget)
-            && !(matches!(profile, ShaderProfile::VertexLevel9_1)
+            && !(profile.is_level_9_vertex()
                 && (is_supported_integer_vertex_argument(module, function, index)
                     || (input_options.instance_index_input
                         && is_supported_instance_index_argument(module, function, index))
@@ -12067,7 +12069,7 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
             budget.set(remaining);
             for (index, argument) in function.arguments.iter().enumerate() {
                 if type_may_contain_integer(module, &module.types[argument.ty].inner, &budget)
-                    && !(matches!(profile, ShaderProfile::VertexLevel9_1)
+                    && !(profile.is_level_9_vertex()
                         && (is_supported_integer_vertex_argument(module, function, index)
                             || (input_options.instance_index_input
                                 && is_supported_instance_index_argument(module, function, index))
@@ -12137,22 +12139,20 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                         &budget,
                     )
                 };
-                let supported_vertex_integer_expression =
-                    matches!(profile, ShaderProfile::VertexLevel9_1)
-                        && (is_supported_integer_vertex_argument_expression(
-                            module, function, handle,
-                        ) || (input_options.instance_index_input
+                let supported_vertex_integer_expression = profile.is_level_9_vertex()
+                    && (is_supported_integer_vertex_argument_expression(module, function, handle)
+                        || (input_options.instance_index_input
                             && is_instance_index_expression(module, function, handle))
-                            || (input_options.vertex_index_input
-                                && is_vertex_index_expression(module, function, handle))
-                            || function_handle.is_some_and(|function_handle| {
-                                is_supported_uniform_index_helper_expression(
-                                    function,
-                                    function_handle,
-                                    handle,
-                                    uniform_index_arguments,
-                                )
-                            }));
+                        || (input_options.vertex_index_input
+                            && is_vertex_index_expression(module, function, handle))
+                        || function_handle.is_some_and(|function_handle| {
+                            is_supported_uniform_index_helper_expression(
+                                function,
+                                function_handle,
+                                handle,
+                                uniform_index_arguments,
+                            )
+                        }));
                 let supported_fragment_integer_expression = fragment_index_proof
                     .is_some_and(|proof| proof.allows_integer_expression(function_handle, handle));
                 let supported_vertex_uniform_integer_expression = function_handle.is_none()
@@ -12194,16 +12194,15 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                         kind,
                         convert,
                     } => {
-                        let supported_vertex_conversion =
-                            matches!(profile, ShaderProfile::VertexLevel9_1)
-                                && kind == naga::ScalarKind::Float
-                                && convert == Some(4)
-                                && (is_supported_integer_vertex_argument_expression(
-                                    module, function, expr,
-                                ) || (input_options.instance_index_input
-                                    && is_instance_index_expression(module, function, expr))
-                                    || (input_options.vertex_index_input
-                                        && is_vertex_index_expression(module, function, expr)));
+                        let supported_vertex_conversion = profile.is_level_9_vertex()
+                            && kind == naga::ScalarKind::Float
+                            && convert == Some(4)
+                            && (is_supported_integer_vertex_argument_expression(
+                                module, function, expr,
+                            ) || (input_options.instance_index_input
+                                && is_instance_index_expression(module, function, expr))
+                                || (input_options.vertex_index_input
+                                    && is_vertex_index_expression(module, function, expr)));
                         let supported_texture_query_conversion = (texture_query_conversion
                             == Some(expr)
                             || texture_dimensions_helper_result == Some(expr)
@@ -12261,7 +12260,7 @@ fn has_unsafe_integer_semantics_with_options_and_uniform_indices(
                                 && dynamic_access_base_is_float_vector(module, function_info, base)
                                 && is_vertex_index_expression(module, function, index))
                             && !(function_handle.is_none()
-                                && matches!(profile, ShaderProfile::VertexLevel9_1)
+                                && profile.is_level_9_vertex()
                                 && input_options.vertex_index_input
                                 && is_direct_local_matrix_column_store(
                                     module, function, handle, index,
@@ -12772,10 +12771,7 @@ fn has_unsupported_sample_bias(
     profile: ShaderProfile,
     allow_offset: bool,
 ) -> bool {
-    if !matches!(
-        profile,
-        ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
-    ) {
+    if !profile.is_level_9() {
         return false;
     }
     let mut budget = 65_536;
@@ -15244,6 +15240,9 @@ impl ShaderModule {
         stage: naga::ShaderStage,
         entry: &str,
     ) -> Result<Vec<TextureSampleGradSingleMipPair>, crate::PipelineError> {
+        if self.owner.experimental_fl93() {
+            return Ok(Vec::new());
+        }
         let proof = fl9_texture_sample_grad_single_mip_proof(
             &self.shader.module,
             &self.shader.info,
@@ -15373,22 +15372,18 @@ impl ShaderModule {
             .iter()
             .position(|candidate| candidate.stage == stage && candidate.name == entry)
             .ok_or(crate::PipelineError::EntryPoint(stage))?;
-        let profile =
-            selected_shader_profile(stage).ok_or(crate::PipelineError::EntryPoint(stage))?;
+        let profile = selected_shader_profile(stage, self.owner.experimental_fl93())
+            .ok_or(crate::PipelineError::EntryPoint(stage))?;
         let entry_info = info.get_entry_point(entry_index);
-        input_options.vertex_index_vector_indexing =
-            matches!(profile, ShaderProfile::VertexLevel9_1)
-                && input_options.vertex_index_input
-                && supported_vertex_index_vector_indexing(
-                    &module,
-                    &module.entry_points[entry_index].function,
-                    entry_info,
-                    input_options,
-                );
-        if matches!(
-            profile,
-            ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
-        ) {
+        input_options.vertex_index_vector_indexing = profile.is_level_9_vertex()
+            && input_options.vertex_index_input
+            && supported_vertex_index_vector_indexing(
+                &module,
+                &module.entry_points[entry_index].function,
+                entry_info,
+                input_options,
+            );
+        if profile.is_level_9() {
             if let Some(proof) = fl9_texture_sample_level_zero_proof(&module, &info, stage, entry)?
             {
                 lower_fl9_texture_sample_level_zero(&mut module, entry_index, &proof).map_err(
@@ -15404,9 +15399,12 @@ impl ShaderModule {
                     },
                 )?;
             }
-            if let Some(proof) =
+            let grad_proof = if self.owner.experimental_fl93() {
+                None
+            } else {
                 fl9_texture_sample_grad_single_mip_proof(&module, &info, stage, entry)?
-            {
+            };
+            if let Some(proof) = grad_proof {
                 lower_fl9_texture_sample_grad_single_mip(&mut module, entry_index, &proof)
                     .map_err(|_| {
                         crate::PipelineError::Linkage(
@@ -15508,7 +15506,7 @@ impl ShaderModule {
         });
         let dynamic_access_mode =
             DynamicAccessMode::new(stage, input_options, uses_uniform, requests_checks);
-        let uniform_index_arguments = if matches!(profile, ShaderProfile::VertexLevel9_1)
+        let uniform_index_arguments = if profile.is_level_9_vertex()
             && (input_options.vertex_index_input || input_options.instance_index_input)
         {
             fl9_uniform_index_helper_arguments(
@@ -15576,11 +15574,7 @@ impl ShaderModule {
                 "D3D11 matrix aggregate stores are not implemented safely".into(),
             ));
         }
-        if (requests_checks
-            || matches!(
-                profile,
-                ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1
-            ))
+        if (requests_checks || profile.is_level_9())
             && has_unsupported_dynamic_access(
                 &module,
                 &info,

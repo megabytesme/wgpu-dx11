@@ -5373,13 +5373,14 @@ impl Device {
             }) {
                 self.require_downlevel_flags(wgt::DownlevelFlags::SEPARATE_ALPHA_BLEND)?;
             }
-            if !cts.is_empty() && {
-                let first = &cts[0];
-                cts[1..]
-                    .iter()
-                    .any(|ct| ct.write_mask != first.write_mask || ct.blend != first.blend)
-            } {
-                self.require_downlevel_flags(wgt::DownlevelFlags::INDEPENDENT_BLEND)?;
+            if let Some((first, others)) = cts.split_first() {
+                let independent_masks = self.downlevel.limits.independent_color_write_masks;
+                if others.iter().any(|ct| {
+                    ct.blend != first.blend
+                        || (!independent_masks && ct.write_mask != first.write_mask)
+                }) {
+                    self.require_downlevel_flags(wgt::DownlevelFlags::INDEPENDENT_BLEND)?;
+                }
             }
         }
 
@@ -5679,6 +5680,7 @@ impl Device {
         validation::validate_color_attachment_bytes_per_sample(
             color_targets.iter().flatten().map(|cs| cs.format),
             self.limits.max_color_attachment_bytes_per_sample,
+            self.downlevel.limits.color_attachments_same_bit_depth,
         )
         .map_err(pipeline::CreateRenderPipelineError::ColorAttachment)?;
 

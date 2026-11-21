@@ -229,6 +229,7 @@ impl<T> Query<T> {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct DriverCapabilities {
     pub timestamp_frequency: Query<u64>,
+    pub native_sampler_lod_clamp: bool,
     pub rgba8: Query<u32>,
     pub bgra8: Query<u32>,
     pub rgba8_srgb: Query<u32>,
@@ -626,6 +627,7 @@ impl BackendCapabilities {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Capabilities {
     pub hardware: HardwareGuarantees,
+    pub experimental_fl93: bool,
     pub driver: DriverCapabilities,
     pub backend: BackendCapabilities,
 }
@@ -697,8 +699,7 @@ impl Capabilities {
     }
 
     pub fn private_fl91_fragment_texture_dimensions_3d_float(&self) -> bool {
-        self.backend.fl91_fragment_texture_dimensions_3d_float
-            && self.texture_3d_format_mask() != 0
+        self.backend.fl91_fragment_texture_dimensions_3d_float && self.texture_3d_format_mask() != 0
     }
 
     pub fn private_fl91_fragment_texture_dimensions_cube_float(&self) -> bool {
@@ -710,8 +711,7 @@ impl Capabilities {
     }
 
     pub fn private_fl91_fragment_texture_num_levels_3d_float(&self) -> bool {
-        self.backend.fl91_fragment_texture_num_levels_3d_float
-            && self.texture_3d_format_mask() != 0
+        self.backend.fl91_fragment_texture_num_levels_3d_float && self.texture_3d_format_mask() != 0
     }
 
     pub fn private_fl91_fragment_texture_num_levels_cube_float(&self) -> bool {
@@ -910,8 +910,12 @@ impl Capabilities {
         limits.max_vertex_buffer_array_stride = 2048;
         // FL9_1 compiled pixel shaders accept eight inputs total, including SV_Position.
         limits.max_inter_stage_shader_variables = 7;
-        limits.max_color_attachments = self.backend.color_attachments;
-        limits.max_color_attachment_bytes_per_sample = 8;
+        limits.max_color_attachments = if self.experimental_fl93 {
+            self.hardware.render_targets
+        } else {
+            self.backend.color_attachments
+        };
+        limits.max_color_attachment_bytes_per_sample = 8 * limits.max_color_attachments;
         limits.max_buffers_and_acceleration_structures_per_shader_stage =
             self.backend.vertex_buffers + uniform_buffers_per_stage;
 
@@ -976,7 +980,8 @@ impl Capabilities {
                     0
                 },
                 comparison_sampler_independent_filters: false,
-                sampler_lod_clamp: self.hardware.sampler_lod_clamp,
+                sampler_lod_clamp: self.hardware.sampler_lod_clamp
+                    && self.driver.native_sampler_lod_clamp,
                 max_comparison_sampler_anisotropy: if comparison_sampling { 1 } else { 0 },
                 border_addressing_requires_comparison_sampler: comparison_sampling,
                 sampled_sint_textures: false,
@@ -1067,7 +1072,10 @@ impl Capabilities {
                     .private_fl91_fragment_texture_sample_compare_offset_2d_single_mip(),
                 texture_sample_bias_requires_compatible_sampler: true,
                 fragment_derivatives: self.hardware.fragment_derivatives
-                    && self.backend.fragment_derivatives,
+                    && (self.backend.fragment_derivatives || self.experimental_fl93),
+                fragment_derivatives_default_only: self.experimental_fl93,
+                independent_color_write_masks: self.experimental_fl93,
+                color_attachments_same_bit_depth: self.experimental_fl93,
                 texture_sample_level: self.hardware.texture_sample_level
                     && self.backend.texture_sample_level,
                 texture_sample_level_zero_2d_float_fragment: self
@@ -1376,7 +1384,9 @@ impl Capabilities {
         });
         Self {
             hardware: HardwareGuarantees::for_level(device.feature_level()),
+            experimental_fl93: device.experimental_fl93(),
             driver: DriverCapabilities {
+                native_sampler_lod_clamp: device.native_sampler_lod_clamp,
                 timestamp_frequency: device
                     .timestamp_frequency()
                     .map_or(Query::Unavailable(-1), Query::Value),
@@ -2242,7 +2252,9 @@ mod tests {
     fn model(level: FeatureLevel) -> Capabilities {
         Capabilities {
             hardware: HardwareGuarantees::for_level(level),
+            experimental_fl93: false,
             driver: DriverCapabilities {
+                native_sampler_lod_clamp: HardwareGuarantees::for_level(level).sampler_lod_clamp,
                 timestamp_frequency: Query::Value(1_000_000_000),
                 rgba8: Query::Value(u32::MAX),
                 bgra8: Query::Value(!(D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32)),

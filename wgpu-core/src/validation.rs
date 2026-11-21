@@ -337,6 +337,7 @@ struct EntryPoint {
     sampling_pairs: FastHashSet<(naga::Handle<Resource>, naga::Handle<Resource>)>,
     texture_sample_biases: Vec<TextureSampleBias>,
     fragment_derivatives_used: bool,
+    controlled_fragment_derivatives_used: bool,
     fl9_texture_sample_grad_single_mip_pairs: Option<Vec<TextureSampleGradSingleMipPair>>,
     texture_sample_level_used: bool,
     fl9_texture_sample_level_zero_pairs: Option<Vec<TextureSampleLevelZeroPair>>,
@@ -4123,27 +4124,31 @@ fn entry_point_texture_sample_biases(
     biases
 }
 
-fn function_uses_fragment_derivatives(function: &naga::Function) -> bool {
-    function.expressions.iter().any(|(_, expression)| {
-        matches!(
-            *expression,
-            naga::Expression::Derivative { .. }
-                | naga::Expression::ImageSample {
-                    level: naga::SampleLevel::Gradient { .. },
-                    ..
-                }
-        )
-    })
-}
-
-fn entry_point_uses_fragment_derivatives(
+fn entry_point_fragment_derivatives(
     module: &naga::Module,
     entry_point: &naga::EntryPoint,
-) -> bool {
-    if function_uses_fragment_derivatives(&entry_point.function) {
-        return true;
+) -> (bool, bool) {
+    let mut uses_derivatives = false;
+    let mut uses_derivative_control = false;
+    let mut inspect = |function: &naga::Function| {
+        for (_, expression) in function.expressions.iter() {
+            match *expression {
+                naga::Expression::Derivative { ctrl, .. } => {
+                    uses_derivatives = true;
+                    uses_derivative_control |= ctrl != naga::DerivativeControl::None;
+                }
+                naga::Expression::ImageSample {
+                    level: naga::SampleLevel::Gradient { .. },
+                    ..
+                } => uses_derivatives = true,
+                _ => {}
+            }
+        }
+        uses_derivative_control
+    };
+    if inspect(&entry_point.function) {
+        return (true, true);
     }
-
     let mut called_functions = Vec::new();
     collect_called_functions(&entry_point.function.body, &mut called_functions);
     let mut visited = FastHashSet::default();
@@ -4152,12 +4157,12 @@ fn entry_point_uses_fragment_derivatives(
             continue;
         }
         let function = &module.functions[handle];
-        if function_uses_fragment_derivatives(function) {
-            return true;
+        if inspect(function) {
+            return (true, true);
         }
         collect_called_functions(&function.body, &mut called_functions);
     }
-    false
+    (uses_derivatives, uses_derivative_control)
 }
 
 fn fl9_texture_sample_grad_single_mip_pairs(
@@ -9605,6 +9610,8 @@ impl Interface {
                             fl9_texture_sample_offset_proof,
                         )
                     });
+            let (fragment_derivatives_used, controlled_fragment_derivatives_used) =
+                entry_point_fragment_derivatives(module, entry_point);
             let mut ep = EntryPoint {
                 fragment_position_used: entry_point_uses_fragment_position(
                     module,
@@ -9714,10 +9721,8 @@ impl Interface {
                         info,
                     ),
                 texture_sample_biases: entry_point_texture_sample_biases(module, entry_point),
-                fragment_derivatives_used: entry_point_uses_fragment_derivatives(
-                    module,
-                    entry_point,
-                ),
+                fragment_derivatives_used,
+                controlled_fragment_derivatives_used,
                 fl9_texture_sample_grad_single_mip_pairs: fl9_texture_sample_grad_single_mip_pairs(
                     module,
                     module_info,
@@ -10446,14 +10451,18 @@ impl Interface {
         let Some(entry_point) = self.entry_points.get(&key) else {
             return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
         };
-        Ok(stage == naga::ShaderStage::Fragment
-            && entry_point.fragment_derivatives_used
-            && !limits.fragment_derivatives
-            && !(limits.texture_sample_grad_2d_float_single_mip_fragment
-                && entry_point
-                    .fl9_texture_sample_grad_single_mip_pairs
-                    .as_ref()
-                    .is_some_and(|pairs| !pairs.is_empty())))
+        if stage != naga::ShaderStage::Fragment || !entry_point.fragment_derivatives_used {
+            return Ok(false);
+        }
+        if limits.fragment_derivatives {
+            return Ok(limits.fragment_derivatives_default_only
+                && entry_point.controlled_fragment_derivatives_used);
+        }
+        Ok(!(limits.texture_sample_grad_2d_float_single_mip_fragment
+            && entry_point
+                .fl9_texture_sample_grad_single_mip_pairs
+                .as_ref()
+                .is_some_and(|pairs| !pairs.is_empty())))
     }
 
     pub(crate) fn entry_point_fl9_texture_sample_grad_single_mip_pairs(
@@ -11115,9 +11124,20 @@ pub fn check_color_attachment_count(
 pub fn validate_color_attachment_bytes_per_sample(
     attachment_formats: impl IntoIterator<Item = wgt::TextureFormat>,
     limit: u32,
+    same_bit_depth: bool,
 ) -> Result<(), ColorAttachmentError> {
     let mut total_bytes_per_sample: u32 = 0;
+    let mut first_format: Option<wgt::TextureFormat> = None;
     for format in attachment_formats {
+        if same_bit_depth {
+            let first = *first_format.get_or_insert(format);
+            if first.block_copy_size(None) != format.block_copy_size(None) {
+                return Err(ColorAttachmentError::MismatchedBitDepth {
+                    first,
+                    other: format,
+                });
+            }
+        }
         let byte_cost = format.target_pixel_byte_cost().unwrap();
         let alignment = format.target_component_alignment().unwrap();
 

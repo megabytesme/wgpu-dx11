@@ -54,6 +54,7 @@ Bottom level categories:
 
 #### Hal
 
+- Add exact hardware selection and experimental FL9_3 rendering with four color targets, independent write masks and fragment derivatives to the Windows D3D11 backend.
 - Accept alpha-equivalent color and alpha blend equations in the opt-in FL9_1 D3D11 backend without enabling separate-alpha blending.
 - Emulate the direct single-mip fragment `textureSampleGrad` subset in the opt-in FL9_1 D3D11 backend.
 - Extend the opt-in FL9_1 D3D11 literal-zero texture-sampling subset to support bounded helper coordinate arithmetic and validate render-bundle view compatibility.

@@ -34,10 +34,46 @@ fn translate_sampler(
     translate_sampler_with_shadow_support(desc, level, false)
 }
 
+pub(super) fn supports_native_lod_clamp(device: &ID3D11Device) -> bool {
+    let mut state = None;
+    let result = unsafe {
+        device.CreateSamplerState(
+            &D3D11_SAMPLER_DESC {
+                Filter: D3D11_FILTER_MIN_POINT_MAG_MIP_LINEAR,
+                AddressU: D3D11_TEXTURE_ADDRESS_CLAMP,
+                AddressV: D3D11_TEXTURE_ADDRESS_CLAMP,
+                AddressW: D3D11_TEXTURE_ADDRESS_CLAMP,
+                MaxAnisotropy: 1,
+                ComparisonFunc: D3D11_COMPARISON_NEVER,
+                MinLOD: 0.5,
+                MaxLOD: 1.0,
+                ..Default::default()
+            },
+            Some(&mut state),
+        )
+    };
+    result.is_ok() && state.is_some()
+}
+
+#[cfg(test)]
 fn translate_sampler_with_shadow_support(
     desc: &crate::SamplerDescriptor,
     level: super::device::FeatureLevel,
     shadow_supported: bool,
+) -> Result<(D3D11_SAMPLER_DESC, bool), crate::DeviceError> {
+    translate_sampler_for_device(
+        desc,
+        level,
+        shadow_supported,
+        level.as_raw() >= super::device::FeatureLevel::L9_3.as_raw(),
+    )
+}
+
+fn translate_sampler_for_device(
+    desc: &crate::SamplerDescriptor,
+    level: super::device::FeatureLevel,
+    shadow_supported: bool,
+    native_lod_clamp: bool,
 ) -> Result<(D3D11_SAMPLER_DESC, bool), crate::DeviceError> {
     use wgt::FilterMode::{Linear, Nearest};
     use wgt::MipmapFilterMode::{Linear as MipLinear, Nearest as MipNearest};
@@ -70,10 +106,9 @@ fn translate_sampler_with_shadow_support(
         return Err(crate::DeviceError::Unexpected);
     }
     // Before FL11, min/mag selection can occur before or after LOD clamping.
-    let level_9_1_or_2 = level.as_raw() <= super::device::FeatureLevel::L9_2.as_raw();
     // Raising a maximum of at least 1 preserves the filter boundary for mip zero.
-    let finite_max = level_9_1_or_2 && desc.lod_clamp.end != f32::MAX;
-    let native_lod_rejected = level_9_1_or_2
+    let finite_max = !native_lod_clamp && desc.lod_clamp.end != f32::MAX;
+    let native_lod_rejected = !native_lod_clamp
         && (desc.lod_clamp.start.fract() != 0.0
             || (desc.lod_clamp.start > 0.0
                 && (desc.min_filter != desc.mag_filter || desc.anisotropy_clamp > 1))
@@ -193,8 +228,12 @@ impl Sampler {
         let comparison = desc.compare.is_some();
         let shadow_supported = super::capabilities::Capabilities::query(&owner)
             .private_fl91_depth_comparison_sampling();
-        let (native, _) =
-            translate_sampler_with_shadow_support(desc, owner.feature_level(), shadow_supported)?;
+        let (native, _) = translate_sampler_for_device(
+            desc,
+            owner.feature_level(),
+            shadow_supported,
+            owner.native_sampler_lod_clamp,
+        )?;
         let lod = sampler_lod(desc, &native);
         let mut raw = None;
         unsafe {
@@ -435,7 +474,10 @@ mod tests {
         let (higher_level, _) =
             translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_3, true)
                 .expect("comparison sampler stays supported across L9_1..=L11_1");
-        assert_eq!(higher_level.Filter, D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT);
+        assert_eq!(
+            higher_level.Filter,
+            D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT
+        );
     }
 
     #[test]
