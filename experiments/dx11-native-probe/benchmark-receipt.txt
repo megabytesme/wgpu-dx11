@@ -1,0 +1,24 @@
+UTC: 2026-11-21T22:53:38.3436918Z
+Host: BEN-DESKTOP
+OS: Microsoft Windows 11 Pro 10.0.26300 build 26300 64-bit
+Source SHA256: E99CEFD841004AE32BFD963479D080DB04F57C1D0EF50963711B0AA9D6926849
+Executable SHA256: 217AB300B7DA1D4E1D62C7D54CE6E919D4B56D6304127E5E79C5E4389305AE0E
+Build: MSVC x64 cl /EHsc /W4 /WX /O2 /std:c++17
+Run: 10_0
+adapter=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=00000000:00014a80 requested=10_0 actual=0xa000
+sample=0 gpu_ms=0.520192 logical_gib_per_s=240.296 frequency=1000000000
+sample=1 gpu_ms=0.525408 logical_gib_per_s=237.910 frequency=1000000000
+sample=2 gpu_ms=0.527392 logical_gib_per_s=237.015 frequency=1000000000
+sample=3 gpu_ms=0.527264 logical_gib_per_s=237.073 frequency=1000000000
+sample=4 gpu_ms=0.549088 logical_gib_per_s=227.650 frequency=1000000000
+PASS: bytes=4194304 copies=32 samples=5 valid=5 median_gpu_ms=0.527264 readback_bytes=4194304
+Exit: 0
+Run: 11_0
+adapter=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=00000000:00014a80 requested=11_0 actual=0xb000
+sample=0 gpu_ms=0.504832 logical_gib_per_s=247.607 frequency=1000000000
+sample=1 gpu_ms=0.931840 logical_gib_per_s=134.143 frequency=1000000000
+sample=2 gpu_ms=0.530624 logical_gib_per_s=235.572 frequency=1000000000
+sample=3 gpu_ms=0.526048 logical_gib_per_s=237.621 frequency=1000000000
+sample=4 gpu_ms=0.526976 logical_gib_per_s=237.202 frequency=1000000000
+PASS: bytes=4194304 copies=32 samples=5 valid=5 median_gpu_ms=0.526976 readback_bytes=4194304
+Exit: 0
