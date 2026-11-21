@@ -314,6 +314,83 @@ HRESULT stencil_reference(ID3D11Device* device, ID3D11DeviceContext* context, co
     return S_OK;
 }
 
+HRESULT depth16_reference(ID3D11Device* device, ID3D11DeviceContext* context,
+    const Tier& tier, Report report)
+{
+    const D3D11_TEXTURE2D_DESC desc = {8, 8, 1, 1, DXGI_FORMAT_D16_UNORM,
+        {1, 0}, D3D11_USAGE_DEFAULT, D3D11_BIND_DEPTH_STENCIL};
+    ComPtr<ID3D11Texture2D> depth;
+    HRESULT hr = device->CreateTexture2D(&desc, nullptr, &depth);
+    if (FAILED(hr)) return hr;
+    ComPtr<ID3D11DepthStencilView> view;
+    hr = device->CreateDepthStencilView(depth.Get(), nullptr, &view);
+    if (FAILED(hr)) return hr;
+    D3D11_DEPTH_STENCIL_DESC test = {};
+    test.DepthEnable = TRUE;
+    test.DepthWriteMask = D3D11_DEPTH_WRITE_MASK_ZERO;
+    test.DepthFunc = D3D11_COMPARISON_LESS;
+    ComPtr<ID3D11DepthStencilState> state;
+    hr = device->CreateDepthStencilState(&test, &state);
+    if (FAILED(hr)) return hr;
+    RefTarget color;
+    hr = ref_target(device, DXGI_FORMAT_R8G8B8A8_UNORM, 1, color);
+    if (FAILED(hr)) return hr;
+
+    UINT rejected = 0, accepted = 0;
+    for (bool passes : {false, true}) {
+        hr = prepare_reference_draw(device, context, tier, tier.pixel);
+        if (FAILED(hr)) return hr;
+        context->ClearDepthStencilView(view.Get(), D3D11_CLEAR_DEPTH, passes ? 1.0f : 0.0f, 0);
+        context->ClearRenderTargetView(color.view.Get(), green_clear);
+        context->OMSetDepthStencilState(state.Get(), 0);
+        context->OMSetRenderTargets(1, color.view.GetAddressOf(), view.Get());
+        context->Draw(3, 0);
+        context->ClearState();
+        const auto& expected = passes ? magenta : green;
+        hr = read_reference(device, context, color.texture.Get(), 0, 8, 8, 4,
+            [&](UINT, UINT) { return PixelBytes{expected.data(), expected.size()}; },
+            passes ? &accepted : &rejected);
+        if (FAILED(hr) && hr != E_FAIL) return hr;
+    }
+    emit(report, "observation|depth16_test|rejected_pixels=%u|accepted_pixels=%u\n", rejected, accepted);
+    return rejected == 64 && accepted == 64 ? S_OK : E_FAIL;
+}
+
+HRESULT r32_float_reference(ID3D11Device* device, ID3D11DeviceContext* context,
+    const Tier& tier, Report report)
+{
+    constexpr DXGI_FORMAT format = DXGI_FORMAT_R32_FLOAT;
+    UINT support = 0;
+    const HRESULT query = device->CheckFormatSupport(format, &support);
+    if (FAILED(query)) return query;
+    const bool supports_texture = (support & D3D11_FORMAT_SUPPORT_TEXTURE2D) != 0;
+
+    constexpr UINT width = 8, height = 8;
+    std::array<float, width * height> data;
+    for (size_t i = 0; i < data.size(); ++i) data[i] = float(i) * 0.25f - 8.0f;
+    const D3D11_TEXTURE2D_DESC desc = {width, height, 1, 1, format,
+        {1, 0}, D3D11_USAGE_DEFAULT};
+    const D3D11_SUBRESOURCE_DATA init = {data.data(), width * sizeof(float), 0};
+    ComPtr<ID3D11Texture2D> source;
+    const HRESULT create = device->CreateTexture2D(&desc, &init, &source);
+    emit(report, "observation|r32_float_texture2d|reported=%u|create_hresult=%08x|returned_resource=%u\n",
+        unsigned(supports_texture), unsigned(create), unsigned(source.Get() != nullptr));
+
+    if (!supports_texture) {
+        return tier.level == D3D_FEATURE_LEVEL_9_1 && FAILED(create) && !source ? S_OK : E_FAIL;
+    }
+    if (FAILED(create)) return create;
+
+    UINT matches = 0;
+    const HRESULT hr = read_reference(device, context, source.Get(), 0, width, height, sizeof(float),
+        [&](UINT x, UINT y) {
+            const auto* texel = reinterpret_cast<const BYTE*>(&data[y * width + x]);
+            return PixelBytes{texel, sizeof(float)};
+        }, &matches);
+    emit(report, "observation|r32_float_copy|matched_pixels=%u\n", matches);
+    return hr;
+}
+
 HRESULT resolve_reference(ID3D11Device* device, ID3D11DeviceContext* context,
     const Tier& tier, Report report)
 {
@@ -417,6 +494,9 @@ bool reference_controls(ID3D11Device* device, ID3D11DeviceContext* context, cons
     result("bgrx8_srgb_autogen_copy_sample", mip_reference(device, context, tier, DXGI_FORMAT_B8G8R8X8_UNORM_SRGB, true));
     result("rgba8_autogen_copy_sample", mip_reference(device, context, tier, DXGI_FORMAT_R8G8B8A8_UNORM, true));
     result("rgba8_generate_mips_without_flag", mip_reference(device, context, tier, DXGI_FORMAT_R8G8B8A8_UNORM, false));
+    result("depth16_clear_and_test", depth16_reference(device, context, tier, report));
+    if (tier.level <= D3D_FEATURE_LEVEL_9_2)
+        result("r32_float_texture2d_boundary", r32_float_reference(device, context, tier, report));
     result(tier.level == D3D_FEATURE_LEVEL_9_1 ? "mirror_once_creation_negative" : "mirror_once_sample_vs_clamp",
         mirror_reference(device, context, tier, report));
     result(tier.level == D3D_FEATURE_LEVEL_9_1 ? "occlusion_creation_negative" : "occlusion_visible_64_empty_0",

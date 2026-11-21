@@ -30,7 +30,11 @@ lock before GPU testing or deployment.
 The 4× RGBA8 resolve records all 64 pixel comparisons and the first observed
 RGBA value. The 33-sample texture descriptor test separately reports the raw
 creation HRESULT and resource presence. These controls run from FL10_1 through
-FL11_1 regardless of the other control's result. An overall PASS covers the
+FL11_1 regardless of the other control's result. Every tier checks a D16 depth
+attachment by reading back the color target with both passing and failing depth
+comparisons. FL9_1 and FL9_2 also record the R32_FLOAT Texture2D support bit and
+creation result. When that bit is present, a staging copy checks 64 float texels.
+An overall PASS covers the
 fixture only. Keep native results distinct from wgpu HAL, public API, CTS, and
 presentation and lifecycle receipts.
 
