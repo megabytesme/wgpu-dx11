@@ -34107,6 +34107,28 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
             @fragment fn large() -> @location(0) vec4f {
                 return textureSample(image, samp, vec2f(129.0, 0.125));
             }
+            @fragment fn repeat_seam() -> @location(0) vec4f {
+                return textureSample(image, samp, vec2f(1.0, 0.5));
+            }
+            @fragment fn folded_repeat_seam() -> @location(0) vec4f {
+                return textureSample(image, samp, vec2f(fract(1.0), 0.5));
+            }
+            @fragment fn repeat_lod(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let coordinate = select(vec2f(63.0 / 64.0, 0.5), vec2f(65.0 / 64.0, 0.5), uv.x >= 0.0);
+                return textureSample(image, samp, coordinate);
+            }
+            @fragment fn folded_repeat_lod(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSample(image, samp, vec2f(fract(1.0 + uv.x / 32.0), 0.5));
+            }
+            @fragment fn mirror_lod(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let coordinate = select(vec2f(15.0 / 16.0, 0.5), vec2f(17.0 / 16.0, 0.5), uv.x >= 0.0);
+                return textureSample(image, samp, coordinate);
+            }
+            @fragment fn folded_mirror_lod(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let u = 1.0 + uv.x / 8.0;
+                let folded = 1.0 - abs(2.0 * fract(0.5 * u) - 1.0);
+                return textureSample(image, samp, vec2f(folded, 0.5));
+            }
         "#
             .into(),
         ),
@@ -34195,13 +34217,13 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
         },
         size,
     );
-    let pixel_extent = Extent3d {
-        width: 1,
-        height: 1,
+    let target_size = Extent3d {
+        width: 2,
+        height: 2,
         depth_or_array_layers: 1,
     };
     let target = device.create_texture(&TextureDescriptor {
-        size: pixel_extent,
+        size: target_size,
         usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
         ..texture_desc
     });
@@ -34212,9 +34234,10 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
         contents: bytemuck::cast_slice(&[-1.0f32, -1.0, -1.0, 3.0, 3.0, -1.0]),
         usage: BufferUsages::VERTEX,
     });
+    let row_pitch = COPY_BYTES_PER_ROW_ALIGNMENT;
     let map = device.create_buffer(&BufferDescriptor {
         label: None,
-        size: 256,
+        size: u64::from(row_pitch * target_size.height),
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -34249,7 +34272,7 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
                     depth_slice: None,
                     resolve_target: None,
                     ops: Operations {
-                        load: LoadOp::Clear(Color::GREEN),
+                        load: LoadOp::Clear(Color::WHITE),
                         store: StoreOp::Store,
                     },
                 })],
@@ -34270,15 +34293,15 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
                 buffer: &map,
                 layout: TexelCopyBufferLayout {
                     offset: 0,
-                    bytes_per_row: Some(256),
-                    rows_per_image: Some(1),
+                    bytes_per_row: Some(row_pitch),
+                    rows_per_image: Some(target_size.height),
                 },
             },
-            pixel_extent,
+            target_size,
         );
         encoder.finish()
     };
-    let check_pixel = |commands, mode, filter, expected: u8| {
+    let read_pixels = |commands| {
         let submission = queue.submit([commands]);
         let (sender, receiver) = std::sync::mpsc::channel();
         map.slice(..)
@@ -34293,20 +34316,26 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
             .recv_timeout(Duration::from_secs(10))
             .unwrap()
             .unwrap();
-        {
+        let pixels: [[u8; 4]; 4] = {
             let view = map.slice(..).get_mapped_range().unwrap();
-            assert!(
-                view[0].abs_diff(expected) <= 1,
-                "{mode:?} {filter:?}: {:?}",
-                &view[..4]
-            );
-            assert_eq!(&view[1..4], &[0, 0, 255]);
-            println!(
-                "PASS: bounded {mode:?} {filter:?} GPU pixel {:?}",
-                &view[..4]
-            );
-        }
+            core::array::from_fn(|index| {
+                let offset = index / 2 * row_pitch as usize + index % 2 * 4;
+                view[offset..offset + 4].try_into().unwrap()
+            })
+        };
         map.unmap();
+        pixels
+    };
+    let check_pixel = |commands, mode, filter, expected: u8| {
+        let pixels = read_pixels(commands);
+        for pixel in pixels {
+            assert!(
+                pixel[0].abs_diff(expected) <= 1,
+                "{mode:?} {filter:?}: {pixel:?}"
+            );
+            assert_eq!(&pixel[1..], &[0, 0, 255]);
+        }
+        println!("PASS: bounded {mode:?} {filter:?} GPU pixels {pixels:?}");
     };
     for (mode, nearest, linear) in [
         (AddressMode::Repeat, 81u8, 128u8),
@@ -34406,6 +34435,97 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
             "NpotTextureWithRepeatSampler",
             || drop(encode(&bounded, &wrapped_npot, None)),
         );
+    }
+
+    let large_size = Extent3d {
+        width: 16,
+        height: 16,
+        ..size
+    };
+    let seam_source = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 linear repeat seam"),
+        size: large_size,
+        ..texture_desc
+    });
+    let red = [255, 0, 0, 255];
+    let green = [0, 255, 0, 255];
+    let blue = [0, 0, 255, 255];
+    let magenta = [255, 0, 255, 255];
+    let mut row = [[0, 0, 0, 255]; 16];
+    row[0] = red;
+    row[15] = blue;
+    let upload = |texture: &Texture, level, extent: Extent3d, data: &[[u8; 4]]| {
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                mip_level: level,
+                ..texture.as_image_copy()
+            },
+            bytemuck::cast_slice(data),
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(extent.width * 4),
+                rows_per_image: Some(extent.height),
+            },
+            extent,
+        );
+    };
+    upload(&seam_source, 0, large_size, &row.repeat(16));
+    let mip_source = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 distinct mip colors"),
+        size: large_size,
+        mip_level_count: 5,
+        ..texture_desc
+    });
+    for (level, color) in [red, green, blue, [255, 255, 0, 255], magenta]
+        .into_iter()
+        .enumerate()
+    {
+        let edge = large_size.width >> level;
+        let mip_size = Extent3d {
+            width: edge,
+            height: edge,
+            ..large_size
+        };
+        upload(
+            &mip_source,
+            level as u32,
+            mip_size,
+            &vec![color; (edge * edge) as usize],
+        );
+    }
+    let seam_view = seam_source.create_view(&TextureViewDescriptor::default());
+    let mip_view = mip_source.create_view(&TextureViewDescriptor::default());
+    let clamp = AddressMode::ClampToEdge;
+    let repeat = AddressMode::Repeat;
+    let linear = FilterMode::Linear;
+    for (entry, view, mode, filter, expected, tolerance) in [
+        (
+            "repeat_seam",
+            &seam_view,
+            repeat,
+            linear,
+            [128, 0, 128, 255],
+            2,
+        ),
+        ("folded_repeat_seam", &seam_view, clamp, linear, red, 0),
+        ("repeat_lod", &mip_view, repeat, nearest, red, 0),
+        ("folded_repeat_lod", &mip_view, clamp, nearest, magenta, 0),
+        ("mirror_lod", &mip_view, mirror, nearest, green, 0),
+        ("folded_mirror_lod", &mip_view, clamp, nearest, red, 0),
+    ] {
+        let pipeline = make_pipeline(entry);
+        let group = make_group(view, mode, filter);
+        let pixels = read_pixels(encode(&pipeline, &group, None));
+        for pixel in pixels {
+            assert!(
+                pixel
+                    .into_iter()
+                    .zip(expected)
+                    .all(|(actual, expected)| actual.abs_diff(expected) <= tolerance),
+                "{entry}: expected {expected:?}, got {pixel:?}"
+            );
+        }
+        println!("PASS: {entry} GPU pixels {pixels:?}");
     }
 }
 
