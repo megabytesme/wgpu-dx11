@@ -1,0 +1,544 @@
+{
+  "source_sha": "8d5e1288248c77d1f3a1dc9589f5877dc2ad5ad9",
+  "source_tree": "be2265e5d42a51afc34d87a97e4dac0e6240baf1",
+  "scope": "Offscreen native D3D11 fixed draw workload, physical RTX 3090 Ti",
+  "workload": {
+    "width": 512,
+    "height": 256,
+    "color": "RGBA8_UNORM",
+    "depth": "D24_UNORM_S8_UINT",
+    "warmup_draws": 64,
+    "measured_draws": 64,
+    "rounds_per_level": 3
+  },
+  "process_video_memory_sample_order": [
+    "before allocations",
+    "after warm-up",
+    "after submit",
+    "after completion"
+  ],
+  "process_video_memory_fields": [
+    "local bytes",
+    "non-local bytes"
+  ],
+  "horizon_gameplay_performance": "unknown",
+  "horizon_gameplay_peak_memory": "unknown",
+  "summary": {
+    "x64": {
+      "L9_1": {
+        "median_submit_us": 86.7,
+        "median_complete_us": 15574.5,
+        "median_gpu_us": 47.104,
+        "maximum_sampled_local_bytes": 9908224,
+        "maximum_sampled_non_local_bytes": 1191936
+      },
+      "L10_0": {
+        "median_submit_us": 85.2,
+        "median_complete_us": 15460.6,
+        "median_gpu_us": 47.104,
+        "maximum_sampled_local_bytes": 9908224,
+        "maximum_sampled_non_local_bytes": 1191936
+      },
+      "L10_1": {
+        "median_submit_us": 81.8,
+        "median_complete_us": 15559.3,
+        "median_gpu_us": 47.104,
+        "maximum_sampled_local_bytes": 9908224,
+        "maximum_sampled_non_local_bytes": 1060864
+      }
+    },
+    "x86": {
+      "L9_1": {
+        "median_submit_us": 110.6,
+        "median_complete_us": 15549.6,
+        "median_gpu_us": 47.104,
+        "maximum_sampled_local_bytes": 9908224,
+        "maximum_sampled_non_local_bytes": 1060864
+      },
+      "L10_0": {
+        "median_submit_us": 97.1,
+        "median_complete_us": 15423.5,
+        "median_gpu_us": 47.104,
+        "maximum_sampled_local_bytes": 9908224,
+        "maximum_sampled_non_local_bytes": 1060864
+      },
+      "L10_1": {
+        "median_submit_us": 94.5,
+        "median_complete_us": 15527.7,
+        "median_gpu_us": 47.104,
+        "maximum_sampled_local_bytes": 9908224,
+        "maximum_sampled_non_local_bytes": 1060864
+      }
+    }
+  },
+  "samples": [
+    {
+      "architecture": "x64",
+      "level": "L9_1",
+      "round": 1,
+      "submit_us": 86.7,
+      "complete_us": 15574.5,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x64",
+      "level": "L10_0",
+      "round": 1,
+      "submit_us": 85.2,
+      "complete_us": 15417.4,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1191936
+        ],
+        [
+          9908224,
+          1191936
+        ],
+        [
+          9908224,
+          1191936
+        ]
+      ]
+    },
+    {
+      "architecture": "x64",
+      "level": "L10_1",
+      "round": 1,
+      "submit_us": 81.8,
+      "complete_us": 15473.1,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x64",
+      "level": "L10_0",
+      "round": 2,
+      "submit_us": 102.0,
+      "complete_us": 15460.6,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x64",
+      "level": "L10_1",
+      "round": 2,
+      "submit_us": 115.3,
+      "complete_us": 15606.5,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x64",
+      "level": "L9_1",
+      "round": 2,
+      "submit_us": 79.1,
+      "complete_us": 15447.6,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x64",
+      "level": "L10_1",
+      "round": 3,
+      "submit_us": 61.6,
+      "complete_us": 15559.3,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x64",
+      "level": "L9_1",
+      "round": 3,
+      "submit_us": 113.6,
+      "complete_us": 15596.7,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1191936
+        ],
+        [
+          9908224,
+          1191936
+        ],
+        [
+          9908224,
+          1191936
+        ]
+      ]
+    },
+    {
+      "architecture": "x64",
+      "level": "L10_0",
+      "round": 3,
+      "submit_us": 84.0,
+      "complete_us": 15593.6,
+      "gpu_us": 47.072,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x86",
+      "level": "L9_1",
+      "round": 1,
+      "submit_us": 110.6,
+      "complete_us": 15584.3,
+      "gpu_us": 47.072,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x86",
+      "level": "L10_0",
+      "round": 1,
+      "submit_us": 89.8,
+      "complete_us": 15364.1,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x86",
+      "level": "L10_1",
+      "round": 1,
+      "submit_us": 94.5,
+      "complete_us": 15492.0,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x86",
+      "level": "L10_0",
+      "round": 2,
+      "submit_us": 144.6,
+      "complete_us": 15423.5,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x86",
+      "level": "L10_1",
+      "round": 2,
+      "submit_us": 87.8,
+      "complete_us": 15527.7,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x86",
+      "level": "L9_1",
+      "round": 2,
+      "submit_us": 126.3,
+      "complete_us": 15492.1,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x86",
+      "level": "L10_1",
+      "round": 3,
+      "submit_us": 100.4,
+      "complete_us": 15560.8,
+      "gpu_us": 48.0,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x86",
+      "level": "L9_1",
+      "round": 3,
+      "submit_us": 71.6,
+      "complete_us": 15549.6,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    },
+    {
+      "architecture": "x86",
+      "level": "L10_0",
+      "round": 3,
+      "submit_us": 97.1,
+      "complete_us": 15472.2,
+      "gpu_us": 47.104,
+      "process_video_memory_samples_bytes": [
+        [
+          8855552,
+          913408
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ],
+        [
+          9908224,
+          1060864
+        ]
+      ]
+    }
+  ]
+}

@@ -1,0 +1,107 @@
+
+running 7 tests
+test dx11::exact::tests::benchmark::exact_fl10_matched_native_render_benchmark ... requested=L9_1 actual=L9_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+BENCHMARK level=L9_1 round=1 submit_us=86.700 complete_us=15574.500 gpu_us=Some(47.104) memory_bytes=[Some([8855552, 913408]), Some([9908224, 1060864]), Some([9908224, 1060864]), Some([9908224, 1060864])]
+requested=L10_0 actual=L10_0 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+BENCHMARK level=L10_0 round=1 submit_us=85.200 complete_us=15417.400 gpu_us=Some(47.104) memory_bytes=[Some([8855552, 913408]), Some([9908224, 1191936]), Some([9908224, 1191936]), Some([9908224, 1191936])]
+requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+BENCHMARK level=L10_1 round=1 submit_us=81.800 complete_us=15473.100 gpu_us=Some(47.104) memory_bytes=[Some([8855552, 913408]), Some([9908224, 1060864]), Some([9908224, 1060864]), Some([9908224, 1060864])]
+requested=L10_0 actual=L10_0 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+BENCHMARK level=L10_0 round=2 submit_us=102.000 complete_us=15460.600 gpu_us=Some(47.104) memory_bytes=[Some([8855552, 913408]), Some([9908224, 1060864]), Some([9908224, 1060864]), Some([9908224, 1060864])]
+requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+BENCHMARK level=L10_1 round=2 submit_us=115.300 complete_us=15606.500 gpu_us=Some(47.104) memory_bytes=[Some([8855552, 913408]), Some([9908224, 1060864]), Some([9908224, 1060864]), Some([9908224, 1060864])]
+requested=L9_1 actual=L9_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+BENCHMARK level=L9_1 round=2 submit_us=79.100 complete_us=15447.600 gpu_us=Some(47.104) memory_bytes=[Some([8855552, 913408]), Some([9908224, 1060864]), Some([9908224, 1060864]), Some([9908224, 1060864])]
+requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+BENCHMARK level=L10_1 round=3 submit_us=61.600 complete_us=15559.300 gpu_us=Some(47.104) memory_bytes=[Some([8855552, 913408]), Some([9908224, 1060864]), Some([9908224, 1060864]), Some([9908224, 1060864])]
+requested=L9_1 actual=L9_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+BENCHMARK level=L9_1 round=3 submit_us=113.600 complete_us=15596.700 gpu_us=Some(47.104) memory_bytes=[Some([8855552, 913408]), Some([9908224, 1191936]), Some([9908224, 1191936]), Some([9908224, 1191936])]
+requested=L10_0 actual=L10_0 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+BENCHMARK level=L10_0 round=3 submit_us=84.000 complete_us=15593.600 gpu_us=Some(47.072) memory_bytes=[Some([8855552, 913408]), Some([9908224, 1060864]), Some([9908224, 1060864]), Some([9908224, 1060864])]
+ok
+test dx11::exact::tests::exact_fl10_geometry_stream_output_draw_auto ... requested=L10_0 actual=L10_0 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+DXBC profile=vs_4_0
+DXBC profile=gs_4_0
+DXBC profile=ps_4_0
+SO statistics written=1 storage-needed=1
+SO buffer=[[-1.0, 1.0, 0.0, 1.0], [3.0, 1.0, 0.0, 1.0], [-1.0, -3.0, 0.0, 1.0]] DrawAuto readback=[[255, 0, 255, 255], [255, 0, 255, 255], [255, 0, 255, 255], [255, 0, 255, 255]]
+requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+DXBC profile=vs_4_1
+DXBC profile=gs_4_1
+DXBC profile=ps_4_1
+SO statistics written=1 storage-needed=1
+SO buffer=[[-1.0, 1.0, 0.0, 1.0], [3.0, 1.0, 0.0, 1.0], [-1.0, -3.0, 0.0, 1.0]] DrawAuto readback=[[255, 0, 255, 255], [255, 0, 255, 255], [255, 0, 255, 255], [255, 0, 255, 255]]
+ok
+test dx11::exact::tests::exact_fl10_optional_compute_structured_uav ... requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+D3D10_X_HARDWARE_OPTIONS compute-plus-raw-structured=true
+DXBC profile=cs_4_1
+structured UAV readback words=768 first=7 last=14580
+ok
+test dx11::exact::tests::exact_fl10_sm41_gather_render_and_fl100_rejection ... requested=L10_0 actual=L10_0 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+requested=L9_1 actual=L9_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+software adapter rejected: Microsoft Basic Render Driver
+DXBC profile=vs_4_0
+ps_4_0 gather rejected: 0x80004001 C:\dev\personal\wgpu-dx11-FL10_1-Nov21\Shader@0x00007FF7722A12D8(4,36-73): error X4532: cannot map expression to ps_4_0 instruction set
+
+DXBC profile=vs_4_1
+DXBC profile=ps_4_1
+//
+// Generated by Microsoft (R) HLSL Shader Compiler 10.1
+//
+//
+// Resource Bindings:
+//
+// Name                                 Type  Format         Dim      HLSL Bind  Count
+// ------------------------------ ---------- ------- ----------- -------------- ------
+// sampler0                          sampler      NA          NA             s0      1
+// image                             texture   float          2d             t0      1
+//
+//
+//
+// Input signature:
+//
+// Name                 Index   Mask Register SysValue  Format   Used
+// -------------------- ----- ------ -------- -------- ------- ------
+// no Input
+//
+// Output signature:
+//
+// Name                 Index   Mask Register SysValue  Format   Used
+// -------------------- ----- ------ -------- -------- ------- ------
+// SV_Target                0   xyzw        0   TARGET   float   xyzw
+//
+ps_4_1
+dcl_globalFlags refactoringAllowed
+dcl_sampler s0, mode_default
+dcl_resource_texture2d (float,float,float,float) t0
+dcl_output o0.xyzw
+gather4 o0.xyzw, l(0.500000, 0.500000, 0.000000, 0.000000), t0.xyzw, s0.x
+ret
+// Approximately 2 instruction slots used
+
+FL10_0 rejected ps_4_1 DXBC: 0x80070057
+DXBC profile=ps_4_1
+Naga WGSL gather compiles to SM4.1 gather4
+R32_FLOAT CheckFormatSupport=0x00f6f7fb
+R32_FLOAT gather readback HLSL=[[64, 127, 191, 255]] WGSL=[[64, 127, 191, 255]]
+ok
+test dx11::exact::tests::formats::exact_fl10_cube_array_nonzero_view_base_and_copy ... requested=L10_0 actual=L10_0 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+DXBC profile=ps_4_1
+seven-face resource create HRESULT=0x00000000
+out-of-bounds cube SRV rejected: 0x80070057
+cube array base-face=6 copied readback=[[106, 0, 0, 255], [122, 0, 0, 255], [138, 0, 0, 255], [154, 0, 0, 255], [170, 0, 0, 255], [186, 0, 0, 255]]
+ok
+test dx11::exact::tests::formats::exact_fl10_independent_blend_eight_targets ... requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+DXBC profile=ps_4_1
+independent blend RGBA8 readback=[[127, 64, 0, 255], [0, 0, 255, 255], [127, 64, 0, 255], [0, 0, 255, 255], [127, 64, 0, 255], [0, 0, 255, 255], [127, 64, 0, 255], [127, 0, 255, 255]]
+ok
+test dx11::exact::tests::formats::exact_fl10_standard_4x_sample_frequency_copy_and_readback ... requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86_64
+RGBA8 CheckFormatSupport=0x317ef3f3 quality levels for 4x=1
+DXBC profile=ps_4_1
+DXBC profile=ps_4_1
+RGBA8 4x standard sample readback=[[96, 32, 32, 255], [223, 96, 64, 255], [32, 159, 96, 255], [159, 223, 127, 255]]
+ok
+
+test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 557 filtered out; finished in 4.96s

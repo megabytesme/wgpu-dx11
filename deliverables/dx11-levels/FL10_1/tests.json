@@ -1,0 +1,602 @@
+{
+  "state": "INCOMPLETE",
+  "source_sha": "8d5e1288248c77d1f3a1dc9589f5877dc2ad5ad9",
+  "source_tree": "be2265e5d42a51afc34d87a97e4dac0e6240baf1",
+  "roadmap_sha": "126114a9fa069194e2bd63ac8e8d46c327a35d83",
+  "build": {
+    "host": "BEN-DESKTOP",
+    "directory": "C:\\dev\\personal\\wgpu-dx11-FL10_1-Nov21",
+    "sdk": "10.0.19041.0",
+    "toolchain": "1.93",
+    "env": {
+      "CARGO_PROFILE_TEST_DEBUG": "0",
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_TARGET_DIR": "E:\\temp\\wgpu-fl10_1\\target"
+    },
+    "lint": {
+      "command": "cargo clippy --offline --target x86_64-pc-windows-msvc -p wgpu-hal --no-default-features --features dx11-experimental-fl10 --tests",
+      "result": "pass with baseline warnings"
+    },
+    "default_path": {
+      "command": "cargo check --offline --target x86_64-pc-windows-msvc -p wgpu-hal --no-default-features --features dx11 --lib",
+      "result": "pass with baseline warnings"
+    }
+  },
+  "runs": {
+    "x64": {
+      "target": "x86_64-pc-windows-msvc",
+      "binary": "E:\\temp\\wgpu-fl10_1\\target\\x86_64-pc-windows-msvc\\debug\\deps\\wgpu_hal-e34d3818602bb199.exe",
+      "binary_sha256": "1c64254308e43ea31b85a8e45273c7eeeb5b9a811b736f43dcba216578081475",
+      "build_command": "cargo test --offline --target x86_64-pc-windows-msvc -p wgpu-hal --no-default-features --features dx11-experimental-fl10 --lib --no-run",
+      "run_command": "wgpu_hal-e34d3818602bb199.exe dx11::exact::tests:: --ignored --nocapture --test-threads=1",
+      "result_summary": "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 557 filtered out; finished in 4.96s",
+      "log": {
+        "path": "evidence/desktop-x64.log",
+        "sha256": "eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a"
+      },
+      "fl91_control": {
+        "log": {
+          "path": "evidence/desktop-x64-fl91.log",
+          "sha256": "789e22c03815e6b114481b09e69cd7badb99a4b671c33d66a2cc40e92a0ec9bf"
+        },
+        "command": "wgpu_hal-e34d3818602bb199.exe instance_rejects_unsupported_handles_and_projects_only_fl91_hardware --nocapture --test-threads=1",
+        "env": {
+          "WGPU_DX11_FORCE_FL9_1": "1",
+          "WGPU_DX11_REQUIRE_HARDWARE": "1"
+        },
+        "result_summary": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 563 filtered out; finished in 0.33s"
+      },
+      "optional_compute_reported": true
+    },
+    "x86": {
+      "target": "i686-pc-windows-msvc",
+      "binary": "E:\\temp\\wgpu-fl10_1\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-4da916a18891cfc3.exe",
+      "binary_sha256": "eb0f932b12c4989854cd1bf757e330acd149b0850cf41f9085ed91e9e1fd5c9f",
+      "build_command": "cargo test --offline --target i686-pc-windows-msvc -p wgpu-hal --no-default-features --features dx11-experimental-fl10 --lib --no-run",
+      "run_command": "wgpu_hal-4da916a18891cfc3.exe dx11::exact::tests:: --ignored --nocapture --test-threads=1",
+      "result_summary": "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 557 filtered out; finished in 4.39s",
+      "log": {
+        "path": "evidence/desktop-x86.log",
+        "sha256": "5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62"
+      },
+      "fl91_control": {
+        "log": {
+          "path": "evidence/desktop-x86-fl91.log",
+          "sha256": "91a2582c74ef95ffb7dfc3d7b84ad277a83c9d3027561d9a5d2aa39a23374b82"
+        },
+        "command": "wgpu_hal-4da916a18891cfc3.exe instance_rejects_unsupported_handles_and_projects_only_fl91_hardware --nocapture --test-threads=1",
+        "env": {
+          "WGPU_DX11_FORCE_FL9_1": "1",
+          "WGPU_DX11_REQUIRE_HARDWARE": "1"
+        },
+        "result_summary": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 563 filtered out; finished in 0.31s"
+      },
+      "optional_compute_reported": true
+    }
+  },
+  "case_results": {
+    "x64": {
+      "exact_fl10_matched_native_render_benchmark": "pass",
+      "exact_fl10_geometry_stream_output_draw_auto": "pass",
+      "exact_fl10_optional_compute_structured_uav": "pass",
+      "exact_fl10_sm41_gather_render_and_fl100_rejection": "pass",
+      "exact_fl10_cube_array_nonzero_view_base_and_copy": "pass",
+      "exact_fl10_independent_blend_eight_targets": "pass",
+      "exact_fl10_standard_4x_sample_frequency_copy_and_readback": "pass"
+    },
+    "x86": {
+      "exact_fl10_matched_native_render_benchmark": "pass",
+      "exact_fl10_geometry_stream_output_draw_auto": "pass",
+      "exact_fl10_optional_compute_structured_uav": "pass",
+      "exact_fl10_sm41_gather_render_and_fl100_rejection": "pass",
+      "exact_fl10_cube_array_nonzero_view_base_and_copy": "pass",
+      "exact_fl10_independent_blend_eight_targets": "pass",
+      "exact_fl10_standard_4x_sample_frequency_copy_and_readback": "pass"
+    }
+  },
+  "supplemental_requirements": [
+    {
+      "id": "FL10_1.METHOD.D3D11CreateDevice.hardware_only",
+      "layer": "native-method",
+      "requirement": "Reject a DXGI software adapter in the native exact-tier selector",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-d3d11createdevice",
+      "test_id": "exact_fl10_sm41_gather_render_and_fl100_rejection",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CreatePixelShader.ps_4_1_reject_fl10_0",
+      "layer": "native-method",
+      "requirement": "Reject SM4.1-only pixel DXBC on the FL10.0 control",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-createpixelshader",
+      "test_id": "exact_fl10_sm41_gather_render_and_fl100_rejection",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.WGSL.gather_r32_float",
+      "layer": "tier-translation-fixture",
+      "requirement": "Translate a plain red gather to DXBC and read back using the native exact interface",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/format-support-for-direct3d-feature-level-10-1-hardware",
+      "test_id": "exact_fl10_sm41_gather_render_and_fl100_rejection",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CheckFormatSupport.R32_FLOAT.gather",
+      "layer": "native-method",
+      "requirement": "Report and exercise the R32_FLOAT gather bit",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/format-support-for-direct3d-feature-level-10-1-hardware",
+      "test_id": "exact_fl10_sm41_gather_render_and_fl100_rejection",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CreateTexture2D.cube_array_two_cubes",
+      "layer": "native-method",
+      "requirement": "Create and sample a 12-face cube-array resource",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_texture2d_desc",
+      "test_id": "exact_fl10_cube_array_nonzero_view_base_and_copy",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CreateTexture2D.cube_array_seven_faces",
+      "layer": "native-method",
+      "requirement": "Documented six-face resource group constraint",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_texture2d_desc",
+      "test_id": "",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CreateShaderResourceView.cube_array_base_face_6",
+      "layer": "native-method",
+      "requirement": "Sample all faces of a view starting at face six",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_texcube_array_srv",
+      "test_id": "exact_fl10_cube_array_nonzero_view_base_and_copy",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CreateShaderResourceView.cube_array_out_of_bounds",
+      "layer": "native-method",
+      "requirement": "Reject a cube-array view extending beyond its resource",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_texcube_array_srv",
+      "test_id": "exact_fl10_cube_array_nonzero_view_base_and_copy",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CopyResource.rgba8_cube_array",
+      "layer": "native-method",
+      "requirement": "Use copied cube-array data after release of the source reference",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-copyresource",
+      "test_id": "exact_fl10_cube_array_nonzero_view_base_and_copy",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CopyResource.rgba8_4x",
+      "layer": "native-method",
+      "requirement": "Copy matching RGBA8 4x resources and read each copied sample",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-copyresource",
+      "test_id": "exact_fl10_standard_4x_sample_frequency_copy_and_readback",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CheckMultisampleQualityLevels.rgba8_4x",
+      "layer": "native-method",
+      "requirement": "Query RGBA8 4x support and exercise the fixed standard pattern",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-checkmultisamplequalitylevels",
+      "test_id": "exact_fl10_standard_4x_sample_frequency_copy_and_readback",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.PS.sample_interpolation.standard4",
+      "layer": "native-method",
+      "requirement": "Sample frequency invocation, index, and standard 4x interpolation",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-10-1",
+      "test_id": "exact_fl10_standard_4x_sample_frequency_copy_and_readback",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CreateGeometryShaderWithStreamOutput.gs_4_1",
+      "layer": "native-method",
+      "requirement": "Create an SM4.1 geometry shader and verify one stream-out buffer",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11device-creategeometryshaderwithstreamoutput",
+      "test_id": "exact_fl10_geometry_stream_output_draw_auto",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.SOSetTargets.one_stream_one_buffer",
+      "layer": "native-method",
+      "requirement": "Bind one SO target, emit and read back the exact triangle",
+      "owner": "fl10_1",
+      "source": "https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm",
+      "test_id": "exact_fl10_geometry_stream_output_draw_auto",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.GetData.SO_STATISTICS.one_triangle",
+      "layer": "native-method",
+      "requirement": "Read back one primitive written and needed",
+      "owner": "fl10_1",
+      "source": "https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm",
+      "test_id": "exact_fl10_geometry_stream_output_draw_auto",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.DrawAuto.vertex_slot_0",
+      "layer": "native-method",
+      "requirement": "Read back the image produced by a draw from the filled SO buffer",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-id3d11devicecontext-drawauto",
+      "test_id": "exact_fl10_geometry_stream_output_draw_auto",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.GetData.EVENT",
+      "layer": "native-method",
+      "requirement": "Wait for a reusable event query around matched draw batches",
+      "owner": "fl10_1",
+      "source": "https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm",
+      "test_id": "exact_fl10_matched_native_render_benchmark",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.GetData.TIMESTAMP_DISJOINT",
+      "layer": "native-method",
+      "requirement": "Read timestamp pairs and discard disjoint intervals",
+      "owner": "fl10_1",
+      "source": "https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm",
+      "test_id": "exact_fl10_matched_native_render_benchmark",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CreateInputLayout.slot_31_and_slot_32",
+      "layer": "native-method",
+      "requirement": "Verify final valid 10.1 input slot and first invalid slot",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/direct3d10/d3d10-graphics-programming-guide-10-1",
+      "test_id": "",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CreateSamplerState.mip_lod_bias",
+      "layer": "native-method",
+      "requirement": "Verify native sampler LOD bias across different actual mip levels",
+      "owner": "fl10_1",
+      "source": "https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm",
+      "test_id": "",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.GenerateMips.format_family",
+      "layer": "native-method",
+      "requirement": "Verify base view selection and generated mips for every mandatory format",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/format-support-for-direct3d-feature-level-10-1-hardware",
+      "test_id": "",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.ResolveSubresource.format_family",
+      "layer": "native-method",
+      "requirement": "Validate resolves and prohibitions on the complete format family",
+      "owner": "fl10_1",
+      "source": "https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/format-support-for-direct3d-feature-level-10-1-hardware",
+      "test_id": "",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.SetPredication.occlusion_and_so_overflow",
+      "layer": "native-method",
+      "requirement": "Test occlusion and stream output overflow predicates against captured outcomes",
+      "owner": "fl10_1",
+      "source": "https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm",
+      "test_id": "",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.GetDeviceRemovedReason.real_reset",
+      "layer": "native-method",
+      "requirement": "Exercise a real removed device and release mappings, query state and resources",
+      "owner": "fl10_1",
+      "source": "https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm",
+      "test_id": "",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.ResizeBuffers.signed_appcontainer",
+      "layer": "native-method",
+      "requirement": "Verify real signed app presentation, suspend and resize",
+      "owner": "fl10_1",
+      "source": "https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm",
+      "test_id": "",
+      "classification": "mandatory"
+    },
+    {
+      "id": "FL10_1.METHOD.CheckFeatureSupport.D3D10_X_HARDWARE_OPTIONS",
+      "layer": "native-method",
+      "requirement": "Observe optional compute and raw/structured buffer support",
+      "owner": "fl10_1",
+      "source": "https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm",
+      "test_id": "exact_fl10_optional_compute_structured_uav",
+      "classification": "optional"
+    },
+    {
+      "id": "FL10_1.METHOD.CreateComputeShader.cs_4_1",
+      "layer": "native-method",
+      "requirement": "Execute an optional structured UAV write and compare all 768 words",
+      "owner": "fl10_1",
+      "source": "https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm",
+      "test_id": "exact_fl10_optional_compute_structured_uav",
+      "classification": "optional"
+    }
+  ],
+  "requirement_evidence": {
+    "FL10_1.OP.exact_device": {
+      "native_result": "pass",
+      "hal_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_sm41_gather_render_and_fl100_rejection",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Owned opt-in HAL interface. Exact hardware levels, runtime identity, software rejection."
+    },
+    "FL10_1.OP.vertex_profile": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_sm41_gather_render_and_fl100_rejection",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Native VS 4.1 bytecode executed."
+    },
+    "FL10_1.OP.pixel_profile": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_sm41_gather_render_and_fl100_rejection",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Native PS 4.1 bytecode executed, with FL10.0 compilation and device rejection controls."
+    },
+    "FL10_1.OP.independent_blends": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_independent_blend_eight_targets",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "All eight RGBA8 outputs used individual target blend state."
+    },
+    "FL10_1.OP.geometry_shader": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_geometry_stream_output_draw_auto",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact geometry shader with one stream and one buffer."
+    },
+    "FL10_1.OP.msaa_sample_load": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_standard_4x_sample_frequency_copy_and_readback",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Index readback after an RGBA8 standard 4x multisampled copy."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R32_FLOAT.shader_gather4": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_sm41_gather_render_and_fl100_rejection",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Single-channel R32_FLOAT Gather with native render and readback."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R8G8B8A8_UNORM.msaa_4x": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_standard_4x_sample_frequency_copy_and_readback",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Standard 4x pattern on one color format."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R8G8B8A8_UNORM.multisample_load": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_standard_4x_sample_frequency_copy_and_readback",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Native color-view Texture2DMS.Load."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R8G8B8A8_UNORM.blend_attachment": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_independent_blend_eight_targets",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Independent RGBA8 per-target write masks and factors."
+    },
+    "FL10_1.METHOD.D3D11CreateDevice.hardware_only": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_sm41_gather_render_and_fl100_rejection",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.CreatePixelShader.ps_4_1_reject_fl10_0": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_sm41_gather_render_and_fl100_rejection",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.WGSL.gather_r32_float": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_sm41_gather_render_and_fl100_rejection",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.CheckFormatSupport.R32_FLOAT.gather": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_sm41_gather_render_and_fl100_rejection",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.CreateTexture2D.cube_array_two_cubes": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_cube_array_nonzero_view_base_and_copy",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.CreateTexture2D.cube_array_seven_faces": {
+      "notes": "RTX returned success for seven faces. Portable validation and debug-layer or independent driver confirmation are pending."
+    },
+    "FL10_1.METHOD.CreateShaderResourceView.cube_array_base_face_6": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_cube_array_nonzero_view_base_and_copy",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.CreateShaderResourceView.cube_array_out_of_bounds": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_cube_array_nonzero_view_base_and_copy",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.CopyResource.rgba8_cube_array": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_cube_array_nonzero_view_base_and_copy",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.CopyResource.rgba8_4x": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_standard_4x_sample_frequency_copy_and_readback",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.CheckMultisampleQualityLevels.rgba8_4x": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_standard_4x_sample_frequency_copy_and_readback",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.PS.sample_interpolation.standard4": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_standard_4x_sample_frequency_copy_and_readback",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.CreateGeometryShaderWithStreamOutput.gs_4_1": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_geometry_stream_output_draw_auto",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.SOSetTargets.one_stream_one_buffer": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_geometry_stream_output_draw_auto",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.GetData.SO_STATISTICS.one_triangle": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_geometry_stream_output_draw_auto",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.DrawAuto.vertex_slot_0": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_geometry_stream_output_draw_auto",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.GetData.EVENT": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_matched_native_render_benchmark",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.GetData.TIMESTAMP_DISJOINT": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_matched_native_render_benchmark",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.OP.compute_profile": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_optional_compute_structured_uav",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Optional support query succeeded and CS 4.1 structured UAV output matched."
+    },
+    "FL10_1.OP.compute_thread_count": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_optional_compute_structured_uav",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Executed 768 threads on X and FXC rejected 769."
+    },
+    "FL10_1.METHOD.CheckFeatureSupport.D3D10_X_HARDWARE_OPTIONS": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_optional_compute_structured_uav",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    },
+    "FL10_1.METHOD.CreateComputeShader.cs_4_1": {
+      "native_result": "pass",
+      "hal_result": "unknown",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86",
+      "test_command": "run-desktop.ps1 -Filter exact_fl10_optional_compute_structured_uav",
+      "artifact_sha256": "x64=eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a; x86=5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62",
+      "notes": "Exact native hardware fixture."
+    }
+  },
+  "unrun": [
+    "cumulative certified FL10.0 suite",
+    "public DX11 FL10.1 CTS",
+    "verified physical device removal",
+    "signed ARM64 and ARM32",
+    "signed HorizonUWP gameplay and presentation"
+  ]
+}

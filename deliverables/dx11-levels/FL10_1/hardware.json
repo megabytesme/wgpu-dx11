@@ -1,0 +1,38 @@
+{
+  "source_sha": "8d5e1288248c77d1f3a1dc9589f5877dc2ad5ad9",
+  "source_tree": "be2265e5d42a51afc34d87a97e4dac0e6240baf1",
+  "desktop": {
+    "host": "BEN-DESKTOP",
+    "os_build": "26300",
+    "gpu": "NVIDIA GeForce RTX 3090 Ti",
+    "driver": "32.0.16.2101",
+    "vendor": "0x10de",
+    "device": "0x2203",
+    "reported_luid": "0x0000000000014a80",
+    "d3dcompiler_47_dll_version": "10.0.26100.9818",
+    "mode": "physical RTX forced to requested levels",
+    "runs": {
+      "x64": {
+        "path": "evidence/desktop-x64.log",
+        "sha256": "eed09bc8b482243a581ce13f30a8cdf4fef8a31e537077282ef24977ed6df26a"
+      },
+      "x86": {
+        "path": "evidence/desktop-x86.log",
+        "sha256": "5b00e138dac627bfe06333f934fc26636d518a1fd739994c3bf58a48b3123f62"
+      }
+    }
+  },
+  "surface_arm64": {
+    "status": "blocked-before-deployment",
+    "reason": "Key-based SSH connection to Ben-Tablet timed out.",
+    "previous_roadmap_probe_is_candidate_evidence": false
+  },
+  "lumia_arm32": {
+    "status": "unknown",
+    "reason": "Pinned TLS Device Portal request timed out before deployment.",
+    "requires": "Wake and unlock Lumia and verify Device Portal and discovery are enabled on the LAN."
+  },
+  "native_ceiling_hardware": {
+    "status": "unknown"
+  }
+}

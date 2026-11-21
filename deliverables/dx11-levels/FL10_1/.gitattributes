@@ -1,0 +1,2 @@
+evidence/*.log text eol=lf
+requirements.csv text eol=crlf
