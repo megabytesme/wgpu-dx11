@@ -33,3 +33,32 @@ creation HRESULT and resource presence. These controls run from FL10_1 through
 FL11_1 regardless of the other control's result. An overall PASS covers the
 fixture only. Keep native results distinct from wgpu HAL, public API, CTS, and
 presentation and lifecycle receipts.
+
+## Optional Win32 GPU copy benchmark
+
+The separate `benchmark.cpp` executable does not change the tier probe or its
+report format. From an x64 MSVC developer shell, build into a fresh scratch
+directory, then run an exact tier under the shared GPU lock:
+
+```powershell
+.\build-benchmark.ps1 -OutputDirectory C:\Temp\dx11-copy-bench
+C:\Temp\dx11-copy-bench\Dx11CopyBenchmark.exe 10_0
+```
+
+The argument accepts `9_1`, `9_2`, `9_3`, `10_0`, `10_1`, `11_0`, or `11_1`.
+The default hardware adapter and actual tier are printed. One untimed warmup
+precedes five samples, each containing 32 copies of a 4 MiB buffer. D3D11
+timestamp and timestamp-disjoint queries measure GPU time, with a five-second
+timeout per query. A staging readback compares all 4 MiB after the timed work.
+The reported GiB/s is logical bytes copied divided by timestamp duration; it is
+not measured memory-bus traffic. This repeated-copy microbenchmark does not
+measure wgpu, draws, presentation, gameplay, or end-to-end latency.
+
+Exit 0 means at least one valid sample and a matching readback; disjoint samples
+are reported and omitted from the median. Exit 2 means timestamp query creation
+reported unsupported, exit 3 means every sample was disjoint, and exit 1 means
+an error, timeout, or mismatch. Unsupported, all-disjoint, and error paths have
+not been induced in the recorded run. The [receipt](benchmark-receipt.txt)
+contains the exact source and executable hashes, adapter, OS and per-sample
+results for a short RTX 3090 Ti FL10_0/FL11_0 run. These measurements are not
+an architectural comparison between feature levels.
