@@ -1,0 +1,23 @@
+UTC: 2026-11-21T23:05:03.4512460Z
+Host: BEN-DESKTOP
+OS: Microsoft Windows 11 Pro 10.0.26300 build 26300 64-bit
+FXC SHA256: 217D23273289CAF4EDD34710BB08415E8AE1A69FF7FCA131F23F523D5D63CE2B
+gather.hlsl SHA256: 232B8C747FB55C405908838DE43C92F251508E8E26C9FB99359084EF4492FC45
+sample.hlsl SHA256: 08A93DE0568EA57FCD117456B231BCEAF5F691EC7E0127077573153F687CC131
+run.ps1 SHA256: 1707585A676105675B33E7B61BFEF19EAFD59822732589D186166989974322D3
+compiler=C:\Program Files (x86)\Windows Kits\10\bin\10.0.19041.0\x64\fxc.exe version=10.0.19041.5609 (WinBuild.160101.0800)
+case=sample-sm40 target=ps_4_0 exit=0
+compilation code save succeeded; see C:\Users\ben\AppData\Local\Temp\wgpu-sm41-fxc-e84bc06b0d904d6f9196eef26608db27\sample-sm40.asm
+compilation object save succeeded; see C:\Users\ben\AppData\Local\Temp\wgpu-sm41-fxc-e84bc06b0d904d6f9196eef26608db27\sample-sm40.dxbc
+instruction=sample object_bytes=560
+case=gather-sm40 target=ps_4_0 exit=1
+C:\dev\personal\wgpu-dx11-fl10_1-sm41-controls\experiments\dx11-sm41-fxc\gather.hlsl(5,12-52): error X4532: cannot map expression to ps_4_0 instruction set
+
+compilation failed; no code produced
+expected_diagnostic=X4532
+case=gather-sm41 target=ps_4_1 exit=0
+compilation code save succeeded; see C:\Users\ben\AppData\Local\Temp\wgpu-sm41-fxc-e84bc06b0d904d6f9196eef26608db27\gather-sm41.asm
+compilation object save succeeded; see C:\Users\ben\AppData\Local\Temp\wgpu-sm41-fxc-e84bc06b0d904d6f9196eef26608db27\gather-sm41.dxbc
+instruction=gather4 object_bytes=564
+PASS: FXC profile controls
+Exit: 0
