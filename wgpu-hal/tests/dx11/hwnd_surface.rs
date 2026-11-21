@@ -10,7 +10,10 @@ use windows::{
     core::w,
     Win32::{
         Foundation::HWND,
-        UI::WindowsAndMessaging::{CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_OVERLAPPED},
+        UI::WindowsAndMessaging::{
+            CreateWindowExW, DestroyWindow, IsWindowVisible, SetWindowPos, HWND_TOPMOST,
+            SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SWP_SHOWWINDOW, WINDOW_EX_STYLE, WS_OVERLAPPED,
+        },
     },
 };
 
@@ -333,6 +336,7 @@ fn run_hidden_hwnd(
         Err(error) => return Err(error),
     };
     let _window = WindowGuard(hwnd);
+    assert!(!unsafe { IsWindowVisible(hwnd) }.as_bool());
     let handle = NonZeroIsize::new(hwnd.0 as isize).unwrap();
     let surface = unsafe {
         super::super::Instance
@@ -394,6 +398,38 @@ fn run_hidden_hwnd(
     drop(guard);
     assert_eq!(rx.recv_timeout(Duration::from_secs(5)).unwrap()?, [32, 24]);
     worker.join().unwrap();
+
+    let hidden = unsafe { surface.acquire_texture(None, &fence).unwrap() };
+    hidden
+        .texture
+        .frame
+        .as_ref()
+        .unwrap()
+        .clear([0.0, 0.0, 0.0, 1.0])?;
+    unsafe { queue.submit(&[], &[&hidden.texture], (&fence, 1)).unwrap() };
+    let hidden_present = unsafe { queue.present(&surface, hidden.texture) };
+    assert!(
+        hidden_present.is_ok() || matches!(&hidden_present, Err(crate::SurfaceError::Occluded)),
+        "unexpected hidden HWND Present: {hidden_present:?}"
+    );
+    assert_eq!(chain.has_pending_present(), hidden_present.is_ok());
+    unsafe { queue.wait_for_idle().unwrap() };
+    assert!(!chain.has_pending_present());
+    std::println!("Hidden HWND present: {hidden_present:?}");
+
+    unsafe {
+        SetWindowPos(
+            hwnd,
+            Some(HWND_TOPMOST),
+            0,
+            0,
+            0,
+            0,
+            SWP_SHOWWINDOW | SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+        )?;
+    }
+    assert!(unsafe { IsWindowVisible(hwnd) }.as_bool());
+
     let acquired = unsafe { surface.acquire_texture(None, &fence).unwrap() };
     assert!(chain.has_consumed_latency_ready());
     assert!(unsafe { surface.acquire_texture(None, &fence) }.is_err());
@@ -455,10 +491,10 @@ fn run_hidden_hwnd(
     };
     unsafe {
         queue
-            .submit(&[&command], &[&acquired.texture], (&fence, 1))
+            .submit(&[&command], &[&acquired.texture], (&fence, 2))
             .unwrap();
     }
-    assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+    assert!(native.wait_native_fence(&fence, 2, Some(Duration::from_secs(5)))?);
     let pixel = acquired.texture.frame.as_ref().unwrap().readback()?;
     assert_eq!(pixel, [0, 0, 255, 255]);
     assert!(command
@@ -478,11 +514,11 @@ fn run_hidden_hwnd(
     if required {
         assert!(
             present.is_ok(),
-            "strict HWND test requires a queued Present"
+            "strict visible HWND test requires a queued Present: {present:?}"
         );
     }
     assert_eq!(chain.has_pending_present(), present.is_ok());
-    std::println!("Hidden HWND present: {present:?}; BGRA pixel {pixel:?}");
+    std::println!("Visible HWND present: {present:?}; BGRA pixel {pixel:?}");
     unsafe {
         queue.wait_for_idle().unwrap();
     }
@@ -553,10 +589,10 @@ fn run_hidden_hwnd(
     };
     unsafe {
         queue
-            .submit(&[&resized_command], &[&resized.texture], (&fence, 2))
+            .submit(&[&resized_command], &[&resized.texture], (&fence, 3))
             .unwrap();
     }
-    assert!(native.wait_native_fence(&fence, 2, Some(Duration::from_secs(5)))?);
+    assert!(native.wait_native_fence(&fence, 3, Some(Duration::from_secs(5)))?);
     assert_eq!(
         resized.texture.frame.as_ref().unwrap().readback()?,
         [0, 255, 0, 255]
@@ -572,7 +608,7 @@ fn run_hidden_hwnd(
     if required {
         assert!(
             second_present.is_ok(),
-            "strict HWND test requires a second queued Present"
+            "strict visible HWND test requires a second queued Present: {second_present:?}"
         );
     }
     assert_eq!(chain.has_pending_present(), second_present.is_ok());
@@ -645,7 +681,7 @@ fn run_hidden_hwnd(
         .clear([0.0, 0.0, 1.0, 1.0])?;
     unsafe {
         queue
-            .submit(&[], &[&final_frame.texture], (&fence, 3))
+            .submit(&[], &[&final_frame.texture], (&fence, 4))
             .unwrap();
     }
     let final_present = unsafe { queue.present(&surface, final_frame.texture) };
@@ -656,7 +692,7 @@ fn run_hidden_hwnd(
     if required {
         assert!(
             final_present.is_ok(),
-            "strict HWND test requires a queued Present before surface drop"
+            "strict visible HWND test requires a queued Present before surface drop: {final_present:?}"
         );
     }
     assert_eq!(final_chain.has_pending_present(), final_present.is_ok());
@@ -664,7 +700,7 @@ fn run_hidden_hwnd(
     unsafe { queue.wait_for_idle().unwrap() };
     assert!(!final_chain.has_pending_present());
     std::println!(
-        "PASS: hidden HWND acquire, HAL {} readback, present and resize; visibility not verified",
+        "PASS: HWND hidden-to-visible acquire, HAL {} readback, resize and Present ({present:?}, {second_present:?}, {final_present:?})",
         if clone_sample {
             "clone-sampled draw"
         } else {
