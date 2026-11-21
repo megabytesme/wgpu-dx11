@@ -1,0 +1,19 @@
+   Compiling windows-sys v0.61.2
+   Compiling once_cell v1.21.4
+   Compiling uuid v1.23.3
+   Compiling wgpu-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\wgpu-types)
+   Compiling gpu-allocator v0.28.0
+   Compiling naga v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\naga)
+   Compiling ron v0.12.1
+   Compiling debugid v0.8.0
+   Compiling sourcemap v9.3.2
+   Compiling socket2 v0.6.4
+   Compiling mio v1.2.1
+   Compiling tokio v1.52.3
+error: failed to write to `E:/codex-dx11-FL11_1/cts-target\debug\deps\rmetaOGAEYV\full.rmeta`: There is not enough space on the disk. (os error 112)
+
+error: could not compile `tokio` (lib) due to 1 previous error
+warning: build failed, waiting for other jobs to finish...
+error: failed to write to `E:/codex-dx11-FL11_1/cts-target\debug\deps\rmetaGRggqL\full.rmeta`: There is not enough space on the disk. (os error 112)
+
+error: could not compile `naga` (lib) due to 1 previous error

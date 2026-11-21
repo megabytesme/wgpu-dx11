@@ -1,0 +1,754 @@
+{
+  "source": "be1b44bebcbd084e2f16a24ea0c71091d28894f8",
+  "cts_source": "76c98824195674111e1389e07c82b6fa789e9092",
+  "baseline": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+  "roadmap": "126114a9fa069194e2bd63ac8e8d46c327a35d83",
+  "product_reference": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+  "utc": "2026-11-21T14:05:18.444735+00:00",
+  "log_policy": "Saved stdout/stderr use UTF-8 and LF with terminal NUL and trailing whitespace removed. Record both saved and raw digests.",
+  "tests": [
+    {
+      "id": "build-hal-x64",
+      "kind": "build",
+      "host": "BEN-DESKTOP",
+      "directory": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "command": "cargo +1.93.1 test --offline -p wgpu-hal --no-default-features --features dx11 --lib --no-run",
+      "source": "be1b44bebcbd084e2f16a24ea0c71091d28894f8",
+      "result": "pass",
+      "scratch_directory": "E:\\codex-dx11-FL11_1\\target",
+      "artifact": {
+        "path": "evidence/build-hal-x64.txt",
+        "sha256": "d90d6419b2c1e449a3905df8b7663e149dda4e0a64dad7d703d6eedd24956509",
+        "raw_sha256": "ad74b849b69631e60926e70e635d78200d06b43022489e89cdf5cbf5de5c4f04"
+      }
+    },
+    {
+      "id": "build-hal-x86",
+      "kind": "build",
+      "host": "BEN-DESKTOP",
+      "directory": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "command": "cargo +1.93.1 test --offline -p wgpu-hal --no-default-features --features dx11 --target i686-pc-windows-msvc --lib --no-run",
+      "source": "be1b44bebcbd084e2f16a24ea0c71091d28894f8",
+      "result": "pass",
+      "scratch_directory": "E:\\codex-dx11-FL11_1\\target",
+      "artifact": {
+        "path": "evidence/build-hal-x86.txt",
+        "sha256": "67c2f29eac02ac6f989067008e2c774b0489c20608091b6a6c4001348e095a30",
+        "raw_sha256": "2c03c9dba4a9137c4eb03bc1ca3d03f5adbe13d11afd420b0a72e754b7f2d2e1"
+      }
+    },
+    {
+      "id": "build-public-x64",
+      "kind": "build",
+      "host": "BEN-DESKTOP",
+      "directory": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "command": "cargo +1.93.1 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public --no-run",
+      "source": "be1b44bebcbd084e2f16a24ea0c71091d28894f8",
+      "result": "pass",
+      "scratch_directory": "E:\\codex-dx11-FL11_1\\target",
+      "artifact": {
+        "path": "evidence/build-public-x64.txt",
+        "sha256": "8ed2b43865a51a05e18ca8e5d7f687ba280307152494e848b4d787b0ddf9f130",
+        "raw_sha256": "45b3391d7f4c262fa5f49f1cff2e8fbb29ad33f96c2a94a890286c3f7d9364bf"
+      }
+    },
+    {
+      "id": "build-scene-x64",
+      "kind": "build",
+      "host": "BEN-DESKTOP",
+      "directory": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "command": "cargo +1.93.1 test --offline -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl91_scene --no-run",
+      "source": "be1b44bebcbd084e2f16a24ea0c71091d28894f8",
+      "result": "pass",
+      "scratch_directory": "E:\\codex-dx11-FL11_1\\target",
+      "artifact": {
+        "path": "evidence/build-scene-x64.txt",
+        "sha256": "1981a2466925813900ab87be22b344ecd9997f0be0083cc47a3e522eee3f4e55",
+        "raw_sha256": "8330c5094715ff62c3230920c3d4784381cc7525b6cbc4fa04ece022a4515670"
+      }
+    },
+    {
+      "id": "check-hal-arm64",
+      "kind": "build",
+      "host": "BEN-DESKTOP",
+      "directory": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "command": "cargo +1.93.1 check --offline -p wgpu-hal --no-default-features --features dx11 --target aarch64-pc-windows-msvc --lib",
+      "source": "be1b44bebcbd084e2f16a24ea0c71091d28894f8",
+      "result": "pass",
+      "scratch_directory": "C:/Users/ben/AppData/Local/Temp/codex-dx11-FL11_1-arm64",
+      "artifact": {
+        "path": "evidence/check-hal-arm64.txt",
+        "sha256": "907e51bc1e9001fb7131a948eb24854feeb21757c607d5678ce0262dae53414e",
+        "raw_sha256": "ac091532d70a62738796dc740f2bbc335bc1c7e6139291bcb775bb27edc54941"
+      }
+    },
+    {
+      "id": "clippy-x64",
+      "kind": "build",
+      "host": "BEN-DESKTOP",
+      "directory": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "command": "cargo +1.93.1 clippy --offline -p wgpu-hal --no-default-features --features dx11 --tests",
+      "source": "be1b44bebcbd084e2f16a24ea0c71091d28894f8",
+      "result": "pass",
+      "scratch_directory": "E:\\codex-dx11-FL11_1\\target",
+      "artifact": {
+        "path": "evidence/clippy-x64.txt",
+        "sha256": "684af79ba1a19cc04206b35f62f1327314652256e0e3d5a8a5a3c163f70a90fe",
+        "raw_sha256": "a6879ed24c0a654ad84e4f5be83063845897496cf2913e1759a67b185ca2a44b"
+      }
+    },
+    {
+      "id": "build-cts-x64",
+      "kind": "build",
+      "host": "BEN-DESKTOP",
+      "directory": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "command": "cargo +1.93.1 build --offline -p cts_runner --bin cts_runner --features deno_webgpu/dx11",
+      "source": "be1b44bebcbd084e2f16a24ea0c71091d28894f8",
+      "result": "fail",
+      "scratch_directory": "E:\\codex-dx11-FL11_1\\cts-target",
+      "artifact": {
+        "path": "evidence/build-cts-x64.txt",
+        "sha256": "52b96ad06cfb82598b494d792e150a205b49cb9007bb3c1f68fbee514d1744a3",
+        "raw_sha256": "2830df8f7c882adcbe60559e560a41b9fbfb0870ae88ef14c9e4c06b48904d1a"
+      }
+    },
+    {
+      "id": "build-cts-retry-x64",
+      "kind": "build",
+      "host": "BEN-DESKTOP",
+      "directory": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "command": "cargo +1.93.1 build --offline -p cts_runner --bin cts_runner --features deno_webgpu/dx11",
+      "source": "be1b44bebcbd084e2f16a24ea0c71091d28894f8",
+      "result": "fail",
+      "scratch_directory": "E:\\codex-dx11-FL11_1\\cts-target",
+      "artifact": {
+        "path": "evidence/build-cts-retry-x64.txt",
+        "sha256": "619d0483835012c435ca40d214b06c91b7d945bb4ce170225c445d68840202c4",
+        "raw_sha256": "7158b1c676c1e25a0987d3dd4e13c2111bcf49743d883f076a3fdb748b4e10d4"
+      }
+    },
+    {
+      "id": "build-cts-final-x64",
+      "kind": "build",
+      "host": "BEN-DESKTOP",
+      "directory": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "command": "cargo +1.93.1 build --offline -p cts_runner --bin cts_runner --features deno_webgpu/dx11",
+      "source": "76c98824195674111e1389e07c82b6fa789e9092",
+      "result": "pass",
+      "scratch_directory": "E:\\codex-dx11-FL11_1\\cts-target",
+      "artifact": {
+        "path": "evidence/build-cts-final-x64.txt",
+        "sha256": "ebc98ef68fdec4d34ddbe9b7116d56b5b3a15d5f13467dfa237617a48bc6a30f",
+        "raw_sha256": "062db7e173e40924b9a6900a30943ed45d38cf239150c2ed0c7ed527273e354b"
+      }
+    },
+    {
+      "id": "test-cts-marker-x64",
+      "kind": "build",
+      "host": "BEN-DESKTOP",
+      "directory": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "command": "cargo +1.93.1 test --offline -p deno_webgpu --features dx11 --lib backend_selection_tests",
+      "source": "76c98824195674111e1389e07c82b6fa789e9092",
+      "result": "fail",
+      "scratch_directory": "E:\\codex-dx11-FL11_1\\cts-target",
+      "artifact": {
+        "path": "evidence/test-cts-marker-x64.txt",
+        "sha256": "59a761ce7d10398fc360b2dbee4feb6d9b81a2effec20231fa5ccbfd512a6f1e",
+        "raw_sha256": "d113798842e88822a020c08e96ba2674636c06826b0425cafaece2c34168c48d"
+      }
+    },
+    {
+      "id": "clear_overlap_and_graphics_uav",
+      "kind": "native",
+      "description": "Integer XOR with R/B mask, rectangle ClearView, overlapping Texture2D copy, discard and graphics u63 from VS/HS/DS/GS/PS",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x64",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x64 test binary> -Architecture x64",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/native-x64.txt",
+        "sha256": "f230e1a76a18faaf23058200242ce89146f26fd07fca3186e61e0a0c97de19eb",
+        "raw_sha256": "991e552eb2d7c1a32a4f63144982482b8a0d85bb850eb2aa449a05d744292cc0"
+      },
+      "stderr": {
+        "path": "evidence/native-x64.stderr.txt",
+        "sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5",
+        "raw_sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5"
+      }
+    },
+    {
+      "id": "compute_slots_and_constant_updates",
+      "kind": "native",
+      "description": "CS u0/u8/u63, final constant of the maximum 4096-constant window above 64 KiB, 16-byte partial update, invalid update, dynamic CB and SRV NO_OVERWRITE",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x64",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x64 test binary> -Architecture x64",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/native-x64.txt",
+        "sha256": "f230e1a76a18faaf23058200242ce89146f26fd07fca3186e61e0a0c97de19eb",
+        "raw_sha256": "991e552eb2d7c1a32a4f63144982482b8a0d85bb850eb2aa449a05d744292cc0"
+      },
+      "stderr": {
+        "path": "evidence/native-x64.stderr.txt",
+        "sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5",
+        "raw_sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5"
+      }
+    },
+    {
+      "id": "deferred_commands_and_context_state",
+      "kind": "native",
+      "description": "All six stage range setters/getters, context-state swap, flagged copy and source lifetime across replay",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x64",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x64 test binary> -Architecture x64",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/native-x64.txt",
+        "sha256": "f230e1a76a18faaf23058200242ce89146f26fd07fca3186e61e0a0c97de19eb",
+        "raw_sha256": "991e552eb2d7c1a32a4f63144982482b8a0d85bb850eb2aa449a05d744292cc0"
+      },
+      "stderr": {
+        "path": "evidence/native-x64.stderr.txt",
+        "sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5",
+        "raw_sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5"
+      }
+    },
+    {
+      "id": "exact_options_and_format_queries",
+      "kind": "native",
+      "description": "Exact singleton hardware negotiation and two interfaces, 12 required options, optional double/SAD4 fields, primary and secondary DXGI queries",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x64",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x64 test binary> -Architecture x64",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/native-x64.txt",
+        "sha256": "f230e1a76a18faaf23058200242ce89146f26fd07fca3186e61e0a0c97de19eb",
+        "raw_sha256": "991e552eb2d7c1a32a4f63144982482b8a0d85bb850eb2aa449a05d744292cc0"
+      },
+      "stderr": {
+        "path": "evidence/native-x64.stderr.txt",
+        "sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5",
+        "raw_sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5"
+      }
+    },
+    {
+      "id": "forced_rasterizer_sample_masks",
+      "kind": "native",
+      "description": "Forced coverage 1/4/8/16 with UAV-only and RTV cases, 4x RTV under forced 1, invalid forced 3",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x64",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x64 test binary> -Architecture x64",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/native-x64.txt",
+        "sha256": "f230e1a76a18faaf23058200242ce89146f26fd07fca3186e61e0a0c97de19eb",
+        "raw_sha256": "991e552eb2d7c1a32a4f63144982482b8a0d85bb850eb2aa449a05d744292cc0"
+      },
+      "stderr": {
+        "path": "evidence/native-x64.stderr.txt",
+        "sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5",
+        "raw_sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5"
+      }
+    },
+    {
+      "id": "packed_color_mips",
+      "kind": "native",
+      "description": "B5G6R5/B5G5R5A1/B4G4R4A4 native SampleLevel/Load, manual and generated level 1, and mapped packed copy",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x64",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x64 test binary> -Architecture x64",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "fail",
+      "artifact": {
+        "path": "evidence/native-x64.txt",
+        "sha256": "f230e1a76a18faaf23058200242ce89146f26fd07fca3186e61e0a0c97de19eb",
+        "raw_sha256": "991e552eb2d7c1a32a4f63144982482b8a0d85bb850eb2aa449a05d744292cc0"
+      },
+      "stderr": {
+        "path": "evidence/native-x64.stderr.txt",
+        "sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5",
+        "raw_sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5"
+      }
+    },
+    {
+      "id": "shared_texture_mips_and_layers",
+      "kind": "native",
+      "description": "Two physical devices, keyed mutex handoff on a shared two-mip two-layer Texture2D, GPU copy and readback",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x64",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x64 test binary> -Architecture x64",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/native-x64.txt",
+        "sha256": "f230e1a76a18faaf23058200242ce89146f26fd07fca3186e61e0a0c97de19eb",
+        "raw_sha256": "991e552eb2d7c1a32a4f63144982482b8a0d85bb850eb2aa449a05d744292cc0"
+      },
+      "stderr": {
+        "path": "evidence/native-x64.stderr.txt",
+        "sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5",
+        "raw_sha256": "169d657764116c0e352f2e0c5fe9098d8e41a996e5e87422bf7c09889c2670c5"
+      }
+    },
+    {
+      "id": "six_shader_profiles",
+      "kind": "FXC compile and disassembly",
+      "architecture": "x64",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "wgpu_hal-<hash>.exe --nocapture --exact dx11::fl11_1::tests::tier_fl11_1_six_shader_profiles",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/shader-x64.txt",
+        "sha256": "898332902e8b9e0b7aa98fc6907b59d951d77302ac743f5215a6dae9bff3bc11",
+        "raw_sha256": "202ae28314a42dd3e86eebdd7c5e635f934e204d528ec633da30830ab1bc819b"
+      }
+    },
+    {
+      "id": "clear_overlap_and_graphics_uav",
+      "kind": "native",
+      "description": "Integer XOR with R/B mask, rectangle ClearView, overlapping Texture2D copy, discard and graphics u63 from VS/HS/DS/GS/PS",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x86",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x86 test binary> -Architecture x86",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/native-x86.txt",
+        "sha256": "f3320af4ed510f11fe292c99877ffa665f6af122afa893b26caccfe3d36ab8c3",
+        "raw_sha256": "49bef71997d65aeac27bfc433bd124979ffa0e58137d95b79f60cfa3515fed73"
+      },
+      "stderr": {
+        "path": "evidence/native-x86.stderr.txt",
+        "sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4",
+        "raw_sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4"
+      }
+    },
+    {
+      "id": "compute_slots_and_constant_updates",
+      "kind": "native",
+      "description": "CS u0/u8/u63, final constant of the maximum 4096-constant window above 64 KiB, 16-byte partial update, invalid update, dynamic CB and SRV NO_OVERWRITE",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x86",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x86 test binary> -Architecture x86",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/native-x86.txt",
+        "sha256": "f3320af4ed510f11fe292c99877ffa665f6af122afa893b26caccfe3d36ab8c3",
+        "raw_sha256": "49bef71997d65aeac27bfc433bd124979ffa0e58137d95b79f60cfa3515fed73"
+      },
+      "stderr": {
+        "path": "evidence/native-x86.stderr.txt",
+        "sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4",
+        "raw_sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4"
+      }
+    },
+    {
+      "id": "deferred_commands_and_context_state",
+      "kind": "native",
+      "description": "All six stage range setters/getters, context-state swap, flagged copy and source lifetime across replay",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x86",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x86 test binary> -Architecture x86",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/native-x86.txt",
+        "sha256": "f3320af4ed510f11fe292c99877ffa665f6af122afa893b26caccfe3d36ab8c3",
+        "raw_sha256": "49bef71997d65aeac27bfc433bd124979ffa0e58137d95b79f60cfa3515fed73"
+      },
+      "stderr": {
+        "path": "evidence/native-x86.stderr.txt",
+        "sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4",
+        "raw_sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4"
+      }
+    },
+    {
+      "id": "exact_options_and_format_queries",
+      "kind": "native",
+      "description": "Exact singleton hardware negotiation and two interfaces, 12 required options, optional double/SAD4 fields, primary and secondary DXGI queries",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x86",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x86 test binary> -Architecture x86",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/native-x86.txt",
+        "sha256": "f3320af4ed510f11fe292c99877ffa665f6af122afa893b26caccfe3d36ab8c3",
+        "raw_sha256": "49bef71997d65aeac27bfc433bd124979ffa0e58137d95b79f60cfa3515fed73"
+      },
+      "stderr": {
+        "path": "evidence/native-x86.stderr.txt",
+        "sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4",
+        "raw_sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4"
+      }
+    },
+    {
+      "id": "forced_rasterizer_sample_masks",
+      "kind": "native",
+      "description": "Forced coverage 1/4/8/16 with UAV-only and RTV cases, 4x RTV under forced 1, invalid forced 3",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x86",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x86 test binary> -Architecture x86",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/native-x86.txt",
+        "sha256": "f3320af4ed510f11fe292c99877ffa665f6af122afa893b26caccfe3d36ab8c3",
+        "raw_sha256": "49bef71997d65aeac27bfc433bd124979ffa0e58137d95b79f60cfa3515fed73"
+      },
+      "stderr": {
+        "path": "evidence/native-x86.stderr.txt",
+        "sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4",
+        "raw_sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4"
+      }
+    },
+    {
+      "id": "packed_color_mips",
+      "kind": "native",
+      "description": "B5G6R5/B5G5R5A1/B4G4R4A4 native SampleLevel/Load, manual and generated level 1, and mapped packed copy",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x86",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x86 test binary> -Architecture x86",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "fail",
+      "artifact": {
+        "path": "evidence/native-x86.txt",
+        "sha256": "f3320af4ed510f11fe292c99877ffa665f6af122afa893b26caccfe3d36ab8c3",
+        "raw_sha256": "49bef71997d65aeac27bfc433bd124979ffa0e58137d95b79f60cfa3515fed73"
+      },
+      "stderr": {
+        "path": "evidence/native-x86.stderr.txt",
+        "sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4",
+        "raw_sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4"
+      }
+    },
+    {
+      "id": "shared_texture_mips_and_layers",
+      "kind": "native",
+      "description": "Two physical devices, keyed mutex handoff on a shared two-mip two-layer Texture2D, GPU copy and readback",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "architecture": "x86",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "run-desktop.ps1 -HalTestExe <wgpu-hal x86 test binary> -Architecture x86",
+      "binary_arguments": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/native-x86.txt",
+        "sha256": "f3320af4ed510f11fe292c99877ffa665f6af122afa893b26caccfe3d36ab8c3",
+        "raw_sha256": "49bef71997d65aeac27bfc433bd124979ffa0e58137d95b79f60cfa3515fed73"
+      },
+      "stderr": {
+        "path": "evidence/native-x86.stderr.txt",
+        "sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4",
+        "raw_sha256": "36a5098af6bbe46168155901c6b29c1d9746090e0556a21ef257b5fd15bce4d4"
+      }
+    },
+    {
+      "id": "six_shader_profiles",
+      "kind": "FXC compile and disassembly",
+      "architecture": "x86",
+      "owner": "wgpu-hal/tests/dx11/fl11_1.rs",
+      "command": "wgpu_hal-<hash>.exe --nocapture --exact dx11::fl11_1::tests::tier_fl11_1_six_shader_profiles",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/shader-x86.txt",
+        "sha256": "6400eac499bdbd2abaae1000b2c457aea2f2b4b148e5888fd0ac676b958ae76c",
+        "raw_sha256": "ff158913f24d6c7801098fa059870eb530b5564f9b2b207f25f3e1bf480ae811"
+      }
+    },
+    {
+      "id": "public-x64",
+      "kind": "public",
+      "description": "Exact FL11_1 with conservative public projection",
+      "architecture": "x64",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "owner": "wgpu/tests/dx11_public.rs",
+      "command": "run-desktop.ps1 -PublicTestExe <wgpu x64 dx11_public binary> -Architecture x64",
+      "result": "pass",
+      "summary": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.28s",
+      "test_binary_sha256": "c5b0330c81975a6752aca6710aa0cb9b22e186ba26765abcbc6520728485e284",
+      "artifact": {
+        "path": "evidence/public-x64.txt",
+        "sha256": "b2c7592c8490b5a9ab742f28fdb823a35fbdd6de95a7f24cdb492eac0e83c6c1",
+        "raw_sha256": "2742b7c6ca3b77145cd700180c021884f1bd3b023cd94c4a85329b68a2c989c0"
+      },
+      "stderr": {
+        "path": "evidence/public-x64.stderr.txt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "id": "public-fl9_1-x64",
+      "kind": "public",
+      "description": "Forced legacy FL9_1 public regression",
+      "architecture": "x64",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "owner": "wgpu/tests/dx11_public.rs",
+      "command": "run-desktop.ps1 -PublicTestExe <wgpu x64 dx11_public binary> -Architecture x64",
+      "result": "fail",
+      "summary": "test result: FAILED. 176 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 28.23s",
+      "test_binary_sha256": "c5b0330c81975a6752aca6710aa0cb9b22e186ba26765abcbc6520728485e284",
+      "artifact": {
+        "path": "evidence/public-fl9_1-x64.txt",
+        "sha256": "75f82b5950111dbf20700bc0594e105460576808b917c39639f15ce56fdeac68",
+        "raw_sha256": "3ee9b5572c43804bc820bcc8e4155c0dd72f1db32bc83801eeb4810563d5a0e8"
+      },
+      "stderr": {
+        "path": "evidence/public-fl9_1-x64.stderr.txt",
+        "sha256": "ed85dfdc244006dc6faab65bf3a427d4327c42a60adf3fd95e6323ae52a74539",
+        "raw_sha256": "ed85dfdc244006dc6faab65bf3a427d4327c42a60adf3fd95e6323ae52a74539"
+      }
+    },
+    {
+      "id": "exact_selector_argument_validation",
+      "kind": "CPU",
+      "architecture": "x64",
+      "owner": "wgpu-hal/src/dx11/instance.rs",
+      "command": "wgpu-hal-x64.exe exact_selector_rejects_invalid_and_conflicting_values",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/selector-x64.txt",
+        "sha256": "e267b1279be33a59ed7e1e86c10f8f0acbf6bd40803b0eb6abc87921f9c522e0",
+        "raw_sha256": "884e227611453d5ce8b3f33150ba2fad672510ea604ea67340e91f4b14883a1f"
+      }
+    },
+    {
+      "id": "workspace_rustfmt",
+      "kind": "format",
+      "host": "BEN-DESKTOP",
+      "directory": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "command": "cargo +1.93.1 fmt --all -- --check",
+      "result": "fail",
+      "detail": "Pinned formatting differences in existing lines were retained",
+      "artifact": {
+        "path": "evidence/format-check.txt",
+        "sha256": "29acc5db86c70d921225d33a26473bc68f54aa9e36eeef29b746d21988a2b607",
+        "raw_sha256": "fba66be334106d5d965e299c06651295817f9e32c844c0c232ffbc0d0e1e3e39"
+      },
+      "baseline_artifact": {
+        "path": "evidence/format-check-baseline.txt",
+        "sha256": "e4bedcb274e34cf47f16465d382d59381c54290009a00ad187a21c921fec4d85",
+        "raw_sha256": "5d2ab7b3ed86861b6effcadfcc7a5ee8ba7dbf6f59893c13b439292d99be689b"
+      }
+    },
+    {
+      "id": "desktop_runner_continues_after_failure",
+      "kind": "harness",
+      "architecture": "x64",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "command": "run-desktop.ps1 -PublicTestExe <x64 public> -HalTestExe <x64 native> -Architecture x64",
+      "result": "pass",
+      "detail": "Public regression failure was reported and the native suite still completed",
+      "suite_status": {
+        "public": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.30s",
+        "public-fl9_1": "test result: FAILED. 176 passed; 1 failed; 1 ignored; 0 measured; 0 filtered out; finished in 24.16s",
+        "native": "test result: FAILED. 6 passed; 1 failed; 0 ignored; 0 measured; 559 filtered out; finished in 1.77s"
+      }
+    },
+    {
+      "id": "complete_inherited_matrix",
+      "result": "unknown",
+      "reason": "No certified FL11_0 candidate or lower-tier chain"
+    },
+    {
+      "id": "full_cts",
+      "result": "unknown",
+      "reason": "Full CTS remains open on a cumulative candidate"
+    },
+    {
+      "id": "surface_arm64_appcontainer",
+      "result": "unknown",
+      "reason": "Desktop ARM64 library type-check passed. Surface LAN SSH 22 did not respond and no signed physical run was collected"
+    },
+    {
+      "id": "lumia_arm32_appcontainer",
+      "result": "unknown",
+      "reason": "No current exact FL11_1 proof. Lumia access was coordinated through the existing device lock"
+    },
+    {
+      "id": "physical_device_loss",
+      "result": "unknown",
+      "reason": "No real device-removal and recreation receipt"
+    },
+    {
+      "id": "horizon_signed_scene",
+      "result": "unknown",
+      "reason": "No cumulative candidate build or promotion of the pinned Horizon product"
+    },
+    {
+      "id": "historical_native_ceiling",
+      "result": "unknown",
+      "reason": "No independent native-ceiling hardware run"
+    },
+    {
+      "id": "cts_smoke",
+      "kind": "CTS",
+      "source": "76c98824195674111e1389e07c82b6fa789e9092",
+      "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "architecture": "x64",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "feature_level": "11_1",
+      "outcome": {
+        "exit_code": 1,
+        "verified_requested_level": true
+      },
+      "case_counts": {
+        "passed": 1,
+        "failed": 2,
+        "skipped": 0
+      },
+      "test_binary_sha256": "9db9a4b638a020c5b2c2863a21f87b7214263d5281356ce96a963675042a3c08",
+      "command": "cts_runner.exe ./tools/run_deno --verbose webgpu:api,operation,command_buffer,basic:*",
+      "summary": [
+        "Passed  w/o warnings = 1 / 3 =  33.33%",
+        "Passed with warnings = 0 / 3 =   0.00%",
+        "Skipped              = 0 / 3 =   0.00%",
+        "Failed               = 2 / 3 =  66.67%"
+      ],
+      "result": "fail",
+      "artifact": {
+        "path": "evidence/cts-11_1-command-buffer-basic-x64.txt",
+        "sha256": "d7ca6fb4ab5fee1681752dd827ed1cc26cc82c27b08dd1fd0dcbd5adc3d1c9b8",
+        "raw_sha256": "d7ca6fb4ab5fee1681752dd827ed1cc26cc82c27b08dd1fd0dcbd5adc3d1c9b8"
+      },
+      "stderr": {
+        "path": "evidence/cts-11_1-command-buffer-basic-x64.stderr.txt",
+        "sha256": "84378b22691532ffd665e9774dd3a73a6a3f111412d67049fb0d83dcc8868d9d",
+        "raw_sha256": "84378b22691532ffd665e9774dd3a73a6a3f111412d67049fb0d83dcc8868d9d"
+      }
+    },
+    {
+      "id": "cts_smoke",
+      "kind": "CTS",
+      "source": "76c98824195674111e1389e07c82b6fa789e9092",
+      "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "architecture": "x64",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "feature_level": "11_1",
+      "outcome": {
+        "exit_code": 0,
+        "verified_requested_level": true
+      },
+      "case_counts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test_binary_sha256": "9db9a4b638a020c5b2c2863a21f87b7214263d5281356ce96a963675042a3c08",
+      "command": "cts_runner.exe ./tools/run_deno --verbose webgpu:api,validation,capability_checks,limits,maxStorageBufferBindingSize:validate,*",
+      "summary": [
+        "Passed  w/o warnings = 2 / 2 = 100.00%",
+        "Passed with warnings = 0 / 2 =   0.00%",
+        "Skipped              = 0 / 2 =   0.00%",
+        "Failed               = 0 / 2 =   0.00%"
+      ],
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/cts-11_1-storage-buffer-limit-x64.txt",
+        "sha256": "51e06ef57388688d6aa951efa7bed3977e27e7f06ba6d9859ffc3f65c35a65e2",
+        "raw_sha256": "51e06ef57388688d6aa951efa7bed3977e27e7f06ba6d9859ffc3f65c35a65e2"
+      },
+      "stderr": {
+        "path": "evidence/cts-11_1-storage-buffer-limit-x64.stderr.txt",
+        "sha256": "44b4a52d20a809c5e77779d79e9b9b6d3665d5cba0f05975e3c4b93fe8ce8a10",
+        "raw_sha256": "44b4a52d20a809c5e77779d79e9b9b6d3665d5cba0f05975e3c4b93fe8ce8a10"
+      }
+    },
+    {
+      "id": "cts_smoke",
+      "kind": "CTS",
+      "source": "76c98824195674111e1389e07c82b6fa789e9092",
+      "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "architecture": "x64",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "feature_level": "9_1",
+      "outcome": {
+        "exit_code": 1,
+        "verified_requested_level": true
+      },
+      "case_counts": {
+        "passed": 1,
+        "failed": 2,
+        "skipped": 0
+      },
+      "test_binary_sha256": "9db9a4b638a020c5b2c2863a21f87b7214263d5281356ce96a963675042a3c08",
+      "command": "cts_runner.exe ./tools/run_deno --verbose webgpu:api,operation,command_buffer,basic:*",
+      "summary": [
+        "Passed  w/o warnings = 1 / 3 =  33.33%",
+        "Passed with warnings = 0 / 3 =   0.00%",
+        "Skipped              = 0 / 3 =   0.00%",
+        "Failed               = 2 / 3 =  66.67%"
+      ],
+      "result": "fail",
+      "artifact": {
+        "path": "evidence/cts-9_1-command-buffer-basic-x64.txt",
+        "sha256": "e8d276abefe3fbc2cde810539188ffb25331f52061635da387df47ae425158db",
+        "raw_sha256": "e8d276abefe3fbc2cde810539188ffb25331f52061635da387df47ae425158db"
+      },
+      "stderr": {
+        "path": "evidence/cts-9_1-command-buffer-basic-x64.stderr.txt",
+        "sha256": "1800b8cfa84cef58a4a914954fc53c3c0ccb6f9c770a22b71e2d0c1d931b46f1",
+        "raw_sha256": "1800b8cfa84cef58a4a914954fc53c3c0ccb6f9c770a22b71e2d0c1d931b46f1"
+      }
+    },
+    {
+      "id": "cts_smoke",
+      "kind": "CTS",
+      "source": "76c98824195674111e1389e07c82b6fa789e9092",
+      "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "architecture": "x64",
+      "device": "NVIDIA GeForce RTX 3090 Ti",
+      "feature_level": "9_1",
+      "outcome": {
+        "exit_code": 0,
+        "verified_requested_level": true
+      },
+      "case_counts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "test_binary_sha256": "9db9a4b638a020c5b2c2863a21f87b7214263d5281356ce96a963675042a3c08",
+      "command": "cts_runner.exe ./tools/run_deno --verbose webgpu:api,validation,capability_checks,limits,maxStorageBufferBindingSize:validate,*",
+      "summary": [
+        "Passed  w/o warnings = 2 / 2 = 100.00%",
+        "Passed with warnings = 0 / 2 =   0.00%",
+        "Skipped              = 0 / 2 =   0.00%",
+        "Failed               = 0 / 2 =   0.00%"
+      ],
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/cts-9_1-storage-buffer-limit-x64.txt",
+        "sha256": "a44b81abf6c06f579f2dd308aed87179b0e7464d1bcf8165818ce9015c697c79",
+        "raw_sha256": "a44b81abf6c06f579f2dd308aed87179b0e7464d1bcf8165818ce9015c697c79"
+      },
+      "stderr": {
+        "path": "evidence/cts-9_1-storage-buffer-limit-x64.stderr.txt",
+        "sha256": "d0676835b9cff5a3d5a3ce0f7aac5799000bcb3b29f33506e5cfed48d6821302",
+        "raw_sha256": "d0676835b9cff5a3d5a3ce0f7aac5799000bcb3b29f33506e5cfed48d6821302"
+      }
+    }
+  ]
+}

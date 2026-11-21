@@ -1,0 +1,12 @@
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\wgpu-hal)
+wgpu-hal\src\dx11\hal_queue.rs:452:56: warning: unnecessary qualification
+wgpu-hal\src\dx11\hal_queue.rs:457:52: warning: unnecessary qualification
+wgpu-hal\src\dx11\hal_queue.rs:463:52: warning: unnecessary qualification
+wgpu-hal\src\dx11\hal_queue.rs:469:71: warning: unnecessary qualification
+wgpu-hal\src\dx11\hal_shader.rs:6198:13: warning: unnecessary qualification
+wgpu-hal\src\dx11\hal_shader.rs:6314:13: warning: unnecessary qualification
+wgpu-hal\src\dx11\hal_shader.rs:6550:13: warning: unnecessary qualification
+wgpu-hal\src\auxil\mod.rs:128:15: warning: function `adjust_raw_limits` is never used
+warning: `wgpu-hal` (lib test) generated 8 warnings (run `cargo fix --lib -p wgpu-hal --tests` to apply 7 suggestions)
+    Finished `test` profile [unoptimized] target(s) in 8.44s
+  Executable unittests src\lib.rs (E:/codex-dx11-FL11_1/target\debug\deps\wgpu_hal-ff8ff1e8a00c333a.exe)

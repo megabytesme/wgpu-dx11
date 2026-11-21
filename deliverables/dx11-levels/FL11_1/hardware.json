@@ -1,0 +1,2057 @@
+{
+  "source": "be1b44bebcbd084e2f16a24ea0c71091d28894f8",
+  "baseline": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+  "utc": "2026-11-21T14:05:18.444735+00:00",
+  "devices": [
+    {
+      "id": "rtx3090ti-x64",
+      "host": "BEN-DESKTOP",
+      "os_build": "10.0.26300",
+      "architecture": "x64",
+      "adapter": "NVIDIA GeForce RTX 3090 Ti",
+      "vendor": "0x10de",
+      "device": "0x2203",
+      "driver": "32.0.16.2101",
+      "luid": "00000000:00014a80",
+      "software": false,
+      "requested": "11_1",
+      "returned": "11_1",
+      "get_feature_level": "0xb100",
+      "options": {
+        "OutputMergerLogicOp": true,
+        "UAVOnlyRenderingForcedSampleCount": true,
+        "DiscardAPIsSeenByDriver": true,
+        "FlagsForUpdateAndCopySeenByDriver": true,
+        "ClearView": true,
+        "CopyWithOverlap": true,
+        "ConstantBufferPartialUpdate": true,
+        "ConstantBufferOffsetting": true,
+        "MapNoOverwriteOnDynamicConstantBuffer": true,
+        "MapNoOverwriteOnDynamicBufferSRV": true,
+        "MultisampleRTVWithForcedSampleCountOne": true,
+        "SAD4ShaderInstructions": true,
+        "ExtendedDoublesShaderInstructions": true,
+        "ExtendedResourceSharing": true
+      },
+      "basic_double_precision": true,
+      "artifact": {
+        "path": "evidence/native-x64.txt",
+        "sha256": "f230e1a76a18faaf23058200242ce89146f26fd07fca3186e61e0a0c97de19eb",
+        "raw_sha256": "991e552eb2d7c1a32a4f63144982482b8a0d85bb850eb2aa449a05d744292cc0"
+      },
+      "test_binary": "E:\\codex-dx11-FL11_1\\artifacts\\wgpu-hal-x64.exe",
+      "test_binary_sha256": "7d31bdd9c933824c59aa33d6973247c3fcab1b6ba36679112f03df6cdc52acfe",
+      "format_queries": {
+        "0": {
+          "support": {
+            "bits": 131073
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "1": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "2": {
+          "support": {
+            "bits": 49738747
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "3": {
+          "support": {
+            "bits": 41046523
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "4": {
+          "support": {
+            "bits": 41046523
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "5": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "6": {
+          "support": {
+            "bits": 5640699
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "7": {
+          "support": {
+            "bits": 5378555
+          },
+          "support2": {
+            "bits": 256
+          }
+        },
+        "8": {
+          "support": {
+            "bits": 5378555
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "9": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "10": {
+          "support": {
+            "bits": 318698483
+          },
+          "support2": {
+            "bits": 83648
+          }
+        },
+        "11": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "12": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "13": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "14": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "15": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "16": {
+          "support": {
+            "bits": 49738747
+          },
+          "support2": {
+            "bits": 704
+          }
+        },
+        "17": {
+          "support": {
+            "bits": 41046523
+          },
+          "support2": {
+            "bits": 960
+          }
+        },
+        "18": {
+          "support": {
+            "bits": 41046523
+          },
+          "support2": {
+            "bits": 704
+          }
+        },
+        "19": {
+          "support": {
+            "bits": 1183920
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "20": {
+          "support": {
+            "bits": 3346608
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "21": {
+          "support": {
+            "bits": 80877488
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "22": {
+          "support": {
+            "bits": 5378480
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "23": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "24": {
+          "support": {
+            "bits": 872346611
+          },
+          "support2": {
+            "bits": 83648
+          }
+        },
+        "25": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "26": {
+          "support": {
+            "bits": 48690163
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "27": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "28": {
+          "support": {
+            "bits": 872346611
+          },
+          "support2": {
+            "bits": 83648
+          }
+        },
+        "29": {
+          "support": {
+            "bits": 301921264
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "30": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "31": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "32": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "33": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "34": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "35": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "36": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "37": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "38": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "39": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "40": {
+          "support": {
+            "bits": 3346608
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "41": {
+          "support": {
+            "bits": 116848635
+          },
+          "support2": {
+            "bits": 1736
+          }
+        },
+        "42": {
+          "support": {
+            "bits": 41046527
+          },
+          "support2": {
+            "bits": 2047
+          }
+        },
+        "43": {
+          "support": {
+            "bits": 41046523
+          },
+          "support2": {
+            "bits": 1791
+          }
+        },
+        "44": {
+          "support": {
+            "bits": 1183920
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "45": {
+          "support": {
+            "bits": 3346608
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "46": {
+          "support": {
+            "bits": 80877488
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "47": {
+          "support": {
+            "bits": 5378480
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "48": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "49": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "50": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "51": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "52": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "53": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "54": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "55": {
+          "support": {
+            "bits": 3346608
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "56": {
+          "support": {
+            "bits": 116848627
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "57": {
+          "support": {
+            "bits": 41046519
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "58": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "59": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "60": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "61": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "62": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "63": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "64": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "65": {
+          "support": {
+            "bits": 48690160
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "66": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "67": {
+          "support": {
+            "bits": 8524784
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "68": {
+          "support": {
+            "bits": 8524784
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "69": {
+          "support": {
+            "bits": 8524784
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "70": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "71": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "72": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "73": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "74": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "75": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "76": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "77": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "78": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "79": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "80": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "81": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "82": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "83": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "84": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "85": {
+          "support": {
+            "bits": 15135728
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "86": {
+          "support": {
+            "bits": 15135728
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "87": {
+          "support": {
+            "bits": 872346611
+          },
+          "support2": {
+            "bits": 83648
+          }
+        },
+        "88": {
+          "support": {
+            "bits": 821490675
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "89": {
+          "support": {
+            "bits": 286916640
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "90": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "91": {
+          "support": {
+            "bits": 301921264
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "92": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "93": {
+          "support": {
+            "bits": 16184304
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "94": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "95": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "96": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "97": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "98": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "99": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "100": {
+          "support": {
+            "bits": 713224992
+          },
+          "support2": {
+            "bits": 1152
+          }
+        },
+        "101": {
+          "support": {
+            "bits": 713163552
+          },
+          "support2": {
+            "bits": 1152
+          }
+        },
+        "102": {
+          "support": {
+            "bits": 713167648
+          },
+          "support2": {
+            "bits": 1152
+          }
+        },
+        "103": {
+          "support": {
+            "bits": 4202873632
+          },
+          "support2": {
+            "bits": 83072
+          }
+        },
+        "104": {
+          "support": {
+            "bits": 981648160
+          },
+          "support2": {
+            "bits": 83072
+          }
+        },
+        "105": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "106": {
+          "support": {
+            "bits": 939524128
+          },
+          "support2": {
+            "bits": 1024
+          }
+        },
+        "107": {
+          "support": {
+            "bits": 981599008
+          },
+          "support2": {
+            "bits": 83072
+          }
+        },
+        "108": {
+          "support": {
+            "bits": 578945824
+          },
+          "support2": {
+            "bits": 1152
+          }
+        },
+        "109": {
+          "support": {
+            "bits": 578945824
+          },
+          "support2": {
+            "bits": 1152
+          }
+        },
+        "110": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "111": {
+          "support": {
+            "bits": 537002016
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "112": {
+          "support": {
+            "bits": 537002016
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "113": {
+          "support": {
+            "bits": 537002016
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "114": {
+          "support": {
+            "bits": 537002016
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "115": {
+          "support": {
+            "bits": 8786928
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "130": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "131": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "132": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "189": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "190": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "191": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        }
+      }
+    },
+    {
+      "id": "rtx3090ti-x86",
+      "host": "BEN-DESKTOP",
+      "os_build": "10.0.26300",
+      "architecture": "x86",
+      "adapter": "NVIDIA GeForce RTX 3090 Ti",
+      "vendor": "0x10de",
+      "device": "0x2203",
+      "driver": "32.0.16.2101",
+      "luid": "00000000:00014a80",
+      "software": false,
+      "requested": "11_1",
+      "returned": "11_1",
+      "get_feature_level": "0xb100",
+      "options": {
+        "OutputMergerLogicOp": true,
+        "UAVOnlyRenderingForcedSampleCount": true,
+        "DiscardAPIsSeenByDriver": true,
+        "FlagsForUpdateAndCopySeenByDriver": true,
+        "ClearView": true,
+        "CopyWithOverlap": true,
+        "ConstantBufferPartialUpdate": true,
+        "ConstantBufferOffsetting": true,
+        "MapNoOverwriteOnDynamicConstantBuffer": true,
+        "MapNoOverwriteOnDynamicBufferSRV": true,
+        "MultisampleRTVWithForcedSampleCountOne": true,
+        "SAD4ShaderInstructions": true,
+        "ExtendedDoublesShaderInstructions": true,
+        "ExtendedResourceSharing": true
+      },
+      "basic_double_precision": true,
+      "artifact": {
+        "path": "evidence/native-x86.txt",
+        "sha256": "f3320af4ed510f11fe292c99877ffa665f6af122afa893b26caccfe3d36ab8c3",
+        "raw_sha256": "49bef71997d65aeac27bfc433bd124979ffa0e58137d95b79f60cfa3515fed73"
+      },
+      "test_binary": "E:\\codex-dx11-FL11_1\\artifacts\\wgpu-hal-x86.exe",
+      "test_binary_sha256": "652576596314757841e5adaacd446c294880fd92a8cc08cdfeebc3d86a767179",
+      "format_queries": {
+        "0": {
+          "support": {
+            "bits": 131073
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "1": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "2": {
+          "support": {
+            "bits": 49738747
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "3": {
+          "support": {
+            "bits": 41046523
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "4": {
+          "support": {
+            "bits": 41046523
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "5": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "6": {
+          "support": {
+            "bits": 5640699
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "7": {
+          "support": {
+            "bits": 5378555
+          },
+          "support2": {
+            "bits": 256
+          }
+        },
+        "8": {
+          "support": {
+            "bits": 5378555
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "9": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "10": {
+          "support": {
+            "bits": 318698483
+          },
+          "support2": {
+            "bits": 83648
+          }
+        },
+        "11": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "12": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "13": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "14": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "15": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "16": {
+          "support": {
+            "bits": 49738747
+          },
+          "support2": {
+            "bits": 704
+          }
+        },
+        "17": {
+          "support": {
+            "bits": 41046523
+          },
+          "support2": {
+            "bits": 960
+          }
+        },
+        "18": {
+          "support": {
+            "bits": 41046523
+          },
+          "support2": {
+            "bits": 704
+          }
+        },
+        "19": {
+          "support": {
+            "bits": 1183920
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "20": {
+          "support": {
+            "bits": 3346608
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "21": {
+          "support": {
+            "bits": 80877488
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "22": {
+          "support": {
+            "bits": 5378480
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "23": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "24": {
+          "support": {
+            "bits": 872346611
+          },
+          "support2": {
+            "bits": 83648
+          }
+        },
+        "25": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "26": {
+          "support": {
+            "bits": 48690163
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "27": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "28": {
+          "support": {
+            "bits": 872346611
+          },
+          "support2": {
+            "bits": 83648
+          }
+        },
+        "29": {
+          "support": {
+            "bits": 301921264
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "30": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "31": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "32": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "33": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "34": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "35": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "36": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "37": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "38": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "39": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "40": {
+          "support": {
+            "bits": 3346608
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "41": {
+          "support": {
+            "bits": 116848635
+          },
+          "support2": {
+            "bits": 1736
+          }
+        },
+        "42": {
+          "support": {
+            "bits": 41046527
+          },
+          "support2": {
+            "bits": 2047
+          }
+        },
+        "43": {
+          "support": {
+            "bits": 41046523
+          },
+          "support2": {
+            "bits": 1791
+          }
+        },
+        "44": {
+          "support": {
+            "bits": 1183920
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "45": {
+          "support": {
+            "bits": 3346608
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "46": {
+          "support": {
+            "bits": 80877488
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "47": {
+          "support": {
+            "bits": 5378480
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "48": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "49": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "50": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "51": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "52": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "53": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "54": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "55": {
+          "support": {
+            "bits": 3346608
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "56": {
+          "support": {
+            "bits": 116848627
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "57": {
+          "support": {
+            "bits": 41046519
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "58": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "59": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "60": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "61": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "62": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1984
+          }
+        },
+        "63": {
+          "support": {
+            "bits": 49738739
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "64": {
+          "support": {
+            "bits": 41046515
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "65": {
+          "support": {
+            "bits": 48690160
+          },
+          "support2": {
+            "bits": 1728
+          }
+        },
+        "66": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "67": {
+          "support": {
+            "bits": 8524784
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "68": {
+          "support": {
+            "bits": 8524784
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "69": {
+          "support": {
+            "bits": 8524784
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "70": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "71": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "72": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "73": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "74": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "75": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "76": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "77": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "78": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "79": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "80": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "81": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "82": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "83": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "84": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "85": {
+          "support": {
+            "bits": 15135728
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "86": {
+          "support": {
+            "bits": 15135728
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "87": {
+          "support": {
+            "bits": 872346611
+          },
+          "support2": {
+            "bits": 83648
+          }
+        },
+        "88": {
+          "support": {
+            "bits": 821490675
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "89": {
+          "support": {
+            "bits": 286916640
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "90": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "91": {
+          "support": {
+            "bits": 301921264
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "92": {
+          "support": {
+            "bits": 1183984
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "93": {
+          "support": {
+            "bits": 16184304
+          },
+          "support2": {
+            "bits": 1536
+          }
+        },
+        "94": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "95": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "96": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "97": {
+          "support": {
+            "bits": 1183968
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "98": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "99": {
+          "support": {
+            "bits": 9573344
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "100": {
+          "support": {
+            "bits": 713224992
+          },
+          "support2": {
+            "bits": 1152
+          }
+        },
+        "101": {
+          "support": {
+            "bits": 713163552
+          },
+          "support2": {
+            "bits": 1152
+          }
+        },
+        "102": {
+          "support": {
+            "bits": 713167648
+          },
+          "support2": {
+            "bits": 1152
+          }
+        },
+        "103": {
+          "support": {
+            "bits": 4202873632
+          },
+          "support2": {
+            "bits": 83072
+          }
+        },
+        "104": {
+          "support": {
+            "bits": 981648160
+          },
+          "support2": {
+            "bits": 83072
+          }
+        },
+        "105": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "106": {
+          "support": {
+            "bits": 939524128
+          },
+          "support2": {
+            "bits": 1024
+          }
+        },
+        "107": {
+          "support": {
+            "bits": 981599008
+          },
+          "support2": {
+            "bits": 83072
+          }
+        },
+        "108": {
+          "support": {
+            "bits": 578945824
+          },
+          "support2": {
+            "bits": 1152
+          }
+        },
+        "109": {
+          "support": {
+            "bits": 578945824
+          },
+          "support2": {
+            "bits": 1152
+          }
+        },
+        "110": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "111": {
+          "support": {
+            "bits": 537002016
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "112": {
+          "support": {
+            "bits": 537002016
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "113": {
+          "support": {
+            "bits": 537002016
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "114": {
+          "support": {
+            "bits": 537002016
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "115": {
+          "support": {
+            "bits": 8786928
+          },
+          "support2": {
+            "bits": 512
+          }
+        },
+        "130": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "131": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "132": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "189": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "190": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        },
+        "191": {
+          "support": {
+            "hresult": "0x80004005"
+          },
+          "support2": {
+            "hresult": "0x80004005"
+          }
+        }
+      }
+    }
+  ],
+  "pending": [
+    {
+      "device": "Surface Pro X ARM64",
+      "result": "unknown",
+      "detail": "SSH TCP 22 unavailable"
+    },
+    {
+      "device": "Lumia 950 XL ARM32",
+      "result": "unknown",
+      "detail": "No current exact FL11_1 evidence"
+    },
+    {
+      "device": "Historical or independent native-ceiling hardware",
+      "result": "unknown"
+    }
+  ]
+}

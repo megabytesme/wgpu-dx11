@@ -1,0 +1,259 @@
+{
+  "source": "be1b44bebcbd084e2f16a24ea0c71091d28894f8",
+  "host": "BEN-DESKTOP",
+  "device": "NVIDIA GeForce RTX 3090 Ti",
+  "workload": "Four matching 32x32 public wgpu cube draws, two with native D16, fixed 2x2 face textures and output readback",
+  "metric": "CPU-clock submit-to-map latency, sampled process peak working set",
+  "scope": "Diagnostic, existing public projection only. Product gameplay, steady-state GPU timing, and peak GPU memory remain open.",
+  "test_binary_sha256": "3186c67324e7047730a11c6c076514b95ec528fbba10cb4d4f40ee2f30113d74",
+  "summary": [
+    {
+      "architecture": "x64",
+      "level": "11_1",
+      "samples": 5,
+      "median_submit_to_mapped_us": 5119,
+      "max_process_working_set_bytes": 62042112
+    },
+    {
+      "architecture": "x64",
+      "level": "11_0",
+      "samples": 5,
+      "median_submit_to_mapped_us": 5198,
+      "max_process_working_set_bytes": 62631936
+    },
+    {
+      "architecture": "x64",
+      "level": "9_1",
+      "samples": 5,
+      "median_submit_to_mapped_us": 4749,
+      "max_process_working_set_bytes": 62230528
+    }
+  ],
+  "samples": [
+    {
+      "round": 0,
+      "requested": "11_1",
+      "actual": "11_1",
+      "submit_to_mapped_us": 4495,
+      "peak_process_working_set_bytes": 62013440,
+      "log": "scene-x64-11_1-0.txt",
+      "log_sha256": "11edc8ef4a95e154ffc28cdaa0f21601d6de64f8bc45239e4b285747f3e19d2b",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-11_1-0.txt",
+        "sha256": "84bc4cfef79adb47042c7ee69fd164ef33bd211867b24125967186d882a0a717",
+        "raw_sha256": "11edc8ef4a95e154ffc28cdaa0f21601d6de64f8bc45239e4b285747f3e19d2b"
+      }
+    },
+    {
+      "round": 0,
+      "requested": "11_0",
+      "actual": "11_0",
+      "submit_to_mapped_us": 8328,
+      "peak_process_working_set_bytes": 62058496,
+      "log": "scene-x64-11_0-0.txt",
+      "log_sha256": "5b351dfa6b1964654565389364369c4168b1d5f2b0c20e856ce1cebe3cf55f4d",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-11_0-0.txt",
+        "sha256": "8ea5b04558d13eb96c3d346aedf1eab2e90ac0e48418863b0da0969eb3094418",
+        "raw_sha256": "5b351dfa6b1964654565389364369c4168b1d5f2b0c20e856ce1cebe3cf55f4d"
+      }
+    },
+    {
+      "round": 0,
+      "requested": "9_1",
+      "actual": "9_1",
+      "submit_to_mapped_us": 4550,
+      "peak_process_working_set_bytes": 62005248,
+      "log": "scene-x64-9_1-0.txt",
+      "log_sha256": "c24086feefcc22973e6091c8576837f5c2b01fb7f48c8264bb976071db018e69",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-9_1-0.txt",
+        "sha256": "cbb5976e8b9c36cb5bee09c225653a6bdd40895663a06d0cc13863a65deb4731",
+        "raw_sha256": "c24086feefcc22973e6091c8576837f5c2b01fb7f48c8264bb976071db018e69"
+      }
+    },
+    {
+      "round": 1,
+      "requested": "11_0",
+      "actual": "11_0",
+      "submit_to_mapped_us": 7809,
+      "peak_process_working_set_bytes": 61603840,
+      "log": "scene-x64-11_0-1.txt",
+      "log_sha256": "05de0e0fb795732f1382fe02d7f932537e9646b6e2a1458b5617e570b450f099",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-11_0-1.txt",
+        "sha256": "5679e1bb471812a6e57b39e951b01b8322313767f09e552db13651770c45380b",
+        "raw_sha256": "05de0e0fb795732f1382fe02d7f932537e9646b6e2a1458b5617e570b450f099"
+      }
+    },
+    {
+      "round": 1,
+      "requested": "9_1",
+      "actual": "9_1",
+      "submit_to_mapped_us": 4749,
+      "peak_process_working_set_bytes": 61648896,
+      "log": "scene-x64-9_1-1.txt",
+      "log_sha256": "e1c4b587f829229e07f7b48e227950521f418d507551968adb79ee28fa0af62f",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-9_1-1.txt",
+        "sha256": "75cfb36a2c1de25e31beb398739456c681cdbf0097150a36a2332bb649d92e8a",
+        "raw_sha256": "e1c4b587f829229e07f7b48e227950521f418d507551968adb79ee28fa0af62f"
+      }
+    },
+    {
+      "round": 1,
+      "requested": "11_1",
+      "actual": "11_1",
+      "submit_to_mapped_us": 5509,
+      "peak_process_working_set_bytes": 61849600,
+      "log": "scene-x64-11_1-1.txt",
+      "log_sha256": "19440b32cd60c8b783bde4c9bcaf28a4a62b392679e9ea63b0f984650ab7a615",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-11_1-1.txt",
+        "sha256": "e3d02f98760bbde2b6885a6296c3f34c14c4a121a8b99323dc85dba92e2b5ca8",
+        "raw_sha256": "19440b32cd60c8b783bde4c9bcaf28a4a62b392679e9ea63b0f984650ab7a615"
+      }
+    },
+    {
+      "round": 2,
+      "requested": "9_1",
+      "actual": "9_1",
+      "submit_to_mapped_us": 4399,
+      "peak_process_working_set_bytes": 62136320,
+      "log": "scene-x64-9_1-2.txt",
+      "log_sha256": "2f0eb7b7d4b0d1f06ae5ad832e757fdd7c486f28302b15e7ed5cdaceecf06ede",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-9_1-2.txt",
+        "sha256": "6ee3ba25e7296a9925771dabbaaf466ebe79bce80c13241e1ddf06e82ff7e44b",
+        "raw_sha256": "2f0eb7b7d4b0d1f06ae5ad832e757fdd7c486f28302b15e7ed5cdaceecf06ede"
+      }
+    },
+    {
+      "round": 2,
+      "requested": "11_1",
+      "actual": "11_1",
+      "submit_to_mapped_us": 5323,
+      "peak_process_working_set_bytes": 61841408,
+      "log": "scene-x64-11_1-2.txt",
+      "log_sha256": "b733eaf886bd12525b4eb8fe56a8801b5ca733154033d77f441ec928773d4d10",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-11_1-2.txt",
+        "sha256": "24256db43999c288eb42ec892e1419e55fe4fbafa220f4619fd64bb4e52d94d5",
+        "raw_sha256": "b733eaf886bd12525b4eb8fe56a8801b5ca733154033d77f441ec928773d4d10"
+      }
+    },
+    {
+      "round": 2,
+      "requested": "11_0",
+      "actual": "11_0",
+      "submit_to_mapped_us": 5198,
+      "peak_process_working_set_bytes": 62631936,
+      "log": "scene-x64-11_0-2.txt",
+      "log_sha256": "4974727992d47d562404d5db967a4db9e1372c7f050678c32b08a6e27bd7975a",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-11_0-2.txt",
+        "sha256": "5c99290dd808598b5501e7753356cb3102a075ea177b5085fddbfc4c0868edbd",
+        "raw_sha256": "4974727992d47d562404d5db967a4db9e1372c7f050678c32b08a6e27bd7975a"
+      }
+    },
+    {
+      "round": 3,
+      "requested": "11_1",
+      "actual": "11_1",
+      "submit_to_mapped_us": 5119,
+      "peak_process_working_set_bytes": 62042112,
+      "log": "scene-x64-11_1-3.txt",
+      "log_sha256": "056af6e018b5db7d205958c5ec6f4a52a1aef93134d8ed0b4e44589db5ea1a7c",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-11_1-3.txt",
+        "sha256": "45d63e3d4b369adf507682048d91f27710925dd9ff6207632cf3ebce5afa83e8",
+        "raw_sha256": "056af6e018b5db7d205958c5ec6f4a52a1aef93134d8ed0b4e44589db5ea1a7c"
+      }
+    },
+    {
+      "round": 3,
+      "requested": "11_0",
+      "actual": "11_0",
+      "submit_to_mapped_us": 4295,
+      "peak_process_working_set_bytes": 62312448,
+      "log": "scene-x64-11_0-3.txt",
+      "log_sha256": "1224e639b82bc26844aabde13cdbb2d375586c42d84aebd857b81bd065ea6af1",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-11_0-3.txt",
+        "sha256": "b8b7e6b4b04146e67ccf129b80b4c96f9e5e448ac861d2b4ca8de2b97c0e343e",
+        "raw_sha256": "1224e639b82bc26844aabde13cdbb2d375586c42d84aebd857b81bd065ea6af1"
+      }
+    },
+    {
+      "round": 3,
+      "requested": "9_1",
+      "actual": "9_1",
+      "submit_to_mapped_us": 4961,
+      "peak_process_working_set_bytes": 62230528,
+      "log": "scene-x64-9_1-3.txt",
+      "log_sha256": "18dfc5fdaaf532ded2963bac55845bc2d91ed488f0280ce0fbfe57470445ea3c",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-9_1-3.txt",
+        "sha256": "13f88009a6390736a7abf976113befa44c68552061cea2ff803c281959b54f83",
+        "raw_sha256": "18dfc5fdaaf532ded2963bac55845bc2d91ed488f0280ce0fbfe57470445ea3c"
+      }
+    },
+    {
+      "round": 4,
+      "requested": "11_0",
+      "actual": "11_0",
+      "submit_to_mapped_us": 4733,
+      "peak_process_working_set_bytes": 61820928,
+      "log": "scene-x64-11_0-4.txt",
+      "log_sha256": "48a6f47cbdfd1ddc5bf1845a77b378b4dfe81ffcb7b76034997e326b2164308d",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-11_0-4.txt",
+        "sha256": "cc72afa9a117ab20784d2b515796f71624c5b6915a3a403057c4a6b3da782846",
+        "raw_sha256": "48a6f47cbdfd1ddc5bf1845a77b378b4dfe81ffcb7b76034997e326b2164308d"
+      }
+    },
+    {
+      "round": 4,
+      "requested": "9_1",
+      "actual": "9_1",
+      "submit_to_mapped_us": 5582,
+      "peak_process_working_set_bytes": 61997056,
+      "log": "scene-x64-9_1-4.txt",
+      "log_sha256": "4645420e42d8f79d8c7e59d1e8185f116b01eae23e50648c65610848d3020489",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-9_1-4.txt",
+        "sha256": "bc2aac4cdbcf9456c554aa8eedd0fff2cf8af59f7b5926dae68f3ffaedf9db49",
+        "raw_sha256": "4645420e42d8f79d8c7e59d1e8185f116b01eae23e50648c65610848d3020489"
+      }
+    },
+    {
+      "round": 4,
+      "requested": "11_1",
+      "actual": "11_1",
+      "submit_to_mapped_us": 5038,
+      "peak_process_working_set_bytes": 61931520,
+      "log": "scene-x64-11_1-4.txt",
+      "log_sha256": "69606453e1771446a9eab69fa8fed4cc92a25fd8aa8fc3728adcc60ea4d4b39a",
+      "architecture": "x64",
+      "artifact": {
+        "path": "evidence/scene-x64-11_1-4.txt",
+        "sha256": "643616a1c3097655d32527443a6726ff98ea6f5c4bd7866beb3676cda3fbb8eb",
+        "raw_sha256": "69606453e1771446a9eab69fa8fed4cc92a25fd8aa8fc3728adcc60ea4d4b39a"
+      }
+    }
+  ]
+}

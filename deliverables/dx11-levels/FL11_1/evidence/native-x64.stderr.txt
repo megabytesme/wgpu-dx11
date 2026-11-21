@@ -1,0 +1,4 @@
+
+thread 'dx11::fl11_1::tests::tier_fl11_1_packed_color_mips' (77140) panicked at wgpu-hal\src\dx11\..\..\tests\dx11\fl11_1.rs:1131:13:
+packed mip cases with incorrect pixels: [(DXGI_FORMAT(86), false), (DXGI_FORMAT(86), true), (DXGI_FORMAT(115), false)]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

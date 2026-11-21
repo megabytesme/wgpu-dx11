@@ -1,0 +1,8 @@
+
+running 1 test
+Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1 (hardware L11_0); physical DXGI adapter; driver version 32.0.16.2101" requested=Some("11_0") actual=FL11_0 software=false; workload=textured perspective cube with D16 depth
+PASS: public FL9_1 perspective cube sampled a 2x2 face texture and used D16 depth; depth-tested opposite face orders matched all 1,024 pixels, while painter-order controls differed at 223 pixels; clear/red/green/blue/yellow=[779, 154, 0, 21, 70]
+Scene submit_to_mapped_us=4295
+test public_dx11_textured_depth_tested_3d_scene_at_fl91 ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.39s

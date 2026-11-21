@@ -1,0 +1,69 @@
+[pass] webgpu:api,operation,command_buffer,basic:empty: (354ms). Log:
+[fail] webgpu:api,operation,command_buffer,basic:b2t2b: (46ms). Log:
+  - EXPECTATION FAILED: Array had unexpected contents at indices 0 through 0.
+     Starting at index 0:
+       actual == 0x: 00000000
+       failed ->           xx
+     expected ==     01020304
+      at (elided: below max severity)
+  - EXCEPTION: Error: Unexpected validation error occurred: Texture usages TextureUsages(COPY_SRC | COPY_DST) are not allowed on a texture of type Rgba8Uint due to downlevel restrictions
+        at DeviceHolder.attemptEndTestScope (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:466:13)
+        at eventLoopTick (ext:core/01_core.js:179:7)
+        at async DevicePool.release (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:104:7)
+        at async Promise.allSettled (<anonymous>)
+        at async AllFeaturesMaxLimitsGPUTestSubcaseBatchState.finalize (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/gpu_test.js:154:21)
+        at async RunCaseSpecific.run (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/internal/test_group.js:694:9)
+        at async file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/runtime/cmdline.js:218:5
+[fail] webgpu:api,operation,command_buffer,basic:b2t2t2b: (42ms). Log:
+  - EXPECTATION FAILED: Array had unexpected contents at indices 0 through 0.
+     Starting at index 0:
+       actual == 0x: 00000000
+       failed ->           xx
+     expected ==     01020304
+      at (elided: below max severity)
+  - EXCEPTION: Error: Unexpected validation error occurred: Texture usages TextureUsages(COPY_SRC | COPY_DST) are not allowed on a texture of type Rgba8Uint due to downlevel restrictions
+        at DeviceHolder.attemptEndTestScope (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:466:13)
+        at eventLoopTick (ext:core/01_core.js:179:7)
+        at async DevicePool.release (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:104:7)
+        at async Promise.allSettled (<anonymous>)
+        at async AllFeaturesMaxLimitsGPUTestSubcaseBatchState.finalize (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/gpu_test.js:154:21)
+        at async RunCaseSpecific.run (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/internal/test_group.js:694:9)
+        at async file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/runtime/cmdline.js:218:5
+
+** Failures **
+[fail] webgpu:api,operation,command_buffer,basic:b2t2b: (46ms). Log:
+  - EXPECTATION FAILED: Array had unexpected contents at indices 0 through 0.
+     Starting at index 0:
+       actual == 0x: 00000000
+       failed ->           xx
+     expected ==     01020304
+      at (elided: below max severity)
+  - EXCEPTION: Error: Unexpected validation error occurred: Texture usages TextureUsages(COPY_SRC | COPY_DST) are not allowed on a texture of type Rgba8Uint due to downlevel restrictions
+        at DeviceHolder.attemptEndTestScope (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:466:13)
+        at eventLoopTick (ext:core/01_core.js:179:7)
+        at async DevicePool.release (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:104:7)
+        at async Promise.allSettled (<anonymous>)
+        at async AllFeaturesMaxLimitsGPUTestSubcaseBatchState.finalize (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/gpu_test.js:154:21)
+        at async RunCaseSpecific.run (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/internal/test_group.js:694:9)
+        at async file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/runtime/cmdline.js:218:5
+[fail] webgpu:api,operation,command_buffer,basic:b2t2t2b: (42ms). Log:
+  - EXPECTATION FAILED: Array had unexpected contents at indices 0 through 0.
+     Starting at index 0:
+       actual == 0x: 00000000
+       failed ->           xx
+     expected ==     01020304
+      at (elided: below max severity)
+  - EXCEPTION: Error: Unexpected validation error occurred: Texture usages TextureUsages(COPY_SRC | COPY_DST) are not allowed on a texture of type Rgba8Uint due to downlevel restrictions
+        at DeviceHolder.attemptEndTestScope (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:466:13)
+        at eventLoopTick (ext:core/01_core.js:179:7)
+        at async DevicePool.release (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:104:7)
+        at async Promise.allSettled (<anonymous>)
+        at async AllFeaturesMaxLimitsGPUTestSubcaseBatchState.finalize (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/gpu_test.js:154:21)
+        at async RunCaseSpecific.run (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/internal/test_group.js:694:9)
+        at async file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/runtime/cmdline.js:218:5
+
+** Summary **
+Passed  w/o warnings = 1 / 3 =  33.33%
+Passed with warnings = 0 / 3 =   0.00%
+Skipped              = 0 / 3 =   0.00%
+Failed               = 2 / 3 =  66.67%

@@ -1,0 +1,68 @@
+    Checking log v0.4.32
+    Checking raw-window-handle v0.6.2
+    Checking once_cell v1.21.4
+    Checking unicode-xid v0.2.6
+    Checking pin-project-lite v0.2.17
+    Checking tracing-core v0.1.36
+    Checking smol_str v0.2.2
+    Checking dpi v0.1.2
+    Checking windows-sys v0.61.2
+   Compiling naga v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\naga)
+    Checking libloading v0.8.9
+    Checking unicode-segmentation v1.13.3
+    Checking unicode-ident v1.0.24
+    Checking cursor-icon v1.2.0
+    Checking windows_x86_64_msvc v0.52.6
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\wgpu-hal)
+    Checking glam v0.33.1
+    Checking naga-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\naga-types)
+    Checking glutin_wgl_sys v0.6.1
+    Checking pp-rs v0.2.1
+    Checking env_filter v1.0.0 (https://github.com/rust-cli/env_logger.git?rev=d550741#d550741c)
+    Checking windows-targets v0.52.6
+    Checking windows-sys v0.52.0
+    Checking env_logger v0.11.9 (https://github.com/rust-cli/env_logger.git?rev=d550741#d550741c)
+    Checking wgpu-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\wgpu-types)
+    Checking tracing v0.1.44
+    Checking winapi-util v0.1.11
+    Checking termcolor v1.4.1
+    Checking codespan-reporting v0.13.1
+    Checking glutin_egl_sys v0.7.1
+    Checking winit v0.30.13
+    Checking glutin v0.32.3
+    Checking glutin-winit v0.5.0
+    Checking wgpu-naga-bridge v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\wgpu-naga-bridge)
+wgpu-hal\src\dx11\hal_queue.rs:452:56: warning: unnecessary qualification
+wgpu-hal\src\dx11\hal_queue.rs:457:52: warning: unnecessary qualification
+wgpu-hal\src\dx11\hal_queue.rs:463:52: warning: unnecessary qualification
+wgpu-hal\src\dx11\hal_queue.rs:469:71: warning: unnecessary qualification
+wgpu-hal\src\dx11\hal_shader.rs:6198:13: warning: unnecessary qualification
+wgpu-hal\src\dx11\hal_shader.rs:6314:13: warning: unnecessary qualification
+wgpu-hal\src\dx11\hal_shader.rs:6550:13: warning: unnecessary qualification
+wgpu-hal\src\auxil\mod.rs:128:15: warning: function `adjust_raw_limits` is never used
+wgpu-hal\src\dx11\adapter.rs:70:9: warning: you seem to be trying to use `match` to destructure a single infallible pattern. Consider using `let`: help: try: `let AdapterInner::Native(native) = &self.inner;`
+wgpu-hal\src\dx11\..\..\tests\dx11\fl11_1.rs:590:28: warning: called `.as_ref().map(|r| &**r)` on an `Option` value: help: consider using as_deref: `rasterizer.as_deref()`
+wgpu-hal\src\dx11\..\..\tests\dx11\fl11_1.rs:603:33: warning: called `.as_ref().map(|b| &**b)` on an `Option` value: help: consider using as_deref: `blend.as_deref()`
+wgpu-hal\src\dx11\hal_device.rs:1758:57: warning: an array of `Range` that is only one element
+wgpu-hal\src\dx11\hal_device.rs:1887:56: warning: an array of `Range` that is only one element
+wgpu-hal\src\dx11\hal_device.rs:1893:59: warning: an array of `Range` that is only one element
+wgpu-hal\src\dx11\hal_device.rs:1908:56: warning: an array of `Range` that is only one element
+wgpu-hal\src\dx11\hal_device.rs:1914:59: warning: an array of `Range` that is only one element
+wgpu-hal\src\dx11\hal_device.rs:1925:56: warning: an array of `Range` that is only one element
+wgpu-hal\src\dx11\hal_device.rs:1931:59: warning: an array of `Range` that is only one element
+wgpu-hal\src\dx11\hal_index.rs:219:5: warning: this function has too many arguments (8/7)
+wgpu-hal\src\dx11\hal_index.rs:1615:5: warning: this function has too many arguments (9/7)
+wgpu-hal\src\dx11\hal_index.rs:2174:1: warning: this function has too many arguments (8/7)
+wgpu-hal\src\dx11\hal_pipeline.rs:597:5: warning: this function has too many arguments (8/7)
+wgpu-hal\src\dx11\hal_queue.rs:7:17: warning: used import from `std` instead of `core`
+wgpu-hal\src\dx11\hal_queue.rs:35:36: warning: used import from `std` instead of `core`: help: consider importing the item from `core`: `core`
+wgpu-hal\src\dx11\hal_queue.rs:51:44: warning: used import from `std` instead of `core`: help: consider importing the item from `core`: `core`
+wgpu-hal\src\dx11\hal_transfer.rs:881:25: warning: called `unwrap` on `source_size` after checking its variant with `is_none`
+wgpu-hal\src\dx11\hal_transfer.rs:902:1: warning: this function has too many arguments (9/7)
+wgpu-hal\src\dx11\swapchain.rs:614:1: warning: items after a test module
+wgpu-hal\src\dx11\texture.rs:459:5: warning: this function has too many arguments (9/7)
+wgpu-hal\src\dx11\texture.rs:1955:5: warning: this function has too many arguments (8/7)
+wgpu-hal\src\dx11\texture.rs:3010:20: warning: the loop variable `row` is used to index `rows`
+wgpu-hal\src\dx11\..\..\tests\dx11\fl9_texel_load.rs:56:47: warning: this expression creates a reference which is immediately dereferenced by the compiler: help: change this to: `wgsl`
+warning: `wgpu-hal` (lib test) generated 32 warnings (run `cargo clippy --fix --lib -p wgpu-hal --tests` to apply 21 suggestions)
+    Finished `dev` profile [unoptimized] target(s) in 42.48s

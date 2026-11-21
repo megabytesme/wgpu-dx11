@@ -1,0 +1,9 @@
+
+thread 'public_dx11_buffer_destroy_preserves_live_mapped_views' (83984) panicked at wgpu\src\api\buffer.rs:806:9:
+You cannot unmap a buffer that still has accessible mapped views
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+thread 'public_dx11_inter_stage_varying_limit_at_fl91' (93860) panicked at wgpu\tests\dx11_public.rs:33794:5:
+assertion `left == right` failed
+  left: 7
+ right: 8

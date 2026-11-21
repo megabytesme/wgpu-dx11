@@ -15,6 +15,15 @@ $sceneExe = if ($SceneTestExe) { (Resolve-Path -LiteralPath $SceneTestExe).Path 
 if (-not ($halExe -or $publicExe -or $sceneExe)) { throw 'Pass at least one test executable.' }
 $evidence = [IO.Path]::GetFullPath($EvidenceDirectory)
 New-Item -ItemType Directory -Path $evidence -Force | Out-Null
+$failures = [Collections.Generic.List[string]]::new()
+
+function Invoke-Case([scriptblock]$Run) {
+    try { & $Run }
+    catch {
+        $failures.Add($_.Exception.Message)
+        Write-Warning $_.Exception.Message
+    }
+}
 
 function Invoke-TestBinary([string]$Exe, [string[]]$Arguments, [string]$Case) {
     $out = Join-Path $evidence "$Case-$Architecture.txt"
@@ -91,15 +100,25 @@ try {
     $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
     $env:WGPU_DX11_FORCE_FL9_1 = $null
     $env:WGPU_DX11_FORCE_FEATURE_LEVEL = '11_1'
-    if ($sceneExe) { Measure-Scene $sceneExe }
+    if ($sceneExe) { Invoke-Case { Measure-Scene $sceneExe } }
     if ($publicExe) {
-        Invoke-TestBinary $publicExe @('tier_fl11_1', '--ignored', '--test-threads=1', '--nocapture') 'public'
+        $env:WGPU_DX11_FORCE_FEATURE_LEVEL = '11_1'
+        Invoke-Case {
+            Invoke-TestBinary $publicExe @('tier_fl11_1', '--ignored', '--test-threads=1', '--nocapture') 'public'
+        }
         $env:WGPU_DX11_FORCE_FEATURE_LEVEL = $null
         $env:WGPU_DX11_FORCE_FL9_1 = '1'
-        Invoke-TestBinary $publicExe @('--test-threads=1', '--nocapture') 'public-fl9_1'
+        Invoke-Case { Invoke-TestBinary $publicExe @('--test-threads=1', '--nocapture') 'public-fl9_1' }
     }
     if ($halExe) {
-        Invoke-TestBinary $halExe @('tier_fl11_1', '--ignored', '--test-threads=1', '--nocapture') 'native'
+        $env:WGPU_DX11_FORCE_FL9_1 = $null
+        $env:WGPU_DX11_FORCE_FEATURE_LEVEL = '11_1'
+        Invoke-Case {
+            Invoke-TestBinary $halExe @('tier_fl11_1', '--ignored', '--test-threads=1', '--nocapture') 'native'
+        }
+    }
+    if ($failures.Count -ne 0) {
+        throw ($failures -join [Environment]::NewLine)
     }
 }
 finally {
