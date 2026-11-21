@@ -754,11 +754,17 @@ impl Capabilities {
             }
         });
         let rg8_unorm = wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Rg8Unorm);
+        let mut mask = guaranteed_formats;
         if matches!(self.driver.rg8_unorm, Query::Value(bits) if bits & required == required) {
-            guaranteed_formats | rg8_unorm
-        } else {
-            guaranteed_formats
+            mask |= rg8_unorm;
         }
+        // Preserve the adapter-wide 3D mip capability for existing formats.
+        let srgb_required = required | D3D11_FORMAT_SUPPORT_MIP.0 as u32;
+        if matches!(self.driver.rgba8_srgb, Query::Value(bits) if bits & srgb_required == srgb_required)
+        {
+            mask |= wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Rgba8UnormSrgb);
+        }
+        mask
     }
 
     pub fn texture_3d_mipmaps(&self) -> bool {
@@ -768,6 +774,7 @@ impl Capabilities {
         }
         [
             (wgt::TextureFormat::Rgba8Unorm, self.driver.rgba8),
+            (wgt::TextureFormat::Rgba8UnormSrgb, self.driver.rgba8_srgb),
             (wgt::TextureFormat::Bgra8Unorm, self.driver.bgra8),
             (wgt::TextureFormat::Bgra8UnormSrgb, self.driver.bgra8_srgb),
             (wgt::TextureFormat::R8Unorm, self.driver.r8_unorm),
@@ -2246,7 +2253,7 @@ mod tests {
                 timestamp_frequency: Query::Value(1_000_000_000),
                 rgba8: Query::Value(u32::MAX),
                 bgra8: Query::Value(!(D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32)),
-                rgba8_srgb: Query::Value(u32::MAX),
+                rgba8_srgb: Query::Value(!(D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32)),
                 bgra8_srgb: Query::Value(!(D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32)),
                 depth24_stencil8: Query::Value(u32::MAX),
                 depth16_unorm: Query::Value(u32::MAX),
@@ -3050,6 +3057,36 @@ mod tests {
             }
             assert_eq!(caps.texture_3d_format_mask(), 0);
         }
+    }
+
+    #[test]
+    fn rgba8_srgb_3d_requires_its_own_mip_and_sampling_queries() {
+        let mut caps = model(FeatureLevel::L9_1);
+        let format = wgt::TextureFormat::Rgba8UnormSrgb;
+        let bit = wgt::DownlevelLimits::texture_3d_format_bit(format);
+        let previous_mask = caps.texture_3d_format_mask();
+        let texture_3d = D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32;
+        let sample = D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32;
+        let mip = D3D11_FORMAT_SUPPORT_MIP.0 as u32;
+        for query in [
+            Query::Unavailable(-1),
+            Query::Value(texture_3d | sample),
+            Query::Value(texture_3d | mip),
+            Query::Value(sample | mip),
+        ] {
+            caps.driver.rgba8_srgb = query;
+            assert_eq!(caps.texture_3d_format_mask(), previous_mask);
+            assert!(caps.texture_3d_mipmaps());
+        }
+        caps.driver.rgba8_srgb = Query::Value(texture_3d | sample | mip);
+        assert_eq!(caps.texture_3d_format_mask(), previous_mask | bit);
+        let projection = caps.wgpu_projection().expect("FL9_1 projection");
+        assert!(projection
+            .capabilities
+            .downlevel
+            .limits
+            .supports_texture_3d_format(format));
+        assert!(projection.capabilities.downlevel.limits.texture_3d_mipmaps);
     }
 
     #[test]

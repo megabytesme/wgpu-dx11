@@ -888,7 +888,7 @@ fn public_dx11_rgba8_snorm_shadow_readback_after_partial_copy_at_fl91() {
         .find(|adapter| adapter.get_info().device_type != DeviceType::Cpu)
     else {
         assert!(
-            required,
+            !required,
             "strict mode requires a physical FL9_1 D3D11 adapter"
         );
         println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");

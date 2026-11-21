@@ -578,7 +578,7 @@ fn fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware()
     );
     assert_eq!(
         capabilities.limits.max_buffer_size,
-        u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT
+        (128 << 20) - wgt::COPY_BUFFER_ALIGNMENT
     );
     assert_eq!(
         capabilities

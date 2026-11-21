@@ -331,12 +331,13 @@ impl NativeDevice {
         destination: &NativeTexture,
         region: &crate::TextureCopy,
     ) -> Result<Texture3DToTexture3D> {
-        let format = source.logical_format.ok_or_else(invalid)?;
+        let source_format = source.logical_format.ok_or_else(invalid)?;
+        let destination_format = destination.logical_format.ok_or_else(invalid)?;
         if source.dimension != wgt::TextureDimension::D3
             || destination.dimension != wgt::TextureDimension::D3
-            || destination.logical_format != Some(format)
-            || texture_3d_dxgi_format(format) != Some(source.format)
-            || source.format != destination.format
+            || texture_3d_dxgi_format(source_format) != Some(source.format)
+            || texture_3d_dxgi_format(destination_format) != Some(destination.format)
+            || !texture_formats_copy_compatible(source.format, destination.format)
             || !source.usage.contains(wgt::TextureUses::COPY_SRC)
             || !destination.usage.contains(wgt::TextureUses::COPY_DST)
             || region.src_base.array_layer != 0

@@ -575,6 +575,7 @@ pub(super) fn texture_3d_dxgi_format(format: wgt::TextureFormat) -> Option<DXGI_
         wgt::TextureFormat::R8Unorm => Some(DXGI_FORMAT_R8_UNORM),
         wgt::TextureFormat::Rg8Unorm => Some(DXGI_FORMAT_R8G8_UNORM),
         wgt::TextureFormat::Rgba8Unorm => Some(DXGI_FORMAT_R8G8B8A8_UNORM),
+        wgt::TextureFormat::Rgba8UnormSrgb => Some(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB),
         wgt::TextureFormat::Bgra8Unorm => Some(DXGI_FORMAT_B8G8R8A8_UNORM),
         wgt::TextureFormat::Bgra8UnormSrgb => Some(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB),
         _ => None,
@@ -2669,7 +2670,11 @@ mod tests {
     use crate::dx11::{enumerate_native_adapters, FeatureLevel};
 
     #[test]
-    fn bgra_3d_formats_map_to_native_formats() {
+    fn srgb_3d_formats_map_to_native_formats() {
+        assert_eq!(
+            texture_3d_dxgi_format(wgt::TextureFormat::Rgba8UnormSrgb),
+            Some(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)
+        );
         assert_eq!(
             texture_3d_dxgi_format(wgt::TextureFormat::Bgra8Unorm),
             Some(DXGI_FORMAT_B8G8R8A8_UNORM)
