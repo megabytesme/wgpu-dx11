@@ -15040,6 +15040,9 @@ fn entry_has_fragment_depth(module: &naga::Module, entry: &str) -> Option<bool> 
 }
 
 impl ShaderModule {
+    pub(super) fn naga_for(&self, owner: &Arc<NativeDevice>) -> Option<&crate::NagaShader> {
+        Arc::ptr_eq(&self.owner, owner).then_some(&self.shader)
+    }
     pub(super) fn validate_no_fragment_depth(
         &self,
         entry: &str,

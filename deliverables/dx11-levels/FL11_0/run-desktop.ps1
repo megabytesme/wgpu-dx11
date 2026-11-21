@@ -74,6 +74,7 @@ function Run-Tests([string]$Label, [string]$Binary, [string]$Filter) {
         command = @($Binary) + $arguments
         requested = $env:WGPU_DX11_EXACT_FEATURE_LEVEL
         force_fl9_1 = $env:WGPU_DX11_FORCE_FL9_1
+        portable_fl11_0 = $env:WGPU_DX11_EXPERIMENTAL_FL11_0 -eq '1'
         exit_code = $code
         passed = $passed
         failed = $failed
@@ -117,16 +118,20 @@ try {
 
     $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
     Remove-Item Env:WGPU_DX11_FORCE_FL9_1 -ErrorAction SilentlyContinue
+    Remove-Item Env:WGPU_DX11_EXPERIMENTAL_FL11_0 -ErrorAction SilentlyContinue
     $env:WGPU_DX11_EXACT_FEATURE_LEVEL = '11_0'
     Run-Tests 'hal-fl11_0' $hal 'tier_fl11_0'
     Run-Tests 'hal-selector' $hal 'exact_selector'
-    Run-Tests 'public-fl11_0' $public
+    Run-Tests 'public-fl11_0' $public 'public_exact_selection'
+    $env:WGPU_DX11_EXPERIMENTAL_FL11_0 = '1'
+    Run-Tests 'portable-fl11_0' $public 'tier_fl11_0_portable'
     $env:WGPU_DX11_EXACT_FEATURE_LEVEL = '10_1'
-    Run-Tests 'public-fl10_1' $public
+    Run-Tests 'public-fl10_1' $public 'public_exact_selection'
+    Remove-Item Env:WGPU_DX11_EXPERIMENTAL_FL11_0
     $env:WGPU_DX11_EXACT_FEATURE_LEVEL = '9_1'
-    Run-Tests 'public-fl9_1' $public
+    Run-Tests 'public-fl9_1' $public 'public_exact_selection'
     $env:WGPU_DX11_EXACT_FEATURE_LEVEL = '12_0'
-    Run-Tests 'public-invalid' $public
+    Run-Tests 'public-invalid' $public 'public_exact_selection'
     if ($IncludeBenchmarks) {
         $env:WGPU_DX11_SCENE_BENCH = '1'
         foreach ($level in '9_1', '10_1', '11_0') {

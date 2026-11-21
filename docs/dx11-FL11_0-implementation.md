@@ -6,7 +6,17 @@
 
 Enable the existing experimental DX11 backend explicitly and set `WGPU_DX11_EXACT_FEATURE_LEVEL=11_0` before enumerating adapters. The selector accepts `9_1`, `9_2`, `9_3`, `10_0`, `10_1`, `11_0` and `11_1`. Enumeration uses an explicit physical DXGI adapter and a singleton level list and verifies the returned level against `GetFeatureLevel`. Invalid or conflicting selectors produce no DX11 adapters. The legacy `WGPU_DX11_FORCE_FL9_1=1` selector continues to select FL9_1. Automatic enumeration uses its existing highest-first list and retains the retry for runtimes that reject the leading FL11_1 request. Exact selection includes the requested and active level and the adapter LUID in the report. Strict CTS selection verifies the live HAL adapter. [D3D11CreateDevice](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/nf-d3d11-d3d11createdevice)
 
-The ordinary wgpu contract is still FL9_1-class. Its shader translation, portable storage, texture formats, limits and downlevel flags reflect the pre-existing implementation. The native feature-level result is independent of those capabilities.
+The ordinary wgpu contract is FL9_1-class by default. An experimental compute projection requires a separate runtime opt-in. The native feature-level result is independent of the public capabilities.
+
+## Portable compute opt-in
+
+Enable the `dx11-fl11_0` Cargo feature, select `WGPU_DX11_EXACT_FEATURE_LEVEL=11_0`, and set `WGPU_DX11_EXPERIMENTAL_FL11_0=1` before enumerating adapters. The opt-in exposes SM5 WGSL compute, read-only and writable storage buffers, dynamic storage ranges, workgroup memory, and direct and indirect compute dispatch. A GPU sanitizer checks the three indirect counts against the logical device limit and supplies `num_workgroups` to the shader. The portable indirect-draw flag stays disabled.
+
+D3D11 binds raw storage ranges through SRV and UAV views. Dispatch replay clears conflicting bindings. Multiple ranges of one buffer use temporary GPU copies when any of those ranges is writable. Compute writes invalidate the CPU shadow used by later copies and mappings. [D3D11 raw buffer views](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_bufferex_srv) · [D3D11 functional specification](https://microsoft.github.io/DirectX-Specs/d3d/archive/D3D11_3_FunctionalSpec.htm)
+
+The same opt-in adds typed `Rgba8Uint` 2D copies in both directions, including texture-to-texture copies. The adapter reports copy support after checking the driver's texture, mip and CPU-lockable format flags. Storage textures and indirect rendering remain separate work.
+
+Use `run-desktop.ps1` to exercise both the opt-in and default projections. Rebuild the CTS runner with `--features deno_webgpu/dx11-fl11_0` and pass `-Portable` to `run-cts.ps1` for the compute projection.
 
 ## Native commands
 

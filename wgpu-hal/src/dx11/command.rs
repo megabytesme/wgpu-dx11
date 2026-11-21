@@ -198,6 +198,7 @@ impl RenderTarget {
 
 #[derive(Debug)]
 pub(super) enum NativeCommand {
+    Dispatch(super::hal_compute::ComputeDispatch),
     Copy(NativeBufferCopy),
     ClearBuffer(NativeBufferClear),
     WriteTimestamp(ID3D11Asynchronous),
@@ -632,6 +633,7 @@ impl CommandBuffer {
         for command in &self.commands {
             unsafe {
                 match command {
+                    NativeCommand::Dispatch(dispatch) => dispatch.execute(context)?,
                     NativeCommand::Copy(copy) => copy.execute(context),
                     NativeCommand::ClearBuffer(clear) => {
                         // A fixed static chunk avoids allocating proportional to buffer size.

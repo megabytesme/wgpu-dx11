@@ -7,6 +7,7 @@ use super::{
         ResolveOperation, VertexIndexDraw,
     },
     device::NativeDevice,
+    hal_compute::{ComputeState, DispatchCount, IndirectDispatch},
     Api as Dx11Api,
 };
 #[allow(unused_imports)]
@@ -29,6 +30,9 @@ pub struct CommandEncoder {
     recording: Option<Vec<NativeCommand>>,
     render: Option<RenderState>,
     compute: bool,
+    compute_state: ComputeState,
+    indirect_dispatch: Option<Arc<IndirectDispatch>>,
+    pub(super) compute_limit: u32,
     end_compute_timestamp: Option<windows::Win32::Graphics::Direct3D11::ID3D11Asynchronous>,
     failure: Option<DeviceError>,
     viewport_buffer: Option<windows::Win32::Graphics::Direct3D11::ID3D11Buffer>,
@@ -645,6 +649,9 @@ impl CommandEncoder {
             recording: None,
             render: None,
             compute: false,
+            compute_state: ComputeState::default(),
+            indirect_dispatch: None,
+            compute_limit: 65535,
             end_compute_timestamp: None,
             failure: None,
             viewport_buffer: None,
@@ -700,6 +707,7 @@ impl crate::CommandEncoder for CommandEncoder {
         self.failure = None;
         self.render = None;
         self.compute = false;
+        self.compute_state = ComputeState::default();
         self.end_compute_timestamp = None;
         self.recording = Some(Vec::new());
         Ok(())
@@ -709,6 +717,7 @@ impl crate::CommandEncoder for CommandEncoder {
         self.recording = None;
         self.render = None;
         self.compute = false;
+        self.compute_state = ComputeState::default();
         self.end_compute_timestamp = None;
         self.failure = None;
     }
@@ -717,6 +726,7 @@ impl crate::CommandEncoder for CommandEncoder {
         let commands = self.recording.take().ok_or(DeviceError::Unexpected)?;
         let render_open = self.render.take().is_some();
         let compute_open = core::mem::take(&mut self.compute);
+        self.compute_state = ComputeState::default();
         self.end_compute_timestamp = None;
         if render_open || compute_open {
             self.reject();
@@ -969,6 +979,16 @@ impl crate::CommandEncoder for CommandEncoder {
         dynamic_offsets: &[wgt::DynamicOffset],
     ) {
         use windows::core::Interface;
+        if self.compute && self.device.portable_fl11_0 {
+            if layout.compute_for(&self.device).is_none()
+                || !Arc::ptr_eq(&group.owner, &self.device)
+            {
+                self.reject();
+            } else if let Err(error) = self.compute_state.bind(index, group, dynamic_offsets) {
+                self.failure = Some(error);
+            }
+            return;
+        }
         let Some(render) = self.render.as_mut() else {
             self.reject();
             return;
@@ -984,19 +1004,10 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         }
-        if dynamic_offsets.len()
-            != group
-                .kind
-                .uniforms
-                .iter()
-                .flatten()
-                .filter(|uniform| uniform.dynamic)
-                .count()
-        {
+        if dynamic_offsets.len() != group.dynamic_bindings.len() {
             self.reject();
             return;
         }
-        let mut offsets = dynamic_offsets.iter().copied();
         let mut ranges = Vec::with_capacity(group.resources.uniforms.len());
         let mut resources = group.resources.clone();
         resources.uniforms.clear();
@@ -1006,11 +1017,11 @@ impl crate::CommandEncoder for CommandEncoder {
                 return;
             };
             let offset = if layout.dynamic {
-                let Some(offset) = offsets.next() else {
+                let Ok(slot) = group.dynamic_bindings.binary_search(&layout.binding) else {
                     self.reject();
                     return;
                 };
-                offset
+                dynamic_offsets[slot]
             } else {
                 0
             };
@@ -2609,14 +2620,30 @@ impl crate::CommandEncoder for CommandEncoder {
         } else if let Some(query) = self.end_compute_timestamp.take() {
             self.record(NativeCommand::WriteTimestamp(query));
         }
+        self.compute_state = ComputeState::default();
     }
 
     unsafe fn set_compute_pipeline(&mut self, pipeline: &<Self::A as Api>::ComputePipeline) {
-        self.reject()
+        if self.compute && self.device.portable_fl11_0 && Arc::ptr_eq(&pipeline.owner, &self.device)
+        {
+            self.compute_state.set_pipeline(pipeline);
+        } else {
+            self.reject();
+        }
     }
 
     unsafe fn dispatch_workgroups(&mut self, count: [u32; 3]) {
-        self.reject()
+        if !self.compute
+            || !self.device.portable_fl11_0
+            || count.iter().any(|&v| v > self.compute_limit)
+        {
+            self.reject();
+        } else {
+            match self.compute_state.dispatch(DispatchCount::Direct(count)) {
+                Ok(dispatch) => self.record(NativeCommand::Dispatch(dispatch)),
+                Err(error) => self.failure = Some(error),
+            }
+        }
     }
 
     unsafe fn dispatch_workgroups_indirect(
@@ -2624,7 +2651,27 @@ impl crate::CommandEncoder for CommandEncoder {
         buffer: &<Self::A as Api>::Buffer,
         offset: wgt::BufferAddress,
     ) {
-        self.reject()
+        if !self.compute || !self.device.portable_fl11_0 {
+            self.reject();
+            return;
+        }
+        if self.indirect_dispatch.is_none() {
+            match IndirectDispatch::new(&self.device) {
+                Ok(scratch) => self.indirect_dispatch = Some(Arc::new(scratch)),
+                Err(error) => {
+                    self.failure = Some(error);
+                    return;
+                }
+            }
+        }
+        let scratch = self.indirect_dispatch.as_ref().unwrap().clone();
+        let result =
+            DispatchCount::indirect(&self.device, buffer, offset, self.compute_limit, scratch)
+                .and_then(|count| self.compute_state.dispatch(count));
+        match result {
+            Ok(dispatch) => self.record(NativeCommand::Dispatch(dispatch)),
+            Err(error) => self.failure = Some(error),
+        }
     }
 
     unsafe fn begin_ray_tracing_pass(&mut self, desc: &RayTracingPassDescriptor) {

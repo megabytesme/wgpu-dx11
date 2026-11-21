@@ -13,6 +13,7 @@ mod fence;
 #[cfg(feature = "dx11-fl11_0")]
 mod fl11_0;
 mod hal_bind_group;
+mod hal_compute;
 mod hal_device;
 mod hal_encoder;
 mod hal_index;

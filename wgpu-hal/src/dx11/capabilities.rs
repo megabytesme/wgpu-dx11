@@ -939,6 +939,7 @@ impl Capabilities {
             flags,
             shader_model: wgt::ShaderModel::Sm2,
             limits: wgt::DownlevelLimits {
+                indirect_dispatch: false,
                 empty_binding_visibility: false,
                 texture_1d: false,
                 texture_3d: texture_3d_sampling,

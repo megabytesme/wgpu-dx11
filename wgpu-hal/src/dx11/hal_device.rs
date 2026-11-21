@@ -17,12 +17,16 @@ use core::{
 #[derive(Debug)]
 pub struct Device {
     native: Arc<super::device::NativeDevice>,
+    pub(super) compute_limit: u32,
 }
 
 impl Device {
     #[allow(dead_code)]
     pub(super) fn new(native: Arc<super::device::NativeDevice>) -> Self {
-        Self { native }
+        Self {
+            native,
+            compute_limit: 65535,
+        }
     }
 
     #[allow(dead_code)]
@@ -151,7 +155,7 @@ impl crate::Device for Device {
         &self,
         desc: &BufferDescriptor,
     ) -> Result<<Self::A as Api>::Buffer, DeviceError> {
-        let supported = wgt::BufferUses::COPY_SRC
+        let mut supported = wgt::BufferUses::COPY_SRC
             | wgt::BufferUses::COPY_DST
             | wgt::BufferUses::VERTEX
             | wgt::BufferUses::INDEX
@@ -161,6 +165,9 @@ impl crate::Device for Device {
             | wgt::BufferUses::QUERY_RESOLVE
             | wgt::BufferUses::MAP_READ
             | wgt::BufferUses::MAP_WRITE;
+        if self.native.portable_fl11_0 {
+            supported |= wgt::BufferUses::INDIRECT;
+        }
         if !supported.contains(desc.usage)
             || (self.native.feature_level().as_raw() <= super::device::FeatureLevel::L9_2.as_raw()
                 && desc
@@ -227,6 +234,8 @@ impl crate::Device for Device {
         &self,
         desc: &TextureDescriptor,
     ) -> Result<<Self::A as Api>::Texture, DeviceError> {
+        let uint_copy = desc.format == wgt::TextureFormat::Rgba8Uint
+            && self.native.supports_fl11_rgba8_uint_copies();
         let cube =
             desc.dimension == wgt::TextureDimension::D2 && desc.size.depth_or_array_layers == 6;
         let max_dimension =
@@ -372,7 +381,9 @@ impl crate::Device for Device {
             || (desc.format == wgt::TextureFormat::Rg16Snorm
                 && capabilities.backend.rg16_snorm_texture_to_texture_copy);
         let supported = wgt::TextureUses::TRANSIENT
-            | if depth {
+            | if uint_copy {
+                wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST
+            } else if depth {
                 wgt::TextureUses::DEPTH_STENCIL_READ
                     | wgt::TextureUses::DEPTH_STENCIL_WRITE
                     | if depth_sampled {
@@ -402,6 +413,7 @@ impl crate::Device for Device {
         if desc.dimension != wgt::TextureDimension::D2
             || (!depth
                 && !sampled_upload
+                && !uint_copy
                 && !matches!(
                     desc.format,
                     wgt::TextureFormat::Rgba8Unorm
@@ -545,12 +557,13 @@ impl crate::Device for Device {
                 DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM,
                 DXGI_FORMAT_BC1_UNORM_SRGB, DXGI_FORMAT_BC2_UNORM, DXGI_FORMAT_BC2_UNORM_SRGB,
                 DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB, DXGI_FORMAT_R16G16_SNORM,
-                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UINT, DXGI_FORMAT_R8G8B8A8_UNORM,
                 DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
                 DXGI_FORMAT_R8_UNORM,
             },
         };
         let format = match desc.format {
+            wgt::TextureFormat::Rgba8Uint if uint_copy => DXGI_FORMAT_R8G8B8A8_UINT,
             wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
             wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
             wgt::TextureFormat::Rgba8UnormSrgb => DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
@@ -617,7 +630,7 @@ impl crate::Device for Device {
             && desc.usage.contains(wgt::TextureUses::COPY_SRC)
             && super::capabilities::cube_readback_requires_render_target_bind(desc.format);
         let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
-            | if sampled_upload {
+            | if sampled_upload || uint_copy {
                 0
             } else {
                 D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
@@ -628,7 +641,8 @@ impl crate::Device for Device {
                 0
             }
             | if desc.usage.contains(wgt::TextureUses::COLOR_TARGET)
-                || (desc.usage.contains(wgt::TextureUses::COPY_SRC)
+                || (!uint_copy
+                    && desc.usage.contains(wgt::TextureUses::COPY_SRC)
                     && !matches!(
                         desc.format,
                         wgt::TextureFormat::Bc1RgbaUnorm
@@ -675,7 +689,8 @@ impl crate::Device for Device {
                     desc.mip_level_count,
                     1,
                     desc.usage.contains(wgt::TextureUses::COLOR_TARGET)
-                        || (desc.usage.contains(wgt::TextureUses::COPY_SRC)
+                        || (!uint_copy
+                            && desc.usage.contains(wgt::TextureUses::COPY_SRC)
                             && !matches!(
                                 desc.format,
                                 wgt::TextureFormat::Bc1RgbaUnorm
@@ -827,6 +842,9 @@ impl crate::Device for Device {
         }
         let native = self.native.texture_desc(texture).map_err(device_error)?;
         let native_format = match native.Format {
+            windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UINT => {
+                wgt::TextureFormat::Rgba8Uint
+            }
             DXGI_FORMAT_R8G8B8A8_UNORM => wgt::TextureFormat::Rgba8Unorm,
             DXGI_FORMAT_B8G8R8A8_UNORM => wgt::TextureFormat::Bgra8Unorm,
             DXGI_FORMAT_R8G8B8A8_UNORM_SRGB => wgt::TextureFormat::Rgba8UnormSrgb,
@@ -1043,7 +1061,9 @@ impl crate::Device for Device {
         if !desc.queue.belongs_to(&self.native) {
             return Err(DeviceError::Unexpected);
         }
-        Ok(super::CommandEncoder::new(self.native.clone()))
+        let mut encoder = super::CommandEncoder::new(self.native.clone());
+        encoder.compute_limit = self.compute_limit;
+        Ok(encoder)
     }
 
     unsafe fn create_bind_group_layout(
@@ -1129,11 +1149,11 @@ impl crate::Device for Device {
             <Self::A as Api>::PipelineCache,
         >,
     ) -> Result<<Self::A as Api>::ComputePipeline, PipelineError> {
-        Err(DeviceError::Unexpected.into())
+        super::hal_compute::ComputePipeline::new(&self.native, desc)
     }
 
     unsafe fn destroy_compute_pipeline(&self, pipeline: <Self::A as Api>::ComputePipeline) {
-        panic!("D3D11 HAL operation is not implemented")
+        drop(pipeline)
     }
 
     unsafe fn create_ray_tracing_pipeline(

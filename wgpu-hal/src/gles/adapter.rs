@@ -966,6 +966,7 @@ impl super::Adapter {
         }
 
         let downlevel_defaults = wgt::DownlevelLimits {
+            indirect_dispatch: false,
             empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,

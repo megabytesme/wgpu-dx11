@@ -104,6 +104,9 @@ impl crate::Instance for Instance {
                 return Vec::new();
             }
         };
+        let portable_fl11_0 = cfg!(feature = "dx11-fl11_0")
+            && exact == Some(FeatureLevel::L11_0)
+            && std::env::var_os("WGPU_DX11_EXPERIMENTAL_FL11_0").is_some_and(|value| value == "1");
         let adapters = match super::enumerate_native_adapters() {
             Ok(adapters) => adapters,
             Err(error) => {
@@ -123,7 +126,7 @@ impl crate::Instance for Instance {
                     Some(level) => adapter.open_exact_hardware_device(level),
                     None => adapter.open_device(&FeatureLevel::ALL_DESCENDING),
                 };
-                let native = match result {
+                let mut native = match result {
                     Ok(native) => native,
                     Err(error) => {
                         log::debug!(
@@ -133,6 +136,7 @@ impl crate::Instance for Instance {
                         return None;
                     }
                 };
+                native.portable_fl11_0 = portable_fl11_0;
                 let Some(exposed) = super::Adapter::expose_native(
                     &identity,
                     driver_version.as_deref(),

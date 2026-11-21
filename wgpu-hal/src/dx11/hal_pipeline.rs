@@ -576,6 +576,7 @@ fn native_blend_desc(target: D3D11_RENDER_TARGET_BLEND_DESC) -> D3D11_BLEND_DESC
 pub struct PipelineLayout {
     owner: Arc<NativeDevice>,
     bindings: Arc<super::hal_bind_group::BindingPlan>,
+    compute: Option<Arc<super::hal_compute::ComputeLayout>>,
 }
 crate::impl_dyn_resource!(PipelineLayout);
 impl crate::DynPipelineLayout for PipelineLayout {}
@@ -2768,6 +2769,16 @@ impl crate::DynRenderPipeline for RenderPipeline {
 }
 
 impl PipelineLayout {
+    pub(super) fn compute_for(
+        &self,
+        owner: &Arc<NativeDevice>,
+    ) -> Option<&Arc<super::hal_compute::ComputeLayout>> {
+        if Arc::ptr_eq(&self.owner, owner) {
+            self.compute.as_ref()
+        } else {
+            None
+        }
+    }
     pub(super) fn plan_for(
         &self,
         owner: &Arc<NativeDevice>,
@@ -2801,7 +2812,18 @@ impl PipelineLayout {
             .map(|layout| layout.map(|layout| layout.kind))
             .collect();
         let bindings = Arc::new(super::hal_bind_group::BindingPlan::new(&groups)?);
-        Ok(Self { owner, bindings })
+        let compute = if owner.portable_fl11_0 {
+            Some(Arc::new(super::hal_compute::ComputeLayout::new(
+                desc.bind_group_layouts,
+            )?))
+        } else {
+            None
+        };
+        Ok(Self {
+            owner,
+            bindings,
+            compute,
+        })
     }
 }
 

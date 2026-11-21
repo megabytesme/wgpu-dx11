@@ -16,6 +16,7 @@ path = "lib.rs"
 
 [features]
 dx11 = ["wgpu-core/dx11"]
+dx11-fl11_0 = ["dx11", "wgpu-core/dx11-fl11_0"]
 
 # We make all dependencies conditional on not being wasm,
 # so the whole workspace can built as wasm.

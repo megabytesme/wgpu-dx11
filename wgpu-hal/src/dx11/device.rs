@@ -239,6 +239,7 @@ impl NativeAdapter {
         };
         Ok(NativeDevice {
             raw,
+            portable_fl11_0: false,
             immediate: Mutex::new(immediate),
             idle_query: Mutex::new(Some(idle_query)),
             level,
@@ -258,6 +259,7 @@ impl NativeAdapter {
 #[derive(Debug)]
 pub struct NativeDevice {
     raw: ID3D11Device,
+    pub(super) portable_fl11_0: bool,
     immediate: Mutex<ID3D11DeviceContext>,
     pub(super) idle_query: Mutex<Option<ID3D11Asynchronous>>,
     level: FeatureLevel,

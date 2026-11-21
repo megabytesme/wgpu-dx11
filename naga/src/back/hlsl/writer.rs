@@ -2198,15 +2198,23 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             writeln!(self.out, "{}int {};", back::INDENT, SPECIAL_FIRST_INSTANCE)?;
             writeln!(self.out, "{}uint {};", back::INDENT, SPECIAL_OTHER)?;
             writeln!(self.out, "}};")?;
-            write!(
-                self.out,
-                "ConstantBuffer<{}> {}: register(b{}",
-                SPECIAL_CBUF_TYPE, SPECIAL_CBUF_VAR, bt.register
-            )?;
-            if bt.space != 0 {
-                write!(self.out, ", space{}", bt.space)?;
+            if self.options.shader_model == ShaderModel::V5_0 && bt.space == 0 {
+                writeln!(
+                    self.out,
+                    "cbuffer _NagaSpecialConstants : register(b{}) {{ {} {}; }};",
+                    bt.register, SPECIAL_CBUF_TYPE, SPECIAL_CBUF_VAR
+                )?;
+            } else {
+                write!(
+                    self.out,
+                    "ConstantBuffer<{}> {}: register(b{}",
+                    SPECIAL_CBUF_TYPE, SPECIAL_CBUF_VAR, bt.register
+                )?;
+                if bt.space != 0 {
+                    write!(self.out, ", space{}", bt.space)?;
+                }
+                writeln!(self.out, ");")?;
             }
-            writeln!(self.out, ");")?;
 
             // Extra newline for readability
             writeln!(self.out)?;

@@ -1040,6 +1040,9 @@ impl Limits {
 #[derive(Clone, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 #[cfg_attr(feature = "serde", derive(serde::Serialize, serde::Deserialize))]
 pub struct DownlevelLimits {
+    /// Indirect compute dispatch is available independently of indirect drawing.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub indirect_dispatch: bool,
     /// Whether bind-group layout entries may have no shader-stage visibility.
     ///
     /// This can be unavailable when a backend's resource-layout representation requires
@@ -1637,6 +1640,7 @@ fn default_max_sampled_texture_sampler_pairs() -> u32 {
 impl Default for DownlevelLimits {
     fn default() -> Self {
         Self {
+            indirect_dispatch: false,
             empty_binding_visibility: true,
             texture_1d: true,
             texture_3d: true,
@@ -1856,6 +1860,7 @@ impl DownlevelLimits {
             crate::TextureFormat::Bc2RgbaUnormSrgb => 1 << 17,
             crate::TextureFormat::Bc3RgbaUnorm => 1 << 18,
             crate::TextureFormat::Bc3RgbaUnormSrgb => 1 << 19,
+            crate::TextureFormat::Rgba8Uint => 1 << 20,
             _ => 0,
         }
     }
@@ -1904,6 +1909,7 @@ impl DownlevelLimits {
     #[must_use]
     pub fn check_limits(&self, required: &Self) -> bool {
         (!required.texture_1d || self.texture_1d)
+            && (!required.indirect_dispatch || self.indirect_dispatch)
             && (!required.empty_binding_visibility || self.empty_binding_visibility)
             && (!required.texture_3d
                 || (self.texture_3d

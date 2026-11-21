@@ -62,7 +62,7 @@ impl crate::Api for Api {
     type PipelineLayout = super::hal_pipeline::PipelineLayout;
     type ShaderModule = super::hal_shader::ShaderModule;
     type RenderPipeline = super::hal_pipeline::RenderPipeline;
-    type ComputePipeline = Unavailable;
+    type ComputePipeline = super::hal_compute::ComputePipeline;
     type RayTracingPipeline = Unavailable;
     type PipelineCache = Unavailable;
     type AccelerationStructure = Unavailable;

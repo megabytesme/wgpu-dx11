@@ -495,12 +495,36 @@ impl NativeDevice {
         if size == 0 {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
-        let desc = D3D11_BUFFER_DESC {
+        use windows::Win32::Graphics::Direct3D11::{
+            D3D11_BIND_SHADER_RESOURCE, D3D11_BIND_UNORDERED_ACCESS,
+            D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS, D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS,
+        };
+        let mut desc = D3D11_BUFFER_DESC {
             ByteWidth: size,
             Usage: D3D11_USAGE_DEFAULT,
             BindFlags: native_buffer_bind_flags(self.feature_level(), usage)?,
             ..Default::default()
         };
+        if self.portable_fl11_0
+            && usage.intersects(
+                wgt::BufferUses::STORAGE_READ_ONLY
+                    | wgt::BufferUses::STORAGE_READ_WRITE
+                    | wgt::BufferUses::INDIRECT,
+            )
+        {
+            desc.ByteWidth = size
+                .checked_add(3)
+                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?
+                & !3;
+            desc.BindFlags |= D3D11_BIND_SHADER_RESOURCE.0 as u32;
+            if usage.contains(wgt::BufferUses::STORAGE_READ_WRITE) {
+                desc.BindFlags |= D3D11_BIND_UNORDERED_ACCESS.0 as u32;
+            }
+            desc.MiscFlags = D3D11_RESOURCE_MISC_BUFFER_ALLOW_RAW_VIEWS.0 as u32;
+            if usage.contains(wgt::BufferUses::INDIRECT) {
+                desc.MiscFlags |= D3D11_RESOURCE_MISC_DRAWINDIRECT_ARGS.0 as u32;
+            }
+        }
         let cpu_shadow = if usage.intersects(
             wgt::BufferUses::INDEX | wgt::BufferUses::UNIFORM | wgt::BufferUses::COPY_SRC,
         ) {
@@ -527,6 +551,24 @@ impl NativeDevice {
             #[cfg(test)]
             last_readback_staging_size: core::sync::atomic::AtomicU32::new(0),
         })
+    }
+
+    pub(super) fn compute_buffer(
+        &self,
+        buffer: &NativeBuffer,
+        usage: wgt::BufferUses,
+        offset: u64,
+        size: u64,
+    ) -> Result<ID3D11Buffer> {
+        if !self.portable_fl11_0 || !buffer.usage.contains(usage) {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        self.checked_buffer_range(
+            buffer,
+            offset,
+            usize::try_from(size).map_err(|_| Error::from_hresult(E_INVALIDARG))?,
+        )?;
+        Ok(buffer.raw.clone())
     }
 
     /// Keep CPU memory stable while the D3D buffer remains available to the GPU.

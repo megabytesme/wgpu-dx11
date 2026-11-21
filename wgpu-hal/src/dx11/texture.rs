@@ -37,7 +37,7 @@ use windows::{
                 DXGI_FORMAT_BC3_UNORM_SRGB, DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
                 DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16_TYPELESS, DXGI_FORMAT_R16_UNORM,
                 DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
-                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UINT, DXGI_FORMAT_R8G8B8A8_UNORM,
                 DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
                 DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
             },
@@ -824,6 +824,7 @@ pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLay
         }),
         DXGI_FORMAT_R16G16_SNORM
         | DXGI_FORMAT_R8G8B8A8_SNORM
+        | DXGI_FORMAT_R8G8B8A8_UINT
         | DXGI_FORMAT_R8G8B8A8_UNORM
         | DXGI_FORMAT_B8G8R8A8_UNORM
         | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
@@ -1703,7 +1704,15 @@ impl NativeDevice {
             || layers > 2048
             || mip_levels == 0
             || mip_levels > width.max(height).ilog2() + 1
-            || !(rgba_bgra || uncompressed_sampled || bc_sampled)
+            || !(rgba_bgra
+                || uncompressed_sampled
+                || bc_sampled
+                || (format == DXGI_FORMAT_R8G8B8A8_UINT
+                    && self.portable_fl11_0
+                    && !render_target
+                    && !cube
+                    && layers == 1
+                    && sample_count == 1))
             || (cube
                 && (layers != 6
                     || width != height
@@ -1732,7 +1741,7 @@ impl NativeDevice {
                 Quality: 0,
             },
             Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: ((if sample_count == 1 {
+            BindFlags: ((if sample_count == 1 && format != DXGI_FORMAT_R8G8B8A8_UINT {
                 D3D11_BIND_SHADER_RESOURCE.0
             } else {
                 0
@@ -2395,6 +2404,20 @@ impl NativeDevice {
         let mut desc = D3D11_TEXTURE3D_DESC::default();
         unsafe { texture.raw.as_3d()?.GetDesc(&mut desc) };
         Ok(desc)
+    }
+
+    pub(super) fn supports_fl11_rgba8_uint_copies(&self) -> bool {
+        use windows::Win32::Graphics::Direct3D11::{
+            D3D11_FORMAT_SUPPORT_CPU_LOCKABLE, D3D11_FORMAT_SUPPORT_MIP,
+            D3D11_FORMAT_SUPPORT_TEXTURE2D,
+        };
+        let necessary = (D3D11_FORMAT_SUPPORT_CPU_LOCKABLE.0
+            | D3D11_FORMAT_SUPPORT_MIP.0
+            | D3D11_FORMAT_SUPPORT_TEXTURE2D.0) as u32;
+        self.portable_fl11_0
+            && self
+                .check_format_support(DXGI_FORMAT_R8G8B8A8_UINT)
+                .is_ok_and(|support| support & necessary == necessary)
     }
 
     pub(super) fn validate_texture_readback_source(&self, texture: &NativeTexture) -> Result<()> {

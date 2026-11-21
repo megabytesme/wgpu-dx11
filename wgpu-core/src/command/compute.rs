@@ -1050,7 +1050,7 @@ fn dispatch_workgroups_indirect(
         .pass
         .base
         .device
-        .require_downlevel_flags(wgt::DownlevelFlags::INDIRECT_EXECUTION)?;
+        .require_indirect_dispatch()?;
 
     buffer.check_usage(wgt::BufferUsages::INDIRECT)?;
 

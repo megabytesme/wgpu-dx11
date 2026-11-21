@@ -4,7 +4,8 @@ param(
     [Parameter(Mandatory)][string]$CtsCheckout,
     [Parameter(Mandatory)][string]$OutputDirectory,
     [string]$CoordinationDirectory = 'C:/dev/personal/HorizonCodexCoord-Nov2026',
-    [ValidateRange(0, 300)][int]$GpuWaitSeconds = 0
+    [ValidateRange(0, 300)][int]$GpuWaitSeconds = 0,
+    [switch]$Portable
 )
 
 $ErrorActionPreference = 'Stop'
@@ -19,6 +20,11 @@ $runnerPath = (Resolve-Path -LiteralPath $Runner).Path
 $env:DENO_WEBGPU_BACKEND = 'dx11'
 $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 $env:WGPU_DX11_EXACT_FEATURE_LEVEL = '11_0'
+if ($Portable) {
+    $env:WGPU_DX11_EXPERIMENTAL_FL11_0 = '1'
+} else {
+    Remove-Item Env:WGPU_DX11_EXPERIMENTAL_FL11_0 -ErrorAction SilentlyContinue
+}
 Remove-Item Env:WGPU_DX11_FORCE_FL9_1 -ErrorAction SilentlyContinue
 $selectors = [ordered]@{
     'command-buffer-basic' = 'webgpu:api,operation,command_buffer,basic:*'
@@ -93,6 +99,7 @@ try {
         cts_sha = $revision
         requested = '11_0'
         hardware_required = $true
+        portable_fl11_0 = [bool]$Portable
         runner_sha256 = (Get-FileHash -LiteralPath $runnerPath).Hash.ToLowerInvariant()
         results = $runs
     } | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath (Join-Path $out 'results.json') -Encoding utf8

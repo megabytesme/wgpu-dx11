@@ -483,6 +483,8 @@ fn group_kind(entries: &[wgt::BindGroupLayoutEntry]) -> Result<GroupKind, crate:
 pub struct BindGroupLayout {
     owner: Arc<NativeDevice>,
     pub(super) kind: GroupKind,
+    pub(super) compute_entries: alloc::vec::Vec<wgt::BindGroupLayoutEntry>,
+    dynamic_bindings: alloc::vec::Vec<u32>,
 }
 crate::impl_dyn_resource!(BindGroupLayout);
 impl crate::DynBindGroupLayout for BindGroupLayout {}
@@ -501,6 +503,11 @@ pub struct BindGroup {
     pub(super) owner: Arc<NativeDevice>,
     pub(super) kind: GroupKind,
     pub(super) resources: GroupResources,
+    pub(super) compute_resources: alloc::vec::Vec<(
+        wgt::BindGroupLayoutEntry,
+        super::hal_compute::ComputeResource,
+    )>,
+    pub(super) dynamic_bindings: alloc::vec::Vec<u32>,
 }
 crate::impl_dyn_resource!(BindGroup);
 impl crate::DynBindGroup for BindGroup {}
@@ -525,8 +532,47 @@ impl BindGroupLayout {
         {
             return Err(crate::DeviceError::Unexpected);
         }
-        let kind = group_kind(desc.entries)?;
-        Ok(Self { owner, kind })
+        let mut compute_entries = alloc::vec::Vec::new();
+        let mut graphics_entries = alloc::vec::Vec::new();
+        let mut dynamic_bindings = alloc::vec::Vec::new();
+        for mut entry in desc.entries.iter().copied() {
+            if matches!(
+                entry.ty,
+                wgt::BindingType::Buffer {
+                    has_dynamic_offset: true,
+                    ..
+                }
+            ) {
+                dynamic_bindings.push(entry.binding);
+            }
+            if owner.portable_fl11_0 && entry.visibility.contains(wgt::ShaderStages::COMPUTE) {
+                if entry.count.is_some()
+                    || !matches!(
+                        entry.ty,
+                        wgt::BindingType::Buffer { .. }
+                            | wgt::BindingType::Texture { .. }
+                            | wgt::BindingType::Sampler(_)
+                    )
+                {
+                    return Err(crate::DeviceError::Unexpected);
+                }
+                compute_entries.push(entry);
+                entry.visibility.remove(wgt::ShaderStages::COMPUTE);
+                if entry.visibility.is_empty() {
+                    continue;
+                }
+            }
+            graphics_entries.push(entry);
+        }
+        compute_entries.sort_unstable_by_key(|entry| entry.binding);
+        dynamic_bindings.sort_unstable();
+        let kind = group_kind(&graphics_entries)?;
+        Ok(Self {
+            owner,
+            kind,
+            compute_entries,
+            dynamic_bindings,
+        })
     }
 }
 
@@ -551,16 +597,21 @@ impl BindGroup {
         let textures: alloc::vec::Vec<_> = kind.textures.into_iter().flatten().collect();
         let samplers: alloc::vec::Vec<_> = kind.samplers.into_iter().flatten().collect();
         let uniforms: alloc::vec::Vec<_> = kind.uniforms.into_iter().flatten().collect();
-        if desc.buffers.len() != uniforms.len()
-            || desc.textures.len() != textures.len()
-            || desc.samplers.len() != samplers.len()
+        if desc.layout.compute_entries.is_empty()
+            && (desc.buffers.len() != uniforms.len()
+                || desc.textures.len() != textures.len()
+                || desc.samplers.len() != samplers.len())
         {
             return Err(crate::DeviceError::Unexpected);
         }
-        if desc.entries.len() != textures.len() + samplers.len() + uniforms.len() {
+        if desc.layout.compute_entries.is_empty()
+            && desc.entries.len() != textures.len() + samplers.len() + uniforms.len()
+        {
             return Err(crate::DeviceError::Unexpected);
         }
-        let indices = |bindings: &[u32]| -> Result<alloc::vec::Vec<usize>, crate::DeviceError> {
+        let indices = |bindings: &[u32],
+                       resource_count: usize|
+         -> Result<alloc::vec::Vec<usize>, crate::DeviceError> {
             let mut indices = alloc::vec::Vec::new();
             for &binding in bindings {
                 let mut matching = desc
@@ -571,7 +622,7 @@ impl BindGroup {
                     .next()
                     .ok_or(crate::DeviceError::Unexpected)?
                     .resource_index as usize;
-                if matching.next().is_some() || index >= bindings.len() || indices.contains(&index)
+                if matching.next().is_some() || index >= resource_count || indices.contains(&index)
                 {
                     return Err(crate::DeviceError::Unexpected);
                 }
@@ -580,9 +631,9 @@ impl BindGroup {
             Ok(indices)
         };
         let uniform_numbers: alloc::vec::Vec<_> = uniforms.iter().map(|u| u.binding).collect();
-        let uniform_indices = indices(&uniform_numbers)?;
-        let texture_indices = indices(&textures)?;
-        let sampler_indices = indices(&samplers)?;
+        let uniform_indices = indices(&uniform_numbers, desc.buffers.len())?;
+        let texture_indices = indices(&textures, desc.textures.len())?;
+        let sampler_indices = indices(&samplers, desc.samplers.len())?;
         let mut expected = alloc::vec::Vec::new();
         expected.extend(
             uniform_numbers
@@ -602,7 +653,7 @@ impl BindGroup {
                 .zip(&sampler_indices)
                 .map(|(&binding, &index)| (binding, index as u32)),
         );
-        if !entries_match(desc.entries, &expected) {
+        if desc.layout.compute_entries.is_empty() && !entries_match(desc.entries, &expected) {
             return Err(crate::DeviceError::Unexpected);
         }
         let mut native_uniforms = alloc::vec::Vec::new();
@@ -695,6 +746,8 @@ impl BindGroup {
             owner: owner.clone(),
             kind: desc.layout.kind,
             resources,
+            compute_resources: super::hal_compute::create_group(owner, desc)?,
+            dynamic_bindings: desc.layout.dynamic_bindings.clone(),
         })
     }
 }

@@ -22,14 +22,29 @@ impl Adapter {
         native: Arc<super::NativeDevice>,
         exact: Option<super::FeatureLevel>,
     ) -> Option<crate::ExposedAdapter<super::Api>> {
-        let projection = super::capabilities::Capabilities::query(&native).wgpu_projection()?;
+        let mut projection = super::capabilities::Capabilities::query(&native).wgpu_projection()?;
+        if native.portable_fl11_0 {
+            super::hal_compute::project(&mut projection.capabilities);
+            if native.supports_fl11_rgba8_uint_copies() {
+                projection
+                    .capabilities
+                    .downlevel
+                    .limits
+                    .texture_to_buffer_copy_format_mask |=
+                    wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(
+                        wgt::TextureFormat::Rgba8Uint,
+                    );
+            }
+        }
         let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
         info.name = identity.name.clone();
         info.vendor = identity.vendor_id;
         info.device = identity.device_id;
         info.driver = String::from("D3D11");
         let level = native.feature_level();
-        let level_tag = if level == super::FeatureLevel::L9_1 {
+        let level_tag = if native.portable_fl11_0 {
+            String::from("FL11_0 experimental")
+        } else if level == super::FeatureLevel::L9_1 {
             String::from("FL9_1")
         } else {
             alloc::format!("FL9_1 (hardware {level:?})")
@@ -218,43 +233,37 @@ impl crate::Adapter for Adapter {
     unsafe fn open(
         &self,
         _: wgt::Features,
-        _: &wgt::Limits,
+        limits: &wgt::Limits,
         _: &wgt::MemoryHints,
     ) -> Result<crate::OpenDevice<Self::A>, crate::DeviceError> {
-        #[cfg(feature = "dx11-test-fixture")]
-        {
-            match &self.inner {
-                AdapterInner::Native(native) => Ok(crate::OpenDevice {
-                    device: super::Device::new(native.clone()),
-                    queue: super::Queue::new(native.clone()),
-                }),
-                AdapterInner::Fixture(native) => Ok(crate::OpenDevice {
-                    device: super::Device::new(native.clone()),
-                    queue: super::Queue::new(native.clone()),
-                }),
-            }
-        }
-        #[cfg(not(feature = "dx11-test-fixture"))]
-        {
-            match &self.inner {
-                AdapterInner::Native(native) => Ok(crate::OpenDevice {
-                    device: super::Device::new(native.clone()),
-                    queue: super::Queue::new(native.clone()),
-                }),
-            }
-        }
+        let native = match &self.inner {
+            AdapterInner::Native(native) => native,
+            #[cfg(feature = "dx11-test-fixture")]
+            AdapterInner::Fixture(native) => native,
+        };
+        let mut device = super::Device::new(native.clone());
+        device.compute_limit = limits.max_compute_workgroups_per_dimension;
+        Ok(crate::OpenDevice {
+            device,
+            queue: super::Queue::new(native.clone()),
+        })
     }
     unsafe fn texture_format_capabilities(
         &self,
         format: wgt::TextureFormat,
     ) -> crate::TextureFormatCapabilities {
-        let _ = format;
         match self.inner {
             #[cfg(feature = "dx11-test-fixture")]
             AdapterInner::Fixture(ref native) => {
                 super::capabilities::Capabilities::query(native).texture_format_capabilities(format)
             }
             AdapterInner::Native(ref native) => {
+                if format == wgt::TextureFormat::Rgba8Uint
+                    && native.supports_fl11_rgba8_uint_copies()
+                {
+                    return crate::TextureFormatCapabilities::COPY_SRC
+                        | crate::TextureFormatCapabilities::COPY_DST;
+                }
                 super::capabilities::Capabilities::query(native).texture_format_capabilities(format)
             }
         }

@@ -632,6 +632,14 @@ impl Device {
         }
     }
 
+    pub(crate) fn require_indirect_dispatch(&self) -> Result<(), MissingDownlevelFlags> {
+        if self.downlevel.limits.indirect_dispatch {
+            Ok(())
+        } else {
+            self.require_downlevel_flags(wgt::DownlevelFlags::INDIRECT_EXECUTION)
+        }
+    }
+
     /// # Safety
     ///
     /// - See [wgpu::Device::start_graphics_debugger_capture][api] for details the safety.
@@ -1740,7 +1748,7 @@ impl Device {
         let mut usage = conv::map_buffer_usage(desc.usage);
 
         if desc.usage.contains(wgt::BufferUsages::INDIRECT) {
-            self.require_downlevel_flags(wgt::DownlevelFlags::INDIRECT_EXECUTION)?;
+            self.require_indirect_dispatch()?;
             // We are going to be reading from it, internally;
             // when validating the content of the buffer
             usage |= wgt::BufferUses::STORAGE_READ_ONLY | wgt::BufferUses::STORAGE_READ_WRITE;

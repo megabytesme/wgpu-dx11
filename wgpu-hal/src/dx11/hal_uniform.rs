@@ -136,8 +136,27 @@ impl UniformBinding {
         fragment_slot: Option<u32>,
         source_box: &D3D11_BOX,
     ) -> Result<()> {
-        if vertex_slot.is_none() && fragment_slot.is_none()
-            || source_box.right.checked_sub(source_box.left) != Some(self.len() as u32)
+        if vertex_slot.is_none() && fragment_slot.is_none() {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let constant = self.upload(context, source_box)?;
+        unsafe {
+            if let Some(slot) = vertex_slot {
+                context.VSSetConstantBuffers(slot, Some(&[Some(constant.clone())]));
+            }
+            if let Some(slot) = fragment_slot {
+                context.PSSetConstantBuffers(slot, Some(&[Some(constant.clone())]));
+            }
+        }
+        Ok(())
+    }
+
+    pub(super) fn upload(
+        &self,
+        context: &ID3D11DeviceContext,
+        source_box: &D3D11_BOX,
+    ) -> Result<&ID3D11Buffer> {
+        if source_box.right.checked_sub(source_box.left) != Some(self.len() as u32)
             || source_box.right > self.source_size
             || !source_box.left.is_multiple_of(4)
             || source_box.top != 0
@@ -205,23 +224,13 @@ impl UniformBinding {
                     context.Unmap(staging, 0);
                     return Err(Error::from_hresult(E_FAIL));
                 }
-                scratch[..len].copy_from_slice(core::slice::from_raw_parts(
-                    mapped.pData.cast::<u8>(),
-                    len,
-                ));
+                scratch[..len]
+                    .copy_from_slice(core::slice::from_raw_parts(mapped.pData.cast::<u8>(), len));
                 context.Unmap(staging, 0);
                 context.UpdateSubresource(&self.constant, 0, None, scratch.as_ptr().cast(), 0, 0);
             }
         }
-        unsafe {
-            if let Some(slot) = vertex_slot {
-                context.VSSetConstantBuffers(slot, Some(&[Some(self.constant.clone())]));
-            }
-            if let Some(slot) = fragment_slot {
-                context.PSSetConstantBuffers(slot, Some(&[Some(self.constant.clone())]));
-            }
-        }
-        Ok(())
+        Ok(&self.constant)
     }
 }
 
