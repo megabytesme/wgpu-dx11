@@ -1145,7 +1145,7 @@ impl NativeDevice {
         let cube_face =
             desc.ArraySize == 6 && desc.MiscFlags & D3D11_RESOURCE_MISC_TEXTURECUBE.0 as u32 != 0;
         if !texture.usage.contains(wgt::TextureUses::COPY_SRC)
-            || !matches!(
+            || !(matches!(
                 desc.Format,
                 DXGI_FORMAT_R8G8B8A8_UNORM
                     | DXGI_FORMAT_B8G8R8A8_UNORM
@@ -1167,7 +1167,7 @@ impl NativeDevice {
                     | DXGI_FORMAT_B5G6R5_UNORM
                     | DXGI_FORMAT_B5G5R5A1_UNORM
                     | DXGI_FORMAT_B4G4R4A4_UNORM
-            )
+            ) || (desc.Format == DXGI_FORMAT_R8G8B8A8_UINT && self.portable_fl11_0))
             || (desc.MipLevels > 1
                 && !super::capabilities::supported_mip_texture_usage(texture.usage))
             || !(single_texture || cube_face)
@@ -1189,7 +1189,7 @@ impl NativeDevice {
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe { texture.raw.as_2d()?.GetDesc(&mut desc) };
         if !texture.usage.contains(wgt::TextureUses::COPY_DST)
-            || !matches!(
+            || !(matches!(
                 desc.Format,
                 DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_UNORM
@@ -1209,7 +1209,7 @@ impl NativeDevice {
                     | DXGI_FORMAT_B8G8R8A8_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                     | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
-            )
+            ) || (desc.Format == DXGI_FORMAT_R8G8B8A8_UINT && self.portable_fl11_0))
             || (desc.MipLevels > 1
                 && !super::capabilities::supported_mip_texture_usage(texture.usage))
             || (desc.ArraySize != 1

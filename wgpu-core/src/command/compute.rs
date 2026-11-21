@@ -1046,11 +1046,7 @@ fn dispatch_workgroups_indirect(
 
     state.is_ready()?;
 
-    state
-        .pass
-        .base
-        .device
-        .require_indirect_dispatch()?;
+    state.pass.base.device.require_indirect_dispatch()?;
 
     buffer.check_usage(wgt::BufferUsages::INDIRECT)?;
 

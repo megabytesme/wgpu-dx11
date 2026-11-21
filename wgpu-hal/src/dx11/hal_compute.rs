@@ -37,7 +37,7 @@ pub(super) fn project(caps: &mut crate::Capabilities) {
     caps.limits.max_storage_buffers_per_shader_stage = MAX_STORAGE;
     caps.limits.max_dynamic_storage_buffers_per_pipeline_layout = MAX_STORAGE;
     caps.limits.max_storage_buffer_binding_size =
-        caps.limits.max_buffer_size.min(u64::from(u32::MAX));
+        caps.limits.max_buffer_size.min(u64::from(u32::MAX)) & !3;
     caps.limits.max_compute_workgroup_storage_size = 32 * 1024;
     caps.limits.max_compute_invocations_per_workgroup = 1024;
     caps.limits.max_compute_workgroup_size_x = 1024;
