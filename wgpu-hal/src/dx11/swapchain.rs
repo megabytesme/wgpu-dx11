@@ -133,6 +133,17 @@ struct State {
     acquired: bool,
     latency_ready_consumed: bool,
     pending_present: bool,
+    #[cfg(all(feature = "dx11-native-hdr", target_vendor = "uwp"))]
+    hdr_panel: HdrPanelState,
+}
+
+#[cfg(all(feature = "dx11-native-hdr", target_vendor = "uwp"))]
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+enum HdrPanelState {
+    #[default]
+    Attached,
+    DetachPending,
+    Detached,
 }
 
 fn record_pending_present_completion(state: &mut State, signaled: bool) -> bool {
@@ -415,12 +426,21 @@ impl CoreWindowSwapchain {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
         let _reservation = Reservation::new(&self.inner.state)?;
+        if self.inner.state.lock().hdr_panel == HdrPanelState::Detached {
+            return Ok(());
+        }
         let wait = self.wait_for_pending_present_timeout(core::time::Duration::from_secs(2));
         if unsafe { self.inner.device.raw_device().GetDeviceRemovedReason() }.is_ok() && !wait? {
             return Err(Error::from_hresult(
                 windows::Win32::Graphics::Dxgi::DXGI_ERROR_WAIT_TIMEOUT,
             ));
         }
+        self.detach_reserved_hdr_panel()
+    }
+
+    #[cfg(all(feature = "dx11-native-hdr", target_vendor = "uwp"))]
+    fn detach_reserved_hdr_panel(&self) -> Result<()> {
+        self.inner.state.lock().hdr_panel = HdrPanelState::DetachPending;
         {
             let context = self.inner.device.immediate_context();
             unsafe {
@@ -428,7 +448,17 @@ impl CoreWindowSwapchain {
                 context.Flush();
             }
         }
-        HRESULT(unsafe { horizon_uwp_detach_game_swapchain() }).ok()
+        HRESULT(unsafe { horizon_uwp_detach_game_swapchain() }).ok()?;
+        self.inner.state.lock().hdr_panel = HdrPanelState::Detached;
+        Ok(())
+    }
+
+    #[cfg(all(feature = "dx11-native-hdr", target_vendor = "uwp"))]
+    fn require_attached_hdr_panel(&self) -> Result<()> {
+        if self.inner.state.lock().hdr_panel != HdrPanelState::Attached {
+            return Err(Error::from_hresult(DXGI_ERROR_INVALID_CALL));
+        }
+        Ok(())
     }
 
     #[cfg(feature = "dx11-test-fixture")]
@@ -482,6 +512,8 @@ impl CoreWindowSwapchain {
         timeout: Option<core::time::Duration>,
     ) -> Result<Option<CoreWindowFrame>> {
         let mut reservation = Reservation::new(&self.inner.state)?;
+        #[cfg(all(feature = "dx11-native-hdr", target_vendor = "uwp"))]
+        self.require_attached_hdr_panel()?;
         if !self.wait_for_next_frame(timeout)? {
             return Ok(None);
         }
@@ -596,13 +628,21 @@ impl CoreWindowSwapchain {
     }
 
     /// Resize after the acquired frame and all derived views have been released.
+    ///
+    /// A failed native HDR resize detaches the UWP panel. Release the chain
+    /// before creating an SDR replacement. If detaching also fails, call
+    /// `detach_hdr_panel` to retry before releasing panel ownership.
     pub fn resize(&self, width: u32, height: u32) -> Result<()> {
         if (width == 0) != (height == 0) {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
         let _reservation = Reservation::new(&self.inner.state)?;
-        self.wait_for_pending_present()?;
-        self.resize_buffers(width, height)
+        #[cfg(all(feature = "dx11-native-hdr", target_vendor = "uwp"))]
+        self.require_attached_hdr_panel()?;
+        let result = self
+            .wait_for_pending_present()
+            .and_then(|()| self.resize_buffers(width, height));
+        self.finish_resize(result)
     }
 
     pub(super) fn resize_timeout(
@@ -615,11 +655,27 @@ impl CoreWindowSwapchain {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
         let _reservation = Reservation::new(&self.inner.state)?;
-        if !self.wait_for_pending_present_timeout(timeout)? {
-            return Ok(false);
-        }
-        self.resize_buffers(width, height)?;
+        #[cfg(all(feature = "dx11-native-hdr", target_vendor = "uwp"))]
+        self.require_attached_hdr_panel()?;
+        let result = match self.wait_for_pending_present_timeout(timeout) {
+            Ok(true) => self.resize_buffers(width, height),
+            Ok(false) => return Ok(false),
+            Err(error) => Err(error),
+        };
+        self.finish_resize(result)?;
         Ok(true)
+    }
+
+    fn finish_resize(&self, result: Result<()>) -> Result<()> {
+        #[cfg(all(feature = "dx11-native-hdr", target_vendor = "uwp"))]
+        if let Err(ref resize_error) = result {
+            if self.inner.is_swap_chain_panel && self.inner.hdr_encoding.is_some() {
+                self.detach_reserved_hdr_panel().inspect_err(|detach_error| {
+                    log::error!("D3D11 HDR resize failed ({resize_error}); panel detach failed ({detach_error})");
+                })?;
+            }
+        }
+        result
     }
 
     fn resize_buffers(&self, width: u32, height: u32) -> Result<()> {
@@ -677,6 +733,15 @@ impl CoreWindowFrame {
     /// Present this frame and release its backbuffer reference.
     pub fn present(self, sync_interval: u32) -> Result<()> {
         self.present_for_hal(sync_interval).map(|_| ())
+    }
+
+    /// Present this HDR frame. Returns false if DXGI reports occlusion.
+    #[cfg(feature = "dx11-native-hdr")]
+    pub fn present_hdr(self, sync_interval: u32) -> Result<bool> {
+        if self.inner.hdr_encoding.is_none() {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        self.present_for_hal(sync_interval)
     }
 
     pub(super) fn present_for_hal(mut self, sync_interval: u32) -> Result<bool> {
@@ -955,7 +1020,7 @@ mod tests {
             let chain_desc = unsafe { swapchain.inner.swapchain.GetDesc1()? };
             assert_eq!(chain_desc.AlphaMode, DXGI_ALPHA_MODE_IGNORE);
             assert_eq!(chain_desc.Format, encoding.format_and_color_space().0);
-            if encoding == NativeHdrEncoding::Bt2100Pq {
+            let mut pq_chain = if encoding == NativeHdrEncoding::Bt2100Pq {
                 let chain: IDXGISwapChain4 = swapchain.inner.swapchain.cast()?;
                 let metadata = DXGI_HDR_METADATA_HDR10 {
                     RedPrimary: [35400, 14600],
@@ -970,11 +1035,11 @@ mod tests {
                 // DXGI_HDR_METADATA_HDR10 is repr(C) with 28 occupied bytes.
                 let bytes =
                     unsafe { core::mem::transmute::<DXGI_HDR_METADATA_HDR10, [u8; 28]>(metadata) };
-                unsafe {
-                    chain.SetHDRMetaData(DXGI_HDR_METADATA_TYPE_HDR10, Some(&bytes))?;
-                    chain.SetHDRMetaData(DXGI_HDR_METADATA_TYPE_NONE, None)?;
-                }
-            }
+                unsafe { chain.SetHDRMetaData(DXGI_HDR_METADATA_TYPE_HDR10, Some(&bytes))? };
+                Some(chain)
+            } else {
+                None
+            };
             for extent in [[64, 64], [96, 96]] {
                 assert_eq!(swapchain.size()?, extent);
                 let frame = swapchain.acquire(Some(timeout))?.expect("HDR frame");
@@ -985,7 +1050,11 @@ mod tests {
                     })?;
                 }
                 assert_eq!(frame.readback_hdr()?, expected);
-                assert!(frame.present_for_hal(1)?, "HDR frame was occluded");
+                assert!(frame.present_hdr(1)?, "HDR frame was occluded");
+                if let Some(chain) = pq_chain.take() {
+                    assert!(swapchain.wait_for_pending_present_timeout(timeout)?);
+                    unsafe { chain.SetHDRMetaData(DXGI_HDR_METADATA_TYPE_NONE, None)? };
+                }
                 if extent == [64, 64] {
                     assert!(swapchain.resize_timeout(96, 96, timeout)?);
                 }
