@@ -1,0 +1,49 @@
+{
+  "source_sha": "32551d2777c4fc5c2c55e9cfc31272ec08c35942",
+  "recipe": {
+    "build_host": "BEN-DESKTOP",
+    "build_directory": "E:\\temp\\wgpu-fl10_1\\strict-source",
+    "library_build": "cargo +1.99.1 --config E:/temp/wgpu-fl10_1/portable-uwp-parking.toml build --offline -Z build-std=std,panic_abort -p wgpu --no-default-features --features std,wgsl,dx11-experimental-fl10 --lib --target <target>",
+    "environments": {
+      "RUSTC_BOOTSTRAP": "1",
+      "__CARGO_TESTS_ONLY_SRC_ROOT": "E:\\temp\\wgpu-fl10_1\\patched-rust\\library",
+      "CARGO_PROFILE_DEV_PANIC_arm64": "abort"
+    },
+    "std_patches": "HorizonUWP November 20 pinned rust-std preparation script, applied to a disposable copy.",
+    "parking_lot_core": "0.9.12 copied into the isolated build. Only the UWP path was changed to use WindowsApp WaitOnAddress and WakeByAddressSingle with no desktop fallback. The detached Cargo lock records the path override.",
+    "arm32_package_command": "powershell.exe -NoProfile -File E:/temp/wgpu-fl10_1/package-portable-strict.ps1 -Architecture arm",
+    "arm64_package_command": "powershell.exe -NoProfile -File E:/temp/wgpu-fl10_1/package-portable-abort.ps1 -Architecture arm64",
+    "arm32_deploy": "powershell.exe -NoProfile -File E:/temp/wgpu-fl10_1/run-lumia-portable.ps1 -Package <signed appx> -Sha256 <package sha>",
+    "arm64_deploy": "E:/temp/wgpu-fl10_1/run-surface-appcontainer.ps1 -Package <signed appx>"
+  },
+  "arm32": {
+    "package": "E:\\temp\\wgpu-fl10_1\\signed-portable-strict-arm\\Fl101PortableProbe-arm.signed.appx",
+    "package_sha256": "f8c3bd286dd26fb2b0e39d91624384b470f948a55090832103200cb4d224e43e",
+    "signature": "SignTool verified",
+    "deployed_identity": "MCHorizonUWP.Fl101PortableProbe_1.0.0.0_arm__4pd4jeb6snrqw",
+    "device": "Lumia 950 XL / Qualcomm Adreno 430",
+    "driver": "11.18.1078.53",
+    "runtime_result": "pass",
+    "resolved_red": [
+      0,
+      135,
+      255
+    ],
+    "log": {
+      "path": "evidence/lumia-signed-portable.log",
+      "sha256": "9cf9eee44dc3cb501e29cadf61a796b84cebeb2196ea8fb8710607ba97fca493"
+    }
+  },
+  "arm64": {
+    "package": "E:\\temp\\wgpu-fl10_1\\signed-portable-abort-arm64\\Fl101PortableProbe-arm64.signed.appx",
+    "package_sha256": "1087b7ffb840008cbfd9e456d73e3f44ec591dfa33f3d377d9854dd81c829cc2",
+    "signature": "SignTool verified",
+    "device": "Surface Pro X / Qualcomm Adreno 680",
+    "runtime_result": "unverified",
+    "log": {
+      "path": "evidence/surface-signed-portable.log",
+      "sha256": "7e64ab3d6c8f09796b3a82e05b3775ff5628ceaf2fc09beaa593b5968fcf4561"
+    },
+    "notes": "See connection or deployment receipt. ARM64 Win32 passed in separate evidence."
+  }
+}

@@ -1,0 +1,7 @@
+UWP FL10.1 portable probe startup
+candidate=32551d2777c4fc5c2c55e9cfc31272ec08c35942
+DX11 adapter: AdapterInfo { name: "Qualcomm Adreno 430", vendor: 1297040209, device: 1177957426, device_type: Other, device_pci_bus_id: "", driver: "D3D11", driver_info: "FL10_1 (experimental portable subset); physical DXGI adapter; driver version 11.18.1078.53", backend: Dx11, subgroup_min_size: 4, subgroup_max_size: 128, transient_saves_memory: None, limit_bucket: None }
+4x alpha-to-coverage alpha=0 resolved average red=0
+4x alpha-to-coverage alpha=0.5 resolved average red=135
+4x alpha-to-coverage alpha=1 resolved average red=255
+overall=PASS

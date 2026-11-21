@@ -133,6 +133,19 @@ The complete report was already present when retrieved. Those observations
 apply to the roadmap reference package.
 [Signed Lumia reference output](../deliverables/dx11-levels/FL10_1/evidence/lumia-signed-reference.log)
 
+The signed branch probe passed on Lumia ARM32 at the same tested source
+revision. The portable 4× draw and resolve produced average red values
+of 0, 135, and 255. Both ARM packages signed and passed strict import
+checks. Their build used the November 20 UWP Rust standard-library
+patches and an isolated `parking_lot_core` override that links UWP
+address-wait functions through WindowsApp. The isolated package
+receipts identify the runtime result for each target.
+[AppContainer build and run receipts](../deliverables/dx11-levels/FL10_1/appcontainer-results.json)
+
+The signed ARM64 package is ready for the Surface. Its deployment
+attempts timed out at SSH before transfer. The recorded ARM64 Win32
+results cover the portable fixture and the native format suite.
+
 The RGBA8 render oracles use the Direct3D conversion tolerance of 0.6
 integer ULP. This accounts for the NVIDIA driver converting 0.5 to 127.
 The driver also returned success for a seven-face cube resource, though

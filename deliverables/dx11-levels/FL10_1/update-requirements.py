@@ -72,6 +72,17 @@ def main():
             key: {"candidate_sha": followup["source_sha"]} | result
             for key, result in followup["requirement_evidence"].items()
         }
+        appcontainer_path = HERE / "appcontainer-results.json"
+        if appcontainer_path.exists():
+            appcontainer = json.loads(appcontainer_path.read_text(encoding="utf-8"))
+            if appcontainer["source_sha"] != followup["source_sha"]:
+                raise ValueError("AppContainer and Win32 source revisions differ")
+            alpha = evidence["FL10_1.OP.alpha_to_coverage"]
+            for arch in ("arm32", "arm64"):
+                platform = appcontainer[arch]
+                if platform["runtime_result"] == "pass":
+                    alpha["devices"] += f"; {platform['device']} {arch} AppContainer"
+                    alpha["artifact_sha256"] += f"; signed-{arch}={platform['log']['sha256']}"
     ids = {row["id"] for row in rows}
     if len(ids) != len(rows):
         raise ValueError("Duplicate requirement ID")
