@@ -242,6 +242,53 @@ int probe(ID3D11Device* device, ID3D11DeviceContext* context) {
         }
         controls &= readback(winding.grouped_case, 4, true, true);
     }
+    // One draw contains [front replace, back increment, front replace, back increment].
+    constexpr float ordered_vertices[][2] = {
+        {-1, -1}, {3, -1}, {-1, 3}, {-1, -1}, {-1, 3}, {3, -1},
+        {-1, -1}, {3, -1}, {-1, 3}, {-1, -1}, {-1, 3}, {3, -1},
+    };
+    const D3D11_BUFFER_DESC ordered_buffer_desc{
+        sizeof(ordered_vertices), D3D11_USAGE_IMMUTABLE, D3D11_BIND_VERTEX_BUFFER, 0, 0, 0};
+    const D3D11_SUBRESOURCE_DATA ordered_data{ordered_vertices, 0, 0};
+    ComPtr<ID3D11Buffer> ordered_buffer;
+    check(device->CreateBuffer(&ordered_buffer_desc, &ordered_data, ordered_buffer.GetAddressOf()),
+        "CreateBuffer(ordered vertices)");
+    context->IASetVertexBuffers(0, 1, ordered_buffer.GetAddressOf(), &stride, &offset);
+    const auto replace_increment = stencil_state(device, D3D11_STENCIL_OP_REPLACE,
+        D3D11_STENCIL_OP_INCR_SAT, D3D11_COMPARISON_ALWAYS, 0xff);
+    begin(false);
+    context->RSSetScissorRects(1, &full);
+    context->RSSetState(ccw.Get());
+    context->OMSetDepthStencilState(replace_increment.Get(), stencil_reference);
+    context->Draw(12, 0);
+    const bool direct_native_matches = readback("direct_four_triangles", 2, true, true);
+    std::printf("direct_native_matches=%u (diagnostic on asymmetric-stencil drivers)\n", direct_native_matches);
+
+    begin(false);
+    context->RSSetScissorRects(1, &full);
+    for (UINT first = 0; first != 12; first += 3) {
+        context->RSSetState(cull_back_ccw.Get());
+        context->OMSetDepthStencilState(replace.Get(), stencil_reference);
+        context->Draw(3, first);
+        context->RSSetState(cull_front_ccw.Get());
+        context->OMSetDepthStencilState(increment.Get(), stencil_reference);
+        context->Draw(3, first);
+    }
+    controls &= readback("direct_replay_ordered", 2, true, true);
+
+    begin(false);
+    context->RSSetScissorRects(1, &full);
+    context->RSSetState(cull_back_ccw.Get());
+    context->OMSetDepthStencilState(replace.Get(), stencil_reference);
+    context->Draw(3, 0);
+    context->Draw(3, 6);
+    context->RSSetState(cull_front_ccw.Get());
+    context->OMSetDepthStencilState(increment.Get(), stencil_reference);
+    context->Draw(3, 3);
+    context->Draw(3, 9);
+    controls &= readback("direct_replay_regrouped_wrong", 3, true, true);
+    context->IASetVertexBuffers(0, 1, buffer.GetAddressOf(), &stride, &offset);
+
     const auto asymmetric = stencil_state(device, D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_KEEP,
         D3D11_COMPARISON_ALWAYS, 0xff);
     bool asymmetric_matches = run("asymmetric_ccw_front", asymmetric.Get(), ccw.Get(), true, false);

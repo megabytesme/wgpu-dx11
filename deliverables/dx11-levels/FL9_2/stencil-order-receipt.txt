@@ -1,0 +1,27 @@
+UTC: 2026-11-21T22:58:54.5717963Z
+Host: BEN-DESKTOP
+OS: Microsoft Windows 11 Pro 10.0.26300 build 26300 64-bit
+Source SHA256: 1A43029C4651AF13117F917DDC51EF96416F30F184D5E6FAFD98E42F48AC8FAA
+Executable SHA256: 70AE4A8F280BAAF9BE320AD490A7E6D39EBB1ECAD129B270B1E9791DE6CF3C85
+Build: MSVC x64 /EHsc /W4 /WX /O2 /std:c++17
+adapter=0 name=NVIDIA GeForce RTX 3090 Ti vendor=0x000010de device=0x00002203 flags=0x00000000
+requested=0x9200 actual=0x9200
+case=symmetric_replace equality_reference=1 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=symmetric_keep equality_reference=1 left_red=0 right_red=0 expected_left=0 expected_right=0 mismatches=0
+case=symmetric_replace_cull_back equality_reference=1 left_red=128 right_red=0 expected_left=128 expected_right=0 mismatches=0
+case=symmetric_replace_cull_front equality_reference=1 left_red=0 right_red=128 expected_left=0 expected_right=128 mismatches=0
+case=ordered_ccw_front equality_reference=2 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=grouped_ccw_front equality_reference=4 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=ordered_cw_front equality_reference=2 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=grouped_cw_front equality_reference=4 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=direct_four_triangles equality_reference=2 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+direct_native_matches=1 (diagnostic on asymmetric-stencil drivers)
+case=direct_replay_ordered equality_reference=2 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=direct_replay_regrouped_wrong equality_reference=3 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=asymmetric_ccw_front equality_reference=1 left_red=128 right_red=0 expected_left=128 expected_right=0 mismatches=0
+case=asymmetric_cw_front equality_reference=1 left_red=0 right_red=128 expected_left=0 expected_right=128 mismatches=0
+case=symmetric_replace_depth_disabled equality_reference=1 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=symmetric_replace_color_enabled equality_reference=1 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=asymmetric_depth_disabled equality_reference=1 left_red=128 right_red=0 expected_left=128 expected_right=0 mismatches=0
+case=asymmetric_color_enabled equality_reference=1 left_red=128 right_red=0 expected_left=128 expected_right=0 mismatches=0
+Exit: 0
