@@ -1,0 +1,18 @@
+UTC: 2026-11-21T22:51:01.4174778Z
+Host: BEN-DESKTOP
+OS: Microsoft Windows 11 Pro 10.0.26300 build 26300 64-bit
+Source SHA256: 073919FAD89966B346B01E86F6F04B367B0B04B2C445164BC6F0D16BBF980EFC
+Executable SHA256: 9B251BA0AE0A95A6D5F34B8DED7E1C815D575E233BC71DFB513C330973C3D323
+Build: MSVC x64 cl /nologo /EHsc /W4 /WX /std:c++17, d3d11.lib d3dcompiler.lib
+Run: warp
+adapter=Microsoft Basic Render Driver vendor=0x1414 device=0x008c luid=00000000:0001852a
+driver=warp requested=10_0 actual=10_0 compute4=1
+PASS: 16 structured UAV words matched
+PASS: 16 raw UAV words matched
+Exit: 0
+Run: hardware
+adapter=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=00000000:00014a80
+driver=hardware requested=10_0 actual=10_0 compute4=1
+PASS: 16 structured UAV words matched
+PASS: 16 raw UAV words matched
+Exit: 0
