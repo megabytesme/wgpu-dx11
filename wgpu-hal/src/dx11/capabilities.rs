@@ -915,8 +915,8 @@ impl Capabilities {
         };
         limits.max_vertex_attributes = 16;
         limits.max_vertex_buffer_array_stride = 2048;
-        // FL9_1 compiled pixel shaders accept eight inputs total, including SV_Position.
-        limits.max_inter_stage_shader_variables = 7;
+        // FL9_1 accepts eight user interpolators when the pixel shader does not read SV_Position.
+        limits.max_inter_stage_shader_variables = 8;
         limits.max_color_attachments = self.backend.color_attachments;
         limits.max_color_attachment_bytes_per_sample = 8;
         limits.max_buffers_and_acceleration_structures_per_shader_stage =

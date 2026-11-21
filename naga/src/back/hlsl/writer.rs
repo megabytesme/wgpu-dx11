@@ -3667,6 +3667,15 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
             if is_subgroup_builtin_binding(&m.binding) {
                 continue;
             }
+            if self.options.fl9_omit_unused_fragment_position
+                && shader_stage == (ShaderStage::Fragment, Io::Input)
+                && matches!(
+                    m.binding,
+                    Some(crate::Binding::BuiltIn(crate::BuiltIn::Position { .. }))
+                )
+            {
+                continue;
+            }
             if shader_stage == (ShaderStage::Vertex, Io::Input)
                 && self.options.fl9_instance_index_input
                 && matches!(
@@ -3914,6 +3923,12 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
         fake_member: &EpStructMember,
     ) -> BackendResult {
         match fake_member.binding {
+            Some(crate::Binding::BuiltIn(crate::BuiltIn::Position { .. }))
+                if ep.stage == ShaderStage::Fragment
+                    && self.options.fl9_omit_unused_fragment_position =>
+            {
+                write!(self.out, "float4(0.0, 0.0, 0.0, 0.0)")?
+            }
             Some(crate::Binding::BuiltIn(crate::BuiltIn::InstanceIndex))
                 if self.options.fl9_instance_index_input =>
             {

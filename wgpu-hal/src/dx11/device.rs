@@ -248,6 +248,42 @@ pub struct NativeDevice {
 
 impl NativeDevice {
     #[cfg(test)]
+    pub(super) fn open_default_hardware_for_test(level: FeatureLevel) -> Result<Self> {
+        use windows::Win32::Graphics::Direct3D::D3D_DRIVER_TYPE_HARDWARE;
+
+        let mut device = None;
+        let mut context = None;
+        let mut selected = D3D_FEATURE_LEVEL::default();
+        unsafe {
+            D3D11CreateDevice(
+                None::<&IDXGIAdapter>,
+                D3D_DRIVER_TYPE_HARDWARE,
+                HMODULE::default(),
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                Some(&[D3D_FEATURE_LEVEL(level.as_raw() as i32)]),
+                D3D11_SDK_VERSION,
+                Some(&mut device),
+                Some(&mut selected),
+                Some(&mut context),
+            )?;
+        }
+        if selected.0 as u32 != level.as_raw() {
+            return Err(Error::from_hresult(E_FAIL));
+        }
+        Ok(Self {
+            raw: device.ok_or_else(|| Error::from_hresult(E_FAIL))?,
+            immediate: Mutex::new(context.ok_or_else(|| Error::from_hresult(E_FAIL))?),
+            idle_query: Mutex::new(None),
+            level,
+            timestamp_frequency: None,
+            debug_info_queue: None,
+            injected_oom_check_status: Mutex::new(None),
+            injected_wait_for_idle_status: Mutex::new(None),
+            diagnostic_separate_alpha: false,
+        })
+    }
+
+    #[cfg(test)]
     pub(super) fn clear_debug_messages(&self) {
         if let Some(queue) = &self.debug_info_queue {
             unsafe { queue.ClearStoredMessages() };
@@ -324,6 +360,37 @@ impl NativeDevice {
         format: windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT,
     ) -> Result<u32> {
         unsafe { self.raw.CheckFormatSupport(format) }
+    }
+
+    /// Run native D3D11 commands with exclusive access to this device's immediate context.
+    ///
+    /// Commands are ordered with HAL submissions on this context. The context's bindings
+    /// are cleared before and after the callback.
+    ///
+    /// # Safety
+    ///
+    /// Use only independently owned native resources created for this device and keep
+    /// the immediate context inside the callback. Do not access portable wgpu resources
+    /// or call methods that acquire the immediate-context lock from inside the callback.
+    pub unsafe fn with_native_context<T>(
+        &self,
+        run: impl FnOnce(&ID3D11Device, &ID3D11DeviceContext) -> Result<T>,
+    ) -> Result<T> {
+        struct ClearBindings<'a>(&'a ID3D11DeviceContext);
+        impl Drop for ClearBindings<'_> {
+            fn drop(&mut self) {
+                unsafe { self.0.ClearState() };
+            }
+        }
+
+        let context = self.immediate_context();
+        self.check_device_removed_reason()?;
+        unsafe { context.ClearState() };
+        let bindings = ClearBindings(&context);
+        let result = run(&self.raw, &context);
+        drop(bindings);
+        self.check_device_removed_reason()?;
+        result
     }
 
     pub(super) fn timestamp_frequency(&self) -> Option<u64> {

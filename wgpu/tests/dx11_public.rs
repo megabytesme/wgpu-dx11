@@ -33754,37 +33754,37 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     let limits = adapter.limits();
-    assert_eq!(limits.max_inter_stage_shader_variables, 7);
+    assert_eq!(limits.max_inter_stage_shader_variables, 8);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; inter_stage_variables=7",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; inter_stage_variables=8",
         info.name, info.vendor, info.device, info.driver_info
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
-        label: Some("public D3D11 FL9_1 seven inter-stage varyings"),
+        label: Some("public D3D11 FL9_1 eight inter-stage varyings"),
         required_features: Features::empty(),
         required_limits: limits,
         ..Default::default()
     }))
     .expect("request a device within the public FL9_1 projection");
 
-    let positive_fields = (0..7)
+    let positive_fields = (0..8)
         .map(|location| format!("@location({location}) value{location}: vec4f"))
         .collect::<Vec<_>>()
         .join(", ");
-    let positive_values = (0..7)
-        .map(|_| "vec4f(0.03125, 0.015625, 0.0078125, 0.125)")
+    let positive_values = (0..8)
+        .map(|i| format!("vec4f({}.0, {}.0, 1.0, 8.0) / 512.0", i + 1, 8 - i))
         .collect::<Vec<_>>()
         .join(", ");
-    let positive_sum = (0..7)
-        .map(|location| format!("input.value{location}"))
+    let positive_sum = (0..8)
+        .map(|location| format!("input.value{location} * {}.0", location + 1))
         .collect::<Vec<_>>()
         .join(" + ");
     let positive_shader = device.create_shader_module(ShaderModuleDescriptor {
-        label: Some("FL9_1 seven matched inter-stage vec4 varyings"),
+        label: Some("FL9_1 eight matched inter-stage vec4 varyings"),
         source: ShaderSource::Wgsl(
             format!(
                 "struct VertexOut {{ @builtin(position) position: vec4f, {positive_fields} }}\n\
-                 struct FragmentIn {{ {positive_fields} }}\n\
+                 struct FragmentIn {{ @builtin(position) position: vec4f, {positive_fields} }}\n\
                  @vertex fn vs(@location(0) position: vec2f) -> VertexOut {{\n\
                      return VertexOut(vec4f(position, 0.5, 1.0), {positive_values});\n\
                  }}\n\
@@ -33811,7 +33811,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
         write_mask: ColorWrites::ALL,
     })];
     let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
-        label: Some("FL9_1 seven varying boundary pipeline"),
+        label: Some("FL9_1 eight varying boundary pipeline"),
         layout: None,
         vertex: VertexState {
             module: &positive_shader,
@@ -33837,7 +33837,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
         .flat_map(f32::to_ne_bytes)
         .collect();
     let vertex = device.create_buffer(&BufferDescriptor {
-        label: Some("FL9_1 seven varying fullscreen triangle"),
+        label: Some("FL9_1 eight varying fullscreen triangle"),
         size: vertex_bytes.len() as u64,
         usage: BufferUsages::VERTEX,
         mapped_at_creation: true,
@@ -33845,11 +33845,11 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
     vertex
         .slice(..)
         .get_mapped_range_mut()
-        .expect("map seven varying fullscreen triangle")
+        .expect("map eight varying fullscreen triangle")
         .copy_from_slice(&vertex_bytes);
     vertex.unmap();
     let target = device.create_texture(&TextureDescriptor {
-        label: Some("FL9_1 seven varying output"),
+        label: Some("FL9_1 eight varying output"),
         size: Extent3d {
             width: 8,
             height: 8,
@@ -33864,17 +33864,17 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
     });
     let target_view = target.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
-        label: Some("FL9_1 seven varying readback"),
+        label: Some("FL9_1 eight varying readback"),
         size: 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-        label: Some("FL9_1 seven varying render and readback"),
+        label: Some("FL9_1 eight varying render and readback"),
     });
     {
         let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("FL9_1 seven varying render pass"),
+            label: Some("FL9_1 eight varying render pass"),
             color_attachments: &[Some(RenderPassColorAttachment {
                 view: &target_view,
                 depth_slice: None,
@@ -33924,39 +33924,80 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
             submission_index: Some(submission),
             timeout: Some(Duration::from_secs(10)),
         })
-        .expect("wait for seven varying rendering");
+        .expect("wait for eight varying rendering");
     receiver
         .recv_timeout(Duration::from_secs(10))
-        .expect("seven varying readback callback")
-        .expect("map seven varying readback");
+        .expect("eight varying readback callback")
+        .expect("map eight varying readback");
     {
         let pixels = readback
             .slice(..)
             .get_mapped_range()
-            .expect("mapped seven varying readback");
+            .expect("mapped eight varying readback");
         for y in 0..8 {
             for x in 0..8 {
                 let offset = y * 256 + x * 4;
                 assert_eq!(
                     &pixels[offset..offset + 4],
-                    [56, 28, 14, 223],
-                    "seven varying output pixel ({x}, {y})"
+                    [102, 60, 18, 143],
+                    "eight varying output pixel ({x}, {y})"
                 );
             }
         }
     }
     readback.unmap();
 
-    let over_limit_fields = (0..8)
+    {
+        use wgpu::hal::dx11::{
+            BgrxFormat, BgrxSubresource, BgrxTextureDescriptor, BgrxTextureShape, BgrxTextureUsage,
+        };
+
+        // The guard keeps the public device alive. Only the separate native texture
+        // below is passed to backend-specific operations.
+        let hal = unsafe { device.as_hal::<wgpu::hal::api::Dx11>() }.expect("DX11 device guard");
+        let native = hal.native_device();
+        assert_eq!(native.feature_level(), wgpu::hal::dx11::FeatureLevel::L9_1);
+        let bgrx = native
+            .create_bgrx_texture(BgrxTextureDescriptor {
+                format: BgrxFormat::Unorm,
+                shape: BgrxTextureShape::D2 { width: 2, height: 2 },
+                mip_levels: 2,
+                usage: BgrxTextureUsage {
+                    shader_resource: true,
+                    render_target: true,
+                    generate_mips: true,
+                },
+            })
+            .expect("create native BGRX texture on the public device");
+        native
+            .write_bgrx_subresource(
+                &bgrx,
+                BgrxSubresource { mip: 0, face: 0 },
+                &[[9, 17, 35, 0]; 4],
+            )
+            .expect("upload native BGRX texture");
+        native
+            .generate_bgrx_mips(&bgrx, 0, 2)
+            .expect("generate native BGRX mips");
+        assert_eq!(
+            native
+                .read_bgrx_subresource(&bgrx, BgrxSubresource { mip: 1, face: 0 })
+                .expect("read native BGRX mip"),
+            [[9, 17, 35]]
+        );
+        println!("PASS: guarded native BGRX GenerateMips from the public device read [9, 17, 35]");
+    }
+
+    let over_limit_fields = (0..9)
         .map(|location| format!("@location({location}) value{location}: vec4f"))
         .collect::<Vec<_>>()
         .join(", ");
-    let over_limit_values = (0..8)
+    let over_limit_values = (0..9)
         .map(|_| "vec4f(0.015625, 0.0078125, 0.00390625, 0.0625)")
         .collect::<Vec<_>>()
         .join(", ");
-    let over_limit_sum = (0..8)
-        .map(|location| format!("input.value{location}"))
+    let over_limit_sum = (0..9)
+        .map(|location| format!("input.value{location} * {}.0", location + 1))
         .collect::<Vec<_>>()
         .join(" + ");
     let over_limit_wgsl = format!(
@@ -33971,15 +34012,15 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
     );
     expect_validation_error_containing(
         &device,
-        "eighth inter-stage varying at location 7",
+        "ninth inter-stage varying at location 8",
         "max_inter_stage_shader_variables",
         || {
             let shader = device.create_shader_module(ShaderModuleDescriptor {
-                label: Some("FL9_1 eighth inter-stage varying"),
+                label: Some("FL9_1 ninth inter-stage varying"),
                 source: ShaderSource::Wgsl(over_limit_wgsl.into()),
             });
             let _ = device.create_render_pipeline(&RenderPipelineDescriptor {
-                label: Some("FL9_1 eight varying over-limit pipeline"),
+                label: Some("FL9_1 nine varying over-limit pipeline"),
                 layout: None,
                 vertex: VertexState {
                     module: &shader,
@@ -34002,7 +34043,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
         },
     );
     println!(
-        "PASS: seven matched vec4 varyings at locations 0–6 rendered [56, 28, 14, 223] in 64/64 pixels; Core rejected location 7 against max_inter_stage_shader_variables before HAL"
+        "PASS: eight matched vec4 varyings at locations 0–7 rendered [102, 60, 18, 143] in 64/64 pixels; Core rejected location 8 against max_inter_stage_shader_variables before HAL"
     );
 }
 

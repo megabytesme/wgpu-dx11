@@ -30,6 +30,13 @@ impl Device {
         &self.native
     }
 
+    /// Backend-specific operations on independently owned native textures.
+    ///
+    /// Portable wgpu textures remain managed by wgpu and cannot be passed to these operations.
+    pub fn native_device(&self) -> &super::device::NativeDevice {
+        &self.native
+    }
+
     #[cfg(any(test, feature = "dx11-test-fixture"))]
     #[doc(hidden)]
     pub fn test_fixture_remove_device_on_next_oom_check(&self) {

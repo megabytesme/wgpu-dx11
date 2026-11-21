@@ -604,6 +604,11 @@ pub struct Options {
     /// WebGPU instance index in its second register for every emulated draw.
     pub fl9_instance_index_input: bool,
 
+    /// Omit a fragment position input that the caller has proved unused.
+    ///
+    /// Its local value is initialized to zero to preserve the source argument layout.
+    pub fl9_omit_unused_fragment_position: bool,
+
     /// Map the selected vertex entry point's `vertex_index` input to a
     /// backend-provided `NAGA_VERTEX_INDEX` input semantic.
     pub fl9_vertex_index_input: bool,
@@ -686,6 +691,7 @@ impl Default for Options {
             fl9_texture_sample_compare_offset_proof: None,
             fl9_viewport_transform: None,
             fl9_instance_index_input: false,
+            fl9_omit_unused_fragment_position: false,
             fl9_vertex_index_input: false,
             fl9_vertex_index_vector_indexing: false,
             fl9_uniform_index_arguments: Vec::new(),

@@ -21,6 +21,12 @@ mod hal_shader;
 mod hal_transfer;
 mod hal_uniform;
 mod instance;
+#[cfg(test)]
+mod native_address;
+mod native_bgrx;
+#[cfg(test)]
+mod native_clip;
+mod native_mips;
 mod query;
 mod sampling;
 mod shader;
@@ -42,6 +48,11 @@ pub use hal_device::Device;
 pub use hal_encoder::CommandEncoder;
 pub use hal_queue::Queue;
 pub use instance::Instance;
+pub use native_bgrx::{
+    BgrxFormat, BgrxSubresource, BgrxTexture, BgrxTextureDescriptor, BgrxTextureShape,
+    BgrxTextureUsage,
+};
+pub use native_mips::{NativeMipFormat, NativeMipTexture, NativeMipTextureDescriptor};
 pub use surface::Surface;
 #[doc(hidden)]
 pub use swapchain::{CoreWindowFrame, CoreWindowSwapchain};
