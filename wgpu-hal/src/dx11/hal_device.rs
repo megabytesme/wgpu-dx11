@@ -322,6 +322,16 @@ impl crate::Device for Device {
                 | wgt::TextureFormat::Depth24PlusStencil8
         );
         let depth_sampled = depth && desc.usage.contains(wgt::TextureUses::RESOURCE);
+        let rgba8_uint = desc.format == wgt::TextureFormat::Rgba8Uint;
+        let copy_uses = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
+        if rgba8_uint
+            && (!self.native.rgba8_uint_copy_supported()
+                || desc.size.depth_or_array_layers != 1
+                || desc.sample_count != 1
+                || !copy_uses.contains(desc.usage))
+        {
+            return Err(DeviceError::Unexpected);
+        }
         let sampled_upload = matches!(
             desc.format,
             wgt::TextureFormat::R8Unorm
@@ -395,6 +405,7 @@ impl crate::Device for Device {
         if desc.dimension != wgt::TextureDimension::D2
             || (!depth
                 && !sampled_upload
+                && !rgba8_uint
                 && !matches!(
                     desc.format,
                     wgt::TextureFormat::Rgba8Unorm
@@ -440,8 +451,9 @@ impl crate::Device for Device {
                                     | wgt::TextureFormat::Bc3RgbaUnormSrgb
                             ) && capabilities.bc_mip_chains_supported(desc.format))))
                     || !super::capabilities::supported_mip_texture_usage(desc.usage)
-                    || ((!desc.size.width.is_power_of_two()
-                        || !desc.size.height.is_power_of_two())
+                    || (!rgba8_uint
+                        && (!desc.size.width.is_power_of_two()
+                            || !desc.size.height.is_power_of_two())
                         && !capabilities.npot_mipmapped_textures_supported())))
             || !matches!(desc.sample_count, 1 | 2 | 4 | 8 | 16)
             || (desc.sample_count > 1
@@ -538,13 +550,14 @@ impl crate::Device for Device {
                 DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM,
                 DXGI_FORMAT_BC1_UNORM_SRGB, DXGI_FORMAT_BC2_UNORM, DXGI_FORMAT_BC2_UNORM_SRGB,
                 DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB, DXGI_FORMAT_R16G16_SNORM,
-                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UINT, DXGI_FORMAT_R8G8B8A8_UNORM,
                 DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
                 DXGI_FORMAT_R8_UNORM,
             },
         };
         let format = match desc.format {
             wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
+            wgt::TextureFormat::Rgba8Uint => DXGI_FORMAT_R8G8B8A8_UINT,
             wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
             wgt::TextureFormat::Rgba8UnormSrgb => DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
             wgt::TextureFormat::Bgra8UnormSrgb => DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
@@ -610,7 +623,7 @@ impl crate::Device for Device {
             && desc.usage.contains(wgt::TextureUses::COPY_SRC)
             && super::capabilities::cube_readback_requires_render_target_bind(desc.format);
         let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
-            | if sampled_upload {
+            | if sampled_upload || rgba8_uint {
                 0
             } else {
                 D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0
@@ -621,7 +634,8 @@ impl crate::Device for Device {
                 0
             }
             | if desc.usage.contains(wgt::TextureUses::COLOR_TARGET)
-                || (desc.usage.contains(wgt::TextureUses::COPY_SRC)
+                || (!rgba8_uint
+                    && desc.usage.contains(wgt::TextureUses::COPY_SRC)
                     && !matches!(
                         desc.format,
                         wgt::TextureFormat::Bc1RgbaUnorm
@@ -668,7 +682,8 @@ impl crate::Device for Device {
                     desc.mip_level_count,
                     1,
                     desc.usage.contains(wgt::TextureUses::COLOR_TARGET)
-                        || (desc.usage.contains(wgt::TextureUses::COPY_SRC)
+                        || (!rgba8_uint
+                            && desc.usage.contains(wgt::TextureUses::COPY_SRC)
                             && !matches!(
                                 desc.format,
                                 wgt::TextureFormat::Bc1RgbaUnorm
@@ -780,9 +795,9 @@ impl crate::Device for Device {
                 DXGI_FORMAT_BC1_UNORM_SRGB, DXGI_FORMAT_BC2_UNORM, DXGI_FORMAT_BC2_UNORM_SRGB,
                 DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB, DXGI_FORMAT_D16_UNORM,
                 DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16_TYPELESS,
-                DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
-                DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UINT,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_R8_UNORM,
             },
         };
         if texture.dimension == wgt::TextureDimension::D3 {
@@ -821,6 +836,7 @@ impl crate::Device for Device {
         let native = self.native.texture_desc(texture).map_err(device_error)?;
         let native_format = match native.Format {
             DXGI_FORMAT_R8G8B8A8_UNORM => wgt::TextureFormat::Rgba8Unorm,
+            DXGI_FORMAT_R8G8B8A8_UINT => wgt::TextureFormat::Rgba8Uint,
             DXGI_FORMAT_B8G8R8A8_UNORM => wgt::TextureFormat::Bgra8Unorm,
             DXGI_FORMAT_R8G8B8A8_UNORM_SRGB => wgt::TextureFormat::Rgba8UnormSrgb,
             DXGI_FORMAT_B8G8R8A8_UNORM_SRGB => wgt::TextureFormat::Bgra8UnormSrgb,

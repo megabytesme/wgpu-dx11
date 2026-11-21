@@ -145,12 +145,13 @@ impl NativeAdapter {
         if self.identity.software {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
-        let device = self.open_device(&[level])?;
+        let mut device = self.open_device(&[level])?;
         if device.feature_level() != level
             || unsafe { device.raw.GetFeatureLevel() }.0 as u32 != level.as_raw()
         {
             return Err(Error::from_hresult(E_FAIL));
         }
+        device.exact_fl11_1 = level == FeatureLevel::L11_1;
         Ok(device)
     }
 
@@ -257,6 +258,7 @@ impl NativeAdapter {
             immediate: Mutex::new(immediate),
             idle_query: Mutex::new(Some(idle_query)),
             level,
+            exact_fl11_1: false,
             timestamp_frequency,
             debug_info_queue,
             #[cfg(any(test, feature = "dx11-test-fixture"))]
@@ -276,6 +278,7 @@ pub struct NativeDevice {
     immediate: Mutex<ID3D11DeviceContext>,
     pub(super) idle_query: Mutex<Option<ID3D11Asynchronous>>,
     level: FeatureLevel,
+    exact_fl11_1: bool,
     timestamp_frequency: Option<u64>,
     #[cfg_attr(not(test), allow(dead_code))]
     debug_info_queue: Option<ID3D11InfoQueue>,
@@ -288,6 +291,24 @@ pub struct NativeDevice {
 }
 
 impl NativeDevice {
+    pub(super) fn rgba8_uint_copy_supported(&self) -> bool {
+        use windows::Win32::Graphics::{
+            Direct3D11::{
+                D3D11_FORMAT_SUPPORT_CPU_LOCKABLE, D3D11_FORMAT_SUPPORT_MIP,
+                D3D11_FORMAT_SUPPORT_TEXTURE2D,
+            },
+            Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UINT,
+        };
+
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_MIP.0
+            | D3D11_FORMAT_SUPPORT_CPU_LOCKABLE.0) as u32;
+        self.exact_fl11_1
+            && self
+                .check_format_support(DXGI_FORMAT_R8G8B8A8_UINT)
+                .is_ok_and(|support| support & required == required)
+    }
+
     #[cfg(test)]
     pub(super) fn clear_debug_messages(&self) {
         if let Some(queue) = &self.debug_info_queue {

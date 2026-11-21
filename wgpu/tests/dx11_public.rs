@@ -58,6 +58,153 @@ fn tier_fl11_1_public_projection_stays_within_implemented_operations() {
 }
 
 #[test]
+#[ignore = "requires exclusive physical GPU access and WGPU_DX11_FORCE_FEATURE_LEVEL=11_1"]
+fn tier_fl11_1_rgba8_uint_copy_roundtrip() {
+    use wgpu_hal::{api::Dx11, dx11::FeatureLevel};
+
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapter = poll_ready(instance.enumerate_adapters(Backends::DX11))
+        .into_iter()
+        .next()
+        .expect("physical FL11_1 DX11 adapter");
+    let hal = unsafe { adapter.as_hal::<Dx11>() }.expect("DX11 adapter");
+    assert_eq!(hal.feature_level(), FeatureLevel::L11_1);
+    assert!(!hal.is_software());
+    drop(hal);
+    let format = TextureFormat::Rgba8Uint;
+    let copies = TextureUsages::COPY_SRC | TextureUsages::COPY_DST;
+    let format_features = adapter.get_texture_format_features(format);
+    assert_eq!(format_features.allowed_usages, copies);
+    assert!(adapter
+        .get_downlevel_capabilities()
+        .limits
+        .supports_texture_to_buffer_copy(format));
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .unwrap();
+    let desc = TextureDescriptor {
+        label: Some("FL11_1 Rgba8Uint copy texture"),
+        size: Extent3d {
+            width: 7,
+            height: 5,
+            depth_or_array_layers: 1,
+        },
+        mip_level_count: 3,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format,
+        usage: copies,
+        view_formats: &[],
+    };
+    expect_validation_error(&device, "Rgba8Uint shader binding", || {
+        drop(device.create_texture(&TextureDescriptor {
+            usage: TextureUsages::TEXTURE_BINDING,
+            ..desc
+        }));
+    });
+    let src = device.create_texture(&desc);
+    let dst = device.create_texture(&desc);
+    let uninitialized = device.create_texture(&TextureDescriptor {
+        usage: TextureUsages::COPY_SRC,
+        ..desc
+    });
+    drop(dst.create_view(&TextureViewDescriptor {
+        base_mip_level: 1,
+        mip_level_count: Some(1),
+        ..Default::default()
+    }));
+
+    let mut supplied = [0u8; 512];
+    supplied[..8].copy_from_slice(&[1, 3, 5, 7, 9, 11, 13, 15]);
+    supplied[256..264].copy_from_slice(&[250, 220, 190, 160, 130, 100, 70, 40]);
+    let upload = device.create_buffer_init(&util::BufferInitDescriptor {
+        label: None,
+        contents: &supplied,
+        usage: BufferUsages::COPY_SRC,
+    });
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: None,
+        size: 1024,
+        usage: BufferUsages::MAP_READ | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let texel = |texture, x| TexelCopyTextureInfo {
+        texture,
+        mip_level: 1,
+        origin: Origin3d { x, y: 0, z: 0 },
+        aspect: TextureAspect::All,
+    };
+    let extent = |width| Extent3d {
+        width,
+        height: 2,
+        depth_or_array_layers: 1,
+    };
+    let pitch = |offset| TexelCopyBufferLayout {
+        offset,
+        bytes_per_row: Some(256),
+        rows_per_image: None,
+    };
+    let last_column = [28u8, 55, 83, 111, 139, 167, 195, 223];
+    queue.write_texture(
+        texel(&dst, 2),
+        &last_column,
+        TexelCopyBufferLayout {
+            bytes_per_row: Some(4),
+            ..pitch(0)
+        },
+        extent(1),
+    );
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    encoder.copy_buffer_to_texture(
+        TexelCopyBufferInfo {
+            buffer: &upload,
+            layout: pitch(0),
+        },
+        texel(&src, 1),
+        extent(2),
+    );
+    encoder.copy_texture_to_texture(texel(&src, 1), texel(&dst, 0), extent(2));
+    for (texture, offset) in [(&dst, 0), (&uninitialized, 512)] {
+        encoder.copy_texture_to_buffer(
+            texel(texture, 0),
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: pitch(offset),
+            },
+            extent(3),
+        );
+    }
+    let submission = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(submission),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .unwrap();
+    receiver
+        .recv_timeout(Duration::from_secs(10))
+        .unwrap()
+        .unwrap();
+    let data = readback.slice(..).get_mapped_range().unwrap();
+    let mut expected = [0u8; 1024];
+    for row in 0..2 {
+        let off = row * 256;
+        expected[off..off + 8].copy_from_slice(&supplied[off..off + 8]);
+        expected[off + 8..off + 12].copy_from_slice(&last_column[row * 4..row * 4 + 4]);
+    }
+    assert_eq!(&data[..], &expected);
+    println!("exact FL11_1 Rgba8Uint NPOT mip copy roundtrip, queue write, padding and zero-init verified");
+}
+
+#[test]
 fn public_dx11_empty_immediate_write_requires_feature_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

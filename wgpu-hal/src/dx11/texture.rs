@@ -37,7 +37,7 @@ use windows::{
                 DXGI_FORMAT_BC3_UNORM_SRGB, DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
                 DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16_TYPELESS, DXGI_FORMAT_R16_UNORM,
                 DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
-                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UINT, DXGI_FORMAT_R8G8B8A8_UNORM,
                 DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
                 DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
             },
@@ -823,6 +823,7 @@ pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLay
             bytes: 2,
         }),
         DXGI_FORMAT_R16G16_SNORM
+        | DXGI_FORMAT_R8G8B8A8_UINT
         | DXGI_FORMAT_R8G8B8A8_SNORM
         | DXGI_FORMAT_R8G8B8A8_UNORM
         | DXGI_FORMAT_B8G8R8A8_UNORM
@@ -1147,6 +1148,7 @@ impl NativeDevice {
             || !matches!(
                 desc.Format,
                 DXGI_FORMAT_R8G8B8A8_UNORM
+                    | DXGI_FORMAT_R8G8B8A8_UINT
                     | DXGI_FORMAT_B8G8R8A8_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                     | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
@@ -1205,6 +1207,7 @@ impl NativeDevice {
                     | DXGI_FORMAT_BC3_UNORM
                     | DXGI_FORMAT_BC3_UNORM_SRGB
                     | DXGI_FORMAT_R8G8B8A8_UNORM
+                    | DXGI_FORMAT_R8G8B8A8_UINT
                     | DXGI_FORMAT_B8G8R8A8_UNORM
                     | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                     | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
@@ -1615,6 +1618,11 @@ impl NativeDevice {
                 | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                 | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
         );
+        let copy_only = format == DXGI_FORMAT_R8G8B8A8_UINT
+            && layers == 1
+            && sample_count == 1
+            && !render_target
+            && !cube;
         let sampled_mip_shape = layers == 1 && mip_levels > 1 && sample_count == 1;
         let packed_sampled_mip_chain = sampled_mip_shape
             && match format {
@@ -1703,7 +1711,7 @@ impl NativeDevice {
             || layers > 2048
             || mip_levels == 0
             || mip_levels > width.max(height).ilog2() + 1
-            || !(rgba_bgra || uncompressed_sampled || bc_sampled)
+            || !(rgba_bgra || uncompressed_sampled || bc_sampled || copy_only)
             || (cube
                 && (layers != 6
                     || width != height
@@ -1732,7 +1740,7 @@ impl NativeDevice {
                 Quality: 0,
             },
             Usage: D3D11_USAGE_DEFAULT,
-            BindFlags: ((if sample_count == 1 {
+            BindFlags: ((if sample_count == 1 && !copy_only {
                 D3D11_BIND_SHADER_RESOURCE.0
             } else {
                 0
@@ -1765,7 +1773,9 @@ impl NativeDevice {
             format,
             logical_format: None,
             sample_count,
-            usage: if !render_target
+            usage: if copy_only {
+                wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST
+            } else if !render_target
                 && matches!(
                     format,
                     DXGI_FORMAT_R8_UNORM
@@ -1782,7 +1792,8 @@ impl NativeDevice {
                         | DXGI_FORMAT_BC2_UNORM_SRGB
                         | DXGI_FORMAT_BC3_UNORM
                         | DXGI_FORMAT_BC3_UNORM_SRGB
-                ) {
+                )
+            {
                 wgt::TextureUses::COPY_DST | wgt::TextureUses::RESOURCE
             } else {
                 wgt::TextureUses::COPY_SRC

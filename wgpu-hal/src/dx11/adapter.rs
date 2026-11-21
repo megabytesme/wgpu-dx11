@@ -21,7 +21,17 @@ impl Adapter {
         driver_version: Option<&str>,
         native: Arc<super::NativeDevice>,
     ) -> Option<crate::ExposedAdapter<super::Api>> {
-        let projection = super::capabilities::Capabilities::query(&native).wgpu_projection()?;
+        let mut projection = super::capabilities::Capabilities::query(&native).wgpu_projection()?;
+        if native.rgba8_uint_copy_supported() {
+            projection
+                .capabilities
+                .downlevel
+                .limits
+                .texture_to_buffer_copy_format_mask |=
+                wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(
+                    wgt::TextureFormat::Rgba8Uint,
+                );
+        }
         let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
         info.name = identity.name.clone();
         info.vendor = identity.vendor_id;
@@ -235,15 +245,15 @@ impl crate::Adapter for Adapter {
         &self,
         format: wgt::TextureFormat,
     ) -> crate::TextureFormatCapabilities {
-        let _ = format;
-        match self.inner {
+        let native = match self.inner {
             #[cfg(feature = "dx11-test-fixture")]
-            AdapterInner::Fixture(ref native) => {
-                super::capabilities::Capabilities::query(native).texture_format_capabilities(format)
-            }
-            AdapterInner::Native(ref native) => {
-                super::capabilities::Capabilities::query(native).texture_format_capabilities(format)
-            }
+            AdapterInner::Fixture(ref native) => native,
+            AdapterInner::Native(ref native) => native,
+        };
+        if format == wgt::TextureFormat::Rgba8Uint && native.rgba8_uint_copy_supported() {
+            crate::TextureFormatCapabilities::COPY_SRC | crate::TextureFormatCapabilities::COPY_DST
+        } else {
+            super::capabilities::Capabilities::query(native).texture_format_capabilities(format)
         }
     }
     unsafe fn surface_capabilities(
