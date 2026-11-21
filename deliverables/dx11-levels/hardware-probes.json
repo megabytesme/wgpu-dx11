@@ -1,0 +1,701 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-21",
+  "wgpu_source_reference": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+  "native_harness": "probe/probe.cpp, probe/shaders.hlsl, probe/uwp.cpp and probe/build.ps1",
+  "build_host": "Ben-Desktop",
+  "msvc": "14.44.35207",
+  "sdk_headers_and_fxc": "10.0.19041.0",
+  "arm_import_library_sdk": "10.0.15063.0",
+  "scope": "Offscreen native D3D11/FXC smoke: exact device, selected options, format/MSAA queries, VS/PS draw+copy+Map and eligible CS UAV dispatch+copy+Map. Actual HAL, public high-tier profile, presentation, legacy native ceilings, device removal and full conformance remain separate.",
+  "dxgi_query_id_ranges": [
+    "1-115",
+    "130-132",
+    "189-191"
+  ],
+  "results": [
+    {
+      "runtime": "desktop",
+      "architecture": "x64",
+      "raw_sha256": "b127c4d9a3ca7267ac5c5d08074ef294218ff2c62a115716698c8f18b0eba6d7",
+      "raw_log": "evidence/desktop-raw.txt",
+      "adapters": [
+        {
+          "enumeration_index": 0,
+          "requests": [
+            {
+              "requested": "9_1",
+              "requested_enum": "9100",
+              "create_hresult": "00000000",
+              "returned_enum": "9100",
+              "get_feature_level_enum": "9100",
+              "exact_match": true,
+              "identity": {
+                "name": "NVIDIA GeForce RTX 3090 Ti",
+                "vendor": "10de",
+                "device": "2203",
+                "subsystem": "161810de",
+                "luid": "00000000:00014a80",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 60,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "0",
+                "fp64_hr": "00000000",
+                "fp64": "0",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "0",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "0",
+                "extended_double": "0"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            },
+            {
+              "requested": "9_2",
+              "requested_enum": "9200",
+              "create_hresult": "00000000",
+              "returned_enum": "9200",
+              "get_feature_level_enum": "9200",
+              "exact_match": true,
+              "identity": {
+                "name": "NVIDIA GeForce RTX 3090 Ti",
+                "vendor": "10de",
+                "device": "2203",
+                "subsystem": "161810de",
+                "luid": "00000000:00014a80",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 90,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "0",
+                "fp64_hr": "00000000",
+                "fp64": "0",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "0",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "0",
+                "extended_double": "0"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            },
+            {
+              "requested": "9_3",
+              "requested_enum": "9300",
+              "create_hresult": "00000000",
+              "returned_enum": "9300",
+              "get_feature_level_enum": "9300",
+              "exact_match": true,
+              "identity": {
+                "name": "NVIDIA GeForce RTX 3090 Ti",
+                "vendor": "10de",
+                "device": "2203",
+                "subsystem": "161810de",
+                "luid": "00000000:00014a80",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 100,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "0",
+                "fp64_hr": "00000000",
+                "fp64": "0",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "0",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "0",
+                "extended_double": "0"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            },
+            {
+              "requested": "10_0",
+              "requested_enum": "a000",
+              "create_hresult": "00000000",
+              "returned_enum": "a000",
+              "get_feature_level_enum": "a000",
+              "exact_match": true,
+              "identity": {
+                "name": "NVIDIA GeForce RTX 3090 Ti",
+                "vendor": "10de",
+                "device": "2203",
+                "subsystem": "161810de",
+                "luid": "00000000:00014a80",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000",
+                "dispatch_readback_4_words": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 270,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "1",
+                "fp64_hr": "00000000",
+                "fp64": "0",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "1",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "0",
+                "extended_double": "0"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            },
+            {
+              "requested": "10_1",
+              "requested_enum": "a100",
+              "create_hresult": "00000000",
+              "returned_enum": "a100",
+              "get_feature_level_enum": "a100",
+              "exact_match": true,
+              "identity": {
+                "name": "NVIDIA GeForce RTX 3090 Ti",
+                "vendor": "10de",
+                "device": "2203",
+                "subsystem": "161810de",
+                "luid": "00000000:00014a80",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000",
+                "dispatch_readback_4_words": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 270,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "1",
+                "fp64_hr": "00000000",
+                "fp64": "0",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "1",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "0",
+                "extended_double": "0"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            },
+            {
+              "requested": "11_0",
+              "requested_enum": "b000",
+              "create_hresult": "00000000",
+              "returned_enum": "b000",
+              "get_feature_level_enum": "b000",
+              "exact_match": true,
+              "identity": {
+                "name": "NVIDIA GeForce RTX 3090 Ti",
+                "vendor": "10de",
+                "device": "2203",
+                "subsystem": "161810de",
+                "luid": "00000000:00014a80",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000",
+                "dispatch_readback_4_words": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 270,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "1",
+                "fp64_hr": "00000000",
+                "fp64": "1",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "1",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "1",
+                "extended_double": "1"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            },
+            {
+              "requested": "11_1",
+              "requested_enum": "b100",
+              "create_hresult": "00000000",
+              "returned_enum": "b100",
+              "get_feature_level_enum": "b100",
+              "exact_match": true,
+              "identity": {
+                "name": "NVIDIA GeForce RTX 3090 Ti",
+                "vendor": "10de",
+                "device": "2203",
+                "subsystem": "161810de",
+                "luid": "00000000:00014a80",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000",
+                "dispatch_readback_4_words": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 270,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "1",
+                "fp64_hr": "00000000",
+                "fp64": "1",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "1",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "1",
+                "extended_double": "1"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            }
+          ]
+        }
+      ],
+      "overall_smoke": "PASS",
+      "device": "Ben-Desktop",
+      "os_build": "10.0.26300",
+      "driver": "32.0.16.2101",
+      "wddm": "3.2",
+      "dxdiag_ddi": "12",
+      "binary_sha256": "3282D42E68951E593CF95B66A8EA7348D4C48AE2E1424E308DC161DBEAC9A372",
+      "binary_path": "C:\\Users\\ben\\AppData\\Local\\Temp/dx11-roadmap-nov21-x64/Dx11TierProbe.exe",
+      "original_capture_sha256": "e86f65944d0dc73b5c3bc5dd40c8a70d9e0e1108641e6a180f176075c418fe80",
+      "raw_encoding": "UTF-8, LF"
+    },
+    {
+      "runtime": "appcontainer",
+      "architecture": "arm64",
+      "raw_sha256": "9e7af42773df6859721850c0565820f684180f5be8a9b8cbb79da3517af6cbbb",
+      "raw_log": "evidence/surface-raw.txt",
+      "adapters": [
+        {
+          "enumeration_index": null,
+          "requests": [
+            {
+              "requested": "9_1",
+              "requested_enum": "9100",
+              "create_hresult": "00000000",
+              "returned_enum": "9100",
+              "get_feature_level_enum": "9100",
+              "exact_match": true,
+              "identity": {
+                "name": "Qualcomm(R) Adreno(TM) 680 GPU",
+                "vendor": "4d4f4351",
+                "device": "41333430",
+                "subsystem": "30383138",
+                "luid": "00000000:000118b0",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 60,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "0",
+                "fp64_hr": "00000000",
+                "fp64": "0",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "0",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "0",
+                "extended_double": "0"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            },
+            {
+              "requested": "9_2",
+              "requested_enum": "9200",
+              "create_hresult": "00000000",
+              "returned_enum": "9200",
+              "get_feature_level_enum": "9200",
+              "exact_match": true,
+              "identity": {
+                "name": "Qualcomm(R) Adreno(TM) 680 GPU",
+                "vendor": "4d4f4351",
+                "device": "41333430",
+                "subsystem": "30383138",
+                "luid": "00000000:000118b0",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 90,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "0",
+                "fp64_hr": "00000000",
+                "fp64": "0",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "0",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "0",
+                "extended_double": "0"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            },
+            {
+              "requested": "9_3",
+              "requested_enum": "9300",
+              "create_hresult": "00000000",
+              "returned_enum": "9300",
+              "get_feature_level_enum": "9300",
+              "exact_match": true,
+              "identity": {
+                "name": "Qualcomm(R) Adreno(TM) 680 GPU",
+                "vendor": "4d4f4351",
+                "device": "41333430",
+                "subsystem": "30383138",
+                "luid": "00000000:000118b0",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 100,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "0",
+                "fp64_hr": "00000000",
+                "fp64": "0",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "0",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "0",
+                "extended_double": "0"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            },
+            {
+              "requested": "10_0",
+              "requested_enum": "a000",
+              "create_hresult": "00000000",
+              "returned_enum": "a000",
+              "get_feature_level_enum": "a000",
+              "exact_match": true,
+              "identity": {
+                "name": "Qualcomm(R) Adreno(TM) 680 GPU",
+                "vendor": "4d4f4351",
+                "device": "41333430",
+                "subsystem": "30383138",
+                "luid": "00000000:000118b0",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000",
+                "dispatch_readback_4_words": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 265,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "1",
+                "fp64_hr": "00000000",
+                "fp64": "0",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "1",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "0",
+                "extended_double": "0"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            },
+            {
+              "requested": "10_1",
+              "requested_enum": "a100",
+              "create_hresult": "00000000",
+              "returned_enum": "a100",
+              "get_feature_level_enum": "a100",
+              "exact_match": true,
+              "identity": {
+                "name": "Qualcomm(R) Adreno(TM) 680 GPU",
+                "vendor": "4d4f4351",
+                "device": "41333430",
+                "subsystem": "30383138",
+                "luid": "00000000:000118b0",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000",
+                "dispatch_readback_4_words": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 265,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "1",
+                "fp64_hr": "00000000",
+                "fp64": "0",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "1",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "0",
+                "extended_double": "0"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            },
+            {
+              "requested": "11_0",
+              "requested_enum": "b000",
+              "create_hresult": "00000000",
+              "returned_enum": "b000",
+              "get_feature_level_enum": "b000",
+              "exact_match": true,
+              "identity": {
+                "name": "Qualcomm(R) Adreno(TM) 680 GPU",
+                "vendor": "4d4f4351",
+                "device": "41333430",
+                "subsystem": "30383138",
+                "luid": "00000000:000118b0",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000",
+                "dispatch_readback_4_words": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 265,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "1",
+                "fp64_hr": "00000000",
+                "fp64": "0",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "1",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "1",
+                "extended_double": "0"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            },
+            {
+              "requested": "11_1",
+              "requested_enum": "b100",
+              "create_hresult": "00000000",
+              "returned_enum": "b100",
+              "get_feature_level_enum": "b100",
+              "exact_match": true,
+              "identity": {
+                "name": "Qualcomm(R) Adreno(TM) 680 GPU",
+                "vendor": "4d4f4351",
+                "device": "41333430",
+                "subsystem": "30383138",
+                "luid": "00000000:000118b0",
+                "flags": "00000000",
+                "software": false
+              },
+              "checks": {
+                "draw_readback_64_pixels": "00000000",
+                "dispatch_readback_4_words": "00000000"
+              },
+              "format_query_count": 121,
+              "msaa_query_count": 265,
+              "options": {
+                "device1": "00000000",
+                "cs4_hr": "00000000",
+                "cs4": "1",
+                "fp64_hr": "00000000",
+                "fp64": "0",
+                "opts_hr": "00000000",
+                "logic": "1",
+                "cb_offset": "1",
+                "cb_partial": "1",
+                "map_cb_no_overwrite": "1",
+                "map_srv_no_overwrite": "1",
+                "clear_view": "1",
+                "overlap_copy": "1",
+                "forced_1": "1",
+                "sad4": "1",
+                "extended_double": "0"
+              },
+              "device_removed_reason": "00000000",
+              "hardware_confirmed": true
+            }
+          ]
+        }
+      ],
+      "overall_smoke": "PASS",
+      "device": "Ben-Tablet Surface Pro X SQ1",
+      "os_build": "10.0.26320",
+      "driver": "27.20.2160.0",
+      "wddm": "2.7",
+      "dxdiag_ddi": "12",
+      "package_full_name": "MCHorizonUWP.Dx11TierProbe_1.0.0.0_arm64__4pd4jeb6snrqw",
+      "package_sha256": "73ED0652A84BCBF3DB905B50A9040BD221225AA7FC3350D255DC78591B8C15E3",
+      "package_path": "C:\\Users\\ben\\AppData\\Local\\Temp/dx11-roadmap-nov21-uwp-arm64/Dx11TierProbe-arm64.appx",
+      "deployment_receipt": "evidence/surface-deployment.txt",
+      "pe_receipt": "evidence/arm64-app-pe.txt",
+      "original_capture_sha256": "9e7af42773df6859721850c0565820f684180f5be8a9b8cbb79da3517af6cbbb",
+      "raw_encoding": "UTF-8, LF",
+      "transfer": {
+        "from": "C:/Users/ben/AppData/Local/Temp/dx11-roadmap-nov21-uwp-arm64/Dx11TierProbe-arm64.appx",
+        "to": "C:/Users/ben/AppData/Local/Temp/Dx11RoadmapNov21/Dx11TierProbe-arm64.appx",
+        "transport": "LAN SCP using the pinned SSH host"
+      }
+    }
+  ],
+  "pending": {
+    "device": "Lumia 950 XL",
+    "architecture": "arm",
+    "runtime": "signed AppContainer",
+    "package_identity": "MCHorizonUWP.Dx11TierProbe",
+    "package_version": "1.0.0.0",
+    "package_minimum_os": "10.0.15063.0",
+    "package_path": "C:\\Users\\ben\\AppData\\Local\\Temp/dx11-roadmap-nov21-uwp-arm/Dx11TierProbe-arm.appx",
+    "package_sha256": "CB66A29128FC7EDD0E7F58CBC76F6C30DE3130FED0CA8ED05F02CAB7CEC71FEF",
+    "signature": "SignTool verified",
+    "pe_receipt": "evidence/arm-app-pe.txt",
+    "attempt_state": "BLOCKED_BEFORE_DEPLOYMENT",
+    "error": "Pinned HTTPS Device Portal /api/os/devicefamily timed out on repeated attempts, including locked Windows PowerShell 5.1 run",
+    "observed_requests": [],
+    "unrun_requests": [
+      "9_1",
+      "9_2",
+      "9_3",
+      "10_0",
+      "10_1",
+      "11_0",
+      "11_1"
+    ],
+    "next_action": "Wake and unlock Lumia, verify Device Portal and discovery on its home LAN address, retry pinned TLS helper then install the verified package and read out LocalState after activation"
+  },
+  "harness_files_sha256": {
+    "probe/build.ps1": "3952abddcea0524818f75484515dae34c6e5f61af31834058245620476be5192",
+    "probe/parse-probe.py": "ac6f26759f63af89a93f4a5454007fa8bb267d4c7e7f2a9c60b4855118f56e51",
+    "probe/probe.cpp": "dc2340bfd5133cef715a441779a59ee5597596e9e1c93ab1ce1111e215183320",
+    "probe/run-surface.ps1": "871148c53fda2fbd70323ae18e048abcdc81e4e2548107c9da48deb72dc3078a",
+    "probe/shaders.hlsl": "112bdc861aba57a8b922b0e7420929534fc4ba2f283ec4138f972a3be02eeb05",
+    "probe/uwp.cpp": "c47c4be203e293941f83149da1185db2f3af3abf7a126623be074c16b6cca719"
+  }
+}

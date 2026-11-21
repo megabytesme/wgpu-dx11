@@ -1,0 +1,2 @@
+*.csv text eol=lf
+evidence/*.txt text eol=lf
