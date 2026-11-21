@@ -112,8 +112,9 @@ try {
     }
     Invoke-Checked "$tools\cl.exe" ($compile + @('/ZW',"/AI$SdkRoot\UnionMetadata\$sdkVersion",
         "/AI$MsvcToolset\lib\x86\store\references",'/Fouwp.obj',"$PSScriptRoot\uwp.cpp"))
+    $tlsSymbol = if ($Architecture -eq 'x86') { '__tls_used' } else { '_tls_used' }
     Invoke-Checked "$tools\link.exe" (@("/LIBPATH:$MsvcToolset\lib\$Architecture\store") + $link +
-        @('/SUBSYSTEM:WINDOWS','/APPCONTAINER','/NODEFAULTLIB:kernel32.lib','/INCLUDE:_tls_used',
+        @('/SUBSYSTEM:WINDOWS','/APPCONTAINER','/NODEFAULTLIB:kernel32.lib',"/INCLUDE:$tlsSymbol",
             '/MAP:probe.map','/OUT:stage\Dx11TierProbe.exe','vccorlib.lib','uwp.obj','probe.obj','WindowsApp.lib',
             'd3d11.lib','dxgi.lib'))
     Invoke-Checked "$tools\dumpbin.exe" @('/nologo','/headers','/imports','stage\Dx11TierProbe.exe') |
