@@ -83,21 +83,39 @@ fn strict_request_requires_physical_adapter(
   strict_dx11 && !force_fallback_adapter
 }
 
-fn has_verified_dx11_fl91_marker(info: &wgpu_types::AdapterInfo) -> bool {
+fn strict_dx11_expected_level(
+  requested: Option<&std::ffi::OsStr>,
+) -> Result<&'static str, &'static str> {
+  match requested {
+    None => Ok("FL9_1"),
+    Some(level) if level == "9_1" => Ok("FL9_1"),
+    Some(level) if level == "9_2" => Ok("FL9_2"),
+    Some(_) => {
+      Err("strict D3D11 hardware mode requires a valid WGPU_DX11_FEATURE_LEVEL")
+    }
+  }
+}
+
+fn has_verified_dx11_marker(
+  info: &wgpu_types::AdapterInfo,
+  level: &str,
+) -> bool {
   info
     .driver_info
-    .starts_with("FL9_1; physical DXGI adapter;")
+    .strip_prefix(level)
+    .is_some_and(|rest| rest.starts_with("; physical DXGI adapter;"))
 }
 
 fn dx11_hardware_identity_issue(
   info: &wgpu_types::AdapterInfo,
+  expected_level: &str,
 ) -> Option<&'static str> {
   if info.backend != wgpu_types::Backend::Dx11 {
     Some("selected adapter is not DX11")
   } else if info.device_type == wgpu_types::DeviceType::Cpu {
     Some("selected adapter is software")
-  } else if !has_verified_dx11_fl91_marker(info) {
-    Some("selected adapter lacks the verified FL9_1 D3D11 marker")
+  } else if !has_verified_dx11_marker(info, expected_level) {
+    Some("selected adapter lacks the expected exact D3D11 feature-level marker")
   } else {
     None
   }
@@ -243,6 +261,15 @@ impl GPU {
       return Err(JsErrorBox::type_error(issue));
     }
     let strict_dx11 = require_hardware;
+    let expected_dx11_level = if strict_dx11 {
+      let requested = std::env::var_os("WGPU_DX11_FEATURE_LEVEL");
+      Some(
+        strict_dx11_expected_level(requested.as_deref())
+          .map_err(JsErrorBox::type_error)?,
+      )
+    } else {
+      None
+    };
     let instance = if let Some(instance) = state.try_borrow::<Instance>() {
       instance
     } else {
@@ -313,11 +340,11 @@ impl GPU {
       Err(_) => return Ok(None),
     };
 
-    if strict_dx11 {
+    if let Some(expected_level) = expected_dx11_level {
       let info = instance.adapter_get_info(id);
-      let fl91_marker = has_verified_dx11_fl91_marker(&info);
+      let verified = has_verified_dx11_marker(&info, expected_level);
       eprintln!(
-        "D3D11 strict hardware selection: backend={:?} name={:?} vendor={:#06x} device={:#06x} device_type={:?} driver={:?} driver_info={:?} verified_FL9_1_marker={fl91_marker}",
+        "D3D11 strict hardware selection: backend={:?} name={:?} vendor={:#06x} device={:#06x} device_type={:?} driver={:?} driver_info={:?} expected_level={expected_level} verified_exact_level={verified}",
         info.backend,
         info.name,
         info.vendor,
@@ -326,10 +353,10 @@ impl GPU {
         info.driver,
         info.driver_info,
       );
-      if let Some(issue) = dx11_hardware_identity_issue(&info) {
+      if let Some(issue) = dx11_hardware_identity_issue(&info, expected_level) {
         instance.adapter_drop(id);
         return Err(JsErrorBox::type_error(format!(
-          "strict D3D11 hardware request rejected adapter: {issue}"
+          "strict D3D11 hardware request rejected adapter for {expected_level}: {issue}"
         )));
       }
     }
@@ -369,8 +396,8 @@ impl GPU {
 mod backend_selection_tests {
   use super::{
     backends_from_env, dx11_hardware_identity_issue, feature_level_is_valid,
-    has_verified_dx11_fl91_marker, strict_dx11_configuration_issue,
-    strict_request_requires_physical_adapter,
+    has_verified_dx11_marker, strict_dx11_configuration_issue,
+    strict_dx11_expected_level, strict_request_requires_physical_adapter,
   };
   use wgpu_types::{AdapterInfo, Backend, Backends, DeviceType};
 
@@ -429,14 +456,37 @@ mod backend_selection_tests {
   }
 
   #[test]
-  fn only_the_physical_dx11_fl91_driver_info_marker_is_recognized() {
+  fn strict_level_always_matches_the_exact_physical_marker() {
+    use std::ffi::OsStr;
+
+    assert_eq!(strict_dx11_expected_level(None), Ok("FL9_1"));
+    assert_eq!(
+      strict_dx11_expected_level(Some(OsStr::new("9_1"))),
+      Ok("FL9_1")
+    );
+    assert_eq!(
+      strict_dx11_expected_level(Some(OsStr::new("9_2"))),
+      Ok("FL9_2")
+    );
+    assert!(strict_dx11_expected_level(Some(OsStr::new("11_1"))).is_err());
+
     let mut info = AdapterInfo::new(DeviceType::Other, Backend::Dx11);
     info.driver_info =
       String::from("FL9_1; physical DXGI adapter; driver version 32.0.16.2101");
-    assert!(has_verified_dx11_fl91_marker(&info));
+    assert!(has_verified_dx11_marker(&info, "FL9_1"));
+    assert!(!has_verified_dx11_marker(&info, "FL9_2"));
+
+    info.driver_info =
+      String::from("FL9_2; physical DXGI adapter; driver version unavailable");
+    assert!(has_verified_dx11_marker(&info, "FL9_2"));
+    assert!(!has_verified_dx11_marker(&info, "FL9_1"));
+
+    info.driver_info = String::from("FL9_1 (hardware L9_2); physical DXGI adapter; driver version unavailable");
+    assert!(!has_verified_dx11_marker(&info, "FL9_1"));
+    assert!(!has_verified_dx11_marker(&info, "FL9_2"));
 
     info.driver_info = String::from("D3D11; feature level 9_1");
-    assert!(!has_verified_dx11_fl91_marker(&info));
+    assert!(!has_verified_dx11_marker(&info, "FL9_1"));
   }
 
   #[test]
@@ -444,26 +494,28 @@ mod backend_selection_tests {
     let mut info = AdapterInfo::new(DeviceType::Other, Backend::Dx11);
     info.driver_info =
       String::from("FL9_1; physical DXGI adapter; driver version 32.0.16.2101");
-    assert_eq!(dx11_hardware_identity_issue(&info), None);
+    assert_eq!(dx11_hardware_identity_issue(&info, "FL9_1"), None);
 
     info.backend = Backend::Dx12;
     assert_eq!(
-      dx11_hardware_identity_issue(&info),
+      dx11_hardware_identity_issue(&info, "FL9_1"),
       Some("selected adapter is not DX11")
     );
     info.backend = Backend::Dx11;
 
     info.device_type = DeviceType::Cpu;
     assert_eq!(
-      dx11_hardware_identity_issue(&info),
+      dx11_hardware_identity_issue(&info, "FL9_1"),
       Some("selected adapter is software")
     );
     info.device_type = DeviceType::Other;
 
     info.driver_info.clear();
     assert_eq!(
-      dx11_hardware_identity_issue(&info),
-      Some("selected adapter lacks the verified FL9_1 D3D11 marker")
+      dx11_hardware_identity_issue(&info, "FL9_1"),
+      Some(
+        "selected adapter lacks the expected exact D3D11 feature-level marker"
+      )
     );
   }
 }
