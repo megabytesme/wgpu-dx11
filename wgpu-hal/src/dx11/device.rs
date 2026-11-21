@@ -71,6 +71,19 @@ impl FeatureLevel {
     pub const fn as_raw(self) -> u32 {
         self as u32
     }
+
+    /// D3D's feature-level spelling, suitable for the exact-level selector.
+    pub const fn name(self) -> &'static str {
+        match self {
+            Self::L9_1 => "9_1",
+            Self::L9_2 => "9_2",
+            Self::L9_3 => "9_3",
+            Self::L10_0 => "10_0",
+            Self::L10_1 => "10_1",
+            Self::L11_0 => "11_0",
+            Self::L11_1 => "11_1",
+        }
+    }
 }
 
 /// Stable descriptive fields for a DXGI adapter.
@@ -84,6 +97,8 @@ pub struct AdapterIdentity {
     pub device_id: u32,
     /// Whether DXGI identifies this as a software adapter.
     pub software: bool,
+    /// Locally unique adapter identifier for this boot.
+    pub luid: windows::Win32::Foundation::LUID,
 }
 
 /// An owned DXGI adapter. This is not a `wgpu_hal::Adapter`.
@@ -117,6 +132,14 @@ impl NativeAdapter {
     /// not check wgpu features, limits, shaders, or presentation capabilities.
     pub fn open_device(&self, levels: &[FeatureLevel]) -> Result<NativeDevice> {
         self.open_device_inner(levels, false)
+    }
+
+    /// Open a physical device at exactly `level`, with no fallback.
+    pub fn open_exact_hardware_device(&self, level: FeatureLevel) -> Result<NativeDevice> {
+        if self.identity.software {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        self.open_device(&[level])
     }
 
     #[cfg(test)]
@@ -193,6 +216,9 @@ impl NativeAdapter {
             .find(|level| level.as_raw() == selected.0 as u32)
             .ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let raw = device.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        if unsafe { raw.GetFeatureLevel() }.0 as u32 != level.as_raw() {
+            return Err(Error::from_hresult(E_FAIL));
+        }
         let immediate = context.ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let idle_query = {
             let desc = D3D11_QUERY_DESC {
@@ -387,6 +413,7 @@ fn native_adapter_from_dxgi(raw: IDXGIAdapter1) -> Result<NativeAdapter> {
             vendor_id: desc.VendorId,
             device_id: desc.DeviceId,
             software: desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE.0 as u32 != 0,
+            luid: desc.AdapterLuid,
         },
     })
 }

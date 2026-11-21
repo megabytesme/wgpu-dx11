@@ -326,7 +326,33 @@ impl GPU {
         info.driver,
         info.driver_info,
       );
-      if let Some(issue) = dx11_hardware_identity_issue(&info) {
+      let exact = std::env::var_os("WGPU_DX11_EXACT_FEATURE_LEVEL");
+      let issue = if let Some(exact) = exact {
+        #[cfg(all(windows, feature = "dx11"))]
+        {
+          // The adapter ID is live until this code explicitly drops it.
+          let adapter =
+            unsafe { instance.adapter_as_hal::<wgpu_core::api::Dx11>(id) };
+          match adapter {
+            Some(adapter)
+              if !adapter.is_software()
+                && exact == adapter.feature_level().name() =>
+            {
+              eprintln!("D3D11 strict exact hardware selection: FL{}", adapter.feature_level().name());
+              None
+            }
+            _ => Some("selected adapter is not physical DX11 at the requested feature level"),
+          }
+        }
+        #[cfg(not(all(windows, feature = "dx11")))]
+        {
+          let _ = exact;
+          Some("this build does not support exact D3D11 feature levels")
+        }
+      } else {
+        dx11_hardware_identity_issue(&info)
+      };
+      if let Some(issue) = issue {
         instance.adapter_drop(id);
         return Err(JsErrorBox::type_error(format!(
           "strict D3D11 hardware request rejected adapter: {issue}"

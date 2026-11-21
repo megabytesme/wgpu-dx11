@@ -20,6 +20,7 @@ impl Adapter {
         identity: &super::AdapterIdentity,
         driver_version: Option<&str>,
         native: Arc<super::NativeDevice>,
+        exact: Option<super::FeatureLevel>,
     ) -> Option<crate::ExposedAdapter<super::Api>> {
         let projection = super::capabilities::Capabilities::query(&native).wgpu_projection()?;
         let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
@@ -41,6 +42,18 @@ impl Adapter {
                 alloc::format!("{level_tag}; physical DXGI adapter; driver version unavailable")
             }
         };
+        if let Some(exact) = exact {
+            use core::fmt::Write as _;
+            write!(
+                info.driver_info,
+                "; requested {}; active {}; LUID {:08x}:{:08x}",
+                exact.name(),
+                level.name(),
+                identity.luid.HighPart as u32,
+                identity.luid.LowPart,
+            )
+            .unwrap();
+        }
 
         Some(crate::ExposedAdapter {
             adapter: Self {
