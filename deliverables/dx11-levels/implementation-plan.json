@@ -1,0 +1,114 @@
+{
+  "schema_version": 1,
+  "scope": "DX11 FL9_1 through FL11_1",
+  "state": "INCOMPLETE",
+  "commit_pins": {
+    "wgpu": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+    "horizon_uwp": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+    "horizon": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a"
+  },
+  "spine": {
+    "proposed": "codex/dx11-integration-spine",
+    "owner": "Mission Control-designated integrator",
+    "branch_live": false,
+    "parents": "Only merge from exact gated predecessor selected by Mission Control. This roadmap worktree starts at the pinned research baseline.",
+    "shared_file_policy": "Single lease holder per tracked source path across assignments. Explicit handoff for shared modules. Research agents write isolated docs. Merge tier lanes in predecessor order.",
+    "matrix": "agent-ownership.md",
+    "diagram": "../../docs/wgpu-dx11-tier-dependencies.md"
+  },
+  "ordered_work": [
+    {
+      "id": "baseline",
+      "needs": [],
+      "work": "Complete FL9_1 evidence, establish suite and candidate schema; review public native gaps.",
+      "promotion": "FL9_1 certification record"
+    },
+    {
+      "id": "selection",
+      "needs": [
+        "baseline"
+      ],
+      "work": "Separate native levels from public validation level; store caps, runtime, selected shaders and optional-feature folds; hard-fail exact mismatch, default baseline.",
+      "promotion": "Source/base regression, no speculative features exposed"
+    },
+    {
+      "id": "shared_backends",
+      "needs": [
+        "selection"
+      ],
+      "work": "Prepare file leases around stage/format/binding changes and shared maximum constants; preserve old downlevel API, default D3D11 opt-in, Core validation and DX12/ANGLE behavior.",
+      "promotion": "Affected workspace tests and agreed native-extension plan"
+    },
+    {
+      "id": "FL9_2",
+      "needs": [
+        "shared_backends"
+      ],
+      "work": "FL9_2: separate color/alpha blend, two-sided stencil, occlusion, 32-bit native IA, repeat and DDI additions",
+      "instance_spec": "instances/fl9_2.md",
+      "promotion": "FL9_2 certification record and all earlier exact-tier regressions"
+    },
+    {
+      "id": "FL9_3",
+      "needs": [
+        "FL9_2"
+      ],
+      "work": "FL9_3: actual profile switch, restricted instance draws, equal-bit-depth MRT4, volume/cube, texel formats",
+      "instance_spec": "instances/fl9_3.md",
+      "promotion": "FL9_3 certification record and all earlier exact-tier regressions"
+    },
+    {
+      "id": "FL10_0",
+      "needs": [
+        "FL9_3"
+      ],
+      "work": "FL10_0: shader model 4 with geometry/stream output, NPOT, eight attachments, arrays, optional DirectCompute",
+      "instance_spec": "instances/fl10_0.md",
+      "promotion": "FL10_0 certification record and all earlier exact-tier regressions"
+    },
+    {
+      "id": "FL10_1",
+      "needs": [
+        "FL10_0"
+      ],
+      "work": "FL10_1: shader model 4.1, IA 32, independent blend, cube arrays, sample-frequency and required format-specific 4×",
+      "instance_spec": "instances/fl10_1.md",
+      "promotion": "FL10_1 certification record and all earlier exact-tier regressions"
+    },
+    {
+      "id": "FL11_0",
+      "needs": [
+        "FL10_1"
+      ],
+      "work": "FL11_0: SM5 compute/tessellation, typed and raw UAVs, indirect draw/dispatch, required BC6H/BC7",
+      "instance_spec": "instances/fl11_0.md",
+      "promotion": "FL11_0 certification record and all earlier exact-tier regressions"
+    },
+    {
+      "id": "FL11_1",
+      "needs": [
+        "FL11_0"
+      ],
+      "work": "FL11_1: explicit runtime path, CS/OM 64, graphics stages, OM logic, constant windows and forced sampling",
+      "instance_spec": "instances/fl11_1.md",
+      "promotion": "FL11_1 certification record and all earlier exact-tier regressions"
+    }
+  ],
+  "product": {
+    "entry": "research-integration.md",
+    "baseline": "Current compatibility rendering remains FL9_1 class across selected D3D11 hardware tiers.",
+    "research": [
+      "Shader API 0.2 and Iris pack support have different pipelines; execute expected fixtures under real capabilities.",
+      "GPU culling requires actual compute, storage and the product's count-driven indirect feature or an approved product adaptation.",
+      "HDR requires actual swap-chain/color space/panel/display and OS support. Keep SDR fallback and matching reviews.",
+      "DRS/frame timing and performance compare CPU fallback, timestamp-permitted profile and genuine higher-level candidate with controlled settings."
+    ]
+  },
+  "hold_conditions": [
+    "Freeze fork, upstream and relevant product full commits, actual source status, CTS checkout/revision, test lists, binaries and signed package hashes.",
+    "Resolve every required operation, numeric boundary and required DXGI format/use cell, including inherited rows and runtime footnotes. Assign an owner and reproducible positive and negative fixture to each row.",
+    "Verify driver flags, native operation, reachable DX11 HAL and independently observable public tests where representable. For a native API gap require an approved reachable interface and execution through the backend, plus public limitation documentation.",
+    "Run lower-tier regressions at all prior exact levels, dedicated native-ceiling hardware and required signed AppContainer configurations. Record real hardware, architecture, driver/WDDM, runtime and shader projection. Require actual operation evidence and do not count skips or query-only observations as passes.",
+    "Validate each tier with independent review and have Mission Control issue the approved immutable gate only when zero mandatory rows or required tests remain open."
+  ]
+}

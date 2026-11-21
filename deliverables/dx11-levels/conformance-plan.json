@@ -1,0 +1,440 @@
+{
+  "schema_version": 1,
+  "status": "INCOMPLETE",
+  "evidence_sources": {
+    "operations": "native-guarantees.csv",
+    "format_use": "dxgi-format-support.csv",
+    "hardware": "hardware-probes.json",
+    "hal": "hal-capability-matrix.json"
+  },
+  "layers": [
+    "native support queries",
+    "actual native D3D11 operation",
+    "DX11 HAL backend",
+    "public wgpu/Core validation",
+    "Horizon signed product and surface"
+  ],
+  "devices": [
+    {
+      "id": "desktop",
+      "target": "physical x64 exact requests and HWND",
+      "mandatory": true
+    },
+    {
+      "id": "surface",
+      "target": "physical ARM64 signed AppContainer, CoreWindow and SwapChainPanel as applicable",
+      "mandatory": true
+    },
+    {
+      "id": "lumia",
+      "target": "physical ARM32 signed AppContainer, CoreWindow and product's actual surface",
+      "mandatory": true
+    },
+    {
+      "id": "native-ceiling",
+      "target": "historical or independent native-ceiling hardware per tier",
+      "mandatory": true
+    }
+  ],
+  "test_cases": [
+    {
+      "id": "SELECT",
+      "owner": "selection and projection",
+      "entry_points": "device.rs, instance.rs, adapter.rs, capabilities.rs",
+      "portable_contract": "Adapter and device identity",
+      "positive": "Open exact singleton list for each level, match HRESULT, requested, returned and GetFeatureLevel. Capture hardware DXGI identity and the actual backend projection separately.",
+      "negative": "Reject software, mismatches and empty list. Exercise 11_1 E_INVALIDARG with separate 11_0 control on old runtime, never count a fallback as original success.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "GRAPHICS_SHADER",
+      "owner": "shader translation",
+      "entry_points": "shader.rs and hal_shader.rs",
+      "portable_contract": "ShaderModule and RenderPipelineDescriptor",
+      "positive": "Compile FXC bytecode for the exact stage/profile, create it at the exact tier, execute a deterministic vertex/fragment fixture and read back all output. Separately translate and execute WGSL through HAL and public wgpu.",
+      "negative": "Force a disallowed profile, out-of-budget IO and an invalid stage/resource combination. Check FXC/validation failure before submission.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "FORMAT_CREATE",
+      "owner": "formats",
+      "entry_points": "capabilities.rs, hal_device.rs and texture.rs",
+      "portable_contract": "TextureDescriptor, TextureFormat and per-format features",
+      "positive": "Construct the exact dimension, usage, view and format. Verify mip/layer selection with distinct patterns and perform permitted upload/readback under the device rules.",
+      "negative": "Use one beyond each guaranteed extent, unsupported format/use/view/mip combination and preserved guard blocks.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "TRANSFER",
+      "owner": "buffers and transfers",
+      "entry_points": "buffer.rs, texture.rs, hal_transfer.rs, hal_encoder.rs",
+      "portable_contract": "Queue writes and CommandEncoder copies",
+      "positive": "Upload guarded pitched subresources including block edges and aspects, then copy into readback and compare every byte, row, mip and affected destination.",
+      "negative": "Try invalid alignment, overlap, tail pitch, aspect and bounds. On 10Level9 use nonzero source-origin copy with a valid explicit box and test documented restrictions.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "SAMPLING",
+      "owner": "shader translation and sampler",
+      "entry_points": "hal_shader.rs, hal_sampler.rs, sampling.rs",
+      "portable_contract": "SamplerDescriptor, texture built-ins and DownlevelFlags",
+      "positive": "Render coordinate patterns for the specific filtering or load operation, texture shape, component and LOD. Read texels on each side of address and interpolation boundaries.",
+      "negative": "Bind incompatible comparison or filtering sampler, use unsupported gather variant, invalid LOD or view type, and check both rejection and guard output.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "VERTEX",
+      "owner": "graphics pipeline",
+      "entry_points": "hal_pipeline.rs, hal_encoder.rs and wgpu-hal/src/lib.rs",
+      "portable_contract": "VertexBufferLayout, VertexFormat and max_vertex_buffers",
+      "positive": "Bind sentinels in first/last slots and render a hash of converted format, slot, offset, stride and per-vertex or per-instance inputs.",
+      "negative": "Require rejection of one slot above, wrong step/stride, overflow or invalid indexed/non-indexed combinations.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "INDEX",
+      "owner": "command recording",
+      "entry_points": "hal_index.rs, hal_encoder.rs and command.rs",
+      "portable_contract": "IndexFormat and draw_indexed",
+      "positive": "Draw a small guarded pattern at the highest usable index/range for each native index width, including above 65534 for native FL9_2.",
+      "negative": "Check range/primitive limit, strip cut handling and backend-native rejection or emulation contract when a native width is unavailable.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "BLEND_DEPTH",
+      "owner": "graphics pipeline",
+      "entry_points": "hal_pipeline.rs, hal_device.rs and hal_encoder.rs",
+      "portable_contract": "ColorTargetState, BlendState and DepthStencilState",
+      "positive": "Use a table of expected destination values and compare distinct components, attachments, masks, front/back stencil and depth compare results.",
+      "negative": "Test mismatched bit depth where restricted, too many attachments, absent depth, invalid state combinations and oversize masks.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "MSAA",
+      "owner": "graphics pipeline",
+      "entry_points": "hal_pipeline.rs, hal_device.rs and hal_encoder.rs",
+      "portable_contract": "MultisampleState and per-format sample flags",
+      "positive": "Exercise each required sample count and format, sample-frequency shading/coverage, load and resolve. Verify per-sample colors in staging readback.",
+      "negative": "Check unsupported count/pattern, source/target sample mismatch, illegal resolve or absent MSAA binding. Keep feature availability distinct from formats.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "QUERY",
+      "owner": "sync and query",
+      "entry_points": "query.rs, fence.rs, hal_device.rs and hal_encoder.rs",
+      "portable_contract": "QuerySet and timestamp feature flags",
+      "positive": "Check hidden/visible counts, ordered elapsed timestamps and availability, native disjoint handling, strided resolves and guard bytes over multiple submissions.",
+      "negative": "Reject invalid lifecycle, unresolved reads, unsupported features and disjoint intervals that cannot be interpreted as elapsed GPU time.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "STORAGE",
+      "owner": "storage and binding",
+      "entry_points": "hal_bind_group.rs, hal_device.rs, hal_uniform.rs, hal_encoder.rs and command.rs",
+      "portable_contract": "Storage bindings, ComputePipeline and dispatch",
+      "positive": "Read back actual writes, typed UAV loads and atomics at first/last legal slots. Verify state transitions, independently exercise optional CS4 and mandatory CS5 and assert alias unbinding.",
+      "negative": "Check one slot beyond, unsupported formats/stages, absent native query, dispatch bounds, illegal simultaneous SRV/UAV and counter-dependent commands.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "INDIRECT",
+      "owner": "command recording",
+      "entry_points": "hal_encoder.rs and command.rs",
+      "portable_contract": "draw_indirect, draw_indexed_indirect and dispatch_workgroups_indirect",
+      "positive": "Have GPU produce argument buffers, execute direct/indirect pairs at nonzero offsets and compare pixels/buffers after transitions.",
+      "negative": "Reject incorrect args usage, offsets, sizes, counts, 10.x indirect and reserved/disallowed variants. Test no CPU readback on the advertised path.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "NATIVE_GEOMETRY",
+      "owner": "native API extension",
+      "entry_points": "No pinned pipeline stage, stream-output or patch-topology entry",
+      "portable_contract": "BLOCKER: no public geometry, stream-output or tessellation API",
+      "positive": "Render actual GS and HS/DS output by documented topology and stage. Read stream-output declarations, offsets, stride, counters or tessellated geometry into checked buffers.",
+      "negative": "Try unsupported stage tier, invalid patch width or adjacency, wrong stream selection and unsupported mixed shader-stage combinations.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "FORMAT_NATIVE",
+      "owner": "native API extension and presentation",
+      "entry_points": "Pin has format/surface subsets, no full raw format-operation path",
+      "portable_contract": "BLOCKER: native format/operation outside portable API",
+      "positive": "Use the row format and query, then call the exact native operation through the proposed backend extension. Compare generated mips, mapped data, native state math or output receipt as applicable.",
+      "negative": "Validate unsupported formats, stage/runtime, mapping modes, aliasing, operation flags and invalid cross-process/window combinations.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "PRESENT",
+      "owner": "presentation",
+      "entry_points": "surface.rs, swapchain.rs, instance.rs and hal_queue.rs",
+      "portable_contract": "Surface, SurfaceConfiguration and device loss events subset",
+      "positive": "Run HWND, CoreWindow and SwapChainPanel separately. Verify frame acquisition, present, correct surface state, resize, orientation, suspension and resume.",
+      "negative": "Exercise stale surface/resize, denied uses, injected removal, then coordinated real removal/recovery. Test unavailable color spaces without invalid HDR fallback.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "SYNC",
+      "owner": "sync and query",
+      "entry_points": "fence.rs, hal_queue.rs, command.rs and hal_device.rs",
+      "portable_contract": "Queue, submission and Device::poll",
+      "positive": "Check fence completion, mapped data visibility over multiple submissions, resource lifetime, removal reports and repeatable recovery on applicable hardware.",
+      "negative": "Exercise documented ordering failures, wrong mapping state, timed waits, device-lost events, and no false successful submission.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "NATIVE_FEATURE",
+      "owner": "selection and native API extension",
+      "entry_points": "device.rs and capabilities.rs",
+      "portable_contract": "Native feature query with explicit public mapping review",
+      "positive": "Capture exact query HRESULT and fields, exercise the native operation with an output oracle on a device/runtime with the option, then verify the corresponding backend behavior.",
+      "negative": "Repeat where false or absent, validate unsupported runtime and disabled feature; distinguish query telemetry from operation evidence.",
+      "result_oracle": "Exact operation artifacts with GPU, runtime, candidate SHA and matched requested/actual profile"
+    },
+    {
+      "id": "PUBLIC_REPORT",
+      "owner": "validation and product",
+      "positive": "Adapter::get_info, features, limits, get_downlevel_capabilities and get_texture_format_features on each physical exact tier. Use the normal public instance and Device::request_device. Exercise every advertised feature on an independently driven command/Pipeline and use matching operation-level row IDs.",
+      "negative": "Explicit higher tier disabled should still expose the supported baseline and report it separately from physical level. Request one above each advertised limit, feature off, two incompatible capabilities and forbidden stage/format combinations. Capture validation errors before replay.",
+      "result_oracle": "Actual public or product evidence, authenticated build receipt, adapter/level and complete raw results"
+    },
+    {
+      "id": "CTS",
+      "owner": "validation and product",
+      "positive": "Run pinned strict tests over operation selectors, capture the full case detail, CTS/test list hashes, physical adapter and actual shader projection. Reconcile every applicable skip at case granularity. After candidate values are calibrated run inherited groups at each exact tier.",
+      "negative": "Hardware-required mode rejects no eligible physical adapter, wrong profile or wrong native feature level. Inject a baseline projection mismatch in a fixture and assert the runner turns it into a hard failure.",
+      "result_oracle": "Actual public or product evidence, authenticated build receipt, adapter/level and complete raw results"
+    },
+    {
+      "id": "PRODUCT",
+      "owner": "validation and product",
+      "positive": "Launch isolated package on each signed supported architecture and render known pinned content, input, scaling and HUD. Pair DRS, timestamps, HDR and both actual pack paths by capabilities. Repeat frame benchmark at explicitly different execution paths with matched content and resolution.",
+      "negative": "Try missing pack facilities, failed shader, SDR output, fixed DRS fallback, device loss/resume and disabled tier. Confirm pixel-correct fallback, normalized output and no regression on previous candidates.",
+      "result_oracle": "Actual public or product evidence, authenticated build receipt, adapter/level and complete raw results"
+    },
+    {
+      "id": "PHYSICAL_CEILING",
+      "owner": "validation and product",
+      "positive": "Exercise each applicable tier on independent hardware with that native ceiling, record maximum and runtime via DXGI and exact-level singleton requests. Repeat representative operations and edge profiles, and use real legacy 10Level9 drivers for relevant cases.",
+      "negative": "Prove next tier fails on native-ceiling hardware, keeping fallback results independent. Document unsupported platform/API behavior and a substitute device only with signed review.",
+      "result_oracle": "Actual public or product evidence, authenticated build receipt, adapter/level and complete raw results"
+    }
+  ],
+  "tiers": [
+    {
+      "level": "9_1",
+      "earlier_levels": [],
+      "exact_candidate_gates": "FL9_1: forced exact and default projection controls",
+      "run": [
+        "SELECT",
+        "GRAPHICS_SHADER",
+        "FORMAT_CREATE",
+        "FORMAT_NATIVE",
+        "TRANSFER",
+        "SAMPLING",
+        "VERTEX",
+        "INDEX",
+        "BLEND_DEPTH",
+        "QUERY",
+        "SYNC",
+        "PRESENT",
+        "PUBLIC_REPORT",
+        "CTS",
+        "PRODUCT",
+        "PHYSICAL_CEILING"
+      ],
+      "inherit_tests": true,
+      "future_instance": null,
+      "state": "INCOMPLETE"
+    },
+    {
+      "level": "9_2",
+      "earlier_levels": [
+        "9_1"
+      ],
+      "exact_candidate_gates": "FL9_2: separate color/alpha blend, two-sided stencil, occlusion, 32-bit native IA, repeat and DDI additions",
+      "run": [
+        "SELECT",
+        "GRAPHICS_SHADER",
+        "QUERY",
+        "BLEND_DEPTH",
+        "INDEX",
+        "VERTEX",
+        "SAMPLING",
+        "FORMAT_CREATE",
+        "FORMAT_NATIVE",
+        "PUBLIC_REPORT",
+        "CTS",
+        "PHYSICAL_CEILING"
+      ],
+      "inherit_tests": true,
+      "future_instance": "instances/fl9_2.md",
+      "state": "INCOMPLETE"
+    },
+    {
+      "level": "9_3",
+      "earlier_levels": [
+        "9_1",
+        "9_2"
+      ],
+      "exact_candidate_gates": "FL9_3: actual profile switch, restricted instance draws, equal-bit-depth MRT4, volume/cube, texel formats",
+      "run": [
+        "SELECT",
+        "GRAPHICS_SHADER",
+        "VERTEX",
+        "BLEND_DEPTH",
+        "MSAA",
+        "FORMAT_CREATE",
+        "SAMPLING",
+        "FORMAT_NATIVE",
+        "PUBLIC_REPORT",
+        "CTS",
+        "PHYSICAL_CEILING"
+      ],
+      "inherit_tests": true,
+      "future_instance": "instances/fl9_3.md",
+      "state": "INCOMPLETE"
+    },
+    {
+      "level": "10_0",
+      "earlier_levels": [
+        "9_1",
+        "9_2",
+        "9_3"
+      ],
+      "exact_candidate_gates": "FL10_0: shader model 4 with geometry/stream output, NPOT, eight attachments, arrays, optional DirectCompute",
+      "run": [
+        "SELECT",
+        "GRAPHICS_SHADER",
+        "NATIVE_GEOMETRY",
+        "FORMAT_CREATE",
+        "SAMPLING",
+        "BLEND_DEPTH",
+        "MSAA",
+        "STORAGE",
+        "QUERY",
+        "FORMAT_NATIVE",
+        "PUBLIC_REPORT",
+        "CTS",
+        "PHYSICAL_CEILING"
+      ],
+      "inherit_tests": true,
+      "future_instance": "instances/fl10_0.md",
+      "state": "INCOMPLETE"
+    },
+    {
+      "level": "10_1",
+      "earlier_levels": [
+        "9_1",
+        "9_2",
+        "9_3",
+        "10_0"
+      ],
+      "exact_candidate_gates": "FL10_1: shader model 4.1, IA 32, independent blend, cube arrays, sample-frequency and required format-specific 4×",
+      "run": [
+        "SELECT",
+        "GRAPHICS_SHADER",
+        "NATIVE_GEOMETRY",
+        "VERTEX",
+        "FORMAT_CREATE",
+        "SAMPLING",
+        "BLEND_DEPTH",
+        "MSAA",
+        "STORAGE",
+        "FORMAT_NATIVE",
+        "PUBLIC_REPORT",
+        "CTS",
+        "PHYSICAL_CEILING"
+      ],
+      "inherit_tests": true,
+      "future_instance": "instances/fl10_1.md",
+      "state": "INCOMPLETE"
+    },
+    {
+      "level": "11_0",
+      "earlier_levels": [
+        "9_1",
+        "9_2",
+        "9_3",
+        "10_0",
+        "10_1"
+      ],
+      "exact_candidate_gates": "FL11_0: SM5 compute/tessellation, typed and raw UAVs, indirect draw/dispatch, required BC6H/BC7",
+      "run": [
+        "SELECT",
+        "GRAPHICS_SHADER",
+        "NATIVE_GEOMETRY",
+        "STORAGE",
+        "INDIRECT",
+        "FORMAT_CREATE",
+        "QUERY",
+        "MSAA",
+        "FORMAT_NATIVE",
+        "PUBLIC_REPORT",
+        "CTS",
+        "PHYSICAL_CEILING"
+      ],
+      "inherit_tests": true,
+      "future_instance": "instances/fl11_0.md",
+      "state": "INCOMPLETE"
+    },
+    {
+      "level": "11_1",
+      "earlier_levels": [
+        "9_1",
+        "9_2",
+        "9_3",
+        "10_0",
+        "10_1",
+        "11_0"
+      ],
+      "exact_candidate_gates": "FL11_1: explicit runtime path, CS/OM 64, graphics stages, OM logic, constant windows and forced sampling",
+      "run": [
+        "SELECT",
+        "GRAPHICS_SHADER",
+        "NATIVE_GEOMETRY",
+        "STORAGE",
+        "BLEND_DEPTH",
+        "MSAA",
+        "FORMAT_NATIVE",
+        "NATIVE_FEATURE",
+        "PRESENT",
+        "PUBLIC_REPORT",
+        "CTS",
+        "PRODUCT",
+        "PHYSICAL_CEILING"
+      ],
+      "inherit_tests": true,
+      "future_instance": "instances/fl11_1.md",
+      "state": "INCOMPLETE"
+    }
+  ],
+  "format_expansion": {
+    "unit": "Each unique level, DXGI format, property and source-scope ID",
+    "acceptance": [
+      "Assert relevant support HRESULT/bits and sample counts/quality where applicable.",
+      "Each required cell receives a legal shape and verified operation with an output oracle plus corresponding rejection/boundary evidence.",
+      "Optional and dependent cells need applicability records and do not close mandatory cases.",
+      "Keep documented DDI/10Level9 application differences explicit. FL9_2 has DDI minima and 10Level9 app operations; each missing app-side use must be resolved."
+    ],
+    "negative_codes": "Pin documented HRESULT, debug-layer message, validation error or unchanged output per operation; many immediate-context methods return void."
+  },
+  "ctstest": {
+    "revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+    "baseline": "Read wgpu-hal/src/dx11/FL9_1_CTS.md and cts_runner/revision.txt. Pinned strict runner understands actual FL9_1.",
+    "smoke_command": "cargo xtask cts --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,basic:*'",
+    "higher_tier_prerequisite": "Implement exact tier selection and carry actual returned level/projection into strict runner before crediting higher tiers; retain all earlier selectors."
+  },
+  "gate": [
+    "Freeze fork, upstream and relevant product full commits, actual source status, CTS checkout/revision, test lists, binaries and signed package hashes.",
+    "Resolve every required operation, numeric boundary and required DXGI format/use cell, including inherited rows and runtime footnotes. Assign an owner and reproducible positive and negative fixture to each row.",
+    "Verify driver flags, native operation, reachable DX11 HAL and independently observable public tests where representable. For a native API gap require an approved reachable interface and execution through the backend, plus public limitation documentation.",
+    "Run lower-tier regressions at all prior exact levels, dedicated native-ceiling hardware and required signed AppContainer configurations. Record real hardware, architecture, driver/WDDM, runtime and shader projection. Require actual operation evidence and do not count skips or query-only observations as passes.",
+    "Validate each tier with independent review and have Mission Control issue the approved immutable gate only when zero mandatory rows or required tests remain open."
+  ],
+  "currently_impossible_or_unverified": [
+    "Original 11.0 runtime 11_1 E_INVALIDARG branch requires a compatible runtime/device or dedicated controlled legacy host.",
+    "Real native-ceiling drivers and real physical removal/resume are unverified. Injected errors are supplemental.",
+    "Lumia ARM32 portal was unreachable. Signed package exists on Ben-Desktop.",
+    "Literal mandatory native operations with no public or pinned reachable backend API remain blockers."
+  ]
+}
