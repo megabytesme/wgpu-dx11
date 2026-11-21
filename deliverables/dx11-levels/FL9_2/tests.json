@@ -2,7 +2,7 @@
   "schema_version": 1,
   "certification_status": "INCOMPLETE",
   "baseline": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
-  "candidate": "912fc25d497f872e744185a2564555647e4e2b46",
+  "candidate": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
   "builds": [
     {
       "host": "Ben-Desktop",
@@ -276,5 +276,455 @@
     "Targeted selected-device tests and source checks only",
     "Certification requires independently accepted FL9_1 and a full candidate matrix",
     "Synthetic device-removal injection and hidden-window presentation do not establish physical device loss or UWP lifecycle"
-  ]
+  ],
+  "finish": {
+    "certification_status": "INCOMPLETE",
+    "runtime_commit": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+    "cts_harness_commit": "383f40a8c8c936dc715cd7f8773c488b04910b67",
+    "physical_adapter": {
+      "name": "NVIDIA GeForce RTX 3090 Ti",
+      "dxgi_pci_id": "10de:2203",
+      "driver": "32.0.16.2101"
+    },
+    "builds": [
+      {
+        "source_dir": "C:/dev/personal/wgpu-dx11-FL92-Nov21",
+        "cargo_target_dir": "E:/Temp/fl92-finish/cargo",
+        "command": "cargo test --locked --offline -j 6 -p wgpu-hal --no-default-features --features dx11 --lib --no-run && cargo test --locked --offline -j 6 -p wgpu --no-default-features --features std,dx11-test-fixture --test dx11_fl92 --test dx11_fl92_limits --test dx11_fl92_r16unorm --test dx11_fl91_scene --test dx11_surface_error_fixture --no-run",
+        "log": "E:/Temp/fl92-finish/build-committed-x64.log",
+        "status": "PASS"
+      },
+      {
+        "source_dir": "C:/dev/personal/wgpu-dx11-FL92-Nov21",
+        "cargo_target_dir": "E:/Temp/fl92-finish/cargo",
+        "command": "cargo test --locked --offline -j 6 --target i686-pc-windows-msvc -p wgpu-hal --no-default-features --features dx11 --lib --no-run && cargo test --locked --offline -j 6 --target i686-pc-windows-msvc -p wgpu --no-default-features --features std,dx11-test-fixture --test dx11_fl92 --test dx11_fl92_limits --test dx11_fl92_r16unorm --no-run",
+        "log": "E:/Temp/fl92-finish/build-committed-x86.log",
+        "status": "PASS"
+      },
+      {
+        "source_dir": "C:/dev/personal/wgpu-dx11-FL92-Nov21",
+        "cargo_target_dir": "E:/Temp/fl92-finish/cargo",
+        "command": "cargo clippy --locked --offline -j 6 -p wgpu -p wgpu-hal --no-default-features --features wgpu/std,wgpu/dx11-test-fixture --tests",
+        "log": "E:/Temp/fl92-finish/clippy-committed.log",
+        "status": "PASS"
+      },
+      {
+        "source_dir": "C:/dev/personal/wgpu-dx11-FL92-Nov21",
+        "cargo_target_dir": "C:/Users/ben/AppData/Local/Temp/horizon-wgpu-fl92-cargo",
+        "command": "cargo build --locked --offline -j 6 -p cts_runner --features deno_webgpu/dx11 && cargo test --locked --offline -j 6 -p deno_webgpu --features dx11 --lib backend_selection_tests",
+        "log": "E:/Temp/fl92-finish/cts-exact-tier-build.log",
+        "status": "PASS"
+      }
+    ],
+    "desktop_rust_tests": [
+      {
+        "group": "scene-9_1-pair1",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "da8ac14450e0208fff55909121e0a0c571c43c8c4fd8430ea19b6aef5a7d3a35",
+        "log": "E:/Temp/fl92-finish/committed-scene-9_1-pair1.log"
+      },
+      {
+        "group": "scene-9_1-pair2",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "da8ac14450e0208fff55909121e0a0c571c43c8c4fd8430ea19b6aef5a7d3a35",
+        "log": "E:/Temp/fl92-finish/committed-scene-9_1-pair2.log"
+      },
+      {
+        "group": "scene-9_1-pair3",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "da8ac14450e0208fff55909121e0a0c571c43c8c4fd8430ea19b6aef5a7d3a35",
+        "log": "E:/Temp/fl92-finish/committed-scene-9_1-pair3.log"
+      },
+      {
+        "group": "scene-9_2-pair1",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "da8ac14450e0208fff55909121e0a0c571c43c8c4fd8430ea19b6aef5a7d3a35",
+        "log": "E:/Temp/fl92-finish/committed-scene-9_2-pair1.log"
+      },
+      {
+        "group": "scene-9_2-pair2",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "da8ac14450e0208fff55909121e0a0c571c43c8c4fd8430ea19b6aef5a7d3a35",
+        "log": "E:/Temp/fl92-finish/committed-scene-9_2-pair2.log"
+      },
+      {
+        "group": "scene-9_2-pair3",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "da8ac14450e0208fff55909121e0a0c571c43c8c4fd8430ea19b6aef5a7d3a35",
+        "log": "E:/Temp/fl92-finish/committed-scene-9_2-pair3.log"
+      },
+      {
+        "group": "scene-auto",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "da8ac14450e0208fff55909121e0a0c571c43c8c4fd8430ea19b6aef5a7d3a35",
+        "log": "E:/Temp/fl92-finish/committed-scene-auto.log"
+      },
+      {
+        "group": "x64-9_1-dx11_fl92",
+        "status": "PASS",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "4c91b16a3685481fdc0ff03434f0138fc9695176a6cb3541a4d3673ab1dd21fe",
+        "log": "E:/Temp/fl92-finish/committed-x64-9_1-dx11_fl92.log"
+      },
+      {
+        "group": "x64-9_1-dx11_fl92_r16unorm",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "44f30111658bef2f252292c72a2b5cf248f02f1aea3f4ecc9d089be2820c9119",
+        "log": "E:/Temp/fl92-finish/committed-x64-9_1-dx11_fl92_r16unorm.log"
+      },
+      {
+        "group": "x64-9_1-surface",
+        "status": "PASS",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "cc360a3a6457e33a5a98c798922e622745bd7822888a5ce4e7946bef1d873813",
+        "log": "E:/Temp/fl92-finish/committed-x64-9_1-surface.log"
+      },
+      {
+        "group": "x64-9_2-dx11_fl92",
+        "status": "PASS",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "4c91b16a3685481fdc0ff03434f0138fc9695176a6cb3541a4d3673ab1dd21fe",
+        "log": "E:/Temp/fl92-finish/committed-x64-9_2-dx11_fl92.log"
+      },
+      {
+        "group": "x64-9_2-dx11_fl92_limits",
+        "status": "PASS",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "2d25d9338e305c3dec1e4540bcc8a739f0153e851db58728e37cd139f9be86de",
+        "log": "E:/Temp/fl92-finish/committed-x64-9_2-dx11_fl92_limits.log"
+      },
+      {
+        "group": "x64-9_2-dx11_fl92_r16unorm",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "44f30111658bef2f252292c72a2b5cf248f02f1aea3f4ecc9d089be2820c9119",
+        "log": "E:/Temp/fl92-finish/committed-x64-9_2-dx11_fl92_r16unorm.log"
+      },
+      {
+        "group": "x64-9_2-surface",
+        "status": "PASS",
+        "passed": 5,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "cc360a3a6457e33a5a98c798922e622745bd7822888a5ce4e7946bef1d873813",
+        "log": "E:/Temp/fl92-finish/committed-x64-9_2-surface.log"
+      },
+      {
+        "group": "x64-fl92_bounded",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "2619748764975eeedc3ead239ba369501f6522d6515c3810d0ec00c19e03a4e8",
+        "log": "E:/Temp/fl92-finish/committed-x64-fl92_bounded.log"
+      },
+      {
+        "group": "x64-fl9_2_native_numeric",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "2619748764975eeedc3ead239ba369501f6522d6515c3810d0ec00c19e03a4e8",
+        "log": "E:/Temp/fl92-finish/committed-x64-fl9_2_native_numeric.log"
+      },
+      {
+        "group": "x64-hal-fl91",
+        "status": "PASS",
+        "passed": 557,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "2619748764975eeedc3ead239ba369501f6522d6515c3810d0ec00c19e03a4e8",
+        "log": "E:/Temp/fl92-finish/committed-x64-hal-fl91.log"
+      },
+      {
+        "group": "x64-hwnd-fl92",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "2619748764975eeedc3ead239ba369501f6522d6515c3810d0ec00c19e03a4e8",
+        "log": "E:/Temp/fl92-finish/committed-x64-hwnd-fl92.log"
+      },
+      {
+        "group": "x64-mirror_once",
+        "status": "PASS",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "2619748764975eeedc3ead239ba369501f6522d6515c3810d0ec00c19e03a4e8",
+        "log": "E:/Temp/fl92-finish/committed-x64-mirror_once.log"
+      },
+      {
+        "group": "x86-9_1-dx11_fl92",
+        "status": "PASS",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "cc2b808a1a04121146154d2a0e38217a72f7da98ea788577af45f0ab993c0743",
+        "log": "E:/Temp/fl92-finish/committed-x86-9_1-dx11_fl92.log"
+      },
+      {
+        "group": "x86-9_1-dx11_fl92_r16unorm",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "7493ed5be82e5b16dc6f7a730fbc92803c9c8a0cfa9041d05fe1c732e720918f",
+        "log": "E:/Temp/fl92-finish/committed-x86-9_1-dx11_fl92_r16unorm.log"
+      },
+      {
+        "group": "x86-9_2-dx11_fl92",
+        "status": "PASS",
+        "passed": 4,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "cc2b808a1a04121146154d2a0e38217a72f7da98ea788577af45f0ab993c0743",
+        "log": "E:/Temp/fl92-finish/committed-x86-9_2-dx11_fl92.log"
+      },
+      {
+        "group": "x86-9_2-dx11_fl92_limits",
+        "status": "PASS",
+        "passed": 2,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "cfdf53f171fed718de38747508177a9f48463e9fb0765c66efe4c03e388da747",
+        "log": "E:/Temp/fl92-finish/committed-x86-9_2-dx11_fl92_limits.log"
+      },
+      {
+        "group": "x86-9_2-dx11_fl92_r16unorm",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "7493ed5be82e5b16dc6f7a730fbc92803c9c8a0cfa9041d05fe1c732e720918f",
+        "log": "E:/Temp/fl92-finish/committed-x86-9_2-dx11_fl92_r16unorm.log"
+      },
+      {
+        "group": "x86-fl92_bounded",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "2888c1d43286a176eb62e2ed17998eb4cfea9920482963521d86779a865b8dba",
+        "log": "E:/Temp/fl92-finish/committed-x86-fl92_bounded.log"
+      },
+      {
+        "group": "x86-fl9_2_native_numeric",
+        "status": "PASS",
+        "passed": 1,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "2888c1d43286a176eb62e2ed17998eb4cfea9920482963521d86779a865b8dba",
+        "log": "E:/Temp/fl92-finish/committed-x86-fl9_2_native_numeric.log"
+      },
+      {
+        "group": "x86-hal-fl91",
+        "status": "FAIL",
+        "passed": 555,
+        "failed": 2,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "2888c1d43286a176eb62e2ed17998eb4cfea9920482963521d86779a865b8dba",
+        "log": "E:/Temp/fl92-finish/committed-x86-hal-fl91.log",
+        "failed_tests": [
+          "dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_clone_sampling_presents_and_resizes",
+          "dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_surface_renders_and_resizes"
+        ]
+      },
+      {
+        "group": "x86-mirror_once",
+        "status": "PASS",
+        "passed": 3,
+        "failed": 0,
+        "ignored": 0,
+        "source": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "executable_sha256": "2888c1d43286a176eb62e2ed17998eb4cfea9920482963521d86779a865b8dba",
+        "log": "E:/Temp/fl92-finish/committed-x86-mirror_once.log"
+      }
+    ],
+    "cts": {
+      "revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "scope": "Four selected cases per forced level, each requires an exact physical DX11 adapter",
+      "pre_fix_fl92": "Runner rejected valid FL9_2 hardware before case execution because it required the FL9_1 marker.",
+      "after_fix": [
+        {
+          "level": "9_1",
+          "selector": "webgpu:api,operation,command_buffer,basic:empty:*",
+          "exit": 0,
+          "exact_physical_marker": true,
+          "executable_sha256": "c4a3debf1d96f938603a4ba0aa2775c1ee1ed6261acb99befa1bac193b1f700e",
+          "log": "E:/Temp/fl92-finish/cts-exact-9_1-empty.log",
+          "passed": 1,
+          "warnings": 0,
+          "skipped": 0,
+          "failed": 0
+        },
+        {
+          "level": "9_1",
+          "selector": "webgpu:api,operation,rendering,basic:clear:*",
+          "exit": 0,
+          "exact_physical_marker": true,
+          "executable_sha256": "c4a3debf1d96f938603a4ba0aa2775c1ee1ed6261acb99befa1bac193b1f700e",
+          "log": "E:/Temp/fl92-finish/cts-exact-9_1-clear.log",
+          "passed": 1,
+          "warnings": 0,
+          "skipped": 0,
+          "failed": 0
+        },
+        {
+          "level": "9_1",
+          "selector": "webgpu:api,operation,rendering,basic:fullscreen_quad:*",
+          "exit": 0,
+          "exact_physical_marker": true,
+          "executable_sha256": "c4a3debf1d96f938603a4ba0aa2775c1ee1ed6261acb99befa1bac193b1f700e",
+          "log": "E:/Temp/fl92-finish/cts-exact-9_1-quad.log",
+          "passed": 1,
+          "warnings": 0,
+          "skipped": 0,
+          "failed": 0
+        },
+        {
+          "level": "9_1",
+          "selector": "webgpu:api,operation,command_buffer,copyBufferToBuffer:state_transitions:*",
+          "exit": 0,
+          "exact_physical_marker": true,
+          "executable_sha256": "c4a3debf1d96f938603a4ba0aa2775c1ee1ed6261acb99befa1bac193b1f700e",
+          "log": "E:/Temp/fl92-finish/cts-exact-9_1-copy.log",
+          "passed": 1,
+          "warnings": 0,
+          "skipped": 0,
+          "failed": 0
+        },
+        {
+          "level": "9_2",
+          "selector": "webgpu:api,operation,command_buffer,basic:empty:*",
+          "exit": 0,
+          "exact_physical_marker": true,
+          "executable_sha256": "c4a3debf1d96f938603a4ba0aa2775c1ee1ed6261acb99befa1bac193b1f700e",
+          "log": "E:/Temp/fl92-finish/cts-exact-9_2-empty.log",
+          "passed": 1,
+          "warnings": 0,
+          "skipped": 0,
+          "failed": 0
+        },
+        {
+          "level": "9_2",
+          "selector": "webgpu:api,operation,rendering,basic:clear:*",
+          "exit": 0,
+          "exact_physical_marker": true,
+          "executable_sha256": "c4a3debf1d96f938603a4ba0aa2775c1ee1ed6261acb99befa1bac193b1f700e",
+          "log": "E:/Temp/fl92-finish/cts-exact-9_2-clear.log",
+          "passed": 1,
+          "warnings": 0,
+          "skipped": 0,
+          "failed": 0
+        },
+        {
+          "level": "9_2",
+          "selector": "webgpu:api,operation,rendering,basic:fullscreen_quad:*",
+          "exit": 0,
+          "exact_physical_marker": true,
+          "executable_sha256": "c4a3debf1d96f938603a4ba0aa2775c1ee1ed6261acb99befa1bac193b1f700e",
+          "log": "E:/Temp/fl92-finish/cts-exact-9_2-quad.log",
+          "passed": 1,
+          "warnings": 0,
+          "skipped": 0,
+          "failed": 0
+        },
+        {
+          "level": "9_2",
+          "selector": "webgpu:api,operation,command_buffer,copyBufferToBuffer:state_transitions:*",
+          "exit": 0,
+          "exact_physical_marker": true,
+          "executable_sha256": "c4a3debf1d96f938603a4ba0aa2775c1ee1ed6261acb99befa1bac193b1f700e",
+          "log": "E:/Temp/fl92-finish/cts-exact-9_2-copy.log",
+          "passed": 1,
+          "warnings": 0,
+          "skipped": 0,
+          "failed": 0
+        }
+      ],
+      "runner_unit_tests": {
+        "passed": 7,
+        "failed": 0
+      }
+    },
+    "benchmark": {
+      "scope": "Offscreen 32 by 32 textured cube with D16 depth; 1 and 128 draws per submission; 5 warmups and 25 observations per run",
+      "candidate": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+      "desktop_pairs": 3,
+      "pacing": "Wait for each GPU submission to complete",
+      "history": "performance.csv retains older snapshots identified by the source column"
+    },
+    "x86_hidden_hwnd_retry": {
+      "log": "E:/Temp/fl92-finish/x86-hidden-hwnd-retry.log",
+      "exit": "101"
+    },
+    "x86_visible_hwnd": {
+      "log": "E:/Temp/fl92-finish/x86-visible-fl91.log",
+      "exit": "1",
+      "scope": "Observable desktop window with a bounded frame count"
+    }
+  },
+  "baseline_receipt_candidate": "912fc25d497f872e744185a2564555647e4e2b46"
 }

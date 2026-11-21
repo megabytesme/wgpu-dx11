@@ -2,7 +2,7 @@
   "schema_version": 1,
   "certification_status": "INCOMPLETE",
   "baseline": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
-  "candidate": "912fc25d497f872e744185a2564555647e4e2b46",
+  "candidate": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
   "devices": [
     {
       "device": "Ben-Desktop",
@@ -332,5 +332,73 @@
         "deployed": false
       }
     }
-  ]
+  ],
+  "finish": {
+    "runtime_commit": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+    "desktop_native_stencil": {
+      "requested": "0x9200",
+      "returned": "0x9200",
+      "physical": true,
+      "log": "E:/Temp/fl92-finish/native-stencil-rtx-x64.log",
+      "cases": [
+        {
+          "name": "symmetric_replace",
+          "mismatches": 0
+        },
+        {
+          "name": "symmetric_keep",
+          "mismatches": 0
+        },
+        {
+          "name": "symmetric_replace_cull_back",
+          "mismatches": 0
+        },
+        {
+          "name": "symmetric_replace_cull_front",
+          "mismatches": 0
+        },
+        {
+          "name": "asymmetric_ccw_front",
+          "mismatches": 0
+        },
+        {
+          "name": "asymmetric_cw_front",
+          "mismatches": 0
+        },
+        {
+          "name": "symmetric_replace_depth_disabled",
+          "mismatches": 0
+        },
+        {
+          "name": "symmetric_replace_color_enabled",
+          "mismatches": 0
+        },
+        {
+          "name": "asymmetric_depth_disabled",
+          "mismatches": 0
+        },
+        {
+          "name": "asymmetric_color_enabled",
+          "mismatches": 0
+        }
+      ],
+      "x64_executable_sha256": "2723d785686af03b6b2d91a49b4c39ac3dd7961b812e331aef07c44a5b98df7d",
+      "arm64_executable_sha256": "d6bd2459dbe7f1c5fbf550a9cc451607f7849f0d50766894773d3011ebeaf486",
+      "compiler": "MSVC cl /nologo /W4 /WX /O2, linked d3d11.lib dxgi.lib d3dcompiler.lib"
+    },
+    "surface_pro_x": {
+      "status": "BLOCKED",
+      "failed_preflight": "Paired SSH timed out; TCP port 22 unreachable",
+      "remaining": "Run direct-native stencil control on Adreno 680 driver 27.20.2160.0; diagnose or remedy the back-face mismatch; run current ARM64 public and HAL fixtures.",
+      "last_verified_surface_runtime_commit": "912fc25d497f872e744185a2564555647e4e2b46"
+    },
+    "lumia": {
+      "status": "BLOCKED",
+      "log": "E:/Temp/fl92-finish/lumia-attempt.log",
+      "failed_preflight": "Paired Portal timed out at /api/os/devicefamily before installation; TCP port 443 unreachable",
+      "previous_signed_probe_sha256": "90b8b94cb29172a3d83a89fae85982d6c598d78efca984e22298088483bdf596",
+      "deployed": false
+    }
+  },
+  "baseline_receipt_candidate": "912fc25d497f872e744185a2564555647e4e2b46"
 }
