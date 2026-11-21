@@ -1,0 +1,17 @@
+
+running 1 test
+test public_dx11_inter_stage_varying_limit_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; inter_stage_variables=8
+
+thread 'public_dx11_inter_stage_varying_limit_at_fl91' (31360) panicked at wgpu\tests\dx11_public.rs:33940:17:
+assertion `left == right` failed: eight varying output pixel (8, 0)
+  left: [0, 0, 0, 0]
+ right: [102, 60, 18, 143]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    public_dx11_inter_stage_varying_limit_at_fl91
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.86s

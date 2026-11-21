@@ -1,0 +1,6 @@
+
+running 1 test
+Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+test dx11::fence::tests::event_fence_tracks_real_gpu_copy_completion ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 574 filtered out; finished in 0.34s

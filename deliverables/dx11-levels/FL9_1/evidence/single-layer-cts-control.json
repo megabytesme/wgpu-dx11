@@ -1,0 +1,9 @@
+{
+  "control_predicate": "unless((p) => (p.dimension === '1d' && (p._textureSize[1] > 1 || p._textureSize[2] > 1)) || (p.dimension === '2d' && p._textureSize[2] > 1))",
+  "control_sha256": "dfb5d0841b11715e851e3542aacfde395237f5480b3ce47b0afa6bbd1254441f",
+  "original_predicate": "unless((p) => p.dimension === '1d' && (p._textureSize[1] > 1 || p._textureSize[2] > 1))",
+  "note": "Temporary compatibility control. Upstream source and complete unmodified test results are retained.",
+  "source": "out/webgpu/api/operation/command_buffer/image_copy.spec.js",
+  "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+  "original_sha256": "9f1cae5884ccc2e50cc47cc6623c5db1f8b91cea57d559316b840b3d684c1d02"
+}

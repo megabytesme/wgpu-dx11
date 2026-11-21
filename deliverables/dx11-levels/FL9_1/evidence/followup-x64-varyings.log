@@ -1,0 +1,8 @@
+
+running 1 test
+test public_dx11_inter_stage_varying_limit_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; inter_stage_variables=8
+PASS: guarded native BGRX GenerateMips from the public device read [9, 17, 35]
+PASS: eight matched vec4 varyings at locations 0–7 rendered [102, 60, 18, 143] in 64/64 pixels; Core rejected location 8 against max_inter_stage_shader_variables before HAL
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.37s

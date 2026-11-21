@@ -1,0 +1,506 @@
+
+running 156 tests
+test binding_model::fl9_texture_load_tests::fl9_texture_load_format_subset_is_dimension_specific ... ok
+test command::bind::tests::explicit_integer_lod_requires_the_distinct_multimip_limit ... ok
+test command::bind::tests::fl9_texture_gather_requires_one_mip_and_clamp_addressing ... ok
+test command::bind::tests::npot_repeat_validation_uses_the_bound_relationship ... ok
+test command::bind::tests::sampler_mip_compatibility_checks_only_selected_pairs_and_current_views ... ok
+test command::bind::tests::texture_sample_bias_checks_only_the_selected_sampler_pairs ... ok
+test command::render::viewport_tests::viewport_target_bounds_cover_all_edges ... ok
+test command::render::viewport_tests::viewport_transform_requirement_ignores_empty_rectangles ... ok
+test device::queue::submission_gate_tests::present_gate_rejects_nested_present_and_serializes_other_threads ... ok
+test device::resource::npot_mipmap_tests::checks_spatial_dimensions_but_not_array_layers ... ok
+test device::resource::passthrough_selection_tests::backend_selection_rejects_dx11_and_preserves_other_paths ... ok
+test device::resource::sampler_anisotropy_limit_tests::clamps_to_reported_downlevel_anisotropy_limit ... ok
+test device::resource::sampler_anisotropy_limit_tests::unavailable_or_invalid_anisotropy_cap_is_conservative ... ok
+test device::resource::sampler_border_addressing_tests::comparison_only_border_restriction_is_applied_by_sampler_type ... ok
+test device::resource::sampler_gather_address_tests::fl9_texture_gather_checks_u_and_v_addressing_independently ... ok
+test device::resource::sampler_lod_clamp_tests::limited_lod_clamps_reject_only_unrepresentable_filter_combinations ... ok
+test device::resource::sampler_lod_clamp_tests::non_finite_lod_clamps_are_validation_errors ... ok
+test device::resource::sampler_repeat_limit_tests::finite_repeat_limit_rejects_repeat_and_mirror_repeat_only ... ok
+test device::resource::sampler_texture_sample_bias_tests::sample_bias_sampler_compatibility_uses_effective_anisotropy ... ok
+test device::resource::sampling_pair_limit_tests::count_uses_distinct_sorted_logical_pairs ... ok
+test device::resource::texture_format_feature_tests::narrow_bc_feature_enables_only_bc1_to_bc3_unorm_formats ... ok
+test device::resource::texture_format_feature_tests::narrow_bc_srgb_feature_enables_only_bc1_to_bc3_srgb_formats ... ok
+test device::surface_config::surface_configuration_tests::auto_never_resolves_to_extended_srgb ... ok
+test device::surface_config::surface_configuration_tests::auto_non_fp16_with_srgb_and_extended_linear_resolves_to_srgb ... ok
+test device::surface_config::surface_configuration_tests::auto_prefers_srgb_for_non_fp16 ... ok
+test device::surface_config::surface_configuration_tests::auto_refuses_hdr_only_formats ... ok
+test device::surface_config::surface_configuration_tests::auto_resolves_fp16_to_extended_srgb_linear ... ok
+test device::surface_config::surface_configuration_tests::auto_resolves_fp16_to_srgb_without_extended ... ok
+test device::surface_config::surface_configuration_tests::explicit_hdr10_is_honored ... ok
+test device::surface_config::surface_configuration_tests::explicit_unsupported_color_space_errors ... ok
+test id::test_id ... ok
+test identity::test_epoch_end_of_life ... ok
+test indirect_validation::draw::tests::calculate_src_offsets_test ... ok
+test init_tracker::test::check_for_drained_tracker ... ok
+test init_tracker::test::check_for_newly_created_tracker ... ok
+test init_tracker::test::check_for_partially_filled_tracker ... ok
+test init_tracker::test::discard_adds_range_on_cleared ... ok
+test init_tracker::test::discard_does_nothing_on_uncleared ... ok
+test init_tracker::test::discard_extends_ranges ... ok
+test init_tracker::test::discard_merges_ranges ... ok
+test init_tracker::test::drain_already_drained ... ok
+test init_tracker::test::drain_never_returns_ranges_twice_for_same_range ... ok
+test init_tracker::test::drain_splits_ranges_correctly ... ok
+test instance::downlevel_default_limits_less_than_default_limits ... ok
+test instance::dx11_fixture_tests::fl91_core_buffer_and_offscreen_render_on_hardware ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+Driver unrestricted NPOT sampling: true; core test fixture forces conditional-NPOT validation; texture repeat limit: 128
+Color-format mip projection: RGBA8 driver_mips=true, single_mip_only=false; BGRA8 available=true, driver_mips=true, single_mip_only=false
+Core format capability projection: RGBA8 TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE) }; D24S8 TextureFormatFeatures { allowed_usages: TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY) }; BC1 TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(FILTERABLE) }
+PASS: core sampler requests 2, 3 and 16 clamp to the selected FL9_1 maximum of 2
+PASS: Core rejects two unrepresentable FL9_1 LOD/filter combinations as validation errors and creates a default-range mixed-filter sampler afterward
+PASS: FL9_1 core repeat and mirrored-repeat sampler limit enforced
+PASS: unsupported storage-buffer stages rejected by core validation
+PASS: compute-visible uniform and sampled layouts rejected by core validation
+PASS: empty-visibility bind-group entries rejected by core validation
+PASS: selected depth format capability permits depth-sampled layouts
+PASS: depth sampling follows selected format support; integer sampled-texture layouts are rejected
+PASS: multisampled texture layouts rejected by core validation
+PASS: vertex-only sampled layouts rejected by core validation
+PASS: fragment-visible sampled layouts retain shared-stage visibility
+PASS: combined-visibility depth/comparison layout accepted
+PASS: ordinary texture arrays and cube arrays rejected; the supported cube layout was accepted
+PASS: unavailable 1D/3D and storage-array layouts rejected by core validation
+PASS: Core-to-HAL format/usage/view matrix: 21 formats, 191 advertised usage combinations, 199 views; 0 formats unadvertised on this device
+PASS: 1D and fixture-disabled 3D resources are rejected by Core
+PASS: NPOT mip chain rejected by core validation
+PASS: multi-mip depth attachment rejected by core validation
+PASS: single-mip format capabilities gate multi-mip creation in core
+SKIP: RG8_UNORM mip creation requires selected-device TEXTURE2D | MIP support
+PASS: projected RGBA8 POT mips create with RESOURCE, COPY_SRC and both
+PASS: one-layer D2Array view rejected by core validation
+PASS: copy-only Rgba8Unorm view and GPU transfer, 12 pixels matched
+PASS: core Rgba8Unorm same-texture mip copies and untouched texels
+PASS: copy-only mip chain upload and zero initialization, all 43 pixels matched
+PASS: Rgba8Unorm upload-only mip creation, three ordered queue writes and completion; no readback claimed
+PASS: Rgba8Unorm rendered mip views and initialization: 43 pixels matched; render-only mip pass submitted
+PASS: copy-only Bgra8Unorm view and GPU transfer, 12 pixels matched
+PASS: core Bgra8Unorm same-texture mip copies and untouched texels
+PASS: copy-only mip chain upload and zero initialization, all 43 pixels matched
+PASS: Bgra8Unorm upload-only mip creation, three ordered queue writes and completion; no readback claimed
+PASS: Bgra8Unorm rendered mip views and initialization: 43 pixels matched; render-only mip pass submitted
+PASS: storage/copy buffer upload, GPU copy, fence and readback: 64/64 bytes
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: FXC accepted a safe FL9_1 entry with uncalled dynamic-loop helpers
+PASS: selected vertex loop rejected before HAL
+PASS: selected fragment loop rejected before HAL
+PASS: single-sample alpha-to-coverage rejected by core validation
+PASS: unsupported multisampled alpha-to-coverage rejected before HAL
+PASS: unsupported vertex formats rejected by core downlevel capability
+PASS: unsupported fragment front_facing is selected-entry gated
+PASS: unsupported fragment position is selected-use gated
+PASS: emulated vertex builtins are selected-entry and topology gated
+PASS: vertex texture sampling rejected by core downlevel limit
+PASS: combined-visibility comparison layout accepted while vertex depth sampling remains rejected
+PASS: helper and direct narrow fragment textureLoad accepted by selected-entry validation
+PASS: unsupported source-alpha-saturated factors rejected by core validation
+PASS: unsupported depth-bias clamp rejected by core validation
+PASS: selected frag_depth/depth-bias capability and direct-only output validated before HAL
+PASS: core textured depth test (Baseline): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: invalid pipeline constant overrides return a ShaderStages(FRAGMENT) validation error
+PASS: core FL9_1 pipeline constant PipelineConstant rendered 64 pixels at red=191
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core FL9_1 pipeline constant PipelineConstantDefault rendered 64 pixels at red=64
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: invalid pipeline constant overrides return a ShaderStages(VERTEX) validation error
+PASS: core FL9_1 pipeline constant PipelineVertexConstant rendered 64 pixels at red=191
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core FL9_1 pipeline constant PipelineVertexConstantDefault rendered 64 pixels at red=64
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (FractionalViewport): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core rejected an out-of-target viewport before HAL execution
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (NpotClampedPairs): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (ZeroSampleMask): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (ConstantBlend): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (NonFiltering): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (UnfilterableFloat): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (VertexVisibleBindings): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (PointInput): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (PointIndexed(Uint16)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (PointIndexed(Uint32)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core LineList through FL9_1 fixture: 8 red pixels, remaining pixels clear
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core LineStrip through FL9_1 fixture: 12 red pixels, remaining pixels clear
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core LineIndexed(Uint16) through FL9_1 fixture: 8 red pixels, remaining pixels clear
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core LineIndexed(Uint32) through FL9_1 fixture: 8 red pixels, remaining pixels clear
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core LineStripIndexed(Uint16) through FL9_1 fixture: 12 red pixels, remaining pixels clear
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core LineStripIndexed(Uint32) through FL9_1 fixture: 12 red pixels, remaining pixels clear
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core TriangleStripIndexed(Uint16) through FL9_1 fixture: 12 red pixels, remaining pixels clear
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core TriangleStripIndexed(Uint32) through FL9_1 fixture: 12 red pixels, remaining pixels clear
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (FractionalSamplerLod): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: Core rejected the selected two-mip view for a sampler restricted to one mip before HAL execution
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (Overlapping): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (NoopStencil): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (ActiveStencil): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (DepthOnlyPrepass): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (NeverDepth(false)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (NeverDepth(true)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (DepthBias(1048576)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (DepthBias(-1048576)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (Snorm): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (ZeroStride): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (InstanceRate): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (Uniform4): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (Uniform5): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (Uniform12): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (Uniform20): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (TwoUniformBindings): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (VertexFragmentUniformBindings): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (DynamicVertexFragmentUniformBindings): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (MultiGroupUniformBindings): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (Bc1): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: BC1 GPU copies and shadow-backed texture-to-buffer readback are accepted
+PASS: core textured depth test (Bc1TextureCopy): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (PremultipliedBlend): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (SampledMips): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (SampledMipsBias): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (SampledMipSuffix): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (SampledMipNonSuffix): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (SampledMipsNoCopySrc): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (SampledMipsNoCopySrcUninitialized): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (RenderSampleMip(Rgba8Unorm, false)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (RenderSampleMip(Rgba8Unorm, true)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (RenderSampleMipDefault(Rgba8Unorm)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (DisjointMip(Rgba8Unorm)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (DisjointCloneMip(Rgba8Unorm)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (RenderSampleMip(Bgra8Unorm, false)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (RenderSampleMip(Bgra8Unorm, true)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (RenderSampleMipDefault(Bgra8Unorm)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (DisjointMip(Bgra8Unorm)): 64 pixels matched
+PASS: selected FL9_1 query permits comparison-sampler layouts
+PASS: selected FL9_1 query permits a LessEqual comparison sampler
+PASS: core textured depth test (DisjointCloneMip(Bgra8Unorm)): 64 pixels matched
+PASS: public core queue and context-backed resource operations reject same-thread present reentry
+PASS: injected D3D11 invalidate OOM reached map callback and released shadow
+ok
+test instance::dx11_fixture_tests::fl91_core_empty_unmap_and_mapped_write_flush_failure_cleans_up ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: zero-sized and empty async mappings unmap without HAL unmap
+PASS: injected D3D11 write flush OOM returned and released shadow
+ok
+test instance::dx11_fixture_tests::fl91_core_fence_poll_device_loss_is_propagated_once ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; driver=Some("32.0.16.2101"); requested and actual FL9_1; fence error injection is synthetic
+PASS: synthetic fence GetData device removal propagated through core polling and fired the callback once
+ok
+test instance::dx11_fixture_tests::fl91_core_fence_wait_device_loss_is_propagated_once ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; driver=Some("32.0.16.2101"); requested and actual FL9_1; wait error injection is synthetic
+PASS: synthetic fence-wait device removal completed the pending map and device-lost callbacks once
+ok
+test instance::dx11_fixture_tests::fl91_core_format_mask_rejects_texture_readback_before_hal ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; Core readback-mask override is synthetic
+PASS: Core rejected texture-to-buffer copying from a format excluded by the synthetic mask
+ok
+test instance::dx11_fixture_tests::fl91_core_pipeline_layout_supports_stage_disjoint_uniform_limits ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; uniform-count validation is synthetic
+PASS: Core and HAL created two-group and one-group layouts with 13 vertex-only plus 13 fragment-only uniform bindings
+ok
+test instance::dx11_fixture_tests::fl91_core_poll_all_reaps_orphaned_queue_after_device_drop ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; device-drop timeout injection is synthetic
+PASS: poll_all_devices reaped a timed-out queue after its device left the registry and delivered the callback once
+ok
+test instance::dx11_fixture_tests::fl91_core_queue_drop_timeout_retains_then_reaps_queue ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; bounded idle timeout injection is synthetic
+PASS: bounded queue drop returned promptly, retained the timed-out queue, then polling reaped it and delivered the callback once
+ok
+test instance::dx11_fixture_tests::fl91_core_queue_drop_wait_device_loss_is_reported_without_panicking ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; queue-drop wait error injection is synthetic
+PASS: synthetic wait-for-idle device removal was reported once during queue destruction without panic
+ok
+test instance::dx11_fixture_tests::fl91_core_queue_drop_wait_out_of_memory_retains_queue_until_device_drop ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; queue-drop OOM injection is synthetic
+PASS: synthetic queue idle-wait OOM invalidated the device without panic, retained queue callbacks, and retired the queue when the device was dropped
+ok
+test instance::dx11_fixture_tests::fl91_core_removed_reason_callback_can_reenter_device_poll ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; driver=Some("32.0.16.2101"); requested and actual FL9_1; removed-reason error injection is synthetic
+PASS: synthetic removed-reason device loss propagated through core polling and fired the reentrant callback once
+ok
+test instance::dx11_fixture_tests::fl91_core_submission_device_loss_is_propagated_once ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; driver=Some("32.0.16.2101"); requested and actual FL9_1; loss injection is synthetic
+PASS: synthetic DXGI device removal was classified as Lost, invalidated core submission and fired the callback once
+ok
+test instance::dx11_fixture_tests::fl91_core_zero_input_draws_normalize_wrapping_vertex_ranges ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 zero-input draws for all four supported nonindexed topologies normalized first_vertex=u32::MAX, completed with 64 unchanged pixels each, and retained real-fetch and vertex_index rejection
+ok
+test instance::dx11_fixture_tests::fl91_render_bundle_validates_explicit_level_zero_texture_views ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; render-bundle view validation
+PASS: Core render-bundle finish accepted a valid multi-mip literal-zero view, rejected nonzero MinLOD, and accepted the one-mip view
+ok
+test instance::dx11_fixture_tests::fl91_unmodified_projection_creates_a_non_enumerated_core_device_on_hardware ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; projection overrides: none
+PASS: core rejected fourteen fragment uniform bindings against the projected limit of thirteen
+PASS: core rejected fourteen dynamic uniforms against the projected limit of thirteen
+PASS: core accepted 4x RGBA8 render targets and rejected sampled/copy multisampled usages
+PASS: queried FL9_1 RGBA8 3D texture/view and 3D-to-3D copy accepted; mixed dimensions and same-mip self-copy rejected by core
+PASS: unmodified selected-device projection created a core device and all projected RGBA8/BGRA8 usage combinations; public FL9_1 enumeration is enabled
+ok
+test instance::dx11_scaffold_tests::requesting_dx11_exposes_only_fl91_hardware_adapters ... PASS: core enumerated 1 FL9_1 D3D11 adapter(s)
+ok
+test instance::tests::fully_compliant_adapter_always_allowed ... ok
+test instance::tests::low_limits_allowed_without_strict_compliance ... ok
+test instance::tests::low_limits_rejected_with_strict_compliance ... ok
+test instance::tests::missing_downlevel_flags_rejected_with_strict_compliance ... ok
+test instance::tests::non_power_of_two_storage_alignment_always_rejected ... ok
+test instance::tests::non_power_of_two_uniform_alignment_always_rejected ... ok
+test limits::tests::enumerate_webgpu_features ... ok
+test limits::tests::relationships ... ok
+
+thread 'lock::ranked::forbidden_skip' (124356) panicked at wgpu-core\src\lock\ranked.rs:141:9:
+Attempt to acquire nested mutexes in wrong order:
+last locked pawn                                at wgpu-core\src\lock\ranked.rs:404:25
+now locking knight                              at wgpu-core\src\lock\ranked.rs:405:25
+Locking knight after locking pawn is not permitted.
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test lock::ranked::forbidden_skip - should panic ... ok
+
+thread 'lock::ranked::forbidden_unrelated' (105536) panicked at wgpu-core\src\lock\ranked.rs:141:9:
+Attempt to acquire nested mutexes in wrong order:
+last locked rook                                at wgpu-core\src\lock\ranked.rs:388:25
+now locking pawn                                at wgpu-core\src\lock\ranked.rs:389:25
+Locking pawn after locking rook is not permitted.
+test lock::ranked::forbidden_unrelated - should panic ... ok
+
+thread 'lock::ranked::non_stack_like' (93464) panicked at wgpu-core\src\lock\ranked.rs:182:13:
+assertion `left == right` failed: Lock not released in stacking order
+released rook                                locked at Location { file: "wgpu-core\\src\\lock\\ranked.rs", line: 436, column: 24 }
+when not expecting any locks to be held
+
+  left: 2
+ right: 1
+test lock::ranked::non_stack_like - should panic ... ok
+test lock::ranked::permitted ... ok
+test lock::ranked::stack_like ... ok
+test pipeline::vertex_index_topology_tests::emulated_vertex_index_rejects_unsupported_topology_during_core_validation ... ok
+test pipeline::vertex_index_topology_tests::emulated_vertex_index_requires_a_free_physical_input_slot ... ok
+test pipeline_cache::tests::invalid_magic ... ok
+test pipeline_cache::tests::not_no_data ... ok
+test pipeline_cache::tests::too_little_data ... ok
+test pipeline_cache::tests::too_much_data ... ok
+test pipeline_cache::tests::valid_data ... ok
+test pipeline_cache::tests::written_header ... ok
+test pipeline_cache::tests::wrong_abi ... ok
+test pipeline_cache::tests::wrong_adapter ... ok
+test pipeline_cache::tests::wrong_backend ... ok
+test pipeline_cache::tests::wrong_hash ... ok
+test pipeline_cache::tests::wrong_validation ... ok
+test pipeline_cache::tests::wrong_version ... ok
+0: prewait
+1: prewait
+1: postwait
+0: postwait
+1: init
+1: postget
+0: postget
+test pool::tests::concurrent_creation_2_threads ... ok
+0: prewait
+1: prewait
+1: postwait
+0: postwait
+1: postsleep
+1: removal
+0: postget
+test pool::tests::create_while_drop_2_threads ... ok
+test pool::tests::deduplication ... ok
+test registry::tests::simultaneous_registration ... ok
+
+thread 'storage::tests::get_epoch_mismatch' (73476) panicked at wgpu-core\src\storage.rs:146:9:
+assertion `left == right` failed: Cannot get UntypedId(0,2), found other resource UntypedId(0,1)
+  left: 2
+ right: 1
+test storage::tests::get_epoch_mismatch - should panic ... ok
+
+thread 'storage::tests::get_vacant' (107508) panicked at wgpu-core\src\storage.rs:143:17:
+Cannot get non-existent resource UntypedId(0,1)
+test storage::tests::get_vacant - should panic ... ok
+
+thread 'storage::tests::insert_occupied_different_epoch' (78244) panicked at wgpu-core\src\storage.rs:92:17:
+Cannot insert UntypedId(0,2), found existing resource UntypedId(0,1)
+test storage::tests::insert_occupied_different_epoch - should panic ... ok
+
+thread 'storage::tests::insert_occupied_same_epoch' (70460) panicked at wgpu-core\src\storage.rs:92:17:
+Cannot insert UntypedId(0,1), found existing resource UntypedId(0,1)
+test storage::tests::insert_occupied_same_epoch - should panic ... ok
+
+thread 'storage::tests::remove_epoch_mismatch' (114948) panicked at wgpu-core\src\storage.rs:105:17:
+assertion `left == right` failed: Cannot remove UntypedId(0,2), found other resource UntypedId(0,1)
+  left: 2
+ right: 1
+test storage::tests::remove_epoch_mismatch - should panic ... ok
+
+thread 'storage::tests::remove_vacant' (82060) panicked at wgpu-core\src\storage.rs:114:17:
+Cannot remove non-existent resource UntypedId(0,1)
+test storage::tests::remove_vacant - should panic ... ok
+test tests::test_gcd ... ok
+test tests::test_lcd ... ok
+test timestamp_normalization::tests::compute_timestamp_period ... ok
+test track::range::test::coalesce ... ok
+test track::range::test::isolate ... ok
+
+thread 'track::range::test::sane_empty' (63264) panicked at wgpu-core\src\track\range.rs:45:13:
+assertion failed: a.0.start < a.0.end
+test track::range::test::sane_empty - should panic ... ok
+test track::range::test::sane_good ... ok
+
+thread 'track::range::test::sane_intersect' (12276) panicked at wgpu-core\src\track\range.rs:48:13:
+assertion failed: a.0.end <= b.0.start
+test track::range::test::sane_intersect - should panic ... ok
+test validation::tests::base_clamp_to_edge_sampling_follows_selected_entry_and_helper_calls ... ok
+test validation::tests::depth_comparison_sampling_is_not_runtime_integer_semantics ... ok
+test validation::tests::explicit_texture_sample_level_limits_follow_selected_entry_and_helpers ... ok
+test validation::tests::fl91_helper_uniform_indices_preserve_builtin_provenance_and_exclusive_uses ... ok
+test validation::tests::fl91_integer_semantics_gate_follows_selected_entry_and_helper_calls ... ok
+test validation::tests::fl91_matrix_aggregate_store_gate_follows_pointer_helpers_and_entry_points ... ok
+test validation::tests::fl91_runtime_integer_gate_allows_only_direct_vertex_indexed_matrix_columns ... ok
+test validation::tests::fl91_runtime_integer_gate_ignores_discarded_uniform_loads ... ok
+test validation::tests::fl9_3d_texture_dimensions_has_an_independent_narrow_proof ... ok
+test validation::tests::fl9_cube_texture_dimensions_allows_one_parameterless_helper ... ok
+test validation::tests::fl9_cube_texture_dimensions_has_an_independent_narrow_proof ... ok
+test validation::tests::fl9_level_zero_sampling_requires_a_proven_direct_fragment_shape ... ok
+test validation::tests::fl9_shared_explicit_lod_shape_corpus_matches_core_contract ... ok
+test validation::tests::fl9_single_mip_sample_grad_requires_direct_unconditional_fragment_use ... ok
+test validation::tests::fl9_texture_dimensions_accepts_only_direct_fragment_conversion ... ok
+test validation::tests::fl9_texture_dimensions_helper_allows_one_matching_implicit_sample ... ok
+test validation::tests::fl9_texture_dimensions_sample_allows_one_selected_vec4_uniform ... ok
+test validation::tests::fl9_texture_num_levels_3d_and_cube_helpers_are_dimension_gated ... ok
+test validation::tests::fl9_texture_num_levels_3d_and_cube_limits_are_independent ... ok
+test validation::tests::fl9_texture_num_levels_3d_and_cube_samples_allow_separate_sampler_groups ... ok
+test validation::tests::fl9_texture_num_levels_accepts_one_selected_query_helper ... ok
+test validation::tests::fl9_texture_num_levels_accepts_only_direct_fragment_conversion ... ok
+test validation::tests::fl9_texture_num_levels_allows_one_compatible_implicit_sample ... ok
+test validation::tests::fl9_texture_num_levels_helper_allows_one_matching_implicit_sample ... ok
+test validation::tests::fl9_texture_sample_bias_offset_proof_is_entry_point_specific ... ok
+test validation::tests::fl9_texture_sample_compare_offset_proof_is_entry_point_specific ... ok
+test validation::tests::fragment_depth_without_color_target_0_follows_selected_entry ... ok
+test validation::tests::fragment_derivative_limits_follow_selected_entry_and_helper_calls ... ok
+test validation::tests::fragment_location_error_formats_zero_limit ... ok
+test validation::tests::fragment_non_perspective_interpolation_follows_selected_entry ... ok
+test validation::tests::fragment_position_detection_uses_the_selected_fragment_entry_point ... ok
+test validation::tests::fragment_sample_mask_input_follows_selected_entry ... ok
+test validation::tests::fragment_sample_mask_output_follows_selected_entry ... ok
+test validation::tests::front_facing_detection_uses_the_selected_fragment_entry_point ... ok
+test validation::tests::legacy_shader_builtins_follow_selected_entry_and_direction ... ok
+test validation::tests::restricted_fl9_texture_gather_allows_one_selected_vec4_uniform ... ok
+test validation::tests::restricted_fl9_texture_gather_preserves_the_selected_binding_pair ... ok
+test validation::tests::restricted_fl9_texture_load_and_dimensions_share_one_texture ... ok
+test validation::tests::restricted_fl9_texture_load_proof_is_entry_point_specific ... ok
+test validation::tests::restricted_fragment_uniform_array_indexing_is_selected_entry_aware ... ok
+test validation::tests::restricted_fragment_uniform_array_indexing_supports_one_forwarded_helper ... ok
+test validation::tests::restricted_vertex_uniform_array_indexing_is_selected_entry_aware ... ok
+test validation::tests::restricted_vertex_uniform_array_indexing_leaves_local_pointer_writes_to_existing_validation ... ok
+test validation::tests::restricted_vertex_uniform_selected_array_indexing_is_narrow ... ok
+test validation::tests::sampled_texture_count_uses_the_selected_entry_point ... ok
+test validation::tests::shader_loop_detection_follows_only_selected_entry_calls ... ok
+test validation::tests::texture_gather_limits_follow_selected_entry_and_helpers ... ok
+test validation::tests::texture_queries_follow_selected_entry_and_helper_calls ... ok
+test validation::tests::texture_sample_bias_limits_follow_selected_entry_and_helper_calls ... ok
+test validation::tests::uniform_constant_vectors_use_selected_entry_point_resources ... ok
+test validation::tests::vertex_builtin_detection_uses_selected_entry_point_declarations ... ok
+
+test result: ok. 156 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.84s

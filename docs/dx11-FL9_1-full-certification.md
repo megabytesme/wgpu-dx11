@@ -2,6 +2,29 @@
 
 **INCOMPLETE**
 
+## Follow-up candidate
+
+Candidate `dbae35d184974c22b08da2426804facc5550acec` adds guarded native BGRX8 textures and native mip generation. A public device reaches these operations through `Device::as_hal::<wgpu::hal::api::Dx11>()`. The extension validates device ownership and uses the immediate-context lock shared with queue submission. Keep native textures within the extension and initialize their subresources by upload or clear before use.
+
+| Area | Follow-up result on physical RTX 3090 Ti at requested and returned FL9_1 |
+| --- | --- |
+| BGRX8 | The UNORM and sRGB textures passed the typed 2D, cube and volume sampling checks, including both depth slices, all six cube faces and opaque sampled alpha with X set to zero. The 2D and cube paths passed cross-encoding bit copies, clears, staged reads and mip generation. Volume rendering and direct volume copies observe the 10Level9 restrictions. The driver reported `SHADER_LOAD` for both typed formats. The level-9 shader fixture exercises sampling. |
+| Native mip generation | Native `GenerateMips` populated three lower levels for each of the seven documented formats in both 2D and cube textures. The test checks each cube face, legal suffix views, initialized source mips and cross-device rejection. A public-device guard also reached BGRX mip generation and read back `[9, 17, 35]`. |
+| Varyings | Eight distinct weighted varyings rendered `[102, 60, 18, 143]` in 64 pixels. Core rejected location 8. After an FXC input-limit diagnostic, the backend uses reflection to prove that a declared fragment position is unused before regenerating just the level-9 signature. The resulting shader still uses the FL9_1 FXC profile. CPU checks cover direct, conditional, aliased and derivative position reads. |
+| Clipping and repeats | The six-plane native test matched all 256 pixels with clipping disabled, in both sign directions for each slot, and with all six active. Native address-mode controls matched 49,152 pixels across 24 cases, including positive and negative 128-period spans. Desktop reported unrestricted NPOT support, so the conditional NPOT allocation rejection remains unexercised there. Core still rejects portable Repeat and MirrorRepeat. |
+| sRGB blending | The default `HARDWARE` and explicit-adapter `UNKNOWN` controls returned the same adapter LUID at FL9_1. Both produced BGR `[137, 188, 187]`, matching the linear-space model and the same-adapter FL10_0 control. The documented encoded-space model predicts `[94, 128, 128]`. This discrepancy remains open. [D3D11 blend rules](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_blend_desc) |
+| Event queries | The native fence followed a real GPU copy and the staged bytes matched. The bounded-wait fixture used an injected timeout and then waited successfully on the same hardware event. |
+
+The x64 and x86 public suites each passed 178 test functions, with four optional subcases skipped on each architecture. All seven new native test functions and both focused query tests passed on each architecture. x64 Core passed 156 and wgpu-types passed 120. The x64 HAL suite passed 562 and failed both hidden-HWND queued-Present checks. The same checks failed in a pre-varying build under the same disconnected Windows session. Interactive presentation still needs verification.
+
+The ARM64 public suite cross-built. The ARM32 offscreen consumer linked as an ARM AppContainer against the Windows 10 SDK after recovery from a disk-space failure. Its imports include `D3D11CreateDevice` and undecorated `LoadLibraryExW`. The build uses inert panel-host stubs. Signed runtime testing remains pending. [Test receipts](../deliverables/dx11-levels/FL9_1/tests.json)
+
+The 364-row matrix and CTS audit retain the original run under its earlier remediation SHA. The audit enumerates all 4,720 case skips with reasons and 1,197 list exclusions. Three unmodified copy selectors failed on the follow-up candidate. Each combines four eligible single-layer cases with three cases requiring a non-cube 2D array. A temporary copy of the CTS test changed only that case selection. All 12 eligible pixel assertions then passed. The complete unmodified failures and exact selection delta are recorded. The audit still has 1,130 unresolved exclusions. [Contract matrix](../deliverables/dx11-levels/FL9_1/contract.csv) · [Runtime skips](../deliverables/dx11-levels/FL9_1/cts-runtime-skips.csv) · [Excluded selectors](../deliverables/dx11-levels/FL9_1/cts-excluded-selectors.csv) · [Audit summary](../deliverables/dx11-levels/FL9_1/cts-exclusion-audit.json)
+
+Surface SSH timed out before the device rerun was deferred. The Lumia was unavailable. Signed presentation, physical removal, low-memory and exact-candidate product checks remain open. [Blocker register](../deliverables/dx11-levels/FL9_1/blockers.md)
+
+## Previous candidate and baseline evidence
+
 This pass started from wgpu `aa7b65c43ef008d0a92d20fcdf9f10fa0883f157` and produced remediation commit `dbdc67913fcc858924ca553f68764fd8b432bd70` and a test-only refinement in `9bf6b497bef0c03dcfdc71e5e2bf942752714f34`. The November 20 HorizonUWP checkout was `5c26a8060c1cf2dce20ee5707e84699ed0879e5c` with Horizon `0a875da91dbb0fdcb7ba8c42c11341aa229af51a`. See the [test receipts](../deliverables/dx11-levels/FL9_1/tests.json).
 
 - The 360-row matrix records native driver requirements, 10Level9 API restrictions, SDK limits, shader profiles and projected wgpu operations. It has separate evidence fields for driver queries, native GPU results and wgpu results. Each DXGI format row refers to one format-support bit. [Contract matrix](../deliverables/dx11-levels/FL9_1/contract.csv)

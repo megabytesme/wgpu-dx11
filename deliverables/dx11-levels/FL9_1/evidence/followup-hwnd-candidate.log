@@ -1,0 +1,25 @@
+Windows session:
+ USERNAME              SESSIONNAME        ID  STATE   IDLE TIME  LOGON TIME
+>ben                                       1  Disc           10  21/11/2026 03:58
+
+
+running 2 tests
+test dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_clone_sampling_presents_and_resizes ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+
+thread 'dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_clone_sampling_presents_and_resizes' (96376) panicked at wgpu-hal\src\dx11\..\..\tests\dx11\hwnd_surface.rs:466:9:
+strict HWND test requires a queued Present
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_surface_renders_and_resizes ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+
+thread 'dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_surface_renders_and_resizes' (112748) panicked at wgpu-hal\src\dx11\..\..\tests\dx11\hwnd_surface.rs:466:9:
+strict HWND test requires a queued Present
+FAILED
+
+failures:
+
+failures:
+    dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_clone_sampling_presents_and_resizes
+    dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_surface_renders_and_resizes
+
+test result: FAILED. 0 passed; 2 failed; 0 ignored; 0 measured; 573 filtered out; finished in 0.63s

@@ -98,5 +98,40 @@
       "state": "unverified",
       "reason": "The exact-level hardware selection tests use physical adapters. A software/reference comparison remains open."
     }
-  ]
+  ],
+  "followup": {
+    "candidate_sha": "dbae35d184974c22b08da2426804facc5550acec",
+    "host": "BEN-DESKTOP",
+    "adapter": {
+      "name": "NVIDIA GeForce RTX 3090 Ti",
+      "vendor_id": "0x10de",
+      "device_id": "0x2203",
+      "driver": "32.0.16.2101",
+      "software": false
+    },
+    "forced_levels": [
+      {
+        "architecture": "x64",
+        "requested": "0x9100",
+        "returned": "0x9100",
+        "native_readback": {
+          "path": "evidence/followup-x64-native.log",
+          "sha256": "dc8b7cda77298c052678cfad892d96d6c5293ddc8ca7d3895f7d8535c9bd2270"
+        }
+      },
+      {
+        "architecture": "x86",
+        "requested": "0x9100",
+        "returned": "0x9100",
+        "native_readback": {
+          "path": "evidence/followup-x86-native.log",
+          "sha256": "ed0056ea22e16750e9449606d6c2ce048d57240174ae2da95ac07a32a0cf9529"
+        }
+      }
+    ],
+    "surface": "SSH timeout on the recorded LAN address. Follow-up deployment deferred at the user's request.",
+    "lumia": "Device unavailable. Signed CoreWindow and low-memory execution remain pending.",
+    "true_fl91_ceiling": "No ceiling adapter was available for execution.",
+    "physical_device_removal": "No controlled physical removal was executed."
+  }
 }

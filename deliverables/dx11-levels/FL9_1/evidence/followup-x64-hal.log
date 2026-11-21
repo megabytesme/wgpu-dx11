@@ -1,0 +1,1834 @@
+
+running 564 tests
+test dx11::adapter::tests::surface_capabilities_require_bgra_render_attachment_support ... ok
+test dx11::adapter::tests::surface_copy_usage_tracks_bgra_copy_source_support ... ok
+test dx11::buffer::tests::cpu_shadow_caches_u32_blocks_and_tracks_partial_invalidation ... ok
+test dx11::buffer::tests::fl91_default_copy_and_uniform_buffers_use_one_native_bind ... FL9_1 hardware AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }: copy/uniform default buffers use one native vertex bind; 16/16 bytes match
+ok
+test dx11::buffer::tests::level9_default_buffer_bind_flags_are_portable ... ok
+test dx11::buffer::tests::native_buffers_round_trip_and_reject_invalid_access ... ok
+test dx11::buffer::tests::prepare_initialization_clear_checks_range_and_retains_buffer ... ok
+test dx11::buffer::tests::readback_allocation_reports_out_of_memory_without_panicking ... ok
+D3D11 upload mapping: L9_1
+test dx11::buffer::tests::upload_mapping_uses_clean_shadow_and_falls_back_when_dirty ... ok
+test dx11::capabilities::tests::bc1_mip_chain_requires_queries_and_valid_block_shapes ... ok
+test dx11::capabilities::tests::bc2_and_bc3_upload_and_copy_paths_require_their_own_queries ... ok
+test dx11::capabilities::tests::bc_cube_formats_require_cube_queries_and_sampled_backend_paths ... ok
+test dx11::capabilities::tests::bc_mip_chains_require_each_format_query_and_backend_path ... ok
+test dx11::capabilities::tests::bc_srgb_subset_requires_all_three_queried_sampled_upload_paths ... ok
+test dx11::capabilities::tests::bc_subset_feature_requires_all_three_unorm_sampled_upload_paths ... ok
+test dx11::capabilities::tests::bc_texture_to_buffer_mask_requires_shadow_and_queried_copy_paths ... ok
+test dx11::capabilities::tests::bgra8_multisample_resolve_requires_all_optional_evidence ... ok
+test dx11::capabilities::tests::bgra_3d_formats_require_positive_texture_sampling_queries ... ok
+test dx11::capabilities::tests::bounded_fragment_sample_bias_projection_tracks_backend_support ... ok
+test dx11::capabilities::tests::color_format_projection_limits_mips_to_positive_driver_and_backend_support ... ok
+test dx11::capabilities::tests::color_format_projection_preserves_sampled_usage_without_attachment_support ... ok
+test dx11::capabilities::tests::cube_limits_follow_feature_level_and_selected_format_queries ... ok
+test dx11::capabilities::tests::d16_format_projection_requires_guarantee_driver_query_and_backend_path ... ok
+test dx11::capabilities::tests::depth_multisample_counts_are_reported_individually ... ok
+test dx11::capabilities::tests::depth_multisampling_requires_a_positive_format_query_and_backend_path ... ok
+test dx11::capabilities::tests::dynamic_shader_loops_require_implementation_and_both_stage_guarantees ... ok
+test dx11::capabilities::tests::feature_level_guarantees_are_specific_and_do_not_promote_backend ... ok
+test dx11::capabilities::tests::fixed_integer_sample_level_projection_is_a_narrow_fl91_backend_capability ... ok
+test dx11::capabilities::tests::fl91_optional_narrow_color_attachment_multisample_queries ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 software=false requested=FL9_1 actual=L9_1; diagnostic-only narrow-format MSAA queries
+FL9_1 diagnostic R8_UNORM: CheckFormatSupport=Ok(185312); required_bits=0x00244020; required_bits_present=Some(false)
+FL9_1 diagnostic R8_UNORM 2x: CheckMultisampleQualityLevels=Ok(1); query_candidate=false
+FL9_1 diagnostic R8_UNORM 4x: CheckMultisampleQualityLevels=Ok(1); query_candidate=false
+FL9_1 diagnostic R8_UNORM 8x: CheckMultisampleQualityLevels=Ok(1); query_candidate=false
+FL9_1 diagnostic R8G8_UNORM: CheckFormatSupport=Ok(181024); required_bits=0x00244020; required_bits_present=Some(false)
+FL9_1 diagnostic R8G8_UNORM 2x: CheckMultisampleQualityLevels=Ok(1); query_candidate=false
+FL9_1 diagnostic R8G8_UNORM 4x: CheckMultisampleQualityLevels=Ok(1); query_candidate=false
+FL9_1 diagnostic R8G8_UNORM 8x: CheckMultisampleQualityLevels=Ok(1); query_candidate=false
+FL9_1 diagnostic B5G6R5_UNORM: CheckFormatSupport=Ok(2552736); required_bits=0x00244020; required_bits_present=Some(true)
+FL9_1 diagnostic B5G6R5_UNORM 2x: CheckMultisampleQualityLevels=Ok(1); query_candidate=true
+FL9_1 diagnostic B5G6R5_UNORM 4x: CheckMultisampleQualityLevels=Ok(1); query_candidate=true
+FL9_1 diagnostic B5G6R5_UNORM 8x: CheckMultisampleQualityLevels=Ok(1); query_candidate=true
+PASS: diagnostic-only FL9_1 narrow-format MSAA query probe completed; production capability projection was not changed
+ok
+test dx11::capabilities::tests::fl91_separate_alpha_blend_is_not_exposed ... ok
+test dx11::capabilities::tests::fl91_wgpu_projection_is_conservative_and_uses_only_implemented_paths ... ok
+test dx11::capabilities::tests::fl91_wgpu_projection_matches_the_selected_physical_device ... FL9_1 cube format queries: [("RGBA8", Value(825160674)), ("BGRA8", Value(825160672)), ("RGBA8_SRGB", Value(288289760)), ("BGRA8_SRGB", Value(288289760)), ("R8", Value(185312)), ("RG8", Value(181024)), ("RG8_SNORM", Value(135968)), ("RG16_SNORM", Value(135458)), ("RGBA8_SNORM", Value(136096)), ("BC1", Value(136096)), ("RGB565", Value(2552736)), ("RGB5A1", Value(136096)), ("RGBA4", Value(136096))]
+FL9_1 BC format support queries: [("BC1_UNORM", Value(136096)), ("BC1_SRGB", Value(136096)), ("BC2_UNORM", Value(136096)), ("BC2_SRGB", Value(136096)), ("BC3_UNORM", Value(136096)), ("BC3_SRGB", Value(136096)), ("BC4_UNORM", Unavailable(-2147467259)), ("BC4_SNORM", Unavailable(-2147467259)), ("BC5_UNORM", Unavailable(-2147467259)), ("BC5_SNORM", Unavailable(-2147467259)), ("BC6H_UF16", Unavailable(-2147467259)), ("BC6H_SF16", Unavailable(-2147467259)), ("BC7_UNORM", Unavailable(-2147467259)), ("BC7_SRGB", Unavailable(-2147467259))]
+FL9_1 BC projection: queries=[("BC1_UNORM", Value(136096)), ("BC1_SRGB", Value(136096)), ("BC2_UNORM", Value(136096)), ("BC2_SRGB", Value(136096)), ("BC3_UNORM", Value(136096)), ("BC3_SRGB", Value(136096)), ("BC4_UNORM", Unavailable(-2147467259)), ("BC4_SNORM", Unavailable(-2147467259)), ("BC5_UNORM", Unavailable(-2147467259)), ("BC5_SNORM", Unavailable(-2147467259)), ("BC6H_UF16", Unavailable(-2147467259)), ("BC6H_SF16", Unavailable(-2147467259)), ("BC7_UNORM", Unavailable(-2147467259)), ("BC7_SRGB", Unavailable(-2147467259))]; BC1/BC2/BC3_UNORM feature=true; BC1/BC2/BC3_SRGB feature=true; full BC feature=false
+PASS: capability projection adapter="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 software=false requested=FL9_1 actual=L9_1
+FL9_1 RGBA8 sample-count quality queries: [(2, Value(1)), (4, Value(1)), (8, Value(1)), (16, Value(0))]; format_support=Value(825160674); projected=TextureFormatCapabilities(SAMPLED | SAMPLED_LINEAR | COLOR_ATTACHMENT | COLOR_ATTACHMENT_BLEND | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | COPY_SRC | COPY_DST); multisample_texture_bindings=false
+FL9_1 BGRA8 sample-count quality queries: [(2, Value(1)), (4, Value(1)), (8, Value(1)), (16, Value(0))]; format_support=Value(825160672)
+FL9_1 limits: texture2d=2048 cube_dimension=512 cube_format_mask=0x3ff1f sampled_textures=8 samplers=16 uniforms_per_stage=13 color_attachments=1 max_sampler_anisotropy=2; downlevel_flags=DownlevelFlags(NON_POWER_OF_TWO_MIPMAPPED_TEXTURES | COMPARISON_SAMPLERS | ANISOTROPIC_FILTERING | BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED | CUBE_TEXTURES); unrestricted_npot=Value(true); RG8_UNORM=Value(181024); RG16_SNORM=Value(135458); BC1=Value(136096); BC2=Value(136096); BC3=Value(136096); D16_UNORM=Value(2162720) projected=TextureFormatCapabilities(SAMPLED | DEPTH_STENCIL_ATTACHMENT | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY)
+Optional float texture format queries at FL9_1: [("R32_FLOAT", Value(2)), ("R32G32B32A32_FLOAT", Value(2)), ("R16_FLOAT", Unavailable(-2147467259)), ("R16G16_FLOAT", Unavailable(-2147467259)), ("R16G16B16A16_FLOAT", Unavailable(-2147467259))]
+Optional and packed normalized texture format queries at FL9_1: [("B5G6R5_UNORM", Value(2552736)), ("B5G5R5A1_UNORM", Value(136096)), ("B4G4R4A4_UNORM", Value(136096)), ("R16_UNORM", Unavailable(-2147467259)), ("R16_SNORM", Unavailable(-2147467259)), ("R16G16_UNORM", Unavailable(-2147467259)), ("R16G16_SNORM", Value(135458)), ("R16G16B16A16_UNORM", Unavailable(-2147467259)), ("R16G16B16A16_SNORM", Value(2))]
+Optional depth format queries at FL9_1: [("D32_FLOAT", Unavailable(-2147467259)), ("D32_FLOAT_S8X24_UINT", Unavailable(-2147467259))]
+R8/RG8 attachment queries at FL9_1: R8_UNORM=Value(185312) projection=TextureFormatCapabilities(SAMPLED | SAMPLED_LINEAR | COLOR_ATTACHMENT | COLOR_ATTACHMENT_BLEND | COPY_SRC | COPY_DST); R8G8_UNORM=Value(181024) projection=TextureFormatCapabilities(SAMPLED | SAMPLED_LINEAR | COLOR_ATTACHMENT | COLOR_ATTACHMENT_BLEND | COPY_SRC | COPY_DST | SINGLE_MIP_ONLY)
+Packed format projection: queries=(Value(2552736), Value(136096), Value(136096)), formats=TextureFormatCapabilities(SAMPLED | SAMPLED_LINEAR | COLOR_ATTACHMENT | COLOR_ATTACHMENT_BLEND | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | COPY_SRC | COPY_DST)/TextureFormatCapabilities(SAMPLED | SAMPLED_LINEAR | COPY_SRC | COPY_DST)/TextureFormatCapabilities(SAMPLED | SAMPLED_LINEAR | COPY_SRC | COPY_DST), feature=true
+SNORM format projection: RG8=Value(135968)/TextureFormatCapabilities(SAMPLED | SAMPLED_LINEAR | COPY_SRC | COPY_DST); RGBA8=Value(136096)/TextureFormatCapabilities(SAMPLED | SAMPLED_LINEAR | COPY_SRC | COPY_DST)
+FL9_1 vertex input format mask=0x78c30104; selected formats=[Uint8x4, Unorm8x4, Sint16x2, Snorm16x2, Sint16x4, Snorm16x4, Float32, Float32x2, Float32x3, Float32x4]
+ok
+test dx11::capabilities::tests::format_projection_intersects_queries_and_backend_implementation ... ok
+test dx11::capabilities::tests::format_projection_reports_only_implemented_sampled_uploads_copies_and_depth ... ok
+test dx11::capabilities::tests::format_projection_treats_missing_driver_queries_as_unsupported ... ok
+test dx11::capabilities::tests::fragment_3d_texture_load_projection_requires_supported_volume_sampling ... ok
+test dx11::capabilities::tests::fragment_texture_load_projection_is_narrow_and_feature_level_scoped ... ok
+test dx11::capabilities::tests::fragment_texture_num_levels_projection_is_narrow_and_feature_level_scoped ... ok
+test dx11::capabilities::tests::frexp_fraction_only_projection_is_fl91_fragment_only ... ok
+test dx11::capabilities::tests::legacy_shader_constant_guarantees_follow_feature_level ... ok
+test dx11::capabilities::tests::narrow_optional_copy_sources_require_render_target_support_and_backend_paths ... ok
+test dx11::capabilities::tests::packed_16bit_gpu_copies_need_only_the_selected_texture2d_query ... ok
+test dx11::capabilities::tests::packed_16bit_mip_chains_require_selected_device_query_and_backend_path ... ok
+test dx11::capabilities::tests::packed_16bit_sampling_requires_each_selected_device_query_and_backend_path ... ok
+test dx11::capabilities::tests::point_sampled_rg16_norm_exposes_only_the_required_format_feature ... ok
+test dx11::capabilities::tests::polygon_mode_line_requires_a_positive_rasterizer_probe ... ok
+test dx11::capabilities::tests::pot_mips_require_matching_backend_shape_and_driver ... ok
+test dx11::capabilities::tests::private_cube_texture_validation_is_shape_and_query_aware ... ok
+test dx11::capabilities::tests::private_fl91_shadow_sampling_requires_level_backend_and_positive_query ... ok
+test dx11::capabilities::tests::public_fl91_shadow_capabilities_require_the_positive_optional_query ... ok
+test dx11::capabilities::tests::r8_mip_chains_require_backend_and_selected_format_support ... ok
+test dx11::capabilities::tests::r8_unorm_supports_query_gated_single_mip_render_attachments ... ok
+test dx11::capabilities::tests::restricted_instance_streams_do_not_advertise_general_instancing ... ok
+test dx11::capabilities::tests::rg16_snorm_gpu_copy_source_remains_query_gated_with_shadow_readback ... ok
+test dx11::capabilities::tests::rg16_snorm_is_optional_at_fl91_and_requires_positive_query ... ok
+test dx11::capabilities::tests::rg16_snorm_mip_chains_require_a_positive_selected_device_query ... ok
+test dx11::capabilities::tests::rg16_snorm_shadow_readback_requires_backend_and_format_support ... ok
+test dx11::capabilities::tests::rg8_snorm_mip_chains_require_feature_level_backend_and_driver_support ... ok
+test dx11::capabilities::tests::rg8_snorm_shadow_copy_source_requires_texture_query_and_separates_filterability ... ok
+test dx11::capabilities::tests::rg8_unorm_is_optional_and_supports_query_gated_color_attachments ... ok
+test dx11::capabilities::tests::rg8_unorm_mip_chains_require_selected_query_and_backend ... ok
+test dx11::capabilities::tests::rgb565_color_attachment_requires_the_selected_device_query ... ok
+test dx11::capabilities::tests::rgb565_multisample_resolve_requires_all_optional_evidence ... ok
+test dx11::capabilities::tests::rgba8_multisample_counts_are_individually_query_gated ... ok
+test dx11::capabilities::tests::rgba8_multisample_resolve_requires_all_optional_evidence ... ok
+test dx11::capabilities::tests::rgba8_snorm_mip_chains_require_feature_level_backend_and_driver_support ... ok
+test dx11::capabilities::tests::rgba8_snorm_texture_copy_source_requires_implementation_and_positive_query ... ok
+test dx11::capabilities::tests::rgba8_srgb_3d_requires_its_own_mip_and_sampling_queries ... ok
+test dx11::capabilities::tests::sample_bias_offset_projection_is_fl91_backend_gated ... ok
+test dx11::capabilities::tests::sample_compare_offset_projection_requires_backend_and_shadow_query ... ok
+test dx11::capabilities::tests::sample_level_zero_projection_is_a_narrow_fl91_backend_capability ... ok
+test dx11::capabilities::tests::sampled_upload_filterability_requires_the_any_filter_query_bit ... ok
+test dx11::capabilities::tests::single_mip_sample_grad_projection_is_separate_from_derivative_support ... ok
+test dx11::capabilities::tests::srgb_blending_projection_respects_feature_level_color_space ... ok
+test dx11::capabilities::tests::srgb_color_texture_guarantees_and_queries_are_separate ... ok
+test dx11::capabilities::tests::texture_3d_sampling_requires_its_own_query_and_backend_paths ... ok
+test dx11::capabilities::tests::texture_support_requires_backend_shape_usage_and_driver_support ... ok
+test dx11::capabilities::tests::timestamp_queries_are_not_projected_without_submission_wide_disjoint_tracking ... ok
+test dx11::capabilities::tests::unrestricted_npot_sampling_requires_a_positive_optional_query_below_fl10 ... ok
+test dx11::capabilities::tests::unsupported_query_preserves_error_instead_of_assuming_support ... ok
+test dx11::capabilities::tests::upload_only_mips_require_copy_backend_pot_shape_and_driver_support ... ok
+test dx11::capabilities::tests::vertex_format_projection_intersects_level_driver_and_backend ... ok
+test dx11::capabilities::tests::wgpu_projection_requires_the_selected_fl91_execution_path ... ok
+test dx11::capabilities::tests::wgpu_projection_treats_unavailable_optional_queries_as_unsupported ... ok
+test dx11::command::tests::direct_strip_vertex_indices_preserve_first_vertex_and_check_overflow ... ok
+test dx11::command::tests::draw_batches_keep_instance_order_and_check_boundaries ... ok
+test dx11::command::tests::fl91_direct_triangle_batches_limit_unique_vertices ... ok
+test dx11::command::tests::fl91_line_batch_limits_preserve_complete_primitives ... ok
+test dx11::command::tests::instance_stream_offsets_use_wide_index_arithmetic ... ok
+test dx11::command::tests::line_list_batches_preserve_pairs_and_instances ... ok
+test dx11::command::tests::line_strip_batches_overlap_one_vertex_across_batches ... ok
+test dx11::command::tests::point_batches_preserve_instances_and_zero_input_starts ... ok
+test dx11::command::tests::point_batches_rebase_streams_and_keep_instance_order ... ok
+test dx11::command::tests::recorded_copy_submits_in_order_and_retains_resources ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+ok
+test dx11::command::tests::replay_failure_reaches_queue_and_does_not_signal_fence ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual FL9_1
+ok
+test dx11::command::tests::strip_batches_preserve_winding_overlap_and_instances ... ok
+test dx11::device::tests::device_and_guarded_context_support_hal_threading ... ok
+test dx11::device::tests::native_feature_levels_are_unique_and_descending ... ok
+test dx11::fence::tests::batched_copy_submission_is_ordered_and_validates_before_work ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+ok
+test dx11::fence::tests::event_fence_tracks_real_gpu_copy_completion ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+ok
+test dx11::fence::tests::event_poll_error_retains_pending_query ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; GetData failure is synthetic
+PASS: a synthetic GetData error left the event queued until real GPU completion
+ok
+test dx11::fl9_texel_proof::default_hlsl_path_does_not_enable_fl9_emulation ... ok
+test dx11::fl9_texel_proof::naga_fl9_texel_load_matches_single_mip_bounds ... ok
+test dx11::fl9_texel_proof::naga_fl9_texel_proof_rejects_unsupported_resources_and_control_flow ... ok
+test dx11::hal_bind_group::tests::depth_comparison_layout_uses_matching_texture_and_sampler_namespaces ... ok
+test dx11::hal_bind_group::tests::empty_layout_and_group_enforce_owner_and_no_resources ... ok
+test dx11::hal_bind_group::tests::hal_texture_sampler_group_checks_owner_and_fl9_npot_wrap ... ok
+test dx11::hal_bind_group::tests::mixed_sampler_classes_follow_logical_bindings_not_resource_order ... ok
+test dx11::hal_bind_group::tests::multi_resource_allocation_is_compact_and_rejects_exhaustion ... ok
+test dx11::hal_bind_group::tests::pipeline_binding_plan_allocates_across_groups_and_enforces_limits ... ok
+test dx11::hal_bind_group::tests::sampled_visibility_preserves_sparse_slots_and_layout_identity ... ok
+test dx11::hal_bind_group::tests::sparse_pair_layout_validation_is_order_independent_and_fail_closed ... ok
+test dx11::hal_bind_group::tests::sparse_sampler_filtering_layouts_are_sorted_and_distinct ... ok
+test dx11::hal_bind_group::tests::sparse_uniform_allocation_respects_visibility_and_reservation ... ok
+test dx11::hal_bind_group::tests::unfilterable_texture_layouts_and_sampling_pairs_fail_closed ... ok
+test dx11::hal_device::tests::depth_stencil_views_accept_only_attachment_usage_shapes ... ok
+test dx11::hal_device::tests::device_error_classification_covers_driver_reset_and_memory_failure ... ok
+test dx11::hal_device::tests::fl91_copy_only_mips_start_zeroed_and_have_metadata_views ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: four zero-initialized FL9_1 mip levels and metadata view
+ok
+test dx11::hal_device::tests::mapped_shadow_remains_valid_across_gpu_copies ... ok
+test dx11::hal_device::tests::metadata_texture_view_ranges_check_bounds_and_aspect ... ok
+test dx11::hal_device::tests::private_device_creates_copy_buffers_and_submits_through_hal ... ok
+test dx11::hal_device::tests::private_device_creates_restricted_texture_views ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+ok
+test dx11::hal_device::tests::transient_staging_initializes_device_buffers_through_queue ... ok
+test dx11::hal_device::transient_attachment_tests::fl91_transient_attachments_render_and_preserve_depth ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: transient depth=true; 64/64 pixels matched
+PASS: transient depth=false; 64/64 pixels matched
+ok
+test dx11::hal_device::transient_attachment_tests::transient_attachment_usage_is_restricted ... ok
+test dx11::hal_encoder::bias_mip_tests::fl91_constant_sample_bias_on_mip_chains ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: 9 bounded bias mip renders matched 64 pixels each; invalid biases, offsets and sampler pairs rejected
+ok
+test dx11::hal_encoder::biased_sampling_tests::fl91_sample_bias_rejects_selected_entry_only ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: selected biased entries rejected; safe sampling matched 64 pixels
+ok
+test dx11::hal_encoder::blend_state_tests::fl91_custom_constant_blend_and_updates_match_readback ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: blend factors, all blend operations and factor updates; 64 pixels matched
+ok
+test dx11::hal_encoder::depth_bias_tests::fl91_triangle_depth_bias_and_pipeline_transition ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+FXC rejected zero-bias direct_depth: D3D11 shader compilation failed: Compilation(ShaderCompileError { code: -2147467259, message: "error X4530: pixel shader must minimally write all four components of SV_Target0\n" })
+PASS: zero-bias structured_depth pipeline compiled
+PASS: 5 constant and 2 slope FL9_1 depth-bias full-image executions
+ok
+test dx11::hal_encoder::depth_comparison_tests::fl91_depth_comparison_functions_match_expected_fragments ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: eight FL9_1 depth comparisons; 64 green and 64 blue pixels matched
+ok
+test dx11::hal_encoder::depth_never_tests::fl91_depth_never_preserves_color_depth_and_validation ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: 2 Never variants, each 32 green and 32 blue pixels; invalid draws rejected
+ok
+test dx11::hal_encoder::depth_render_tests::fl91_depth_test_preserves_near_geometry_and_loads_depth ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+FL9_1 depth pass 0: 64/64 pixels [0, 0, 255, 255]
+FL9_1 depth pass 1: 64/64 pixels [128, 0, 0, 255]
+FL9_1 depth pass 2: 64/64 pixels [0, 0, 255, 255]
+FL9_1 depth pass 3: 64/64 pixels [128, 0, 0, 255]
+FL9_1 depth pass 4: 64/64 pixels [128, 0, 0, 255]
+FL9_1 depth-only prepass: 32 occluded and 32 green pixels
+FL9_1 depth pass 6: 64/64 pixels [0, 192, 0, 255]
+FL9_1 depth pass 7: 64/64 pixels [0, 192, 0, 255]
+FL9_1 depth pass 8: 64/64 pixels [128, 0, 0, 255]
+FL9_1 depth pass 9: 64/64 pixels [0, 192, 0, 255]
+FL9_1 viewport depth pass: 32 red and 32 black pixels
+FL9_1 color mask 0x0: 64/64 pixels [0, 0, 255, 0]
+FL9_1 color mask 0x1: 64/64 pixels [128, 0, 255, 0]
+FL9_1 color mask 0x2: 64/64 pixels [0, 192, 255, 0]
+FL9_1 color mask 0x3: 64/64 pixels [128, 192, 255, 0]
+FL9_1 color mask 0x4: 64/64 pixels [0, 0, 64, 0]
+FL9_1 color mask 0x5: 64/64 pixels [128, 0, 64, 0]
+FL9_1 color mask 0x6: 64/64 pixels [0, 192, 64, 0]
+FL9_1 color mask 0x7: 64/64 pixels [128, 192, 64, 0]
+FL9_1 color mask 0x8: 64/64 pixels [0, 0, 255, 255]
+FL9_1 color mask 0x9: 64/64 pixels [128, 0, 255, 255]
+FL9_1 color mask 0xa: 64/64 pixels [0, 192, 255, 255]
+FL9_1 color mask 0xb: 64/64 pixels [128, 192, 255, 255]
+FL9_1 color mask 0xc: 64/64 pixels [0, 0, 64, 255]
+FL9_1 color mask 0xd: 64/64 pixels [128, 0, 64, 255]
+FL9_1 color mask 0xe: 64/64 pixels [0, 192, 64, 255]
+FL9_1 color mask 0xf: 64/64 pixels [128, 192, 64, 255]
+FL9_1 color mask transitions: 64/64 pixels matched
+FL9_1 color mask 0x11: 64/64 pixels [0, 0, 255, 0]
+FL9_1 color mask 0x12: 64/64 pixels [128, 0, 128, 0]
+FL9_1 graphics case 19: 64/64 pixels matched
+FL9_1 graphics case 20: 64/64 pixels matched
+FL9_1 graphics case 21: 64/64 pixels matched
+FL9_1 graphics case 22: 64/64 pixels matched
+FL9_1 graphics case 23: 64/64 pixels matched
+FL9_1 graphics case 24: 64/64 pixels matched
+FL9_1 graphics case 25: 64/64 pixels matched
+FL9_1 graphics case 26: 64/64 pixels matched
+FL9_1 graphics case 27: 64/64 pixels matched
+FL9_1 graphics case 28: 64/64 pixels matched
+FL9_1 graphics case 29: 64/64 pixels matched
+FL9_1 graphics case 30: 64/64 pixels matched
+FL9_1 instanced case 31: 64/64 pixels [0, 0, 0, 0] within one unit
+FL9_1 instanced case 32: 64/64 pixels [64, 0, 0, 0] within one unit
+FL9_1 instanced case 33: 64/64 pixels [96, 0, 0, 0] within one unit
+FL9_1 instanced case 34: 64/64 pixels [40, 120, 0, 0] within one unit
+ok
+test dx11::hal_encoder::depth_render_tests::fl91_read_only_depth_preserves_depth_and_rejects_writes ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and selected FL9_1
+PASS: FL9_1 read-only depth preserved (32 green, 32 blue pixels)
+ok
+test dx11::hal_encoder::disjoint_clone_mips::fl91_clone_disjoint_mips_preserve_depth ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: Rgba8Unorm clone refresh preserved 32 green / 32 blue pixels and depth
+PASS: Bgra8Unorm clone refresh preserved 32 green / 32 blue pixels and depth
+Disjoint clone depth cases: executed=2 passed=2 failed=0 skipped_formats=0
+ok
+test dx11::hal_encoder::disjoint_mips::fl91_native_suffix_disjoint_attachment_mips ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: Rgba8Unorm native disjoint mip sampling and feedback validation
+PASS: Bgra8Unorm native disjoint mip sampling and feedback validation
+Disjoint native mip cases: executed=6 passed=6 failed=0 skipped_formats=0
+ok
+test dx11::hal_encoder::dual_mip_views::fl91_dual_nonsuffix_mip_render_and_sample ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: Rgba8Unorm render/sample mip transitions and feedback rejection
+PASS: Bgra8Unorm render/sample mip transitions and feedback rejection
+Dual non-suffix mip cases: executed=8 passed=8 failed=0 skipped_formats=0
+ok
+test dx11::hal_encoder::indexed_point_tests::fl91_indexed_points_order_instances_and_lifetime ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: 12 FL9_1 indexed-point full-image executions
+ok
+test dx11::hal_encoder::instance_stream_tests::fl91_indexed_primitives_without_vertex_rate_inputs_match_nonindexed ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: indexed list and strip draws without vertex-rate inputs matched direct draws for Uint16/Uint32; restart runs, instance-only and empty layouts
+ok
+test dx11::hal_encoder::instance_stream_tests::fl91_instance_rate_vertex_streams ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 instance streams, 4 full-image executions
+ok
+test dx11::hal_encoder::integer_uniform_bits_tests::fl91_fragment_integer_uniform_bitcast_is_rejected ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 integer shader rejected; float-only control precision=false, vertex_stage=false: 64/64 pixels matched
+ok
+test dx11::hal_encoder::integer_uniform_bits_tests::fl91_integer_uniform_comparison_is_rejected ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 integer shader rejected; float-only control precision=true, vertex_stage=false: 64/64 pixels matched
+ok
+test dx11::hal_encoder::integer_uniform_bits_tests::fl91_vertex_integer_uniform_bitcast_is_rejected ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 integer shader rejected; float-only control precision=false, vertex_stage=true: 64/64 pixels matched
+ok
+test dx11::hal_encoder::integer_vertex_tests::fl91_integer_vertex_formats_render ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+FL9_1 implemented and queried vertex-format mask: 0x0000000078c30104
+FL9_1 R8G8B8A8_UINT format support flags: 0x00000002
+Driver IA support: Uint8x4 DXGI_FORMAT(30), flags=0x2
+Driver IA support: Sint16x2 DXGI_FORMAT(38), flags=0x2
+Driver IA support: Sint16x4 DXGI_FORMAT(14), flags=0x2
+PASS: Sint16x2, Sint16x4 and Uint8x4 vertex data combined into expected yellow output; 64/64 pixels matched
+ok
+test dx11::hal_encoder::line_topology_tests::fl91_line_lists_and_strip_render ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and selected FL9_1
+PASS: FL9_1 line topologies: 17 red, 12 green, 24 blue, 14 white, 10 cyan and 14 yellow pixels
+PASS: indexed Uint32 line-strip wide-pair gather and compact continuation: 15 yellow pixels
+PASS: out-of-range indexed line fetch discarded the whole draw
+PASS: indexed line-strip draw rejected before submission
+PASS: indexed line-strip format mismatch rejected before submission
+ok
+test dx11::hal_encoder::mip_copy_dst_only_tests::fl91_copy_dst_only_mips_upload_and_usage_boundaries ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: Rgba8Unorm COPY_DST-only three-mip uploads and untouched zero mip; control and native diagnostic readbacks matched
+PASS: Bgra8Unorm COPY_DST-only three-mip uploads and untouched zero mip; control and native diagnostic readbacks matched
+COPY_DST-only mip cases: executed=2, passed=2, failed=0, skipped_formats=0
+ok
+test dx11::hal_encoder::mip_transfer_tests::fl91_copy_only_mip_transfers_and_views ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 Rgba8Unorm mip initialization, uploads, copies and full readback (run 0)
+PASS: FL9_1 Bgra8Unorm mip initialization, uploads, copies and full readback (run 1)
+Mip format cases: executed=2 passed=2 failed=0 skipped=0
+ok
+test dx11::hal_encoder::multi_vertex_stream_tests::fl91_sparse_vertex_indexed_render ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and selected FL9_1
+PASS: sparse FL9_1 indexed streams produced 64 matching pixels
+ok
+test dx11::hal_encoder::multi_vertex_stream_tests::fl91_sparse_vertex_indexed_u16_gather_and_native_transition ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and selected FL9_1
+PASS: FL9_1 sparse indexed windows, gather and OOB preflight
+ok
+test dx11::hal_encoder::multi_vertex_stream_tests::fl91_sparse_vertex_indexed_u32_windows_and_gather ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and selected FL9_1
+PASS: FL9_1 sparse indexed windows, gather and OOB preflight
+ok
+test dx11::hal_encoder::multi_vertex_stream_tests::fl91_sparse_vertex_streams_render ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and selected FL9_1
+PASS: sparse FL9_1 vertex streams produced 64 matching pixels
+ok
+test dx11::hal_encoder::multi_vertex_stream_tests::fl91_sparse_vertex_strips_render ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and selected FL9_1
+PASS: sparse FL9_1 triangle strip produced 64 matching pixels
+ok
+test dx11::hal_encoder::nonfiltering_sampler_tests::fl91_nonfiltering_sampler_layout_render_and_transitions ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: non-filtering and filtering layouts with nearest sampling, 2 full-image executions
+ok
+test dx11::hal_encoder::nonsuffix_mips::fl91_nonsuffix_sampled_views_track_source_contents ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: Rgba8Unorm non-suffix mip sampling, transitions, retention and feedback rejection
+PASS: Bgra8Unorm non-suffix mip sampling, transitions, retention and feedback rejection
+Non-suffix mip GPU cases: executed=16 passed=16 failed=0 skipped_formats=0
+ok
+test dx11::hal_encoder::overlapping_vertex_attribute_tests::fl91_overlapping_vertex_attributes_render ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 exact and partial vertex overlap, 9 full-image executions
+ok
+test dx11::hal_encoder::point_vertex_tests::fl91_point_list_vertex_inputs_and_pipeline_transition ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 vertex point list, pipeline transition and batched instances, 3 full-image executions
+ok
+test dx11::hal_encoder::premultiplied_blend_tests::fl91_premultiplied_blend_full_channels_and_transition ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: Rgba8Unorm premultiplied blend and both opaque transitions, 3 full images
+PASS: Bgra8Unorm premultiplied blend and both opaque transitions, 3 full images
+premultiplied blend: executed=6, passed=6, failed=0, skipped_formats=0
+ok
+test dx11::hal_encoder::r8_texture_tests::fl91_bc1_unorm_padded_block_upload_samples_into_rgba ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; BC1_UNORM support=0x000213a0; filtered-sampling=true
+PASS: padded offset BC1_UNORM upload sampled; 256/256 output pixels matched
+ok
+test dx11::hal_encoder::r8_texture_tests::fl91_bc2_unorm_padded_block_upload_samples_into_rgba ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; BC2_UNORM support=0x000213a0; filtered-sampling=true
+PASS: padded offset BC2_UNORM upload sampled; 256/256 output pixels matched
+ok
+test dx11::hal_encoder::r8_texture_tests::fl91_bc3_unorm_padded_block_upload_samples_into_rgba ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; BC3_UNORM support=0x000213a0; filtered-sampling=true
+PASS: padded offset BC3_UNORM upload sampled; 256/256 output pixels matched
+ok
+test dx11::hal_encoder::r8_texture_tests::fl91_r8_unorm_padded_upload_samples_into_rgba ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; R8_UNORM support=0x0002d3e0; filtered-sampling=true
+PASS: padded offset R8_UNORM upload sampled; 80/80 output pixels matched
+ok
+test dx11::hal_encoder::r8_texture_tests::fl91_rg16_snorm_is_query_gated_and_samples_when_supported ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; R16G16_SNORM support=0x00021122
+Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; R16G16_SNORM support=0x00021122; filtered-sampling=false
+PASS: padded offset R16G16_SNORM upload sampled; 80/80 output pixels matched
+ok
+test dx11::hal_encoder::r8_texture_tests::fl91_rg8_snorm_padded_upload_samples_both_signed_channels ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; R8G8_SNORM support=0x00021320; filtered-sampling=true
+PASS: padded offset R8G8_SNORM upload sampled; 80/80 output pixels matched
+ok
+test dx11::hal_encoder::r8_texture_tests::fl91_rgba8_snorm_padded_upload_samples_all_signed_channels ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1; R8G8B8A8_SNORM support=0x000213a0; filtered-sampling=true
+PASS: padded offset R8G8B8A8_SNORM upload sampled; 80/80 output pixels matched
+ok
+test dx11::hal_encoder::render_mip_tests::fl91_multisample_resolve_targets_selected_mip ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 2x RGBA8 resolve wrote mip 1 and preserved mip 0
+ok
+test dx11::hal_encoder::render_mip_tests::fl91_render_to_individual_mips ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 Rgba8Unorm mip attachments and full-chain readback
+PASS: FL9_1 Bgra8Unorm mip attachments and full-chain readback
+Mip render formats: executed=2 passed=2 failed=0 skipped=0
+ok
+test dx11::hal_encoder::render_sample_mips::fl91_render_and_sample_mip_transitions ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: Rgba8Unorm render/sample mip transitions and feedback rejection
+PASS: Bgra8Unorm render/sample mip transitions and feedback rejection
+Combined mip cases: executed=6 passed=6 failed=0 skipped_formats=0
+ok
+test dx11::hal_encoder::same_texture_mips_tests::fl91_render_copy_same_texture_mip_then_sample_clone ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: Rgba8Unorm render, same-resource mip copy and clone sample: 64 blue pixels
+PASS: Bgra8Unorm render, same-resource mip copy and clone sample: 64 blue pixels
+same-resource render/copy/sample: executed=2, passed=2, failed=0, skipped_formats=0
+ok
+test dx11::hal_encoder::same_texture_mips_tests::fl91_same_texture_disjoint_mip_copies ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: Rgba8Unorm same-resource mip copies in both directions and complete padded readback
+PASS: Bgra8Unorm same-resource mip copies in both directions and complete padded readback
+same-texture mip cases: executed=2, passed=2, failed=0, skipped_formats=0
+ok
+test dx11::hal_encoder::sampled_mip_tests::fl91_sampled_pot_mip_chains ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: Rgba8Unorm selected mip sampling and pair validation
+PASS: Bgra8Unorm selected mip sampling and pair validation
+Sampled mip GPU cases: executed=74 passed=74 failed=0 skipped_formats=0
+ok
+test dx11::hal_encoder::sampled_visibility_tests::fl91_sampled_vertex_fragment_visibility_and_transition ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: selected vertex texture sample rejected: unsupported D3D11 sampling relationship or missing binding
+PASS: combined and fragment-only visibility, 2 full-image executions
+ok
+test dx11::hal_encoder::sampler_lod_tests::fl91_single_mip_same_filter_finite_lod ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 single-mip LOD intervals; 32 patterned GPU readbacks matched references
+ok
+test dx11::hal_encoder::shadow_sampling_tests::fl91_query_gated_shadow_resource_views ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested=FL9_1 actual=L9_1 comparison_shadow=Value(true)
+  D16/R16 typed format support=0x00210020
+  D16/R16 typed format query unavailable: Error { code: HRESULT(0x80004005), message: "Unspecified error" }
+  PASS: D16/R16 typeless DSV/SRV and LEQUAL sampler creation
+  D24S8/R24 typed format support=0x00210020
+  D24S8/R24 typed format query unavailable: Error { code: HRESULT(0x80004005), message: "Unspecified error" }
+  PASS: D24S8/R24 typeless DSV/SRV and LEQUAL sampler creation
+PASS: 2 query-supported FL9_1 shadow format(s) created
+ok
+test dx11::hal_encoder::shadow_sampling_tests::fl91_sampled_d24s8_comparison_renders_query_gated_shadow ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested=FL9_1 actual=L9_1 comparison_shadow=Value(true)
+Shadow bind-group mapping: GroupKind { uniforms: [None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None], textures: [Some(7), None, None, None, None, None, None, None], texture_unfilterable_mask: 0, texture_depth_mask: 1, texture_vertex_visibility_mask: 0, samplers: [Some(42), None, None, None, None, None, None, None, None, None, None, None, None, None, None, None], sampler_non_filtering_mask: 0, sampler_comparison_mask: 1, sampler_vertex_visibility_mask: 0 }; sampled depth=true filterable=false; sampler comparison=true
+PASS: query-gated Depth24PlusStencil8 SampleCmp produced 32 failing and 32 passing pixels
+ok
+test dx11::hal_encoder::shadow_sampling_tests::fl91_sampled_depth_comparison_renders_query_gated_shadow ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested=FL9_1 actual=L9_1 comparison_shadow=Value(true)
+Shadow bind-group mapping: GroupKind { uniforms: [None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None, None], textures: [Some(7), None, None, None, None, None, None, None], texture_unfilterable_mask: 0, texture_depth_mask: 1, texture_vertex_visibility_mask: 0, samplers: [Some(42), None, None, None, None, None, None, None, None, None, None, None, None, None, None, None], sampler_non_filtering_mask: 0, sampler_comparison_mask: 1, sampler_vertex_visibility_mask: 0 }; sampled depth=true filterable=false; sampler comparison=true
+PASS: query-gated Depth16Unorm SampleCmp produced 32 failing and 32 passing pixels
+ok
+test dx11::hal_encoder::snorm_vertex_tests::fl91_snorm16_vertex_formats_render ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+IA vertex format DXGI_FORMAT(37): flags 0x21122
+IA vertex format DXGI_FORMAT(13): flags 0x2
+PASS: FL9_1 SNORM16x2/x4 direct and indexed, 64/64 pixels matched
+ok
+test dx11::hal_encoder::stencil_noop_tests::fl91_stencil_operations_match_expected_values ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 stencil reference, Equal, masked no-op, and all eight operations on pass, stencil-fail, and depth-fail paths
+ok
+test dx11::hal_encoder::tests::attachment_ops_accept_discard_and_reject_ambiguous_flags ... ok
+test dx11::hal_encoder::tests::fl91_empty_compute_pass_preserves_order_and_rejects_invalid_commands ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: ordered copies across empty compute pass; 16/16 bytes matched
+ok
+test dx11::hal_encoder::tests::fl9_1_hardware_indexed_triangle ... DXGI adapter: NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 software=false
+DXGI adapter: Microsoft Basic Render Driver vendor=0x1414 device=0x008c software=true
+Selected hardware: NVIDIA GeForce RTX 3090 Ti; requested feature level: 9_1
+D3D11 debug layer requested: false
+Actual feature level: L9_1
+Hardware guarantees: HardwareGuarantees { level: L9_1, texture_2d_dimension: 2048, texture_3d_dimension: 256, texture_cube_dimension: 512, render_targets: 1, max_vertex_index: 65534, max_primitives_per_draw: 65535, max_texture_repeat_per_primitive: 128, legacy_vertex_shader_constant_vectors: Some(255), legacy_fragment_shader_constant_vectors: Some(32), src_alpha_saturated_blend: false, srgb_blending_linear: false, vertex_input_formats: 2026045700, conditional_npot: true, separate_alpha_blend: false, depth_bias: true, slope_scaled_depth_bias: true, depth_bias_clamp: false, depth_stencil_mip_levels: false, geometry_shader: false, compute_shader: false, vertex_static_flow_control: true, vertex_dynamic_flow_control: false, fragment_static_flow_control: false, fragment_dynamic_flow_control: false, fragment_derivatives: false, sampler_lod_clamp: false, texture_query: false, texture_sample_level: false, texture_gather: false, vertex_texture_sampling: false, two_sided_stencil: false, r8_unorm_sampled_texture: true, rg8_snorm_sampled_texture: true, rg16_snorm_sampled_texture: false, rgba8_snorm_sampled_texture: true, bc1_unorm_sampled_texture: true, bc2_unorm_sampled_texture: true, bc3_unorm_sampled_texture: true, bc1_srgb_sampled_texture: true, bc2_srgb_sampled_texture: true, bc3_srgb_sampled_texture: true, d16_unorm_depth_attachment: true, rgba8_srgb_texture: true, bgra8_srgb_texture: true, packed_16bit_sampled_texture: true, r8_unorm_mipmapped_texture: true, rg8_snorm_mipmapped_texture: true, rgba8_snorm_mipmapped_texture: true }
+Driver queries: DriverCapabilities { timestamp_frequency: Value(1000000000), rgba8: Value(825160674), bgra8: Value(825160672), rgba8_srgb: Value(288289760), bgra8_srgb: Value(288289760), depth24_stencil8: Value(2162720), depth16_unorm: Value(2162720), depth24_stencil8_samples: SampleCountQueries([Value(1), Value(1), Value(1), Value(0)]), depth16_unorm_samples: SampleCountQueries([Value(1), Value(1), Value(1), Value(0)]), rgba8_samples: SampleCountQueries([Value(1), Value(1), Value(1), Value(0)]), bgra8_samples: SampleCountQueries([Value(1), Value(1), Value(1), Value(0)]), rgb565_samples: SampleCountQueries([Value(1), Value(1), Value(1), Value(0)]), wireframe_rasterizer: Value(true), full_npot: Value(true), comparison_shadow: Value(true), r8_unorm: Value(185312), rg8_unorm: Value(181024), rg8_snorm: Value(135968), rg16_snorm: Value(135458), rgba8_snorm: Value(136096), bc1_unorm: Value(136096), bc2_unorm: Value(136096), bc3_unorm: Value(136096), bc1_srgb: Value(136096), bc2_srgb: Value(136096), bc3_srgb: Value(136096), rgb565_unorm: Value(2552736), rgb5551_unorm: Value(136096), rgba4444_unorm: Value(136096), vertex_input_formats: 2026045700 }
+Backend implementation: BackendCapabilities { depth_stencil_mip_levels: false, src_alpha_saturated_blend: false, pot_full_chain_sampled_mips: true, pot_copy_only_mip_chains: true, pot_color_attachment_mips: true, pot_sampled_attachment_mips: true, npot_mipmapped_textures: true, rgba8_single_mip_transfers: true, bgra8_single_mip_transfers: true, rgba8_srgb_single_mip_transfers: true, bgra8_srgb_single_mip_transfers: true, r8_unorm_sampled_upload: true, r8_unorm_sampled_mips: true, rg8_unorm_sampled_upload: true, rg8_unorm_sampled_mips: true, rg8_snorm_sampled_mips: true, rgba8_snorm_sampled_mips: true, rg16_snorm_sampled_mips: true, r8_unorm_color_attachment: true, rg8_unorm_color_attachment: true, rgb565_color_attachment: true, r8_unorm_copy_source: true, rg8_unorm_copy_source: true, rgb565_copy_source: true, rg8_snorm_shadow_copy_readback: true, rgba8_snorm_texture_to_texture_copy: true, rgba8_snorm_shadow_copy_readback: true, rg16_snorm_texture_to_texture_copy: true, rg16_snorm_shadow_copy_readback: true, rgb5551_texture_to_texture_copy: true, rgba4444_texture_to_texture_copy: true, rg8_snorm_sampled_upload: true, rg16_snorm_sampled_upload: true, rgba8_snorm_sampled_upload: true, bc1_sampled_upload: true, bc1_texture_to_texture_copy: true, bc2_sampled_upload: true, bc2_texture_to_texture_copy: true, bc3_sampled_upload: true, bc3_texture_to_texture_copy: true, bc_sampled_mips: true, bc_texture_to_buffer_shadow_readback: true, packed_16bit_shadow_copy_readback: true, packed_16bit_sampled_upload: true, packed_16bit_sampled_mips: true, vertex_input_formats: 26938034880511, texture_zero_initialized: true, fl91_depth_comparison_sampling: true, fl91_fragment_texture_load_2d_float: true, fl91_fragment_texture_load_3d_float: true, fl91_fragment_texture_dimensions_2d_float: true, fl91_fragment_texture_dimensions_3d_float: true, fl91_fragment_texture_dimensions_cube_float: true, fl91_fragment_texture_num_levels_2d_float: true, fl91_fragment_texture_num_levels_3d_float: true, fl91_fragment_texture_num_levels_cube_float: true, fl91_fragment_texture_base_clamp_2d_float: true, fl91_fragment_frexp_fraction_only: true, fragment_texture_sample_bias_literal_select: true, fragment_texture_sample_bias_offset_2d_single_mip: true, fragment_texture_sample_compare_offset_2d_single_mip: true, fragment_texture_sample_level_zero_2d_single_mip: true, fragment_texture_sample_level_integer_2d: true, fragment_texture_sample_grad_2d_single_mip: true, texture_array_layers: 1, cube_texture_sampling: true, cube_texture_mipmaps: true, rgba8_multisample_resolve: true, bgra8_multisample_resolve: true, rgb565_multisample_resolve: true, texture_3d_sampling: true, texture_3d_upload: true, texture_3d_texture_copies: true, texture_3d_mipmaps: true, alpha_to_coverage: false, vertex_buffers: 16, zero_input_vertex_pipeline: true, nonindexed_zero_input_points: true, nonindexed_line_lists: true, nonindexed_line_strips: true, indexed_line_lists: true, indexed_line_strips: true, indexed_triangle_strips: true, color_attachments: 1, index_u16: true, index_u16_fl9_rewrite: true, index_u32_ordered_fl9_windows: true, index_u32_wide_triangle_gather: true, max_sampler_anisotropy: 2, single_mip_equal_filter_lod_normalization: true, sparse_texture_sampler_bindings: true, sampled_textures_per_group: 8, samplers_per_group: 16, sampled_texture_sampler_pairs_per_shader_stage: 16, sampled_textures_total: 8, samplers_total: 16, uniform_bindings_per_group: 26, uniform_bindings_total: 26, uniform_bindings_per_stage: 13, dynamic_uniform_bindings_total: 13, max_vertex_shader_uniform_vectors: 255, max_fragment_shader_uniform_vectors: 32, uniform_bind_groups: 8, sampled_bindings_group_zero_only: false, dynamic_uniform_offsets: true, uniform_binding_sizes_unaligned_16: true, compute: false, storage: false, vertex_index_input: true, vertex_base_vertex_input: false, vertex_base_instance_input: false, vertex_point_size_output: false, vertex_index_input_requires_hidden_slot: true, vertex_index_topology_mask: 31, instance_index_input: true, vertex_uniform_array_indexing: true, fragment_uniform_array_indexing: true, vertex_index_local_array_indexing: true, vertex_texture_sampling: false, fragment_derivatives: false, texture_query: false, texture_sample_level: false, texture_gather: false, texture_gather_2d_float_fragment: true, runtime_integer_shader_operations: false, matrix_inverse: false, matrix_inverse_2x2: true, matrix_inverse_3x3: true, matrix_inverse_4x4_vertex: true, matrix_outer_product: true, matrix_aggregate_stores: false, shader_loops: false, statically_unrolled_shader_loops: true, depth_stencil: false, d24s8_depth_attachment: true, d16_depth_attachment: true, d24s8_stencil_operations: true, depth_stencil_multisampling: true, wireframe_rasterizer: true, d24s8_triangle_constant_depth_bias: true, d24s8_triangle_slope_depth_bias: true, d24s8_depth_bias_clamp: false, fragment_depth_with_bias: false, fragment_depth_without_color_target_0: false, fragment_sample_mask_output: false, fragment_sample_mask_input: false, fragment_point_coord_input: false, fragment_non_perspective_interpolation: false, two_sided_stencil: false, instancing: false, instancing_without_instance_inputs: true, restricted_instance_rate_streams: true, queries: false, timestamp_queries: true }
+RGBA8 driver blendable: true; FL9_1 offscreen projection: true
+Readback: 64/64 pixels RGBA [255, 0, 0, 255]; before submission: 64/64 blue
+Readback: positive and negative base vertices, 64/64 red pixels
+Readback: GPU-uploaded u32 indices with positive/negative base, 64/64 red pixels
+PASS: u32 indices 65535..65537 with base -3 rendered 64/64 red pixels
+PASS: high effective u32 indices, later direct and u16 draws rendered 64/64 red pixels
+PASS: sparse u32 triangle gathered GPU-written short-stride vertices for 0/1/2 instances
+PASS: u32 late OOB discarded whole draw; GPU rewrite and later draw succeeded
+PASS: late out-of-bounds index discarded whole draw; later GPU upload and draw succeeded
+PASS: ordered low/high/low u32 windows and subsequent direct draw
+PASS: late out-of-bounds triangle discarded before any window drew
+PASS: direct and indexed first-instance offsets preserve blend order
+PASS: GPU-written u16 gather and negative-base window: 32 red, 32 blue pixels
+PASS: positive-base u16 window and subsequent native draw: 32 red, 32 blue pixels
+PASS: executed=1 passed=1 failed=0 skipped=0
+ok
+test dx11::hal_encoder::tests::fl9_1_hardware_rgb565_multisample_resolve ... RGB565 MSAA hardware: NVIDIA GeForce RTX 3090 Ti; vendor=0x10de device=0x2203; requested/actual FL9_1; samples=2; CheckFormatSupport=Ok(2552736)
+PASS: executed=1 passed=1 failed=0 skipped=0; RGB565 resolve readback 64/64 pixels packed red=0xf800
+ok
+test dx11::hal_encoder::tests::fl9_texture_emulation_format_matrix_is_narrow ... ok
+test dx11::hal_encoder::tests::hal_copy_encoder_records_submits_and_can_discard ... ok
+test dx11::hal_encoder::tests::hal_encoder_clears_only_requested_buffer_range_after_submit ... ok
+test dx11::hal_encoder::tests::hal_encoder_submits_padded_buffer_to_texture_copy ... ok
+test dx11::hal_encoder::tests::indexed_points_detect_index_independent_vertex_ranges ... ok
+test dx11::hal_encoder::tests::instance_stream_range_checks_last_element_and_native_offset ... ok
+test dx11::hal_encoder::tests::sampled_mip_overlap_rejects_invalid_ranges ... ok
+test dx11::hal_encoder::texture_dimension_mip_tests::dimensions_clamp_to_one_for_out_of_range_mip_levels ... ok
+test dx11::hal_encoder::texture_transfer_tests::fl91_bgra8_3d_upload_copy_readback_and_sampling ... Hardware: "NVIDIA GeForce RTX 3090 Ti" (0x10de:0x2203), driver=Some("32.0.16.2101"), software=false; requested/actual FL9_1; Bgra8Unorm format support=0x312ef3e0
+PASS: Bgra8Unorm 3D texture copy and readback; 64 texels, partial-copy zero preservation, offset, padded rows/depth and sentinel bytes matched
+PASS: FL9_1 padded partial BGRA8 3D upload; 8 uploaded voxels and 56 initialized untouched voxels sampled correctly, with row/depth padding preserved
+ok
+test dx11::hal_encoder::texture_transfer_tests::fl91_bgra8_srgb_3d_upload_copy_readback_and_sampling ... Hardware: "NVIDIA GeForce RTX 3090 Ti" (0x10de:0x2203), driver=Some("32.0.16.2101"), software=false; requested/actual FL9_1; Bgra8UnormSrgb format support=0x112ef3e0
+PASS: Bgra8UnormSrgb 3D texture copy and readback; 64 texels, partial-copy zero preservation, offset, padded rows/depth and sentinel bytes matched
+PASS: FL9_1 padded partial BGRA8 sRGB 3D upload; 8 uploaded voxels and 56 initialized untouched voxels sampled correctly, with row/depth padding preserved
+ok
+test dx11::hal_encoder::texture_transfer_tests::fl91_bgra_render_and_partial_copy ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and selected FL9_1
+PASS: rendered BGRA partial copy with nonzero origins, differing dimensions and untouched pixels
+ok
+test dx11::hal_encoder::texture_transfer_tests::fl91_bgra_upload_copy_and_readback ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and selected FL9_1
+PASS: FL9_1 BGRA upload/copy/readback, 6 pixels and row padding
+ok
+test dx11::hal_encoder::texture_transfer_tests::fl91_cube_texture_to_buffer_readback_uses_padded_faces ... Hardware: "NVIDIA GeForce RTX 3090 Ti" (0x10de:0x2203), driver=Some("32.0.16.2101"), software=false; requested/actual FL9_1; RGBA8 format support=0x312ef3e2
+PASS: six cube faces copied to padded CPU buffer; 384 texels and every row/image padding byte matched
+ok
+test dx11::hal_encoder::texture_transfer_tests::fl91_padded_partial_3d_upload_preserves_other_voxels ... Hardware: "NVIDIA GeForce RTX 3090 Ti" (0x10de:0x2203), driver=Some("32.0.16.2101"), software=false; requested/actual FL9_1; Rgba8Unorm format support=0x312ef3e2
+PASS: FL9_1 padded partial RGBA8 3D upload; 8 uploaded voxels and 56 initialized untouched voxels sampled correctly, with row/depth padding preserved
+ok
+test dx11::hal_encoder::texture_transfer_tests::fl91_r8_3d_upload_and_sampling_preserve_other_voxels ... Hardware: "NVIDIA GeForce RTX 3090 Ti" (0x10de:0x2203), driver=Some("32.0.16.2101"), software=false; requested/actual FL9_1; R8Unorm format support=0x0002d3e0
+PASS: R8Unorm 3D texture copy and readback; 64 texels, partial-copy zero preservation, offset, padded rows/depth and sentinel bytes matched
+PASS: FL9_1 padded partial R8 3D upload; 8 uploaded voxels and 56 initialized untouched voxels sampled correctly, with row/depth padding preserved
+ok
+test dx11::hal_encoder::texture_transfer_tests::fl91_rg8_3d_upload_copy_readback_and_sampling_when_queried ... selected physical FL9_1 device lacks Rg8Unorm 3D sampling support (0x0002c320)
+SKIP: selected physical FL9_1 device lacks optional Rg8Unorm 3D support
+ok
+test dx11::hal_encoder::texture_transfer_tests::fl91_texture_transfer_chain_readback_and_lifetime ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+FL9_1 transfer readback: 12/12 uploaded pixels, 30/30 copied pixels, 6/6 partial pixels and padding match; zero initialization and two ordered submissions verified
+ok
+test dx11::hal_encoder::textured_tests::checked_sampling_ignores_unselected_texture_load ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Diagnostic only: separate alpha is not guaranteed at FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::checked_two_texture_overlay_blends_alpha ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Diagnostic only: separate alpha is not guaranteed at FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::checked_two_texture_overlay_inverts_destination ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Diagnostic only: separate alpha is not guaranteed at FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_bgra_texture_samples_native_channels ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_buffer_upload_then_sample ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 51 readback: [90, 140, 110, 255]
+FL9_1 padded upload: 64/64 sampled pixels matched
+ok
+test dx11::hal_encoder::textured_tests::fl91_direct_triangle_unique_vertex_batch_boundary ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_dynamic_uniform_with_sampled_texture_changes_between_draws ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_dynamic_uniform_with_sampled_texture_indexed ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_render_copy_then_sample ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 50 readback: [64, 127, 191, 255]
+ok
+test dx11::hal_encoder::textured_tests::fl91_two_uniforms_with_sampled_textures ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 52 readback: [64, 127, 191, 255]
+ok
+test dx11::hal_encoder::textured_tests::fl91_viewport_bottom_overflow ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_viewport_fractional_coordinates ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_viewport_fully_outside ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_viewport_missing_remap_shader_fails_only_when_drawing ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_viewport_negative_indexed ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_viewport_negative_x ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_viewport_negative_y ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_viewport_one_pixel_intersection ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_viewport_perspective_clip_w ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_viewport_right_overflow ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::fl91_viewport_transition ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_accepts_empty_scissor ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_accepts_zero_height_viewport ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_accepts_zero_width_viewport ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_adds_overlay_highlight ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_applies_overlay_vignette ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Diagnostic only: separate alpha is not guaranteed at FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_blends_translucent_ui_on_level_9 ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Diagnostic only: separate alpha is not guaranteed at FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_clips_to_scissor ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_draws_checked_u16_indices ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_draws_indices_with_zero_viewport ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_draws_interleaved_normalized_vertex_attributes ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_inverts_crosshair_against_destination ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Diagnostic only: separate alpha is not guaranteed at FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_records_sampled_triangle_on_level_9 ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_records_uniform_and_sampled_triangle_on_level_9 ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_restores_nonempty_viewport ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_samples_two_textures_with_uniform_layout ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::hal_encoder_splits_large_level_9_triangle_draw ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+ok
+test dx11::hal_encoder::textured_tests::multi_resource_change_one_binding ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 14 readback: [255, 255, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::multi_resource_eight_distinct_samplers ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 17 readback: [144, 0, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::multi_resource_eight_shared_sampler ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 12 readback: [144, 0, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::multi_resource_independent_sampler_states ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 13 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::multi_resource_one_texture_multiple_samplers ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 15 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::multi_resource_pipeline_transition ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 16 readback: [255, 0, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::multi_resource_sixteen_sampler_relationships ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 18 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::multi_resource_three_distinct ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 10 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::multi_resource_three_shared_sampler ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 11 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::multi_resource_without_uniform ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 19 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::reversed_sparse_declarations_render ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 2 readback: [0, 255, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_anisotropic_minification ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 53 readback: [0, 0, 0, 255]
+FL9_1 minification contrast: anisotropy=2 1, anisotropy=1 128
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_anisotropy_two ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 42 readback: [127, 127, 127, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_clamp_edge ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 48 readback: [0, 255, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_independent_uv ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 39 readback: [0, 0, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_inverse_mixed_magnification ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 34 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_inverse_mixed_minification ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 35 readback: [127, 127, 127, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_linear_magnification ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 31 readback: [127, 127, 127, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_linear_minification ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 47 readback: [127, 127, 127, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_lod_one_magnification ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 45 readback: [127, 127, 127, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_lod_one_minification ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 44 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_mirror_addressing ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 37 readback: [255, 0, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_mixed_filters_magnification ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 32 readback: [127, 127, 127, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_mixed_filters_minification ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 33 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_nearest_magnification ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 30 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_nearest_minification ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 46 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_repeat_addressing ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 36 readback: [0, 255, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::sampler_state_sampler_transition ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 38 readback: [127, 127, 127, 255]
+ok
+test dx11::hal_encoder::textured_tests::shader_pairs_conditional_npot_mixed_resources ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+Device full NPOT query: Value(true)
+FL9_1 variant 20 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::shader_pairs_conditional_npot_pipeline_transition ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+Device full NPOT query: Value(true)
+FL9_1 variant 22 readback: [255, 0, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::shader_pairs_conditional_npot_resource_transition ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+Device full NPOT query: Value(true)
+FL9_1 variant 21 readback: [255, 255, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::shader_pairs_real_device_npot_capability ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+Device full NPOT query: Value(true)
+FL9_1 variant 23 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::shader_pairs_unrestricted_npot_wrap ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+Device full NPOT query: Value(true)
+FL9_1 variant 24 readback: [255, 255, 255, 255]
+ok
+test dx11::hal_encoder::textured_tests::sparse_binding_transition_replaces_texture ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 3 readback: [0, 255, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::sparse_bindings_coexist_with_uniform ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 1 readback: [0, 255, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::sparse_sampler_before_texture_binding_renders ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 4 readback: [0, 255, 0, 255]
+ok
+test dx11::hal_encoder::textured_tests::sparse_texture_sampler_bindings_render ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1
+Actual feature level: L9_1
+FL9_1 variant 1 readback: [0, 255, 0, 255]
+ok
+test dx11::hal_encoder::triangle_strip_tests::fl91_fragment_flat_interpolation_fxc_boundary ... FL9_1 flat interpolation FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ADD092B0(5,28-43): error X4568: nointerpolation usage unsupported on ps_4_0_level_9_1
+
+ok
+test dx11::hal_encoder::triangle_strip_tests::fl91_nonindexed_triangle_strip_winding_and_first_vertex ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and selected FL9_1
+PASS: indexed Uint16/Uint32 triangle-strip restart and winding match triangle-list output for both front faces and cull modes
+PASS: indexed Uint32 wide-triangle gather: 32 red pixels
+PASS: FL9_1 strip winding matches triangle-list with nonzero first vertex
+ok
+test dx11::hal_encoder::unfilterable_texture_tests::fl91_unfilterable_texture_sampling_relationships ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: unfilterable sampling, selected relationships and transition, 2 full images
+ok
+test dx11::hal_encoder::uniform_binding_tests::fl91_checked_local_vector_indexing_with_uniforms ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: InBounds rejected with fragment linkage error: D3D11 FL9 runtime integer semantics are not implemented safely
+SKIP: InBounds GPU rendering; the original shader was rejected
+ok
+test dx11::hal_encoder::uniform_binding_tests::fl91_checked_local_vector_negative_index_with_uniforms ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: Negative rejected with fragment linkage error: D3D11 FL9 runtime integer semantics are not implemented safely
+SKIP: Negative GPU rendering; the original shader was rejected
+ok
+test dx11::hal_encoder::uniform_binding_tests::fl91_checked_local_vector_out_of_bounds_with_uniforms ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: OutOfBounds rejected with fragment linkage error: D3D11 FL9 runtime integer semantics are not implemented safely
+SKIP: OutOfBounds GPU rendering; the original shader was rejected
+ok
+test dx11::hal_encoder::uniform_binding_tests::fl91_checked_mutable_local_vector_indexing_with_uniforms ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: Mutable rejected with fragment linkage error: D3D11 FL9 runtime integer semantics are not implemented safely
+SKIP: Mutable GPU rendering; the original shader was rejected
+ok
+test dx11::hal_encoder::uniform_binding_tests::fl91_checked_mutable_local_vector_out_of_bounds ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: MutableOutOfBounds rejected with fragment linkage error: D3D11 FL9 runtime integer semantics are not implemented safely
+SKIP: MutableOutOfBounds GPU rendering; the original shader was rejected
+ok
+test dx11::hal_encoder::uniform_binding_tests::fl91_checked_uniform_vector_copy_indexing ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: UniformCopy rejected with fragment linkage error: D3D11 FL9 runtime integer semantics are not implemented safely
+SKIP: UniformCopy GPU rendering; the original shader was rejected
+ok
+test dx11::hal_encoder::uniform_binding_tests::fl91_dynamic_uniform_ranges_follow_gpu_upload_and_offset_changes ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+FL9_1 uniform group x=2: [143, 207, 16, 255]
+FL9_1 uniform group x=6: [143, 143, 16, 255]
+ok
+test dx11::hal_encoder::uniform_binding_tests::fl91_multiple_groups_keep_dynamic_ranges_and_layouts_independent ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: groups 0/2, same binding and dynamic buffer, direct/indexed draws; 64/64 pixels matched
+ok
+test dx11::hal_encoder::uniform_binding_tests::fl91_sparse_uniform_ranges_follow_gpu_upload_and_group_switch ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+FL9_1 uniform group x=2: [143, 207, 16, 255]
+FL9_1 uniform group x=6: [80, 143, 16, 255]
+ok
+test dx11::hal_encoder::uniform_binding_tests::fl91_vertex_c254_and_pixel_c31_change_rendered_output ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: FL9_1 vertex c254 shifted geometry and pixel c31 changed color; green 17 pixels, red 4 pixels
+ok
+test dx11::hal_encoder::uniform_binding_tests::fl91_vertex_constant_profile_boundary_creates_on_hardware ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: FXC and D3D11 accepted the 255-element vertex constant array
+ok
+test dx11::hal_encoder::uniform_binding_tests::level9_constant_budgets_and_multiple_buffers_compile ... 31 referenced pixel constants: Ok(())
+32 referenced pixel constants: Ok(())
+33 referenced pixel constants: Err("C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\Shader@0x000001A3AE499AA0(1,80): error X5200: (Second source param) Invalid register number: 32. Max allowed for this type is 31.\n")
+16+16 referenced pixel constants across buffers: Ok(())
+17+16 referenced pixel constants across buffers: Err("C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\Shader@0x000001A3AE8410F0(1,124): error X5200: (Second source param) Invalid register number: 32. Max allowed for this type is 31.\n")
+vertex profile array length 255: Ok(())
+vertex profile array length 256: Err("error X4507: maximum vs_4_0_level_9_1 constant register index (256) exceeded - Try reducing number of constants referenced\n")
+vertex profile array length 257: Err("C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\Shader@0x000001A3AE290590(1,35): error X4507: maximum vs_4_0_level_9_1 constant register index (256) exceeded - Try reducing number of constants referenced\n")
+ok
+test dx11::hal_encoder::uniform_tests::default_dx11_adapter_unlocks_high_resolution_and_fast_indexed_draws ... ok
+test dx11::hal_encoder::uniform_tests::uniform_group_drives_fl9_triangle_and_refreshes_after_partial_update ... ok
+test dx11::hal_encoder::zero_stride_tests::fl91_zero_stride_vertex_streams ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: FL9_1 zero-stride mixed streams, 5 full-image executions; all-zero triangle degenerate
+ok
+test dx11::hal_index::tests::base_vertex_checks_effective_index_and_binding_range ... ok
+test dx11::hal_index::tests::emulated_line_strip_vertex_indices_validate_signed_base_results ... ok
+test dx11::hal_index::tests::indexed_instance_windows_remain_in_primitive_order ... ok
+test dx11::hal_index::tests::indexed_line_plan_gathers_wide_pairs_without_reordering ... ok
+test dx11::hal_index::tests::indexed_line_plans_accept_two_byte_extents_for_windows_and_gathers ... ok
+test dx11::hal_index::tests::indexed_line_plans_discard_bad_fetches_and_split_at_primitive_limit ... ok
+test dx11::hal_index::tests::indexed_line_strip_restart_is_matched_after_base_vertex_resolution ... ok
+test dx11::hal_index::tests::indexed_line_strip_wide_pairs_gather_without_treating_u16_max_as_u32_cut ... ok
+test dx11::hal_index::tests::indexed_line_strips_apply_signed_base_to_vertices ... ok
+test dx11::hal_index::tests::indexed_line_strips_split_restart_runs_and_overlap_at_the_draw_limit ... ok
+test dx11::hal_index::tests::indexed_line_vertex_index_plans_keep_effective_ids_and_allow_no_vertex_streams ... ok
+test dx11::hal_index::tests::indexed_line_windows_preserve_pairs_rebase_and_ignore_an_incomplete_tail ... ok
+test dx11::hal_index::tests::indexed_point_runs_discard_full_draw_for_any_invalid_index ... ok
+test dx11::hal_index::tests::indexed_point_runs_preserve_order_and_rebase_every_stream ... ok
+test dx11::hal_index::tests::indexed_point_runs_split_at_native_primitive_limit ... ok
+test dx11::hal_index::tests::indexed_strip_draw_counts_preserve_restart_runs_and_batch_overlaps ... ok
+test dx11::hal_index::tests::indexed_triangle_strip_batches_obey_fl9_primitive_limit_and_discard_invalid_fetches ... ok
+test dx11::hal_index::tests::indexed_triangle_strip_expansion_preserves_wide_vertex_ids_without_user_streams ... ok
+test dx11::hal_index::tests::indexed_triangle_strip_restart_uses_base_resolved_indices ... ok
+test dx11::hal_index::tests::indexed_triangle_strips_expand_winding_and_reset_after_restart ... ok
+test dx11::hal_index::tests::indexed_vertex_plans_accept_two_byte_extents_and_preserve_other_checks ... ok
+test dx11::hal_index::tests::multi_stream_index_bounds_check_each_range_and_signed_base ... ok
+test dx11::hal_index::tests::u16_rewrites_only_when_native_indices_exceed_fl9_limits ... ok
+test dx11::hal_index::tests::u32_conversion_checks_effective_indices_and_whole_draw ... ok
+test dx11::hal_index::tests::u32_windows_preflight_whole_draw_and_preserve_triangle_order ... ok
+test dx11::hal_index::tests::vertex_index_emulation_preserves_resolved_unsigned_values ... ok
+test dx11::hal_index::tests::vertex_index_emulation_respects_vertex_fetch_bounds ... ok
+test dx11::hal_index::tests::zero_stride_index_windows_preserve_constant_source ... ok
+test dx11::hal_pipeline::tests::blend_masks_use_the_written_component_equation ... ok
+test dx11::hal_pipeline::tests::color_write_masks_map_all_channels_and_reject_unknown_bits ... ok
+test dx11::hal_pipeline::tests::depth_bias_accepts_unclamped_triangle_states ... ok
+test dx11::hal_pipeline::tests::depth_comparison_maps_all_native_functions_and_preserves_never_emulation ... ok
+test dx11::hal_pipeline::tests::depth_only_shader_error_preserves_out_of_memory ... ok
+test dx11::hal_pipeline::tests::empty_vertex_input_pipeline_is_accepted ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: zero-input point and 65,536-point batch: one green and 63 blue pixels; zero-input triangle: 64 blue pixels; point/triangle/point transitions: one green and 63 red pixels
+PASS: RGB-only and alpha-only alpha, inversion and vignette blends
+ok
+test dx11::hal_pipeline::tests::fl91_blend_factors_and_operations_translate_without_promotion ... ok
+test dx11::hal_pipeline::tests::fl91_blend_masks_require_separate_alpha_only_when_observable ... ok
+test dx11::hal_pipeline::tests::fl91_custom_blending_respects_separate_alpha_contract_and_native_slots ... ok
+test dx11::hal_pipeline::tests::fl91_stencil_state_maps_operations_masks_and_rejects_two_sided_state ... ok
+test dx11::hal_pipeline::tests::fl91_vertex_element_overlap_uses_separate_slots ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+ok
+test dx11::hal_pipeline::tests::fl91_zero_sample_mask_uses_equivalent_nonzero_native_mask ... ok
+test dx11::hal_pipeline::tests::hal_pipeline_draws_level_9_triangle ... ok
+test dx11::hal_pipeline::tests::hal_pipeline_samples_texture_group_on_level_9 ... ok
+test dx11::hal_pipeline::tests::native_pipeline_object_errors_preserve_device_failures ... ok
+test dx11::hal_pipeline::tests::premultiplied_alpha_blend_uses_coupled_factors_for_every_mask ... ok
+test dx11::hal_pipeline::tests::sampling_pair_validation_reports_the_selected_stage ... ok
+test dx11::hal_pipeline::tests::stencil_noop_classifier_checks_both_faces_and_eight_bit_masks ... ok
+test dx11::hal_pipeline::tests::vertex_element_overlap_uses_selected_feature_level ... ok
+test dx11::hal_pipeline::tests::vertex_format_support_query_is_conservative_and_propagates_device_loss ... ok
+test dx11::hal_pipeline::tests::vertex_formats_map_required_and_optional_inputs ... ok
+test dx11::hal_pipeline::tests::vertex_slots_reserve_logical_streams_and_partition_overlaps ... ok
+test dx11::hal_pipeline::tests::viewport_shader_creation_errors_distinguish_linkage_from_device_failure ... ok
+test dx11::hal_queue::tests::bounded_idle_wait_resumes_the_same_event_query_after_timeout ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; driver=Some("32.0.16.2101"); requested and actual FL9_1; first query timeout is synthetic
+ok
+test dx11::hal_queue::tests::dynamic_queue_submits_copy_batches_and_signals_real_fence ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+ok
+test dx11::hal_queue::tests::fl91_timestamp_and_disjoint_queries_execute_on_hardware ... PASS: timestamp queries executed at requested/actual FL9_1 on "NVIDIA GeForce RTX 3090 Ti" (0x10de:0x2203), driver=Some("32.0.16.2101"), software=false, values=1795268663282073600/1795268663282073600, frequency=1000000000 Hz, period=1 ns/tick, disjoint=false
+ok
+test dx11::hal_queue::tests::queue_errors_report_memory_and_lost_devices ... ok
+test dx11::hal_sampler::tests::biased_sampling_requires_equal_isotropic_filters ... ok
+test dx11::hal_sampler::tests::equal_isotropic_filters_normalize_lod_only_for_single_mip_views ... ok
+test dx11::hal_sampler::tests::filtering_class_uses_all_original_descriptor_filters ... ok
+test dx11::hal_sampler::tests::fl91_comparison_border_requires_shadow_query_and_representable_colors ... ok
+test dx11::hal_sampler::tests::fl91_comparison_sampler_requires_the_optional_shadow_contract ... ok
+test dx11::hal_sampler::tests::hal_samplers_map_filters_and_reject_unsupported_states ... ok
+test dx11::hal_sampler::tests::sampler_explicit_lod_is_rejected_by_level9_pixel_profile ... ok
+test dx11::hal_sampler::tests::sampler_npot_modes_follow_used_pair_and_optional_capability ... ok
+test dx11::hal_sampler::tests::sampler_state_native_border_diagnostic ... FL9_1 hardware AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; native ordinary border sampler: Err(Error { code: HRESULT(0x80070057), message: "The parameter is incorrect." })
+ok
+test dx11::hal_sampler::tests::sampler_translation_covers_addressing_and_filter_combinations ... ok
+test dx11::hal_sampler::tests::sampler_translation_rejects_unrepresentable_fl9_states ... ok
+test dx11::hal_sampler::tests::translated_lod_retains_pair_specific_mip_restrictions ... ok
+test dx11::hal_shader::tests::checked_matrix_component_stores_require_safe_lowering ... ok
+test dx11::hal_shader::tests::checked_uniform_shader_distinguishes_local_vector_indexing ... ok
+test dx11::hal_shader::tests::dynamic_matrix_column_store_is_safe_for_vertex_index_switch_lowering ... ok
+test dx11::hal_shader::tests::dynamic_uniform_array_reads_allow_direct_vertex_builtins ... ok
+test dx11::hal_shader::tests::fl91_direct_uniform_indexed_vertex_array_is_narrow_and_compiles_with_fxc ... ok
+test dx11::hal_shader::tests::fl91_explicit_integer_lod_selects_a_view_relative_mip_and_lowers_to_sample ... ok
+test dx11::hal_shader::tests::fl91_explicit_lod_helper_tint_translates_and_compiles_with_fxc ... ok
+test dx11::hal_shader::tests::fl91_explicit_lod_proof_lowers_direct_computed_lod_for_single_mip_sampling ... ok
+test dx11::hal_shader::tests::fl91_explicit_lod_zero_proof_is_selected_entry_specific ... ok
+test dx11::hal_shader::tests::fl91_explicit_lod_zero_proof_lowers_computed_lod_and_coordinates_in_helper ... ok
+test dx11::hal_shader::tests::fl91_explicit_lod_zero_proof_lowers_helper_computed_coordinates ... ok
+test dx11::hal_shader::tests::fl91_explicit_lod_zero_proof_lowers_only_selected_direct_samples ... ok
+test dx11::hal_shader::tests::fl91_explicit_lod_zero_proof_rejects_unsafe_shapes ... ok
+test dx11::hal_shader::tests::fl91_fragment_uniform_array_helper_is_selected_and_clamped ... ok
+test dx11::hal_shader::tests::fl91_fragment_uniform_array_helper_rejects_nearby_shapes ... ok
+test dx11::hal_shader::tests::fl91_fragment_uniform_array_indexing_is_narrow_and_compiles_with_fxc ... ok
+test dx11::hal_shader::tests::fl91_frexp_fraction_guard_accepts_only_direct_fragment_projection ... ok
+test dx11::hal_shader::tests::fl91_padded_vec2_uniform_array_shape_compiles_with_fxc ... ok
+test dx11::hal_shader::tests::fl91_profile_rejects_fragment_sample_mask_input ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+Observed FL9_1 sample-mask input FXC rejection (HRESULT 0x80004005): C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABC02320(2,17-29): error X4502: invalid ps_4_0_level_9_1 input semantic 'SV_Coverage'
+
+ok
+test dx11::hal_shader::tests::fl91_profile_rejects_fragment_sample_mask_output ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+Observed FL9_1 sample-mask FXC rejection (HRESULT 0x80004005): C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ADB562D0(13,22-24): error X4583: semantic 'SV_Coverage' unsupported on ps_4_0_level_9_1
+
+ok
+test dx11::hal_shader::tests::fl91_sample_grad_single_mip_proof_lowers_only_straight_line_samples ... ok
+test dx11::hal_shader::tests::fl91_shared_explicit_lod_shape_corpus_matches_hal_contract ... ok
+test dx11::hal_shader::tests::fl91_vertex_uniform_matrix_array_indexing_passes_the_hal_proof_and_fxc ... ok
+test dx11::hal_shader::tests::fl9_2d_texture_load_allows_only_direct_dynamic_coordinate_cast ... ok
+test dx11::hal_shader::tests::fl9_2d_texture_load_and_dimensions_share_one_emulation ... ok
+test dx11::hal_shader::tests::fl9_3d_and_cube_texture_dimensions_use_distinct_emulations ... ok
+test dx11::hal_shader::tests::fl9_3d_texture_load_selects_a_distinct_single_mip_emulation ... ok
+test dx11::hal_shader::tests::fl9_cube_texture_dimensions_selects_face_metadata_emulation ... ok
+test dx11::hal_shader::tests::fl9_texture_base_clamp_binding_is_direct_and_single_mip ... ok
+test dx11::hal_shader::tests::fl9_texture_dimensions_and_num_levels_helpers_are_entry_specific ... ok
+test dx11::hal_shader::tests::fl9_texture_dimensions_binding_is_selected_entry_specific ... ok
+test dx11::hal_shader::tests::fl9_texture_dimensions_helper_accepts_one_same_texture_sample ... ok
+test dx11::hal_shader::tests::fl9_texture_dimensions_requires_a_resolved_mip_level ... ok
+test dx11::hal_shader::tests::fl9_texture_dimensions_sample_allows_one_direct_vec4_uniform ... ok
+test dx11::hal_shader::tests::fl9_texture_gather_allows_one_selected_direct_vec4_uniform ... ok
+test dx11::hal_shader::tests::fl9_texture_gather_computed_coordinate_is_proven_and_bounded ... ok
+test dx11::hal_shader::tests::fl9_texture_gather_helper_proof_is_exact_and_entry_specific ... ok
+test dx11::hal_shader::tests::fl9_texture_gather_proof_retains_exact_texture_and_sampler ... ok
+test dx11::hal_shader::tests::fl9_texture_load_emulation_accepts_direct_global_nested_helpers ... ok
+test dx11::hal_shader::tests::fl9_texture_num_levels_3d_and_cube_accept_selected_helpers ... ok
+test dx11::hal_shader::tests::fl9_texture_num_levels_accepts_3d_and_cube_images ... ok
+test dx11::hal_shader::tests::fl9_texture_num_levels_accepts_one_selected_helper ... ok
+test dx11::hal_shader::tests::fl9_texture_num_levels_binding_is_selected_entry_specific ... ok
+test dx11::hal_shader::tests::fl9_texture_num_levels_can_share_one_implicit_sample ... ok
+test dx11::hal_shader::tests::fl9_texture_num_levels_helper_accepts_one_same_texture_sample ... ok
+test dx11::hal_shader::tests::fl9_texture_sample_bias_offset_is_direct_and_entry_point_specific ... ok
+test dx11::hal_shader::tests::fl9_texture_sample_compare_offset_is_direct_and_entry_point_specific ... ok
+test dx11::hal_shader::tests::fragment_depth_detection_uses_only_selected_entry ... ok
+test dx11::hal_shader::tests::hal_module_compiles_and_creates_level_9_shaders ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+FL9_1 FXC rejected vs_dynamic: D3D11 shader compilation failed: Compilation(ShaderCompileError { code: -2147467259, message: "C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\Shader@0x000001A3ADBDCEC0(5,5-15): warning X3552: cannot map loop to shader target, target does not support breaks, forcing loop to unroll\nC:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\Shader@0x000001A3ADBDCEC0(5,5-15): error X3511: unable to unroll loop, loop does not appear to terminate in a timely manner (863 iterations) or unrolled loop is too large, use the [unroll(n)] attribute to force an exact higher number\n" })
+FL9_1 FXC rejected fs_dynamic: D3D11 shader compilation failed: Compilation(ShaderCompileError { code: -2147467259, message: "C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\Shader@0x000001A3AEEE0590(9,5-15): error X3511: unable to unroll loop, loop does not appear to terminate in a timely manner (82 iterations) or unrolled loop is too large, use the [unroll(n)] attribute to force an exact higher number\n" })
+ok
+test dx11::hal_shader::tests::instance_index_detection_uses_only_selected_entry ... ok
+test dx11::hal_shader::tests::integer_guard_checks_selected_entry_and_level9_profile ... ok
+test dx11::hal_shader::tests::integer_guard_rejects_unfolded_global_initializers_only_when_selected ... ok
+test dx11::hal_shader::tests::matrix_store_analysis_fails_closed_at_call_depth_limit ... ok
+test dx11::hal_shader::tests::matrix_store_analysis_fails_closed_at_call_state_limit ... ok
+test dx11::hal_shader::tests::matrix_store_analysis_handles_shared_type_dag ... ok
+test dx11::hal_shader::tests::matrix_store_analysis_shares_work_budget_across_pointer_lookups ... ok
+test dx11::hal_shader::tests::matrix_struct_stores_require_correct_lowering_even_unchecked ... ok
+test dx11::hal_shader::tests::primitive_index_detection_uses_only_selected_fragment_entry ... ok
+test dx11::hal_shader::tests::sample_bias_guard_uses_selected_entry_and_shader_profile ... ok
+test dx11::hal_shader::tests::static_matrix_component_stores_use_direct_hlsl_members ... ok
+test dx11::hal_shader::tests::texture_load_scan_follows_only_selected_entry_calls ... ok
+test dx11::hal_shader::tests::unused_entry_point_resource_does_not_conflict_with_layout_mapping ... ok
+test dx11::hal_shader::tests::vertex_index_detection_uses_only_selected_entry ... ok
+test dx11::hal_transfer::tests::bc1_bc2_bc3_transfer_layouts_use_padded_block_rows_and_checked_offsets ... ok
+test dx11::hal_transfer::tests::compressed_mip_tail_boxes_clip_physical_blocks_to_logical_edges ... ok
+test dx11::hal_transfer::tests::compressed_upload_boxes_require_aligned_origins_and_complete_edge_blocks ... ok
+test dx11::hal_transfer::tests::narrow_format_readback_layout_uses_the_texel_width ... ok
+test dx11::hal_transfer::tests::retained_buffer_texture_copy_preserves_padded_rows_and_bounds ... ok
+test dx11::hal_transfer::tests::retained_texture_buffer_copy_preserves_padding_and_bounds ... ok
+test dx11::hal_transfer::tests::texture_copy_compatibility_matches_rgba_and_bgra_srgb_families ... ok
+test dx11::hal_transfer::tests::transfer_layout_checks_offsets_rows_and_overflow ... ok
+test dx11::hal_transfer::tests::transfer_texture_boxes_validate_origins_independently_of_subresources ... ok
+test dx11::hal_uniform::tests::constant_buffer_lengths_round_up_without_changing_logical_size ... ok
+test dx11::hal_uniform::tests::dynamic_uniform_ranges_check_alignment_bounds_and_overflow ... ok
+test dx11::hal_uniform::tests::fl91_forked_uniform_bindings_keep_dynamic_ranges_independent ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+PASS: both GPU constant-buffer snapshots match their distinct ranges
+ok
+test dx11::hal_uniform::tests::fl91_short_uniform_dynamic_copy_and_odd_source_end ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: dynamic copy and odd source-end uniform ranges matched GPU readback
+ok
+test dx11::hal_uniform::tests::uniform_binding_materializes_partial_updates_without_partial_constant_writes ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+PASS: short uniform ranges and zero padding matched GPU readback
+ok
+test dx11::hardware_test::missing_hardware_is_only_allowed_outside_strict_mode ... ok
+test dx11::instance::tests::instance_rejects_unsupported_handles_and_projects_only_fl91_hardware ... PASS: exposed 1 physical FL9_1 adapter(s)
+ok
+native addressing adapter=AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false } driver=Some("32.0.16.2101") requested=0x9100 returned=0x9100 full_npot=Value(true)
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(1) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=0..2 v=1.25 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[178, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(1) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=0..2 v=0.75 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[178, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(1) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=0..128 v=1.25 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[178, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(1) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=-128..0 v=1.25 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[178, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(1) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=0..128 v=0.75 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[178, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(1) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=-128..0 v=0.75 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[178, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(2) V=D3D11_TEXTURE_ADDRESS_MODE(1) span=0..2 v=1.25 mismatches=0/2048 first_mismatch=None first=[19, 31, 71, 255] last=[19, 31, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(2) V=D3D11_TEXTURE_ADDRESS_MODE(1) span=0..2 v=0.75 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[19, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(2) V=D3D11_TEXTURE_ADDRESS_MODE(1) span=0..128 v=1.25 mismatches=0/2048 first_mismatch=None first=[19, 31, 71, 255] last=[19, 31, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(2) V=D3D11_TEXTURE_ADDRESS_MODE(1) span=-128..0 v=1.25 mismatches=0/2048 first_mismatch=None first=[19, 31, 71, 255] last=[19, 31, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(2) V=D3D11_TEXTURE_ADDRESS_MODE(1) span=0..128 v=0.75 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[19, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(2) V=D3D11_TEXTURE_ADDRESS_MODE(1) span=-128..0 v=0.75 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[19, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(3) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=0..2 v=1.25 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[178, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(3) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=0..2 v=0.75 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[178, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(3) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=0..128 v=1.25 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[178, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(3) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=-128..0 v=1.25 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[19, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(3) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=0..128 v=0.75 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[178, 140, 71, 255]
+native addressing width=4 U=D3D11_TEXTURE_ADDRESS_MODE(3) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=-128..0 v=0.75 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[19, 140, 71, 255]
+native addressing width=3 U=D3D11_TEXTURE_ADDRESS_MODE(3) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=0..2 v=1.25 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[125, 140, 71, 255]
+native addressing width=3 U=D3D11_TEXTURE_ADDRESS_MODE(3) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=0..2 v=0.75 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[125, 140, 71, 255]
+native addressing width=3 U=D3D11_TEXTURE_ADDRESS_MODE(3) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=0..128 v=1.25 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[125, 140, 71, 255]
+native addressing width=3 U=D3D11_TEXTURE_ADDRESS_MODE(3) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=-128..0 v=1.25 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[19, 140, 71, 255]
+native addressing width=3 U=D3D11_TEXTURE_ADDRESS_MODE(3) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=0..128 v=0.75 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[125, 140, 71, 255]
+native addressing width=3 U=D3D11_TEXTURE_ADDRESS_MODE(3) V=D3D11_TEXTURE_ADDRESS_MODE(3) span=-128..0 v=0.75 mismatches=0/2048 first_mismatch=None first=[19, 140, 71, 255] last=[19, 140, 71, 255]
+test dx11::native_address::fl91_native_128_texture_repeats_and_conditional_npot ... ok
+test dx11::native_bgrx::render_tests::fl91_bgrx_samples_opaque_2d_cube_and_volume_and_blends_native_pixels ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+Unorm D2 { width: 2, height: 2 } sample [0.25, 0.5, 0.0, 0.0] base_mip=0: BGR=[47, 208, 128], expected=[47, 208, 128]
+Unorm D2 { width: 2, height: 2 } sample [0.5, 0.5, 0.0, 0.0] base_mip=0: BGR=[62, 198, 128], expected=[62, 198, 128]
+Unorm D2 { width: 2, height: 2 } sample [0.5, 0.5, 0.0, 0.0] base_mip=1: BGR=[107, 168, 128], expected=[107, 168, 128]
+Srgb D2 { width: 2, height: 2 } sample [0.25, 0.5, 0.0, 0.0] base_mip=0: BGR=[7, 160, 55], expected=[7, 161, 55]
+Srgb D2 { width: 2, height: 2 } sample [0.5, 0.5, 0.0, 0.0] base_mip=0: BGR=[13, 144, 55], expected=[13, 145, 55]
+Srgb D2 { width: 2, height: 2 } sample [0.5, 0.5, 0.0, 0.0] base_mip=1: BGR=[38, 100, 55], expected=[37, 100, 55]
+Unorm Cube { size: 2 } sample [1.0, 0.0, 0.0, 0.0] base_mip=0: BGR=[47, 208, 128], expected=[47, 208, 128]
+Unorm Cube { size: 2 } sample [-1.0, 0.0, 0.0, 0.0] base_mip=0: BGR=[77, 188, 128], expected=[77, 188, 128]
+Unorm Cube { size: 2 } sample [0.0, 1.0, 0.0, 0.0] base_mip=0: BGR=[107, 168, 128], expected=[107, 168, 128]
+Unorm Cube { size: 2 } sample [0.0, -1.0, 0.0, 0.0] base_mip=0: BGR=[137, 148, 128], expected=[137, 148, 128]
+Unorm Cube { size: 2 } sample [0.0, 0.0, 1.0, 0.0] base_mip=0: BGR=[167, 128, 128], expected=[167, 128, 128]
+Unorm Cube { size: 2 } sample [0.0, 0.0, -1.0, 0.0] base_mip=0: BGR=[197, 108, 128], expected=[197, 108, 128]
+Srgb Cube { size: 2 } sample [1.0, 0.0, 0.0, 0.0] base_mip=0: BGR=[7, 160, 55], expected=[7, 161, 55]
+Srgb Cube { size: 2 } sample [-1.0, 0.0, 0.0, 0.0] base_mip=0: BGR=[19, 128, 55], expected=[19, 128, 55]
+Srgb Cube { size: 2 } sample [0.0, 1.0, 0.0, 0.0] base_mip=0: BGR=[38, 100, 55], expected=[37, 100, 55]
+Srgb Cube { size: 2 } sample [0.0, -1.0, 0.0, 0.0] base_mip=0: BGR=[64, 76, 55], expected=[64, 76, 55]
+Srgb Cube { size: 2 } sample [0.0, 0.0, 1.0, 0.0] base_mip=0: BGR=[99, 55, 55], expected=[99, 55, 55]
+Srgb Cube { size: 2 } sample [0.0, 0.0, -1.0, 0.0] base_mip=0: BGR=[142, 38, 55], expected=[142, 38, 55]
+Unorm D3 { width: 2, height: 2, depth: 2 } sample [0.5, 0.5, 0.25, 0.0] base_mip=0: BGR=[47, 208, 128], expected=[47, 208, 128]
+Unorm D3 { width: 2, height: 2, depth: 2 } sample [0.5, 0.5, 0.75, 0.0] base_mip=0: BGR=[77, 188, 128], expected=[77, 188, 128]
+Srgb D3 { width: 2, height: 2, depth: 2 } sample [0.5, 0.5, 0.25, 0.0] base_mip=0: BGR=[7, 160, 55], expected=[7, 161, 55]
+Srgb D3 { width: 2, height: 2, depth: 2 } sample [0.5, 0.5, 0.75, 0.0] base_mip=0: BGR=[19, 128, 55], expected=[19, 128, 55]
+Unorm native source-alpha blend alpha=0: BGR=[0, 255, 0], expected=[0, 255, 0]
+Unorm native source-alpha blend alpha=1: BGR=[0, 0, 255], expected=[0, 0, 255]
+Srgb native source-alpha blend alpha=0: BGR=[0, 255, 0], expected=[0, 255, 0]
+Srgb native source-alpha blend alpha=1: BGR=[0, 0, 255], expected=[0, 0, 255]
+Unorm fractional source-alpha blend: BGR=[63, 128, 127], expected=[64, 128, 128]
+ok
+test dx11::native_bgrx::render_tests::fl91_bgrx_srgb_blend_space_diagnostic ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+sRGB blend diagnostic: explicit IDXGIAdapter / D3D_DRIVER_TYPE_UNKNOWN; actual level=0x9100; adapter LUID=0x0000000000014a80; BGR=[137, 188, 187]; model=linear-space; encoded-space model=[94, 128, 128]; linear-space model=[137, 188, 188]
+sRGB blend diagnostic: default adapter / D3D_DRIVER_TYPE_HARDWARE; actual level=0x9100; adapter LUID=0x0000000000014a80; BGR=[137, 188, 187]; model=linear-space; encoded-space model=[94, 128, 128]; linear-space model=[137, 188, 188]
+sRGB blend diagnostic: default L9_1 and explicit L9_1 use the same adapter: true
+sRGB blend diagnostic: default adapter / D3D_DRIVER_TYPE_HARDWARE; actual level=0xa000; adapter LUID=0x0000000000014a80; BGR=[137, 188, 187]; model=linear-space; encoded-space model=[94, 128, 128]; linear-space model=[137, 188, 188]
+sRGB blend diagnostic: default L10_0 and explicit L9_1 use the same adapter: true
+ok
+test dx11::native_bgrx::tests::fl91_bgrx_views_copies_clears_and_mips_read_back_native_pixels ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+Unorm: native format support 0x3026f3e0
+Unorm/Unorm D2 { width: 2, height: 2 } face=0 mip=1 BGR=[127, 20, 255]
+Unorm/Srgb D2 { width: 2, height: 2 } face=0 mip=1 BGR=[127, 20, 255]
+Unorm/Unorm Cube { size: 2 } face=0 mip=1 BGR=[127, 20, 255]
+Unorm/Unorm Cube { size: 2 } face=1 mip=1 BGR=[127, 30, 255]
+Unorm/Unorm Cube { size: 2 } face=2 mip=1 BGR=[127, 40, 255]
+Unorm/Unorm Cube { size: 2 } face=3 mip=1 BGR=[127, 50, 255]
+Unorm/Unorm Cube { size: 2 } face=4 mip=1 BGR=[127, 60, 255]
+Unorm/Unorm Cube { size: 2 } face=5 mip=1 BGR=[127, 70, 255]
+Unorm/Srgb Cube { size: 2 } face=0 mip=1 BGR=[127, 20, 255]
+Unorm/Srgb Cube { size: 2 } face=1 mip=1 BGR=[127, 30, 255]
+Unorm/Srgb Cube { size: 2 } face=2 mip=1 BGR=[127, 40, 255]
+Unorm/Srgb Cube { size: 2 } face=3 mip=1 BGR=[127, 50, 255]
+Unorm/Srgb Cube { size: 2 } face=4 mip=1 BGR=[127, 60, 255]
+Unorm/Srgb Cube { size: 2 } face=5 mip=1 BGR=[127, 70, 255]
+Srgb: native format support 0x0026f3e0
+Srgb/Unorm D2 { width: 2, height: 2 } face=0 mip=1 BGR=[188, 20, 255]
+Srgb/Srgb D2 { width: 2, height: 2 } face=0 mip=1 BGR=[188, 20, 255]
+Srgb/Unorm Cube { size: 2 } face=0 mip=1 BGR=[188, 20, 255]
+Srgb/Unorm Cube { size: 2 } face=1 mip=1 BGR=[188, 30, 255]
+Srgb/Unorm Cube { size: 2 } face=2 mip=1 BGR=[188, 40, 255]
+Srgb/Unorm Cube { size: 2 } face=3 mip=1 BGR=[188, 50, 255]
+Srgb/Unorm Cube { size: 2 } face=4 mip=1 BGR=[188, 60, 255]
+Srgb/Unorm Cube { size: 2 } face=5 mip=1 BGR=[188, 70, 255]
+Srgb/Srgb Cube { size: 2 } face=0 mip=1 BGR=[188, 20, 255]
+Srgb/Srgb Cube { size: 2 } face=1 mip=1 BGR=[188, 30, 255]
+Srgb/Srgb Cube { size: 2 } face=2 mip=1 BGR=[188, 40, 255]
+Srgb/Srgb Cube { size: 2 } face=3 mip=1 BGR=[188, 50, 255]
+Srgb/Srgb Cube { size: 2 } face=4 mip=1 BGR=[188, 60, 255]
+Srgb/Srgb Cube { size: 2 } face=5 mip=1 BGR=[188, 70, 255]
+ok
+native clip planes adapter=AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false } driver=Some("32.0.16.2101") requested=0x9100 returned=0x9100
+native clip planes disabled: covered=256 clear=0 upper-left=[255, 0, 255, 255] upper-right=[255, 0, 255, 255] center=[255, 0, 255, 255]
+native clip planes slot 0 x sign 1: covered=128 clear=128 upper-left=[0, 0, 0, 255] upper-right=[255, 0, 255, 255] center=[255, 0, 255, 255]
+native clip planes slot 0 x sign -1: covered=128 clear=128 upper-left=[255, 0, 255, 255] upper-right=[0, 0, 0, 255] center=[0, 0, 0, 255]
+native clip planes slot 1 x sign 1: covered=128 clear=128 upper-left=[0, 0, 0, 255] upper-right=[255, 0, 255, 255] center=[255, 0, 255, 255]
+native clip planes slot 1 x sign -1: covered=128 clear=128 upper-left=[255, 0, 255, 255] upper-right=[0, 0, 0, 255] center=[0, 0, 0, 255]
+native clip planes slot 2 x sign 1: covered=128 clear=128 upper-left=[0, 0, 0, 255] upper-right=[255, 0, 255, 255] center=[255, 0, 255, 255]
+native clip planes slot 2 x sign -1: covered=128 clear=128 upper-left=[255, 0, 255, 255] upper-right=[0, 0, 0, 255] center=[0, 0, 0, 255]
+native clip planes slot 3 x sign 1: covered=128 clear=128 upper-left=[0, 0, 0, 255] upper-right=[255, 0, 255, 255] center=[255, 0, 255, 255]
+native clip planes slot 3 x sign -1: covered=128 clear=128 upper-left=[255, 0, 255, 255] upper-right=[0, 0, 0, 255] center=[0, 0, 0, 255]
+native clip planes slot 4 x sign 1: covered=128 clear=128 upper-left=[0, 0, 0, 255] upper-right=[255, 0, 255, 255] center=[255, 0, 255, 255]
+native clip planes slot 4 x sign -1: covered=128 clear=128 upper-left=[255, 0, 255, 255] upper-right=[0, 0, 0, 255] center=[0, 0, 0, 255]
+native clip planes slot 5 x sign 1: covered=128 clear=128 upper-left=[0, 0, 0, 255] upper-right=[255, 0, 255, 255] center=[255, 0, 255, 255]
+native clip planes slot 5 x sign -1: covered=128 clear=128 upper-left=[255, 0, 255, 255] upper-right=[0, 0, 0, 255] center=[0, 0, 0, 255]
+native clip planes six-plane intersection: covered=52 clear=204 upper-left=[0, 0, 0, 255] upper-right=[0, 0, 0, 255] center=[255, 0, 255, 255]
+test dx11::native_clip::fl91_native_six_user_clip_planes_readback ... ok
+native mip readback: adapter=AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false } driver=Some("32.0.16.2101") requested=0x9100 returned=0x9100
+native mip pixels format=Rgba8Unorm cube=false face=0 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8Unorm cube=false face=0 mip=1 count=16 first=[48, 90, 192, 200]
+native mip pixels format=Rgba8Unorm cube=false face=0 mip=2 count=4 first=[48, 90, 192, 200]
+native mip pixels format=Rgba8Unorm cube=false face=0 mip=3 count=1 first=[48, 90, 192, 200]
+native mip pixels format=Rgba8Unorm cube=true face=0 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8Unorm cube=true face=0 mip=1 count=16 first=[48, 90, 192, 200]
+native mip pixels format=Rgba8Unorm cube=true face=0 mip=2 count=4 first=[48, 90, 192, 200]
+native mip pixels format=Rgba8Unorm cube=true face=0 mip=3 count=1 first=[48, 90, 192, 200]
+native mip pixels format=Rgba8Unorm cube=true face=1 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8Unorm cube=true face=1 mip=1 count=16 first=[72, 106, 176, 184]
+native mip pixels format=Rgba8Unorm cube=true face=1 mip=2 count=4 first=[72, 106, 176, 184]
+native mip pixels format=Rgba8Unorm cube=true face=1 mip=3 count=1 first=[72, 106, 176, 184]
+native mip pixels format=Rgba8Unorm cube=true face=2 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8Unorm cube=true face=2 mip=1 count=16 first=[96, 122, 160, 168]
+native mip pixels format=Rgba8Unorm cube=true face=2 mip=2 count=4 first=[96, 122, 160, 168]
+native mip pixels format=Rgba8Unorm cube=true face=2 mip=3 count=1 first=[96, 122, 160, 168]
+native mip pixels format=Rgba8Unorm cube=true face=3 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8Unorm cube=true face=3 mip=1 count=16 first=[120, 138, 144, 152]
+native mip pixels format=Rgba8Unorm cube=true face=3 mip=2 count=4 first=[120, 138, 144, 152]
+native mip pixels format=Rgba8Unorm cube=true face=3 mip=3 count=1 first=[120, 138, 144, 152]
+native mip pixels format=Rgba8Unorm cube=true face=4 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8Unorm cube=true face=4 mip=1 count=16 first=[144, 154, 128, 136]
+native mip pixels format=Rgba8Unorm cube=true face=4 mip=2 count=4 first=[144, 154, 128, 136]
+native mip pixels format=Rgba8Unorm cube=true face=4 mip=3 count=1 first=[144, 154, 128, 136]
+native mip pixels format=Rgba8Unorm cube=true face=5 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8Unorm cube=true face=5 mip=1 count=16 first=[168, 170, 112, 120]
+native mip pixels format=Rgba8Unorm cube=true face=5 mip=2 count=4 first=[168, 170, 112, 120]
+native mip pixels format=Rgba8Unorm cube=true face=5 mip=3 count=1 first=[168, 170, 112, 120]
+native mip pixels format=Rgba8UnormSrgb cube=false face=0 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8UnormSrgb cube=false face=0 mip=1 count=16 first=[48, 90, 192, 200]
+native mip pixels format=Rgba8UnormSrgb cube=false face=0 mip=2 count=4 first=[48, 90, 192, 200]
+native mip pixels format=Rgba8UnormSrgb cube=false face=0 mip=3 count=1 first=[48, 90, 192, 200]
+native mip pixels format=Rgba8UnormSrgb cube=true face=0 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8UnormSrgb cube=true face=0 mip=1 count=16 first=[48, 90, 192, 200]
+native mip pixels format=Rgba8UnormSrgb cube=true face=0 mip=2 count=4 first=[48, 90, 192, 200]
+native mip pixels format=Rgba8UnormSrgb cube=true face=0 mip=3 count=1 first=[48, 90, 192, 200]
+native mip pixels format=Rgba8UnormSrgb cube=true face=1 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8UnormSrgb cube=true face=1 mip=1 count=16 first=[72, 106, 176, 184]
+native mip pixels format=Rgba8UnormSrgb cube=true face=1 mip=2 count=4 first=[72, 106, 176, 184]
+native mip pixels format=Rgba8UnormSrgb cube=true face=1 mip=3 count=1 first=[72, 106, 176, 184]
+native mip pixels format=Rgba8UnormSrgb cube=true face=2 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8UnormSrgb cube=true face=2 mip=1 count=16 first=[96, 122, 160, 168]
+native mip pixels format=Rgba8UnormSrgb cube=true face=2 mip=2 count=4 first=[96, 122, 160, 168]
+native mip pixels format=Rgba8UnormSrgb cube=true face=2 mip=3 count=1 first=[96, 122, 160, 168]
+native mip pixels format=Rgba8UnormSrgb cube=true face=3 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8UnormSrgb cube=true face=3 mip=1 count=16 first=[120, 138, 144, 152]
+native mip pixels format=Rgba8UnormSrgb cube=true face=3 mip=2 count=4 first=[120, 138, 144, 152]
+native mip pixels format=Rgba8UnormSrgb cube=true face=3 mip=3 count=1 first=[120, 138, 144, 152]
+native mip pixels format=Rgba8UnormSrgb cube=true face=4 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8UnormSrgb cube=true face=4 mip=1 count=16 first=[144, 154, 128, 136]
+native mip pixels format=Rgba8UnormSrgb cube=true face=4 mip=2 count=4 first=[144, 154, 128, 136]
+native mip pixels format=Rgba8UnormSrgb cube=true face=4 mip=3 count=1 first=[144, 154, 128, 136]
+native mip pixels format=Rgba8UnormSrgb cube=true face=5 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Rgba8UnormSrgb cube=true face=5 mip=1 count=16 first=[168, 170, 112, 120]
+native mip pixels format=Rgba8UnormSrgb cube=true face=5 mip=2 count=4 first=[168, 170, 112, 120]
+native mip pixels format=Rgba8UnormSrgb cube=true face=5 mip=3 count=1 first=[168, 170, 112, 120]
+native mip pixels format=Bgra8Unorm cube=false face=0 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8Unorm cube=false face=0 mip=1 count=16 first=[48, 90, 192, 200]
+native mip pixels format=Bgra8Unorm cube=false face=0 mip=2 count=4 first=[48, 90, 192, 200]
+native mip pixels format=Bgra8Unorm cube=false face=0 mip=3 count=1 first=[48, 90, 192, 200]
+native mip pixels format=Bgra8Unorm cube=true face=0 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8Unorm cube=true face=0 mip=1 count=16 first=[48, 90, 192, 200]
+native mip pixels format=Bgra8Unorm cube=true face=0 mip=2 count=4 first=[48, 90, 192, 200]
+native mip pixels format=Bgra8Unorm cube=true face=0 mip=3 count=1 first=[48, 90, 192, 200]
+native mip pixels format=Bgra8Unorm cube=true face=1 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8Unorm cube=true face=1 mip=1 count=16 first=[72, 106, 176, 184]
+native mip pixels format=Bgra8Unorm cube=true face=1 mip=2 count=4 first=[72, 106, 176, 184]
+native mip pixels format=Bgra8Unorm cube=true face=1 mip=3 count=1 first=[72, 106, 176, 184]
+native mip pixels format=Bgra8Unorm cube=true face=2 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8Unorm cube=true face=2 mip=1 count=16 first=[96, 122, 160, 168]
+native mip pixels format=Bgra8Unorm cube=true face=2 mip=2 count=4 first=[96, 122, 160, 168]
+native mip pixels format=Bgra8Unorm cube=true face=2 mip=3 count=1 first=[96, 122, 160, 168]
+native mip pixels format=Bgra8Unorm cube=true face=3 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8Unorm cube=true face=3 mip=1 count=16 first=[120, 138, 144, 152]
+native mip pixels format=Bgra8Unorm cube=true face=3 mip=2 count=4 first=[120, 138, 144, 152]
+native mip pixels format=Bgra8Unorm cube=true face=3 mip=3 count=1 first=[120, 138, 144, 152]
+native mip pixels format=Bgra8Unorm cube=true face=4 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8Unorm cube=true face=4 mip=1 count=16 first=[144, 154, 128, 136]
+native mip pixels format=Bgra8Unorm cube=true face=4 mip=2 count=4 first=[144, 154, 128, 136]
+native mip pixels format=Bgra8Unorm cube=true face=4 mip=3 count=1 first=[144, 154, 128, 136]
+native mip pixels format=Bgra8Unorm cube=true face=5 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8Unorm cube=true face=5 mip=1 count=16 first=[168, 170, 112, 120]
+native mip pixels format=Bgra8Unorm cube=true face=5 mip=2 count=4 first=[168, 170, 112, 120]
+native mip pixels format=Bgra8Unorm cube=true face=5 mip=3 count=1 first=[168, 170, 112, 120]
+native mip pixels format=Bgra8UnormSrgb cube=false face=0 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8UnormSrgb cube=false face=0 mip=1 count=16 first=[48, 90, 192, 200]
+native mip pixels format=Bgra8UnormSrgb cube=false face=0 mip=2 count=4 first=[48, 90, 192, 200]
+native mip pixels format=Bgra8UnormSrgb cube=false face=0 mip=3 count=1 first=[48, 90, 192, 200]
+native mip pixels format=Bgra8UnormSrgb cube=true face=0 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8UnormSrgb cube=true face=0 mip=1 count=16 first=[48, 90, 192, 200]
+native mip pixels format=Bgra8UnormSrgb cube=true face=0 mip=2 count=4 first=[48, 90, 192, 200]
+native mip pixels format=Bgra8UnormSrgb cube=true face=0 mip=3 count=1 first=[48, 90, 192, 200]
+native mip pixels format=Bgra8UnormSrgb cube=true face=1 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8UnormSrgb cube=true face=1 mip=1 count=16 first=[72, 106, 176, 184]
+native mip pixels format=Bgra8UnormSrgb cube=true face=1 mip=2 count=4 first=[72, 106, 176, 184]
+native mip pixels format=Bgra8UnormSrgb cube=true face=1 mip=3 count=1 first=[72, 106, 176, 184]
+native mip pixels format=Bgra8UnormSrgb cube=true face=2 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8UnormSrgb cube=true face=2 mip=1 count=16 first=[96, 122, 160, 168]
+native mip pixels format=Bgra8UnormSrgb cube=true face=2 mip=2 count=4 first=[96, 122, 160, 168]
+native mip pixels format=Bgra8UnormSrgb cube=true face=2 mip=3 count=1 first=[96, 122, 160, 168]
+native mip pixels format=Bgra8UnormSrgb cube=true face=3 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8UnormSrgb cube=true face=3 mip=1 count=16 first=[120, 138, 144, 152]
+native mip pixels format=Bgra8UnormSrgb cube=true face=3 mip=2 count=4 first=[120, 138, 144, 152]
+native mip pixels format=Bgra8UnormSrgb cube=true face=3 mip=3 count=1 first=[120, 138, 144, 152]
+native mip pixels format=Bgra8UnormSrgb cube=true face=4 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8UnormSrgb cube=true face=4 mip=1 count=16 first=[144, 154, 128, 136]
+native mip pixels format=Bgra8UnormSrgb cube=true face=4 mip=2 count=4 first=[144, 154, 128, 136]
+native mip pixels format=Bgra8UnormSrgb cube=true face=4 mip=3 count=1 first=[144, 154, 128, 136]
+native mip pixels format=Bgra8UnormSrgb cube=true face=5 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgra8UnormSrgb cube=true face=5 mip=1 count=16 first=[168, 170, 112, 120]
+native mip pixels format=Bgra8UnormSrgb cube=true face=5 mip=2 count=4 first=[168, 170, 112, 120]
+native mip pixels format=Bgra8UnormSrgb cube=true face=5 mip=3 count=1 first=[168, 170, 112, 120]
+native mip pixels format=Bgrx8Unorm cube=false face=0 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8Unorm cube=false face=0 mip=1 count=16 first=[48, 90, 192, 200]
+native mip pixels format=Bgrx8Unorm cube=false face=0 mip=2 count=4 first=[48, 90, 192, 0]
+native mip pixels format=Bgrx8Unorm cube=false face=0 mip=3 count=1 first=[48, 90, 192, 0]
+native mip pixels format=Bgrx8Unorm cube=true face=0 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8Unorm cube=true face=0 mip=1 count=16 first=[48, 90, 192, 200]
+native mip pixels format=Bgrx8Unorm cube=true face=0 mip=2 count=4 first=[48, 90, 192, 0]
+native mip pixels format=Bgrx8Unorm cube=true face=0 mip=3 count=1 first=[48, 90, 192, 0]
+native mip pixels format=Bgrx8Unorm cube=true face=1 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8Unorm cube=true face=1 mip=1 count=16 first=[72, 106, 176, 184]
+native mip pixels format=Bgrx8Unorm cube=true face=1 mip=2 count=4 first=[72, 106, 176, 0]
+native mip pixels format=Bgrx8Unorm cube=true face=1 mip=3 count=1 first=[72, 106, 176, 0]
+native mip pixels format=Bgrx8Unorm cube=true face=2 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8Unorm cube=true face=2 mip=1 count=16 first=[96, 122, 160, 168]
+native mip pixels format=Bgrx8Unorm cube=true face=2 mip=2 count=4 first=[96, 122, 160, 0]
+native mip pixels format=Bgrx8Unorm cube=true face=2 mip=3 count=1 first=[96, 122, 160, 0]
+native mip pixels format=Bgrx8Unorm cube=true face=3 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8Unorm cube=true face=3 mip=1 count=16 first=[120, 138, 144, 152]
+native mip pixels format=Bgrx8Unorm cube=true face=3 mip=2 count=4 first=[120, 138, 144, 0]
+native mip pixels format=Bgrx8Unorm cube=true face=3 mip=3 count=1 first=[120, 138, 144, 0]
+native mip pixels format=Bgrx8Unorm cube=true face=4 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8Unorm cube=true face=4 mip=1 count=16 first=[144, 154, 128, 136]
+native mip pixels format=Bgrx8Unorm cube=true face=4 mip=2 count=4 first=[144, 154, 128, 0]
+native mip pixels format=Bgrx8Unorm cube=true face=4 mip=3 count=1 first=[144, 154, 128, 0]
+native mip pixels format=Bgrx8Unorm cube=true face=5 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8Unorm cube=true face=5 mip=1 count=16 first=[168, 170, 112, 120]
+native mip pixels format=Bgrx8Unorm cube=true face=5 mip=2 count=4 first=[168, 170, 112, 0]
+native mip pixels format=Bgrx8Unorm cube=true face=5 mip=3 count=1 first=[168, 170, 112, 0]
+native mip pixels format=Bgrx8UnormSrgb cube=false face=0 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8UnormSrgb cube=false face=0 mip=1 count=16 first=[48, 90, 192, 200]
+native mip pixels format=Bgrx8UnormSrgb cube=false face=0 mip=2 count=4 first=[48, 90, 192, 200]
+native mip pixels format=Bgrx8UnormSrgb cube=false face=0 mip=3 count=1 first=[48, 90, 192, 200]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=0 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=0 mip=1 count=16 first=[48, 90, 192, 200]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=0 mip=2 count=4 first=[48, 90, 192, 200]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=0 mip=3 count=1 first=[48, 90, 192, 200]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=1 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=1 mip=1 count=16 first=[72, 106, 176, 184]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=1 mip=2 count=4 first=[72, 106, 176, 184]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=1 mip=3 count=1 first=[72, 106, 176, 184]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=2 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=2 mip=1 count=16 first=[96, 122, 160, 168]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=2 mip=2 count=4 first=[96, 122, 160, 168]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=2 mip=3 count=1 first=[96, 122, 160, 168]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=3 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=3 mip=1 count=16 first=[120, 138, 144, 152]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=3 mip=2 count=4 first=[120, 138, 144, 152]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=3 mip=3 count=1 first=[120, 138, 144, 152]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=4 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=4 mip=1 count=16 first=[144, 154, 128, 136]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=4 mip=2 count=4 first=[144, 154, 128, 136]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=4 mip=3 count=1 first=[144, 154, 128, 136]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=5 mip=0 count=64 first=[11, 22, 33, 44]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=5 mip=1 count=16 first=[168, 170, 112, 120]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=5 mip=2 count=4 first=[168, 170, 112, 120]
+native mip pixels format=Bgrx8UnormSrgb cube=true face=5 mip=3 count=1 first=[168, 170, 112, 120]
+native mip pixels format=Bgr565Unorm cube=false face=0 mip=0 count=64 first=[164, 8]
+native mip pixels format=Bgr565Unorm cube=false face=0 mip=1 count=16 first=[216, 50]
+native mip pixels format=Bgr565Unorm cube=false face=0 mip=2 count=4 first=[216, 50]
+native mip pixels format=Bgr565Unorm cube=false face=0 mip=3 count=1 first=[216, 50]
+native mip pixels format=Bgr565Unorm cube=true face=0 mip=0 count=64 first=[164, 8]
+native mip pixels format=Bgr565Unorm cube=true face=0 mip=1 count=16 first=[216, 50]
+native mip pixels format=Bgr565Unorm cube=true face=0 mip=2 count=4 first=[216, 50]
+native mip pixels format=Bgr565Unorm cube=true face=0 mip=3 count=1 first=[216, 50]
+native mip pixels format=Bgr565Unorm cube=true face=1 mip=0 count=64 first=[164, 8]
+native mip pixels format=Bgr565Unorm cube=true face=1 mip=1 count=16 first=[86, 75]
+native mip pixels format=Bgr565Unorm cube=true face=1 mip=2 count=4 first=[86, 75]
+native mip pixels format=Bgr565Unorm cube=true face=1 mip=3 count=1 first=[86, 75]
+native mip pixels format=Bgr565Unorm cube=true face=2 mip=0 count=64 first=[164, 8]
+native mip pixels format=Bgr565Unorm cube=true face=2 mip=1 count=16 first=[212, 99]
+native mip pixels format=Bgr565Unorm cube=true face=2 mip=2 count=4 first=[212, 99]
+native mip pixels format=Bgr565Unorm cube=true face=2 mip=3 count=1 first=[212, 99]
+native mip pixels format=Bgr565Unorm cube=true face=3 mip=0 count=64 first=[164, 8]
+native mip pixels format=Bgr565Unorm cube=true face=3 mip=1 count=16 first=[82, 124]
+native mip pixels format=Bgr565Unorm cube=true face=3 mip=2 count=4 first=[82, 124]
+native mip pixels format=Bgr565Unorm cube=true face=3 mip=3 count=1 first=[82, 124]
+native mip pixels format=Bgr565Unorm cube=true face=4 mip=0 count=64 first=[164, 8]
+native mip pixels format=Bgr565Unorm cube=true face=4 mip=1 count=16 first=[208, 148]
+native mip pixels format=Bgr565Unorm cube=true face=4 mip=2 count=4 first=[208, 148]
+native mip pixels format=Bgr565Unorm cube=true face=4 mip=3 count=1 first=[208, 148]
+native mip pixels format=Bgr565Unorm cube=true face=5 mip=0 count=64 first=[164, 8]
+native mip pixels format=Bgr565Unorm cube=true face=5 mip=1 count=16 first=[78, 173]
+native mip pixels format=Bgr565Unorm cube=true face=5 mip=2 count=4 first=[78, 173]
+native mip pixels format=Bgr565Unorm cube=true face=5 mip=3 count=1 first=[78, 173]
+test dx11::native_mips::tests::fl91_native_mip_texture_generation_readback ... ok
+test dx11::native_mips::tests::validates_fl91_mip_texture_descriptors_and_ranges ... ok
+test dx11::sampling::tests::biased_pairs_check_current_sampler_and_ignore_unused_samplers ... ok
+test dx11::sampling::tests::cross_group_relationships_use_global_slots_and_actual_pairs ... ok
+test dx11::sampling::tests::entry_point_sampling_set_recognizes_comparison_texture_pairs ... ok
+test dx11::sampling::tests::explicit_lod_zero_pair_requires_one_mip_and_compatible_filtering ... ok
+test dx11::sampling::tests::explicit_lod_zero_requires_a_base_mip_view_and_zero_minimum_lod ... ok
+test dx11::sampling::tests::fixed_integer_lod_requires_a_live_compatible_mip_view ... ok
+test dx11::sampling::tests::mip_lod_validation_uses_only_selected_sampling_pairs ... ok
+test dx11::sampling::tests::sampling_relationships_fail_closed_on_missing_or_invalid_bindings ... ok
+test dx11::sampling::tests::sampling_relationships_follow_helpers_and_selected_entry_point ... ok
+test dx11::sampling::tests::selected_cross_group_pairs_enforce_declared_filterability ... ok
+test dx11::sampling::tests::three_dimensional_texture_relationship_keeps_all_axes_in_compatibility_check ... ok
+test dx11::shader::tests::compiles_level_9_1_and_shader_model_5_dxbc ... ok
+test dx11::shader::tests::compiles_resource_free_naga_hlsl_for_level_9_1_and_5_0 ... ok
+test dx11::shader::tests::creates_level_9_1_shader_objects ... ok
+test dx11::shader::tests::draws_compiled_shaders_on_level_9_1_device ... ok
+test dx11::shader::tests::fl91_3d_texel_load_compiles_with_the_level_9_1_profile ... ok
+test dx11::shader::tests::fl91_3d_texel_load_helpers_compile_with_the_level_9_1_profile ... ok
+test dx11::shader::tests::fl91_3d_texture_dimensions_and_implicit_sample_compile ... ok
+test dx11::shader::tests::fl91_base_clamp_through_straight_line_helper_compiles ... ok
+test dx11::shader::tests::fl91_cube_texture_dimensions_and_implicit_sample_compile ... ok
+test dx11::shader::tests::fl91_custom_unsigned_vertex_input_semantic_compiles ... ok
+test dx11::shader::tests::fl91_fragment_front_facing_is_rejected_by_fxc ... ok
+test dx11::shader::tests::fl91_fragment_mat4_inverse_exceeds_pixel_profile_instruction_budget ... FL9_1 fragment mat4 inverse FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3AF70A1D0(28,13): error X5608: Compiled shader code uses too many arithmetic instruction slots (108). Max. allowed by the target (ps_2_0) is 64. Consider increasing optimization level to reduce instruction count.
+(1,1): error X5609: Compiled shader code uses too many instruction slots (108). Max. allowed by the target (ps_2_0) is 96.
+
+ok
+test dx11::shader::tests::fl91_fragment_output_wrapper_preserves_texture_dimensions_emulation ... ok
+test dx11::shader::tests::fl91_fragment_position_is_rejected_by_fxc ... ok
+test dx11::shader::tests::fl91_fragment_primitive_index_fxc_diagnostic ... FL9_1 primitive_index FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ADCD29E0(5,32-49): error X4583: semantic 'SV_PrimitiveID' unsupported on ps_4_0_level_9_1
+C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ADCD29E0(5,32-49): error X4568: integer inputs unsupported on ps_4_0_level_9_1
+
+ok
+test dx11::shader::tests::fl91_fragment_uniform_array_signed_clamp_fxc_probe ... Generated FL9_1 fragment HLSL for array length 2:
+struct Uniforms {
+    uint index;
+    int _pad1_0;
+    int _pad1_1;
+    int _pad1_2;
+    float4 values[2];
+};
+
+cbuffer uniforms : register(b0) { Uniforms uniforms; }
+
+float4 main() : SV_Target0
+{
+    uint _e4 = uniforms.index;
+    float4 _e6 = uniforms.values[min(max(int(_e4), 0), 1)];
+    return _e6;
+}
+
+FXC FL9_1 disassembly for array length 2:
+//
+// Generated by Microsoft (R) HLSL Shader Compiler 10.1
+//
+//
+// Buffer Definitions:
+//
+// cbuffer uniforms
+// {
+//
+//   struct
+//   {
+//
+//       uint index;                    // Offset:    0
+//       int _pad1_0;                   // Offset:    4
+//       int _pad1_1;                   // Offset:    8
+//       int _pad1_2;                   // Offset:   12
+//       float4 values[2];              // Offset:   16
+//
+//   } uniforms;                        // Offset:    0 Size:    48
+//
+// }
+//
+//
+// Resource Bindings:
+//
+// Name                                 Type  Format         Dim      HLSL Bind  Count
+// ------------------------------ ---------- ------- ----------- -------------- ------
+// uniforms                          cbuffer      NA          NA            cb0      1
+//
+//
+//
+// Input signature:
+//
+// Name                 Index   Mask Register SysValue  Format   Used
+// -------------------- ----- ------ -------- -------- ------- ------
+// no Input
+//
+// Output signature:
+//
+// Name                 Index   Mask Register SysValue  Format   Used
+// -------------------- ----- ------ -------- -------- ------- ------
+// SV_Target                0   xyzw        0   TARGET   float   xyzw
+//
+//
+// Constant buffer to DX9 shader constant mappings:
+//
+// Target Reg Buffer  Start Reg # of Regs        Data Conversion
+// ---------- ------- --------- --------- ----------------------
+// c0         cb0             0         1  (UINT, INT, INT, INT)
+// c1         cb0             1         2  ( FLT, FLT, FLT, FLT)
+//
+//
+// Level9 shader bytecode:
+//
+    ps_2_0
+    mov_sat r0.w, c0.x
+    mov r1, c1
+    cmp r0, -r0.w, r1, c2
+    mov oC0, r0
+
+// approximately 4 instruction slots used
+ps_4_0
+dcl_constantbuffer CB0[3], dynamicIndexed
+dcl_output o0.xyzw
+dcl_temps 1
+imax r0.x, l(0), cb0[0].x
+imin r0.x, r0.x, l(1)
+mov o0.xyzw, cb0[r0.x + 1].xyzw
+ret
+// Approximately 4 instruction slots used
+ 
+Generated FL9_1 fragment HLSL for array length 24:
+struct Uniforms {
+    uint index;
+    int _pad1_0;
+    int _pad1_1;
+    int _pad1_2;
+    float4 values[24];
+};
+
+cbuffer uniforms : register(b0) { Uniforms uniforms; }
+
+float4 main() : SV_Target0
+{
+    uint _e4 = uniforms.index;
+    float4 _e6 = uniforms.values[min(max(int(_e4), 0), 23)];
+    return _e6;
+}
+
+FXC FL9_1 disassembly for array length 24:
+//
+// Generated by Microsoft (R) HLSL Shader Compiler 10.1
+//
+//
+// Buffer Definitions:
+//
+// cbuffer uniforms
+// {
+//
+//   struct
+//   {
+//
+//       uint index;                    // Offset:    0
+//       int _pad1_0;                   // Offset:    4
+//       int _pad1_1;                   // Offset:    8
+//       int _pad1_2;                   // Offset:   12
+//       float4 values[24];             // Offset:   16
+//
+//   } uniforms;                        // Offset:    0 Size:   400
+//
+// }
+//
+//
+// Resource Bindings:
+//
+// Name                                 Type  Format         Dim      HLSL Bind  Count
+// ------------------------------ ---------- ------- ----------- -------------- ------
+// uniforms                          cbuffer      NA          NA            cb0      1
+//
+//
+//
+// Input signature:
+//
+// Name                 Index   Mask Register SysValue  Format   Used
+// -------------------- ----- ------ -------- -------- ------- ------
+// no Input
+//
+// Output signature:
+//
+// Name                 Index   Mask Register SysValue  Format   Used
+// -------------------- ----- ------ -------- -------- ------- ------
+// SV_Target                0   xyzw        0   TARGET   float   xyzw
+//
+//
+// Constant buffer to DX9 shader constant mappings:
+//
+// Target Reg Buffer  Start Reg # of Regs        Data Conversion
+// ---------- ------- --------- --------- ----------------------
+// c0         cb0             0         1  (UINT, INT, INT, INT)
+// c1         cb0             1        24  ( FLT, FLT, FLT, FLT)
+//
+//
+// Level9 shader bytecode:
+//
+    ps_2_0
+    def c25, 23, 22, 21, 20
+    def c26, -0, -1, -2, -3
+    def c27, -4, -5, -6, -7
+    def c28, -8, -9, -10, -11
+    def c29, -12, -13, -14, -15
+    def c30, -16, -17, -18, -19
+    mov r0.w, c25.x
+    min r1.w, c0.x, r0.w
+    add r0, r1.w, c26
+    mul r0, r0, r0
+    mov r1.x, c26.x
+    cmp r2, -r0.x, c1, -r1.x
+    cmp r2, -r0.y, c2, r2
+    cmp r2, -r0.z, c3, r2
+    cmp r0, -r0.w, c4, r2
+    add r2, r1.w, c27
+    mul r2, r2, r2
+    cmp r0, -r2.x, c5, r0
+    cmp r0, -r2.y, c6, r0
+    cmp r0, -r2.z, c7, r0
+    cmp r0, -r2.w, c8, r0
+    add r2, r1.w, c28
+    mul r2, r2, r2
+    cmp r0, -r2.x, c9, r0
+    cmp r0, -r2.y, c10, r0
+    cmp r0, -r2.z, c11, r0
+    cmp r0, -r2.w, c12, r0
+    add r2, r1.w, c29
+    mul r2, r2, r2
+    cmp r0, -r2.x, c13, r0
+    cmp r0, -r2.y, c14, r0
+    cmp r0, -r2.z, c15, r0
+    cmp r0, -r2.w, c16, r0
+    add r2, r1.w, c30
+    add r1, r1.w, -c25.wzyx
+    mul r1, r1, r1
+    mul r2, r2, r2
+    cmp r0, -r2.x, c17, r0
+    cmp r0, -r2.y, c18, r0
+    cmp r0, -r2.z, c19, r0
+    cmp r0, -r2.w, c20, r0
+    cmp r0, -r1.x, c21, r0
+    cmp r0, -r1.y, c22, r0
+    cmp r0, -r1.z, c23, r0
+    cmp r0, -r1.w, c24, r0
+    mov oC0, r0
+
+// approximately 40 instruction slots used
+ps_4_0
+dcl_constantbuffer CB0[25], dynamicIndexed
+dcl_output o0.xyzw
+dcl_temps 1
+imax r0.x, l(0), cb0[0].x
+imin r0.x, r0.x, l(23)
+mov o0.xyzw, cb0[r0.x + 1].xyzw
+ret
+// Approximately 4 instruction slots used
+ 
+Generated FL9_1 fragment HLSL for array length 25:
+struct Uniforms {
+    uint index;
+    int _pad1_0;
+    int _pad1_1;
+    int _pad1_2;
+    float4 values[25];
+};
+
+cbuffer uniforms : register(b0) { Uniforms uniforms; }
+
+float4 main() : SV_Target0
+{
+    uint _e4 = uniforms.index;
+    float4 _e6 = uniforms.values[min(max(int(_e4), 0), 24)];
+    return _e6;
+}
+
+FXC rejected fragment uniform array length 25: ShaderCompileError { code: -2147467259, message: "C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\Shader@0x000001A3ABBEA330(14,34): error X5589: Invalid const register num: 32. Max allowed is 31.\n" }
+ok
+test dx11::shader::tests::fl91_frexp_fraction_only_compiles_with_fxc ... ok
+test dx11::shader::tests::fl91_instance_index_entry_inputs_are_rejected_by_fxc ... direct_used: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3AE50B2B0(10,28-42): error X4016: SV_InstanceID semantic cannot be used with 10Level9 targets
+
+direct_unused: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3AE50B090(5,32-46): error X4016: SV_InstanceID semantic cannot be used with 10Level9 targets
+
+struct_used: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3AE50B2B0(2,13-27): error X4016: SV_InstanceID semantic cannot be used with 10Level9 targets
+
+struct_unused: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3AE50B2B0(2,13-27): error X4016: SV_InstanceID semantic cannot be used with 10Level9 targets
+
+ok
+test dx11::shader::tests::fl91_local_two_row_matrix_struct_assignment_fxc_probe ... Generated HLSL for local matrix-struct probe:
+struct State {
+    float2 transform_0; float2 transform_1; float2 transform_2;
+    float gain;
+    int _end_pad_0;
+};
+
+float3x2 GetMattransformOnState(State obj) {
+    return float3x2(obj.transform_0, obj.transform_1, obj.transform_2);
+}
+
+void SetMattransformOnState(inout State obj, float3x2 mat) {
+    obj.transform_0 = mat[0];
+    obj.transform_1 = mat[1];
+    obj.transform_2 = mat[2];
+}
+
+void SetMatVectransformOnState(inout State obj, float2 vec, int mat_idx) {
+    if (mat_idx == 0) { obj.transform_0 = vec; }
+    else if (mat_idx == 1) { obj.transform_1 = vec; }
+    else if (mat_idx == 2) { obj.transform_2 = vec; }
+}
+
+void SetMatScalartransformOnState(inout State obj, float scalar, int mat_idx, int vec_idx) {
+    if (mat_idx == 0) { obj.transform_0[vec_idx] = scalar; }
+    else if (mat_idx == 1) { obj.transform_1[vec_idx] = scalar; }
+    else if (mat_idx == 2) { obj.transform_2[vec_idx] = scalar; }
+}
+
+float4 main(float3 position : LOC0) : SV_Position
+{
+    State state = (State)0;
+
+    SetMattransformOnState(state, float3x2(float2(0.5, 0.0), float2(0.0, 0.5), float2(0.125, -0.125)));
+    state.gain = 2.0;
+    float3x2 _e16 = GetMattransformOnState(state);
+    float2 transformed = mul(position, _e16);
+    float _e19 = state.gain;
+    return float4((transformed * _e19), 0.0, 1.0);
+}
+
+ok
+test dx11::shader::tests::fl91_naga_instance_index_compare_select_fxc_probe ... Generated HLSL for vs_4_0_level_9_1 probe:
+cbuffer naga_fl9_instance_constants : register(b13) { float4 naga_fl9_instance_padding; uint naga_fl9_instance_index; };
+float4 main() : SV_Position
+{
+    uint id = naga_fl9_instance_index;
+    bool matches = (naga_fl9_instance_index == 3u);
+    float x = (matches ? 0.5 : -0.5);
+    return float4(x, 0.0, 0.5, 1.0);
+}
+
+FXC accepted vs_4_0_level_9_1 probe; DXBC size=908 bytes. This is compiler evidence only, not enabled backend support.
+ok
+test dx11::shader::tests::fl91_naga_instance_index_constant_lowering_compiles_with_fxc ... ok
+test dx11::shader::tests::fl91_naga_vertex_index_compare_select_fxc_probe ... Generated HLSL for vs_4_0_level_9_1 probe:
+struct VertexInput_main {
+    float id_1 : NAGA_VERTEX_INDEX;
+};
+
+float4 main(VertexInput_main vertexinput_main) : SV_Position
+{
+    float id = vertexinput_main.id_1;
+    float2 a = float2(1.0, 2.0);
+    float3 x = float3(-1.0, 3.0, -1.0);
+    float3 y = float3(-3.0, 1.0, 1.0);
+    float4 z = float4(4.0, 5.0, 6.0, 7.0);
+    return float4((((float(id) == 1.0) ? x.y : ((float(id) == 0.0) ? x.x : x.z)) + ((float(id) == 0.0) ? a.x : a.y)), ((float(id) == 1.0) ? y.y : ((float(id) == 0.0) ? y.x : y.z)), ((float(id) == 2.0) ? z.z : ((float(id) == 1.0) ? z.y : ((float(id) == 0.0) ? z.x : z.w))), 1.0);
+}
+
+FXC accepted the proven static-swizzle lowering at vs_4_0_level_9_1; DXBC size=1076 bytes.
+ok
+test dx11::shader::tests::fl91_naga_vertex_index_float_input_compiles_with_fxc ... ok
+test dx11::shader::tests::fl91_naga_viewport_transform_preserves_base_shader_budget ... Naga 254 constants: base=Ok(()), remapped=Err(Compilation(ShaderCompileError { code: -2147467259, message: "C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\Shader@0x000001A3ADC513C0(5,11): error X5615: Compiled shader code uses too many instruction slots (258). Max. allowed by the target (vs_2_0) is 256.\n" }))
+ok
+test dx11::shader::tests::fl91_outputless_discard_fragment_compiles_with_fxc ... FL9_1 outputless fragment FXC diagnostic: error X4530: pixel shader must minimally write all four components of SV_Target0
+
+ok
+test dx11::shader::tests::fl91_pixel_profile_accepts_sampled_texture3d ... ok
+test dx11::shader::tests::fl91_pixel_profile_rejects_bitwise_single_sample_mask_emulation ... ok
+test dx11::shader::tests::fl91_sample_compare_offset_split_group_sampler_compiles_with_fxc ... ok
+test dx11::shader::tests::fl91_static_loops_compile_and_dynamic_loops_are_rejected_by_fxc ... ok
+test dx11::shader::tests::fl91_texel_load_capacity_compiles_at_eight_images ... ok
+test dx11::shader::tests::fl91_texel_load_coexists_with_a_uniform_buffer ... ok
+test dx11::shader::tests::fl91_texel_load_uses_the_reserved_shader_registers ... ok
+test dx11::shader::tests::fl91_texture_dimensions_helper_with_implicit_sample_compiles_with_fxc ... ok
+test dx11::shader::tests::fl91_texture_dimensions_rejects_runtime_mip_levels ... ok
+test dx11::shader::tests::fl91_texture_dimensions_through_selected_helper_compiles_with_fxc ... ok
+test dx11::shader::tests::fl91_texture_dimensions_uses_constant_mip_level ... ok
+test dx11::shader::tests::fl91_texture_dimensions_uses_host_supplied_size ... ok
+test dx11::shader::tests::fl91_texture_load_and_dimensions_compile_with_the_level_9_1_profile ... ok
+test dx11::shader::tests::fl91_texture_num_levels_and_implicit_sample_compile ... ok
+test dx11::shader::tests::fl91_texture_num_levels_compiles_for_3d_and_cube_images ... ok
+test dx11::shader::tests::fl91_texture_num_levels_helper_with_implicit_sample_compiles_with_fxc ... ok
+test dx11::shader::tests::fl91_texture_num_levels_through_selected_helper_compiles_with_fxc ... ok
+test dx11::shader::tests::fl91_texture_num_levels_uses_host_supplied_view_count ... ok
+test dx11::shader::tests::fl91_vertex_index_entry_inputs_are_rejected_by_fxc ... direct_used: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBE9D00(11,45-57): error X4555: invalid type used for 'SV_VertexID' input semantics, must be integral
+
+direct_unused: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3AEAE9980(6,51-63): error X4555: invalid type used for 'SV_VertexID' input semantics, must be integral
+
+struct_used: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBE9D00(3,13-25): error X4555: invalid type used for 'SV_VertexID' input semantics, must be integral
+
+struct_unused: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3AEAE9BA0(3,13-25): error X4555: invalid type used for 'SV_VertexID' input semantics, must be integral
+
+ok
+test dx11::shader::tests::fl91_vertex_index_float_reconstruction_is_rejected_by_fxc ... FL9_1 integer reconstruction diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x00007FF775312966(1,102-128): error X3548: in vs_4_0_level_9_1 uints can only be used with known-positive values, use int if possible
+
+ok
+test dx11::shader::tests::fl91_vertex_uniform_arrays_compile_with_compact_slots_and_clamped_indices ... ok
+test dx11::shader::tests::fl91_viewport_transform_compiles_with_fxc ... ok
+test dx11::shader::tests::fl91_viewport_transform_instruction_budget_diagnostic ... 240 referenced constants: base=Ok(()); remap=Ok(())
+248 referenced constants: base=Ok(()); remap=Ok(())
+252 referenced constants: base=Ok(()); remap=Err("C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\Shader@0x000001A3AEE4AFB0(1,105): error X5615: Compiled shader code uses too many instruction slots (257). Max. allowed by the target (vs_2_0) is 256.\n")
+254 referenced constants: base=Ok(()); remap=Err("C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\Shader@0x000001A3AE102BD0(1,105): error X5615: Compiled shader code uses too many instruction slots (259). Max. allowed by the target (vs_2_0) is 256.\n")
+ok
+test dx11::shader::tests::fl9_texture_gather_emulation_compiles_with_reserved_registers ... ok
+test dx11::shader::tests::fragment_position_reflection_distinguishes_live_components ... ok
+test dx11::shader::tests::interpolation_modifiers_require_shader_model_4 ... FL9_1 flat Vertex interpolation compiled
+FL9_1 flat Fragment interpolation FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBE9D00(10,28-43): error X4568: nointerpolation usage unsupported on ps_4_0_level_9_1
+
+FL9_1 linear Vertex interpolation compiled
+FL9_1 linear Fragment interpolation FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBE98E0(10,28-43): error X4568: noperspective usage unsupported on ps_4_0_level_9_1
+
+FL9_1 centroid Vertex interpolation compiled
+FL9_1 centroid Fragment interpolation compiled
+ok
+test dx11::shader::tests::level9_fxc_accepts_sixteen_pairs_and_rejects_seventeen ... ok
+test dx11::shader::tests::level9_naga_propagates_fxc_pair_exhaustion ... ok
+test dx11::shader::tests::level_9_1_compiles_bounded_literal_select_sample_bias ... ok
+test dx11::shader::tests::level_9_1_pixel_profile_compiles_shadow_comparison_level_zero ... ok
+test dx11::shader::tests::level_9_1_pixel_profile_compiles_shadow_comparison_sampling ... ok
+test dx11::shader::tests::level_9_1_pixel_profile_explicit_lod_diagnostic ... FL9_1 explicit literal LOD FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBE9D00(11,18-48): error X4532: texlod not supported on this target
+
+FL9_3 explicit literal LOD FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBEA330(11,18-48): error X4532: texlod not supported on this target
+
+FL9_1 explicit dynamic LOD FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBE9D00(11,18-49): error X4532: texlod not supported on this target
+
+FL9_3 explicit dynamic LOD FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBEA540(11,18-49): error X4532: texlod not supported on this target
+
+ok
+test dx11::shader::tests::level_9_1_pixel_profile_rejects_derivative_instructions ... FL9_1 ddx FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x00007FF775311F83(1,64-70): error X4532: cannot map expression to pixel shader instruction set
+
+FL9_1 SampleGrad FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x00007FF775311FE1(1,140): error X5190: Instruction not supported by version ps_2_0 pixel shader.
+
+ok
+test dx11::shader::tests::level_9_1_rejects_vertex_texture_sampling ... ok
+test dx11::shader::tests::level_9_1_vertex_texture_guards_follow_selected_entry ... ok
+test dx11::shader::tests::level_9_pixel_profiles_reject_base_clamp_to_edge_sampling ... PixelLevel9_1 base-clamp sampling: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3AF74E0D0(10,5-37): error X4532: cannot map expression to pixel shader instruction set
+
+PixelLevel9_3 base-clamp sampling: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3AF74D8B0(10,5-37): error X4532: cannot map expression to pixel shader instruction set
+
+ok
+test dx11::shader::tests::level_9_pixel_profiles_reject_texture_queries ... PixelLevel9_1 dimensions: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBE98E0(6,5-45): error X3548: in ps_4_0_level_9_1 uints can only be used with known-positive values, use int if possible
+
+PixelLevel9_3 dimensions: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBEA120(6,5-45): error X3548: in ps_4_0_level_9_3 uints can only be used with known-positive values, use int if possible
+
+PixelLevel9_1 dimensions_level: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBE9F10(6,5-53): error X3548: in ps_4_0_level_9_1 uints can only be used with known-positive values, use int if possible
+
+PixelLevel9_3 dimensions_level: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBE9D00(6,5-53): error X3548: in ps_4_0_level_9_3 uints can only be used with known-positive values, use int if possible
+
+PixelLevel9_1 levels: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBEA120(6,5-45): error X3548: in ps_4_0_level_9_1 uints can only be used with known-positive values, use int if possible
+
+PixelLevel9_3 levels: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBEA330(6,5-45): error X3548: in ps_4_0_level_9_3 uints can only be used with known-positive values, use int if possible
+
+ok
+test dx11::shader::tests::level_9_profiles_reject_texture_sample_bias_offsets ... PixelLevel9_1 textureSampleBias offset FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBEA330(11,18-75): error X4532: cannot map expression to pixel shader instruction set
+
+PixelLevel9_3 textureSampleBias offset FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBE9F10(11,18-75): error X4532: cannot map expression to pixel shader instruction set
+
+FL9_1 helper textureSampleBias offset FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBE98E0(10,18-77): error X4532: cannot map expression to pixel shader instruction set
+
+ok
+test dx11::shader::tests::naga_direct_sampler_emits_d3d11_registers_without_changing_default_mode ... ok
+test dx11::shader::tests::naga_direct_sampler_rejects_binding_arrays ... ok
+test dx11::shader::tests::naga_fl91_pixel_profile_accepts_bound_texture3d_sampling ... ok
+test dx11::shader::tests::naga_fl91_pixel_profile_compiles_constant_bias_forwarded_to_helper ... ok
+test dx11::shader::tests::naga_maps_depth_comparison_bindings_to_fl91_registers ... ok
+test dx11::shader::tests::naga_path_rejects_texture_bindings ... ok
+test dx11::shader::tests::naga_sampled_bindings_require_valid_explicit_registers ... ok
+test dx11::shader::tests::naga_uniform_bindings_require_explicit_valid_mappings ... ok
+test dx11::shader::tests::naga_uniforms_from_different_groups_cannot_share_a_slot ... ok
+test dx11::shader::tests::naga_unused_entry_point_resources_need_no_binding ... ok
+test dx11::shader::tests::rejects_bad_entry_and_reports_shader_diagnostics ... ok
+test dx11::shader::tests::sample_interpolation_requires_level_4_1_profile ... FL9_1 sample interpolation FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3AE6E3A70(5,32-49): error X4568: Sample interpolation usage unsupported on ps_4_0_level_9_1
+
+ok
+test dx11::shader::tests::sparse_bindings_map_registers_and_reject_invalid_mappings ... ok
+test dx11::shader::tests::texture_gather_is_rejected_by_level_9_1_fxc_profile ... FL9_1 textureGather FXC diagnostic: C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\Shader@0x000001A3ABBE98E0(11,18-38): error X4532: cannot map expression to pixel shader instruction set
+
+ok
+test dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_clone_sampling_presents_and_resizes ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+
+thread 'dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_clone_sampling_presents_and_resizes' (86064) panicked at wgpu-hal\src\dx11\..\..\tests\dx11\hwnd_surface.rs:466:9:
+strict HWND test requires a queued Present
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+test dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_surface_renders_and_resizes ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested FL9_1; actual L9_1
+
+thread 'dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_surface_renders_and_resizes' (97788) panicked at wgpu-hal\src\dx11\..\..\tests\dx11\hwnd_surface.rs:466:9:
+strict HWND test requires a queued Present
+FAILED
+test dx11::surface::tests::core_window_owner_thread_check_rejects_other_threads ... ok
+test dx11::surface::tests::driver_internal_error_marks_surface_device_lost ... ok
+test dx11::surface::tests::hwnd_present_thread_check_is_owner_thread_only ... ok
+test dx11::surface::tests::surface_config_rejects_unimplemented_modes ... ok
+
+thread 'dx11::surface::tests::surface_operations_fail_fast_and_release_on_unwind' (6784) panicked at wgpu-hal\src\dx11\surface.rs:1262:13:
+injected failure
+test dx11::surface::tests::surface_operations_fail_fast_and_release_on_unwind ... ok
+test dx11::surface::tests::unconfigure_reentry_from_operation_owner_fails_without_waiting ... ok
+test dx11::surface::tests::unconfigure_waits_for_an_active_operation ... ok
+test dx11::swapchain::tests::frame_latency_timeout_rounds_up_and_saturates ... ok
+test dx11::swapchain::tests::pending_present_state_survives_timeout_and_completes_on_resume ... ok
+test dx11::swapchain::tests::present_distinguishes_occlusion_from_success_and_failure ... ok
+
+thread 'dx11::swapchain::tests::reservation_releases_on_return_and_unwind' (86824) panicked at wgpu-hal\src\dx11\swapchain.rs:627:13:
+injected failure
+test dx11::swapchain::tests::reservation_releases_on_return_and_unwind ... ok
+test dx11::texture::tests::bc_shadow_accepts_sub_block_mip_tail_regions ... ok
+test dx11::texture::tests::bc_shadow_copies_srgb_and_unorm_views_as_raw_blocks ... ok
+test dx11::texture::tests::bc_shadow_keeps_mips_and_layers_separate ... ok
+test dx11::texture::tests::bc_shadow_rejects_invalid_shapes_regions_and_pitches ... ok
+test dx11::texture::tests::bc_shadow_rows_use_format_specific_block_sizes ... ok
+test dx11::texture::tests::bc_shadow_same_arc_face_copy_uses_a_source_snapshot ... ok
+test dx11::texture::tests::packed_16bit_shadow_preserves_raw_words_and_partial_copies ... ok
+test dx11::texture::tests::r8_3d_shadow_preserves_partial_padded_updates ... ok
+test dx11::texture::tests::rg16_snorm_shadow_preserves_signed_words_and_padded_partial_copies ... ok
+test dx11::texture::tests::rg8_snorm_shadow_preserves_raw_signed_bytes_and_partial_copies ... ok
+test dx11::texture::tests::rg8_unorm_transfer_layout_uses_two_bytes_per_texel ... ok
+test dx11::texture::tests::rgba8_snorm_shadow_preserves_raw_signed_bytes_and_partial_copies ... ok
+test dx11::texture::tests::rgba_render_target_clear_round_trips_on_level_9_1 ... ok
+test dx11::texture::tests::srgb_3d_formats_map_to_native_formats ... ok
+test dx11::texture::tests::texture_3d_shadow_preserves_partial_padded_updates ... ok
+test dx11::texture::tests::texture_subresources_round_trip_and_reject_invalid_access ... ok
+test dx11::texture::tests::wraps_only_owned_bgra_render_target_backbuffers ... ok
+test dx11::viewport::tests::fractional_viewport_intersects_the_target_with_integer_bounds ... ok
+test dx11::viewport::tests::fractional_viewport_keeps_logical_coordinates_in_the_remap ... ok
+test dx11::viewport::tests::intersection_maps_viewport_without_expanding_clip_bounds ... ok
+test dx11::viewport::tests::zero_sized_fractional_viewport_stays_empty ... ok
+
+failures:
+
+failures:
+    dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_clone_sampling_presents_and_resizes
+    dx11::surface::hwnd_surface_tests::fl91_hidden_hwnd_surface_renders_and_resizes
+
+test result: FAILED. 562 passed; 2 failed; 0 ignored; 0 measured; 11 filtered out; finished in 88.95s

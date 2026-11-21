@@ -2488,7 +2488,7 @@
   },
   "coverage_matrix": {
     "path": "contract.csv",
-    "sha256": "64de7d3397d11ecea84e892bae3701ebbdaca4776798ae5a3b4ae44e644c258b"
+    "sha256": "ab9becbf445138f795e17bc0afde114a7a3f79ee5b4ca5bce5d157cd60d7d3de"
   },
   "surface_public_run": {
     "receipt": {
@@ -2524,5 +2524,715 @@
       }
     ]
   },
-  "readback_fixture_revision": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34"
+  "readback_fixture_revision": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+  "followup": {
+    "candidate_sha": "dbae35d184974c22b08da2426804facc5550acec",
+    "device": "NVIDIA GeForce RTX 3090 Ti; vendor 0x10de, device 0x2203; driver 32.0.16.2101",
+    "requested_feature_level": "0x9100",
+    "returned_feature_level": "0x9100",
+    "software": false,
+    "builds": [
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "command": "cargo +1.93.1 test --locked -j4 -p wgpu -p wgpu-core -p wgpu-hal -p wgpu-types --features wgpu/dx11-test-fixture,wgpu-core/dx11-test-fixture,wgpu-hal/dx11-test-fixture --lib --test dx11_public --no-run",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+        "result": "pass",
+        "artifact": {
+          "path": "evidence/followup-x64-final-preflight.log",
+          "sha256": "97eee35bb739679bb035416de1c6e41abc08eba161d3a39dac2f2d2d86013fb9"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "command": "cargo +1.93.1 test --locked -j4 -p wgpu -p wgpu-hal --target i686-pc-windows-msvc --no-default-features --features wgpu/dx11,wgpu/wgsl,wgpu/std,wgpu-hal/dx11-test-fixture --lib --test dx11_public --no-run",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target",
+        "result": "pass",
+        "artifact": {
+          "path": "evidence/followup-x86-final.log",
+          "sha256": "6075fd2493ddd90f91f101197416c19709ce3d1423140750ce8ea32a3dcf1adf"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "command": "cargo +1.93.1 test --locked -j4 -p wgpu --target aarch64-pc-windows-msvc --no-default-features --features dx11,wgsl,std --test dx11_public --no-run",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target",
+        "result": "pass",
+        "artifact": {
+          "path": "evidence/followup-arm64-build.log",
+          "sha256": "aa85b56bfbce7f219392bc564c59ce6ea78303062b7754fad5d118a4cc5f29c1"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "command": "cargo +1.93.1 -Z build-std=core,alloc,std,panic_abort build --offline --target thumbv7a-uwp-windows-msvc --manifest-path <scratch>/uwp-arm32-link/Cargo.toml",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\uwp-target",
+        "result": "pass",
+        "artifact": {
+          "path": "evidence/followup-arm32-offscreen-link.log",
+          "sha256": "176260a6eacafea00a2cd0a47004b6927636bb3e57ca6cf55be6a21bee5b72d8"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "command": "cargo +1.93.1 build --locked --offline -j4 -p cts_runner --bin cts_runner --features deno_webgpu/dx11",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+        "result": "pass",
+        "artifact": {
+          "path": "evidence/followup-cts-build.log",
+          "sha256": "9303bda9fca23a37b3f463c2b8c6b63edf4f6e7fd14cd2177234f370218596ad"
+        }
+      }
+    ],
+    "runs": [
+      {
+        "suite": "native",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\wgpu_hal-1167b942e5b5caaf.exe",
+        "arguments": [
+          "dx11::native_",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "summary": "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 568 filtered out; finished in 1.85s",
+        "binary_sha256": "ed9d2ed8cc6c9d5e029767b8046a1fa538ecc1f61ce4c99ae6d561961bc1e3bf",
+        "arch": "x64",
+        "scope": "focus",
+        "artifact": {
+          "path": "evidence/followup-x64-native.log",
+          "sha256": "dc8b7cda77298c052678cfad892d96d6c5293ddc8ca7d3895f7d8535c9bd2270"
+        }
+      },
+      {
+        "suite": "varyings",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_public-0b1279e0cff4762f.exe",
+        "arguments": [
+          "public_dx11_inter_stage_varying_limit_at_fl91",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "summary": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.37s",
+        "binary_sha256": "4160df958c45f8489ca48085f3e8ca9d1d188a019cfc14c0d871602e56bc5d8f",
+        "arch": "x64",
+        "scope": "focus",
+        "artifact": {
+          "path": "evidence/followup-x64-varyings.log",
+          "sha256": "1be207c57d15fa88443eb15a30ce52c5a5d35837bef07e6c4b104d9968ab0522"
+        }
+      },
+      {
+        "suite": "ordered-query",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\wgpu_hal-1167b942e5b5caaf.exe",
+        "arguments": [
+          "event_fence_tracks_real_gpu_copy_completion",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "summary": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 574 filtered out; finished in 0.34s",
+        "binary_sha256": "ed9d2ed8cc6c9d5e029767b8046a1fa538ecc1f61ce4c99ae6d561961bc1e3bf",
+        "arch": "x64",
+        "scope": "focus",
+        "artifact": {
+          "path": "evidence/followup-x64-ordered-query.log",
+          "sha256": "be6d2aed39960ea2eabcfd6845a9c76f97915c766cabae4b7827e96ecd88c028"
+        }
+      },
+      {
+        "suite": "bounded-query",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\wgpu_hal-1167b942e5b5caaf.exe",
+        "arguments": [
+          "bounded_idle_wait_resumes_the_same_event_query_after_timeout",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "summary": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 574 filtered out; finished in 0.69s",
+        "binary_sha256": "ed9d2ed8cc6c9d5e029767b8046a1fa538ecc1f61ce4c99ae6d561961bc1e3bf",
+        "arch": "x64",
+        "scope": "focus",
+        "artifact": {
+          "path": "evidence/followup-x64-bounded-query.log",
+          "sha256": "5b311413aabbf3b9505e3d9f17e7c9e8b65cdf95119e8efe16d1fdd4740caa87"
+        }
+      },
+      {
+        "suite": "public",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_public-0b1279e0cff4762f.exe",
+        "arguments": [
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "summary": "test result: ok. 178 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 28.22s",
+        "binary_sha256": "4160df958c45f8489ca48085f3e8ca9d1d188a019cfc14c0d871602e56bc5d8f",
+        "arch": "x64",
+        "scope": "full",
+        "artifact": {
+          "path": "evidence/followup-x64-public.log",
+          "sha256": "d45045a6544a2f62b183c486f57fb565dae77874e046971992a9fb2ffb2f578c"
+        }
+      },
+      {
+        "suite": "hal",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\wgpu_hal-1167b942e5b5caaf.exe",
+        "arguments": [
+          "dx11::",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "exit": 101,
+        "summary": "test result: FAILED. 562 passed; 2 failed; 0 ignored; 0 measured; 11 filtered out; finished in 88.95s",
+        "binary_sha256": "ed9d2ed8cc6c9d5e029767b8046a1fa538ecc1f61ce4c99ae6d561961bc1e3bf",
+        "arch": "x64",
+        "scope": "full",
+        "artifact": {
+          "path": "evidence/followup-x64-hal.log",
+          "sha256": "4b2745afad21682addf2aa572083ec8598b4b98813e5d4932c8888d742777715"
+        }
+      },
+      {
+        "suite": "core",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\wgpu_core-58b179f7f287b2a4.exe",
+        "arguments": [
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "summary": "test result: ok. 156 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 7.84s",
+        "binary_sha256": "75c8b40265ffed6b06f45c3ccf24c0f8e5b5dd5905f0a577443584fd6553cdab",
+        "arch": "x64",
+        "scope": "full",
+        "artifact": {
+          "path": "evidence/followup-x64-core.log",
+          "sha256": "a2c52dbf247c633e0ac6f62507283fc72147c941132ea9467a85250c971803c3"
+        }
+      },
+      {
+        "suite": "types",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\wgpu_types-b49f8a5f7bda80dc.exe",
+        "arguments": [
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "summary": "test result: ok. 120 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+        "binary_sha256": "5838d1df671958d46761beff32fde5e1c85680800e7bd63e09feabc109a7e27e",
+        "arch": "x64",
+        "scope": "full",
+        "artifact": {
+          "path": "evidence/followup-x64-types.log",
+          "sha256": "45a04417d8a6464f250032307c83f2f2c7d6521488cbaad2e2f24f8b0e58afae"
+        }
+      },
+      {
+        "suite": "native",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-2e2b03358e535dc1.exe",
+        "arguments": [
+          "dx11::native_",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "summary": "test result: ok. 7 passed; 0 failed; 0 ignored; 0 measured; 559 filtered out; finished in 1.45s",
+        "binary_sha256": "bd92de41cf06f424042d9837483640a40f1f7e27ec9172af5b4330fe30739525",
+        "arch": "x86",
+        "scope": "focus",
+        "artifact": {
+          "path": "evidence/followup-x86-native.log",
+          "sha256": "ed0056ea22e16750e9449606d6c2ce048d57240174ae2da95ac07a32a0cf9529"
+        }
+      },
+      {
+        "suite": "varyings",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target\\i686-pc-windows-msvc\\debug\\deps\\dx11_public-a0e43dab43bd3778.exe",
+        "arguments": [
+          "public_dx11_inter_stage_varying_limit_at_fl91",
+          "--exact",
+          "--test-threads=1",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "summary": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.30s",
+        "binary_sha256": "54c2a64625431a3996392c24d85707eb1e5b91697542bb6d30bc8e86432f0506",
+        "arch": "x86",
+        "scope": "focus",
+        "artifact": {
+          "path": "evidence/followup-x86-varyings.log",
+          "sha256": "cfb9cd9b83052afe4eccb9521826835406cfab49c9d2eaf0802e9eb7eaed410b"
+        }
+      },
+      {
+        "suite": "ordered-query",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-2e2b03358e535dc1.exe",
+        "arguments": [
+          "event_fence_tracks_real_gpu_copy_completion",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "summary": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 565 filtered out; finished in 0.28s",
+        "binary_sha256": "bd92de41cf06f424042d9837483640a40f1f7e27ec9172af5b4330fe30739525",
+        "arch": "x86",
+        "scope": "focus",
+        "artifact": {
+          "path": "evidence/followup-x86-ordered-query.log",
+          "sha256": "7e52bc2dd63f64d56ad2e685ec0aca605c5bb518fa42ce43037377097a765aef"
+        }
+      },
+      {
+        "suite": "bounded-query",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-2e2b03358e535dc1.exe",
+        "arguments": [
+          "bounded_idle_wait_resumes_the_same_event_query_after_timeout",
+          "--nocapture"
+        ],
+        "exit": 0,
+        "summary": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 565 filtered out; finished in 0.63s",
+        "binary_sha256": "bd92de41cf06f424042d9837483640a40f1f7e27ec9172af5b4330fe30739525",
+        "arch": "x86",
+        "scope": "focus",
+        "artifact": {
+          "path": "evidence/followup-x86-bounded-query.log",
+          "sha256": "e0b9ef8c0e33d8bbb0f26a967fd6da2c8ef3934d4e29a295272e8d14a3693879"
+        }
+      }
+    ],
+    "preflight_reproductions": [
+      {
+        "path": "evidence/followup-x64-native-first-run.log",
+        "sha256": "d66471960d5429fe15a7c4aa2986e2e2447b28f95846e4dd1fdb724f9c9652d6"
+      },
+      {
+        "path": "evidence/followup-x64-varyings-first-run.log",
+        "sha256": "008de0892fd3fdd5751ed73c1d40f9c321834c4da00f52b722196669862bddff"
+      },
+      {
+        "path": "evidence/followup-x64-native-position-first.log",
+        "sha256": "56004c5ab3394a190f196f319b2a5a8f2006e8121d13c54f75ec66f49a6d1bf0"
+      }
+    ],
+    "cts_audit_input_sha": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+    "cts_audit": [
+      {
+        "path": "cts-runtime-skips.csv",
+        "sha256": "49a3e384ca7d9c7e69014125d2a5676d789ac240e1bca9fd36f76887b72c7ab6"
+      },
+      {
+        "path": "cts-excluded-selectors.csv",
+        "sha256": "b9d18712712e6384a6918a389ad61b9d6ed7738977226ae28d6e08789b90b213"
+      },
+      {
+        "path": "cts-exclusion-audit.json",
+        "sha256": "bea1cb0510ba41309c8dc0a08647af8c83f344aebaf4c8d1b1f9a1ae971fb805"
+      }
+    ],
+    "notes": [
+      "Preflight reproductions were built before the final source commit and are diagnostic only.",
+      "Committed text logs normalize line endings and trailing whitespace. The source captures remain in the scratch directory.",
+      "The sRGB diagnostic contains a same-adapter FL10_0 control identified separately in the log.",
+      "ARM32 offscreen linkage uses inert Horizon panel-host stubs. It cannot exercise AppContainer presentation.",
+      "Surface rerun deferred at the user's request. Lumia unavailable."
+    ],
+    "x86_public_groups": [
+      {
+        "summary": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 3.98s",
+        "cases": [
+          "experimental_dx11_is_not_enabled_by_default",
+          "public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91",
+          "public_dx11_api_renders_offscreen_at_fl91",
+          "public_dx11_async_write_map_updates_nonzero_slice_at_fl91",
+          "public_dx11_bc1_bc2_bc3_linear_filtering_at_fl91",
+          "public_dx11_bgra8_3d_upload_copy_sampling_at_fl91",
+          "public_dx11_bgra8_unorm_blending_matches_reported_support_at_fl91",
+          "public_dx11_bgra_texture_load_emulation_at_fl91",
+          "public_dx11_blending_and_downlevel_rejections_at_fl91",
+          "public_dx11_blends_query_supported_rgb565_multisample_targets_at_fl91",
+          "public_dx11_buffer_destroy_preserves_live_mapped_views",
+          "public_dx11_buffer_handles_survive_until_submission_at_fl91",
+          "public_dx11_byte_aligned_vertex_attribute_offset_at_fl91",
+          "public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91",
+          "public_dx11_color_write_masks_preserve_disabled_channels_at_fl91",
+          "public_dx11_cube_texture_sampling_at_fl91",
+          "public_dx11_d16_depth_attachment_at_fl91",
+          "public_dx11_d24s8_load_clear_discard_transitions_at_fl91",
+          "public_dx11_d24s8_stencil_operations_all_branches_at_fl91",
+          "public_dx11_depth24plus_constant_depth_bias_at_fl91",
+          "public_dx11_depth_never_remaps_stencil_depth_fail_replace_at_fl91",
+          "public_dx11_depth_only_render_bundle_executes_at_fl91",
+          "public_dx11_depthless_pass_ignores_prior_depth_attachment",
+          "public_dx11_direct_vertex_uniform_array_indexing_at_fl91"
+        ],
+        "timeout": false,
+        "binary_sha256": "54c2a64625431a3996392c24d85707eb1e5b91697542bb6d30bc8e86432f0506",
+        "segment": 1,
+        "logged_skips": 1,
+        "exit": 0,
+        "artifact": {
+          "path": "evidence/followup-x86-public-group-1.log",
+          "sha256": "139e1f40cc51da8a7daffb66f846fc37526ef324d7267cb3fa2d057f99453578"
+        },
+        "stderr_artifact": {
+          "path": "evidence/followup-x86-public-group-1-stderr.log",
+          "sha256": "bf6d558f113e99fb999f44738a99d8acc308fb829ace4f5e61a1b2546d2c1a49"
+        }
+      },
+      {
+        "summary": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 3.99s",
+        "cases": [
+          "public_dx11_discarded_color_is_initialized_before_load_at_fl91",
+          "public_dx11_discarded_color_is_initialized_before_read_at_fl91",
+          "public_dx11_discarded_color_is_initialized_before_sampling_at_fl91",
+          "public_dx11_discarded_texture_is_zero_before_readback_at_fl91",
+          "public_dx11_dont_care_load_overwrite_at_fl91",
+          "public_dx11_eight_sampled_textures_at_fl91",
+          "public_dx11_empty_immediate_write_requires_feature_at_fl91",
+          "public_dx11_empty_render_bundle_resets_pass_state_at_fl91",
+          "public_dx11_enforces_fl91_aggregate_uniform_constants",
+          "public_dx11_enforces_fl91_sampled_relationship_limit_per_entry_point",
+          "public_dx11_enforces_query_type_feature_gates_at_fl91",
+          "public_dx11_executes_combined_texture_format_usages_at_fl91",
+          "public_dx11_fl91_combined_default_depth_views_support_their_roles",
+          "public_dx11_fl91_combined_rgba8_view_transitions_from_attachment_to_sampling",
+          "public_dx11_fl91_optional_float16_vertex_input",
+          "public_dx11_format_usage_projection_matches_core_creation_at_fl91",
+          "public_dx11_fractional_viewport_render_bundle_remaps_at_fl91",
+          "public_dx11_fragment_3d_texture_load_at_fl91",
+          "public_dx11_fragment_8bit_snorm_texture_load_emulation_at_fl91",
+          "public_dx11_fragment_depth_controls_depth_test_at_fl91",
+          "public_dx11_fragment_discard_preserves_color_and_depth_at_fl91",
+          "public_dx11_fragment_float_select_executes_at_fl91",
+          "public_dx11_fragment_interpolation_profile_boundaries_at_fl91",
+          "public_dx11_fragment_rg16_snorm_texture_load_emulation_at_fl91"
+        ],
+        "timeout": false,
+        "binary_sha256": "54c2a64625431a3996392c24d85707eb1e5b91697542bb6d30bc8e86432f0506",
+        "segment": 2,
+        "logged_skips": 1,
+        "exit": 0,
+        "artifact": {
+          "path": "evidence/followup-x86-public-group-2.log",
+          "sha256": "516535a79c8b37968c1dc72a535f23318efe4a64a10ff881bfb84ef7777e392f"
+        }
+      },
+      {
+        "summary": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 3.08s",
+        "cases": [
+          "public_dx11_fragment_texture_dimensions_3d_at_fl91",
+          "public_dx11_fragment_texture_dimensions_3d_constant_mip_at_fl91",
+          "public_dx11_fragment_texture_dimensions_3d_helper_at_fl91",
+          "public_dx11_fragment_texture_dimensions_3d_helper_nonzero_group_at_fl91",
+          "public_dx11_fragment_texture_dimensions_3d_helper_split_sampler_group_at_fl91",
+          "public_dx11_fragment_texture_dimensions_3d_nonzero_group_at_fl91",
+          "public_dx11_fragment_texture_dimensions_3d_split_sampler_group_at_fl91",
+          "public_dx11_fragment_texture_dimensions_and_sample_at_fl91",
+          "public_dx11_fragment_texture_dimensions_and_sample_split_groups_at_fl91",
+          "public_dx11_fragment_texture_dimensions_constant_mip_at_fl91",
+          "public_dx11_fragment_texture_dimensions_cube_at_fl91",
+          "public_dx11_fragment_texture_dimensions_cube_nonzero_group_at_fl91",
+          "public_dx11_fragment_texture_dimensions_emulation_at_fl91",
+          "public_dx11_fragment_texture_dimensions_helper_and_sample_at_fl91",
+          "public_dx11_fragment_texture_dimensions_helper_and_sample_split_groups_at_fl91",
+          "public_dx11_fragment_texture_dimensions_helper_nonzero_group_at_fl91",
+          "public_dx11_fragment_texture_dimensions_nonzero_group_at_fl91",
+          "public_dx11_fragment_texture_dimensions_sample_with_uniform_at_fl91",
+          "public_dx11_fragment_texture_gather_emulation_at_fl91",
+          "public_dx11_fragment_texture_load_emulation_at_fl91",
+          "public_dx11_fragment_texture_load_nonzero_group_at_fl91",
+          "public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91",
+          "public_dx11_fragment_texture_num_levels_emulation_at_fl91",
+          "public_dx11_fragment_texture_num_levels_selected_helper_at_fl91"
+        ],
+        "timeout": false,
+        "binary_sha256": "54c2a64625431a3996392c24d85707eb1e5b91697542bb6d30bc8e86432f0506",
+        "segment": 3,
+        "logged_skips": 0,
+        "exit": 0,
+        "artifact": {
+          "path": "evidence/followup-x86-public-group-3.log",
+          "sha256": "05e644a7922ff8618981d5b24601b3e53f164389b6c18a119ef9e50865c092df"
+        }
+      },
+      {
+        "summary": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 2.59s",
+        "cases": [
+          "public_dx11_front_face_and_backface_culling_at_fl91",
+          "public_dx11_hwnd_surface_presents_on_its_window_thread",
+          "public_dx11_indexed_line_strip_restart_render_bundle_at_fl91",
+          "public_dx11_indexed_primitives_without_vertex_rate_inputs_at_fl91",
+          "public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91",
+          "public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91",
+          "public_dx11_indexed_zero_stride_negative_base_vertex_at_fl91",
+          "public_dx11_instance_index_nonindexed_and_indexed_draws_at_fl91",
+          "public_dx11_instance_indexed_matrix_uniform_array_at_fl91",
+          "public_dx11_instance_rate_vertex_streams_at_fl91",
+          "public_dx11_integer_and_snorm_vertex_formats_render_at_fl91",
+          "public_dx11_inter_stage_varying_limit_at_fl91",
+          "public_dx11_line_list_restores_user_vertex_stream_at_fl91",
+          "public_dx11_map_nonzero_slice_after_gpu_write_preserves_neighbors_at_fl91",
+          "public_dx11_multiple_queue_writes_preserve_disjoint_ranges_at_fl91",
+          "public_dx11_multisample_blend_write_mask_resolve_at_fl91",
+          "public_dx11_new_color_is_initialized_before_load_at_fl91",
+          "public_dx11_nonzero_group_sparse_uniform_renders_at_fl91",
+          "public_dx11_odd_sized_uniform_binding_renders_at_fl91",
+          "public_dx11_outputless_fragment_depth_only_pass_at_fl91",
+          "public_dx11_outputless_fragment_depth_stencil_pass_at_fl91",
+          "public_dx11_partial_texture_transfer_roundtrip_at_fl91",
+          "public_dx11_query_gated_fl91_comparison_border_sampling",
+          "public_dx11_query_gated_fl91_comparison_border_white_sampling"
+        ],
+        "timeout": false,
+        "binary_sha256": "54c2a64625431a3996392c24d85707eb1e5b91697542bb6d30bc8e86432f0506",
+        "segment": 4,
+        "logged_skips": 0,
+        "exit": 0,
+        "artifact": {
+          "path": "evidence/followup-x86-public-group-4.log",
+          "sha256": "019d298a02beea56f0e1db766444eec91a8b408fcd289ffb4e29a1d915c1d33d"
+        }
+      },
+      {
+        "summary": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 4.34s",
+        "cases": [
+          "public_dx11_query_gated_fl91_comparison_level_sample_offset",
+          "public_dx11_query_gated_fl91_comparison_sample_offset",
+          "public_dx11_query_gated_fl91_comparison_sample_offset_split_groups",
+          "public_dx11_query_gated_fl91_d16_depth_comparison_sampling",
+          "public_dx11_query_gated_fl91_d24s8_depth_comparison_sampling",
+          "public_dx11_query_gated_fl91_depth24plus_comparison_sampling",
+          "public_dx11_query_gated_fl91_depth_comparison_level_zero",
+          "public_dx11_query_gated_npot_mip_chain_at_fl91",
+          "public_dx11_query_gated_rg8_3d_upload_copy_and_readback_at_fl91",
+          "public_dx11_query_gated_wireframe_at_fl91",
+          "public_dx11_r8_3d_upload_copy_and_readback_at_fl91",
+          "public_dx11_r8_multimip_texture_copy_at_fl91",
+          "public_dx11_r8_rg8_rgb565_copy_and_readback_at_fl91",
+          "public_dx11_r8_rg8_rgb565_render_attachments_at_fl91",
+          "public_dx11_r8_sampled_mip_chain_at_fl91",
+          "public_dx11_r8_sampled_upload_renders_at_fl91",
+          "public_dx11_read_only_depth_render_bundle_at_fl91",
+          "public_dx11_read_only_stencil_render_bundle_at_fl91",
+          "public_dx11_rejects_compute_pipelines_at_fl91",
+          "public_dx11_rejects_fragment_depth_without_color_target_0_at_fl91",
+          "public_dx11_rejects_fragment_sample_mask_io_at_fl91",
+          "public_dx11_rejects_indirect_buffers_at_fl91",
+          "public_dx11_rejects_mutable_format_views_at_fl91",
+          "public_dx11_rejects_sample_index_without_multisampled_shading"
+        ],
+        "timeout": false,
+        "binary_sha256": "54c2a64625431a3996392c24d85707eb1e5b91697542bb6d30bc8e86432f0506",
+        "segment": 5,
+        "logged_skips": 1,
+        "exit": 0,
+        "artifact": {
+          "path": "evidence/followup-x86-public-group-5.log",
+          "sha256": "88e1f22c0e95bb79b5640caafeb34c4866f610a8eb34bfe78665abd1a8543e4c"
+        }
+      },
+      {
+        "summary": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 3.34s",
+        "cases": [
+          "public_dx11_rejects_unavailable_primitive_index_feature",
+          "public_dx11_rejects_unimplemented_hal_features_at_fl91",
+          "public_dx11_render_bundle_depth_attachment_at_fl91",
+          "public_dx11_render_bundle_dynamic_uniform_offsets_at_fl91",
+          "public_dx11_render_bundle_executes_at_fl91",
+          "public_dx11_render_bundle_pipeline_layout_transition_at_fl91",
+          "public_dx11_render_bundle_preserves_pass_blend_and_scissor_state_at_fl91",
+          "public_dx11_render_bundle_preserves_pass_stencil_reference_at_fl91",
+          "public_dx11_render_bundle_transitions_multiple_bind_groups_at_fl91",
+          "public_dx11_repeat_sampler_limit_at_fl91",
+          "public_dx11_resolves_four_sample_rgba8_at_fl91",
+          "public_dx11_resolves_optional_fl91_sample_counts",
+          "public_dx11_resolves_query_supported_rgb565_samples_at_fl91",
+          "public_dx11_resolves_supported_bgra8_sample_counts_at_fl91",
+          "public_dx11_rg16_snorm_mip_chain_at_fl91",
+          "public_dx11_rg16_snorm_mip_copy_and_readback_at_fl91",
+          "public_dx11_rg8_snorm_mip_chain_at_fl91",
+          "public_dx11_rg8_snorm_shadow_copy_and_readback_at_fl91",
+          "public_dx11_rg8_unorm_mip_chain_at_fl91",
+          "public_dx11_rgb565_sampled_upload_at_fl91",
+          "public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91",
+          "public_dx11_rgba8_snorm_mip_chain_at_fl91",
+          "public_dx11_rgba8_srgb_3d_upload_copy_sampling_at_fl91",
+          "public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91"
+        ],
+        "timeout": false,
+        "binary_sha256": "54c2a64625431a3996392c24d85707eb1e5b91697542bb6d30bc8e86432f0506",
+        "segment": 6,
+        "logged_skips": 1,
+        "exit": 0,
+        "artifact": {
+          "path": "evidence/followup-x86-public-group-6.log",
+          "sha256": "e6e4c83eea7d075f794a87c495eac2b88669a78c04ec656e990c3f0539ad1e21"
+        }
+      },
+      {
+        "summary": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 2.73s",
+        "cases": [
+          "public_dx11_sampled_mip_chain_at_fl91",
+          "public_dx11_scissor_and_viewport_validation_at_fl91",
+          "public_dx11_snorm_sampled_uploads_at_fl91",
+          "public_dx11_sparse_multi_texture_sampling_at_fl91",
+          "public_dx11_splits_nonindexed_line_list_at_fl91_vertex_limit",
+          "public_dx11_splits_point_and_triangle_draws_at_fl91_limits",
+          "public_dx11_srgb_mip_chain_sampling_at_fl91",
+          "public_dx11_srgb_texture_copies_preserve_bits_at_fl91",
+          "public_dx11_srgb_texture_sampling_and_rendering",
+          "public_dx11_stencil_replace_and_compare_at_fl91",
+          "public_dx11_texture_3d_cpu_shadow_readback_at_fl91",
+          "public_dx11_texture_3d_upload_and_sampling_at_fl91",
+          "public_dx11_texture_dimension_2d_boundary_at_fl91",
+          "public_dx11_texture_load_and_dimensions_share_one_fl91_texture",
+          "public_dx11_texture_load_dimensions_with_uniform_at_fl91",
+          "public_dx11_texture_references_survive_until_submission_at_fl91",
+          "public_dx11_texture_sample_base_clamp_to_edge_at_fl91",
+          "public_dx11_textured_depth_test_at_fl91",
+          "public_dx11_timestamp_queries_are_not_advertised_at_fl91",
+          "public_dx11_transient_attachments_at_fl91",
+          "public_dx11_uniform_gpu_updates_are_ordered_between_draws_at_fl91",
+          "public_dx11_uses_255_vertex_uniform_vectors_with_post_encoding_queue_write_at_fl91",
+          "public_dx11_uses_thirteen_uniform_registers_per_stage_at_fl91",
+          "public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91"
+        ],
+        "timeout": false,
+        "binary_sha256": "54c2a64625431a3996392c24d85707eb1e5b91697542bb6d30bc8e86432f0506",
+        "segment": 7,
+        "logged_skips": 0,
+        "exit": 0,
+        "artifact": {
+          "path": "evidence/followup-x86-public-group-7.log",
+          "sha256": "4a2c16f1f1263a2c3148d7962974ba858d517612f846f73ee99b14d09a2a0006"
+        }
+      },
+      {
+        "summary": "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 168 filtered out; finished in 1.77s",
+        "cases": [
+          "public_dx11_vertex_attribute_limit_boundary_at_fl91",
+          "public_dx11_vertex_buffer_slot_15_draw_at_fl91",
+          "public_dx11_vertex_buffer_stride_limit_boundary_at_fl91",
+          "public_dx11_vertex_index_line_list_at_fl91",
+          "public_dx11_vertex_index_line_strip_at_fl91",
+          "public_dx11_vertex_index_point_list_at_fl91",
+          "public_dx11_vertex_index_triangle_list_at_fl91",
+          "public_dx11_vertex_index_triangle_strip_at_fl91",
+          "public_dx11_vertex_uniform_array_indexing_at_fl91",
+          "public_dx11_write_texture_nonzero_offset_padded_rows_at_fl91"
+        ],
+        "timeout": false,
+        "binary_sha256": "54c2a64625431a3996392c24d85707eb1e5b91697542bb6d30bc8e86432f0506",
+        "segment": 8,
+        "logged_skips": 0,
+        "exit": 0,
+        "artifact": {
+          "path": "evidence/followup-x86-public-group-8.log",
+          "sha256": "86df84475d86c46d8c07b62be3cf59b51b24bc8805a95a5555225e5e8285dd07"
+        }
+      }
+    ],
+    "hwnd_comparison": {
+      "session": "Windows session 1 disconnected",
+      "control": "Pre-varying integration build documented in followup-x64-native-first-run.log",
+      "runs": [
+        {
+          "exit": 101,
+          "binary_sha256": "8761f312b85cb40d5c058e0e1426c7dfb150d360c8249aebc7502ec529be464a",
+          "mode": "pre-varying",
+          "artifact": {
+            "path": "evidence/followup-hwnd-pre-varying.log",
+            "sha256": "23a86bb2d46dcebce56b27673a3e0943db73694279aa6f1648656e704070b0cb"
+          }
+        },
+        {
+          "exit": 101,
+          "binary_sha256": "ed9d2ed8cc6c9d5e029767b8046a1fa538ecc1f61ce4c99ae6d561961bc1e3bf",
+          "mode": "candidate",
+          "artifact": {
+            "path": "evidence/followup-hwnd-candidate.log",
+            "sha256": "e0064e29039cecfd39cb3c329553d389f372bdbd9183e8ec693c5afc77031a94"
+          }
+        }
+      ],
+      "result": "Both binaries reached exact FL9_1 and failed the same queued Present assertion in both HWND tests."
+    },
+    "targeted_cts": {
+      "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "binary_sha256": "7b9c61e60cae2aaa3c80e2e71fee7bf9badd44ba4330b02d930003af6dfd8b3d",
+      "unmodified": [
+        {
+          "binary_sha256": "7b9c61e60cae2aaa3c80e2e71fee7bf9badd44ba4330b02d930003af6dfd8b3d",
+          "selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"CopyB2T\";checkMethod=\"FullCopyT2B\";dimension=\"2d\"",
+          "exit": 1,
+          "artifact": {
+            "path": "evidence/followup-selected-cts-1.log",
+            "sha256": "8568a5b589328b08d09406685dee2aac84348dedfac6d0bcf4f606e0c3ae90d7"
+          }
+        },
+        {
+          "binary_sha256": "7b9c61e60cae2aaa3c80e2e71fee7bf9badd44ba4330b02d930003af6dfd8b3d",
+          "selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"WriteTexture\";checkMethod=\"FullCopyT2B\";dimension=\"2d\"",
+          "exit": 1,
+          "artifact": {
+            "path": "evidence/followup-selected-cts-2.log",
+            "sha256": "eb947f85126843c1dac56779e1f5ae2e92825d5474909e4b652a7faf2a7c8c90"
+          }
+        },
+        {
+          "binary_sha256": "7b9c61e60cae2aaa3c80e2e71fee7bf9badd44ba4330b02d930003af6dfd8b3d",
+          "selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"WriteTexture\";checkMethod=\"PartialCopyT2B\";dimension=\"2d\"",
+          "exit": 1,
+          "artifact": {
+            "path": "evidence/followup-selected-cts-3.log",
+            "sha256": "28e4f1c504f7c8089b85c2679247dafc34353710911a1dedd751e0c6c8726e9d"
+          }
+        }
+      ],
+      "result": "Three parent cases failed. Only subcases requiring a 2D texture array raised validation and pixel errors.",
+      "single_layer_control": [
+        {
+          "binary_sha256": "7b9c61e60cae2aaa3c80e2e71fee7bf9badd44ba4330b02d930003af6dfd8b3d",
+          "selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"CopyB2T\";checkMethod=\"FullCopyT2B\";dimension=\"2d\"",
+          "exit": 0,
+          "artifact": {
+            "path": "evidence/followup-single-layer-cts-1.log",
+            "sha256": "86de5d6a11547160a62636d28043673de6602816f2591e6d17b932433ddbc599"
+          }
+        },
+        {
+          "binary_sha256": "7b9c61e60cae2aaa3c80e2e71fee7bf9badd44ba4330b02d930003af6dfd8b3d",
+          "selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"WriteTexture\";checkMethod=\"FullCopyT2B\";dimension=\"2d\"",
+          "exit": 0,
+          "artifact": {
+            "path": "evidence/followup-single-layer-cts-2.log",
+            "sha256": "f184844d490ff764b50b001b897240769c3796991ee9dbb2fecd9aa7bf87504f"
+          }
+        },
+        {
+          "binary_sha256": "7b9c61e60cae2aaa3c80e2e71fee7bf9badd44ba4330b02d930003af6dfd8b3d",
+          "selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"WriteTexture\";checkMethod=\"PartialCopyT2B\";dimension=\"2d\"",
+          "exit": 0,
+          "artifact": {
+            "path": "evidence/followup-single-layer-cts-3.log",
+            "sha256": "1f522f960d25f00acba81f830880b4c294751652557d84d01917bd1213fae2f7"
+          }
+        }
+      ],
+      "selection_delta": {
+        "path": "evidence/single-layer-cts-control.json",
+        "sha256": "4ebf610f9a4608953e68a50ff576e27282c1efc9f4b8fe8ebcdcae427eaaec9f"
+      }
+    },
+    "compiler_controls": [
+      {
+        "path": "evidence/followup-fxc-x64.log",
+        "sha256": "cb30708d130d52c4aa5665fd2beb262601b1a0177ddcee0decaeffd13adba171"
+      },
+      {
+        "path": "evidence/followup-fxc-x86.log",
+        "sha256": "b27980f6f44040eb8ff015c5106521595c11477a051c5d93da6f0ce28d20a8bb"
+      }
+    ],
+    "arm32_first_attempt": {
+      "path": "evidence/followup-arm32-disk-failure.log",
+      "sha256": "e8f1ca7140895309b67929e0345807ede18cd18d329a4388e3b94c5df4123803"
+    }
+  }
 }

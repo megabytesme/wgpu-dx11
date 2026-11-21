@@ -1,0 +1,287 @@
+{
+  "state": "INCOMPLETE",
+  "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+  "candidate_sha": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+  "runtime_skip_case_occurrences": 4720,
+  "runtime_skipped_selectors": 4720,
+  "reason_present": 4720,
+  "unresolved": 86,
+  "reported_transcript_case_skip_total": 4720,
+  "intentional_skip_patterns": [
+    {
+      "selector_pattern": "webgpu:api,validation,createPipelineLayout:immediate_data_size:*",
+      "recorded_reason": "immediates, https://github.com/gfx-rs/wgpu/issues/8556",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:api,validation,dispatch:*",
+      "recorded_reason": "linear indexing, https://github.com/gfx-rs/wgpu/issues/9296",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:api,validation,encoding,programmable,pipeline_immediate:*",
+      "recorded_reason": "immediates, https://github.com/gfx-rs/wgpu/issues/8556",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:api,validation,gpu_external_texture_expiration:*",
+      "recorded_reason": "external texture",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:api,validation,pipeline,immediates:pipeline_creation_immediate_size_mismatch:*",
+      "recorded_reason": "immediates, https://github.com/gfx-rs/wgpu/issues/8556",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:api,validation,queue,copyToTexture,CopyExternalImageToTexture:*",
+      "recorded_reason": "external texture",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,expression,call,builtin,quadBroadcast:*",
+      "recorded_reason": "subgroups, https://github.com/gfx-rs/wgpu/issues/8722",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,expression,call,builtin,quadSwap:*",
+      "recorded_reason": "ibid.",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,expression,call,builtin,subgroupAdd:*",
+      "recorded_reason": "ibid.",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,expression,call,builtin,subgroupAnyAll:*",
+      "recorded_reason": "ibid.",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,expression,call,builtin,subgroupBallot:*",
+      "recorded_reason": "ibid.",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,expression,call,builtin,subgroupBitwise:*",
+      "recorded_reason": "ibid.",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,expression,call,builtin,subgroupBroadcast:*",
+      "recorded_reason": "ibid.",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,expression,call,builtin,subgroupBroadcastFirst:*",
+      "recorded_reason": "ibid.",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,expression,call,builtin,subgroupElect:*",
+      "recorded_reason": "ibid.",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,expression,call,builtin,subgroupMinMax:*",
+      "recorded_reason": "ibid.",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,expression,call,builtin,subgroupMul:*",
+      "recorded_reason": "ibid.",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,expression,call,builtin,subgroupShuffle:*",
+      "recorded_reason": "ibid.",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    },
+    {
+      "selector_pattern": "webgpu:shader,validation,statement,swizzle_assignment:*",
+      "recorded_reason": "swizzle assignment, https://github.com/gfx-rs/wgpu/issues/9159",
+      "applicability": "MIXED_OR_UNRESOLVED_WITHOUT_EXPANSION",
+      "disposition": "INTENTIONAL_HARNESS_SKIP_PATTERN"
+    }
+  ],
+  "reported_excluded_selector_count": 1197,
+  "excluded_selector_strings_enumerated": 1197,
+  "exclusion_classification": "All 1,197 fails-if(dx11) selectors are enumerated. There are 1,130 unresolved, 34 compute-native-absence candidates, 22 1D-native-absence candidates, 8 optional external-texture selectors and 3 mixed 2D image-copy selectors. Each mixed selector's four applicable single-layer subcases passed on the follow-up candidate. Its three array subcases require a non-cube array and fail in the unmodified test. Relevant public negative validation remains open for native-absence candidates.",
+  "inputs": {
+    "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cts-x64-candidate-prefix.log": "f185360a60dbb80b8759e1d7b9cc2cd15b83e45b3c9347bb47bcf7ab56ba4ce1",
+    "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cts-x64-continuation.log": "2bf5ea469ad95e48b7f86a1cba287ef2544e59cffbd2b418e505e1eec484dd62",
+    "C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\cts_runner\\test.lst": "4c0b42ac45af18f805713b79cba55456d29c304a4ef02094c2cb90aa43cdc103",
+    "C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\cts_runner\\skip.lst": "37663ed77aa9a88a382a6f73aee57c4b7cabda405804b7ff2f0282f227376e14",
+    "C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\deliverables\\dx11-levels\\FL9_1\\tests.json": "edc349f033a7116d95829e8f16e893a2b3e4de3367a49dfc3091b1f9cd7921cf"
+  },
+  "runtime_classification_counts": {
+    "OPTIONAL_WEBGPU_FEATURE_OR_FORMAT_TIER": 4591,
+    "ADAPTER_LIMIT_EXCLUDES_THIS_FIVE-ATTACHMENT_CASE": 6,
+    "CTS_CASE_UNIMPLEMENTED": 1,
+    "UNRESOLVED_PARENT_SELECTOR": 77,
+    "RUNTIME_CONDITIONAL_FORMAT_SAMPLE_COUNT": 9,
+    "CTS_GENERATED_CASE_PRECONDITION": 36
+  },
+  "runtime_disposition_counts": {
+    "CAPABILITY_CONDITIONAL; NOT A FL9_1 NATIVE-GUARANTEE FAILURE": 4591,
+    "EXPECTED_CTS_CAPABILITY_SKIP; SINGLE-RT LIMIT REMAINS SEPARATELY REQUIRED": 6,
+    "CTS_COVERAGE_GAP; IMPLEMENTATION-LEVEL QUERY CONTRACT STILL NEEDS DIRECT TEST": 1,
+    "UNRESOLVED_NO_NESTED_SKIP_REASON_IN_RETAINED_TRANSCRIPT": 77,
+    "UNRESOLVED_FORMAT-SPECIFIC-MSAA-CONTRACT": 9,
+    "EXPECTED_CTS_CASE_SKIP; NOT A BACKEND_FAILURE": 36
+  },
+  "excluded_selector_rows": 1197,
+  "excluded_selector_inventory": "cts-excluded-selectors.csv",
+  "test_lst_sha256": "4c0b42ac45af18f805713b79cba55456d29c304a4ef02094c2cb90aa43cdc103",
+  "excluded_selector_classification_counts": {
+    "FL9_1_NATIVE_COMPUTE_UNSUPPORTED": 34,
+    "UNRESOLVED": 1130,
+    "FL9_1_NATIVE_TEXTURE1D_UNSUPPORTED": 22,
+    "OPTIONAL_WEBGPU_EXTERNAL_TEXTURE_FEATURE": 8,
+    "FL9_1_MIXED_SINGLE_LAYER_APPLICABLE_ARRAY_UNSUPPORTED": 3
+  },
+  "excluded_selector_notes": "Native-absent clusters are classified as positive-operation inapplicable with validation coverage open; three RGBA8 2D buffer/texture copy selectors are now explicit mandatory-API operation candidates. All other rows remain conservatively unresolved; no rows are waived.",
+  "runtime_skip_occurrence_note": "Prefix plus continuation transcripts summarize exactly 4,720 skipped cases. Detail logs contain exactly duplicated [skip] blocks; inventory is deduplicated by CTS case selector, preserving detailed reasons from either capture.",
+  "audit_findings": {
+    "native_absence_clusters": [
+      {
+        "count": 22,
+        "family": "1D texture operations/validation setup",
+        "evidence": "Microsoft 10Level9 ID3D11Device: CreateTexture1D unsupported for all 9.*; local HAL projection false; core rejects before HAL.",
+        "policy": "Run targeted negative D1 creation/validation checks; do not run positive operations that require a D1 resource."
+      },
+      {
+        "count": 34,
+        "family": "compute/dispatch dependent cases",
+        "evidence": "Microsoft downlevel compute shader documentation: compute shaders cannot be used on D3D 9.x. CTS requestAdapter and buffer_binding_resource fixtures use compute pipelines.",
+        "policy": "Keep positive compute executions out of FL9_1 applicability; separately test unsupported feature/device request and validation surfaces."
+      }
+    ],
+    "expected_runtime_skip_clusters": [
+      {
+        "count": 36,
+        "family": "vertex output built-in validation",
+        "evidence": "CTS builtins.spec.ts explicitly skipIf missing @builtin(position) in unstructured vertex output."
+      },
+      {
+        "count": 6,
+        "family": "maxColorAttachmentBytesPerSample unaligned cases",
+        "evidence": "CTS source skips five-format set when it exceeds adapter maxColorAttachments; FL9_1 simultaneous RT count is one."
+      }
+    ],
+    "unresolved_high_value_clusters": [
+      {
+        "family": "image_copy / copyTextureToTexture",
+        "count": 241,
+        "reason": "241 selectors excluded in this family. Many test 2D/3D texture copy validation; 78 selectors mention 3D. 10Level9 CopySubresourceRegion/CopyResource states only Texture2D and buffers are copyable within GPU memory, 3D-to-CPU copy is forbidden, and mipmapped volume copies are forbidden. This native restriction may justify some direct-copy exclusions, but does not resolve public wgpu coverage or fallback strategy; split by dimensions, usages, and CPU/GPU direction.",
+        "two_d_candidate_count": 106,
+        "three_d_native_restriction_count": 78
+      },
+      {
+        "family": "render_pipeline fragment_state / render_pass_descriptor / createRenderBundleEncoder",
+        "count": 194,
+        "reason": "Validation selectors for format compatibility, attachment counts, and maxColorAttachmentBytesPerSample. FL9_1 has one RT; only six runtime byte-budget cases self-skip correctly because a five-target test fixture exceeds that cap. Remaining excluded selectors are potential avoidable validation-coverage gaps."
+      },
+      {
+        "family": "image_copy layouts and texture_related validation",
+        "count": 192,
+        "reason": "192 selectors are specifically under validation/image_copy/layout_related or texture_related. Additional buffer_related and buffer_texture_copies bring the full image_copy family to 241. Among all excluded selectors, 106 explicitly use dimension=2d (including 3 operation cases) and 78 use dimension=3d. Prioritize 2D buffer/texture layouts because 2D and buffers are explicitly copyable within GPU-accessible memory at FL9_1; split 3D according to native GPU copy/readback restrictions."
+      },
+      {
+        "family": "query semantics",
+        "reason": "One runtime CTS skip says query nesting is unimplemented by CTS; native event query result/ordering and wgpu validation still need direct coverage."
+      }
+    ],
+    "suggested_commands": [
+      "With WGPU_DX11_FORCE_FL9_1=1 and WGPU_DX11_REQUIRE_HARDWARE=1: cargo xtask cts --skip-checkout --backend dx11 --require-dx11-hardware \"webgpu:api,validation,image_copy:*\"",
+      "With same env: cargo xtask cts --skip-checkout --backend dx11 --require-dx11-hardware \"webgpu:api,validation,render_pass,render_pass_descriptor:*\"",
+      "With same env: cargo xtask cts --skip-checkout --backend dx11 --require-dx11-hardware \"webgpu:api,validation,render_pipeline,fragment_state:*\"",
+      "Before dropping any fails-if(dx11), classify by case setup and capability; add explicit false feature/limit exposure where native capability is absent, and retain validator-only negative tests."
+    ],
+    "source_refs": {
+      "microsoft_10level9_device": "https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device",
+      "microsoft_downlevel_compute": "https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-compute-shaders",
+      "cts_builtins": "cts/src/webgpu/shader/validation/shader_io/builtins.spec.ts",
+      "cts_unaligned_attachment_skip": "cts/src/webgpu/api/validation/render_pass/render_pass_descriptor.spec.ts; cts/src/webgpu/api/validation/render_pipeline/fragment_state.spec.ts"
+    },
+    "policy_recommendations": [
+      "Treat every fails-if(dx11) entry as an owned quarantine: annotate concrete backend/capability cause and CTS test setup; do not keep blanket wildcard exclusions when a selector can be split by dimension, format, feature, or operation.",
+      "Re-run representative 2D image-copy, render-pass, and pipeline validation selectors directly on exact physical FL9_1. Remove only exclusions that pass and whose test setup exercises guaranteed behavior.",
+      "For native-absent D1/compute, retain negative WebGPU validation checks where the API can reject requests without creating an unsupported resource or pipeline.",
+      "For FL9_1 3D copies, distinguish Texture3D sampling/render behavior from native direct copy and GPU-to-CPU readback. Use a HAL-supported staging/shader route only if its ordered readback is independently verified; otherwise classify precisely as unsupported."
+    ],
+    "mandatory_api_candidates": [
+      {
+        "count": 3,
+        "family": "2D RGBA8 queue-write/buffer-texture copies",
+        "selectors": [
+          "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"CopyB2T\";checkMethod=\"FullCopyT2B\";dimension=\"2d\"",
+          "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"WriteTexture\";checkMethod=\"FullCopyT2B\";dimension=\"2d\"",
+          "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"WriteTexture\";checkMethod=\"PartialCopyT2B\";dimension=\"2d\""
+        ],
+        "evidence": "CTS undefined_params test source fixes format to rgba8unorm and exercises WriteTexture or CopyB2T followed by full/partial CopyT2B. FL9_1 requires RGBA8 TEXTURE2D support; native 10Level9 context explicitly allows Texture2D and buffers in GPU-accessible copies.",
+        "disposition": "The exact follow-up candidate passed all 12 applicable single-layer subcases. Keep the upstream mixed parents excluded pending a split.",
+        "suggested_selector_command": "cargo xtask cts --skip-checkout --backend dx11 --require-dx11-hardware \"webgpu:api,operation,command_buffer,image_copy:undefined_params:*\""
+      }
+    ]
+  },
+  "runtime_feature_counts": {
+    "clip-distances": 506,
+    "primitive-index": 244,
+    "subgroups": 429,
+    "texture-compression-bc": 87,
+    "timestamp-query": 11,
+    "texture-compression-astc": 172,
+    "texture-compression-etc2": 50,
+    "depth32float-stencil8": 178,
+    "texture-formats-tier1": 70,
+    "float32-blendable": 2,
+    "dual-source-blending": 395,
+    "bgra8unorm-storage": 4,
+    "float32-filterable": 1,
+    "rg11b10ufloat-renderable": 6,
+    "shader-f16": 2531,
+    "chromium-experimental-primitive-id": 17
+  },
+  "source_refs": {
+    "microsoft_10level9_device": "https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device",
+    "microsoft_downlevel_compute": "https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-compute-shaders",
+    "microsoft_10level9_copy_context": "https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context",
+    "cts_builtins": "cts/src/webgpu/shader/validation/shader_io/builtins.spec.ts",
+    "cts_unaligned_attachment_skip": "cts/src/webgpu/api/validation/render_pass/render_pass_descriptor.spec.ts; cts/src/webgpu/api/validation/render_pipeline/fragment_state.spec.ts"
+  },
+  "suggested_commands": [
+    "With WGPU_DX11_FORCE_FL9_1=1 and WGPU_DX11_REQUIRE_HARDWARE=1: cargo xtask cts --skip-checkout --backend dx11 --require-dx11-hardware \"webgpu:api,validation,image_copy:*\"",
+    "With same env: cargo xtask cts --skip-checkout --backend dx11 --require-dx11-hardware \"webgpu:api,validation,render_pass,render_pass_descriptor:*\"",
+    "With same env: cargo xtask cts --skip-checkout --backend dx11 --require-dx11-hardware \"webgpu:api,validation,render_pipeline,fragment_state:*\"",
+    "Add a temporary explicit CTS list containing selected fails-if(dx11) selectors so execution can be evaluated without changing test.lst; only remove fails-if after passes on exact physical FL9_1 and applicable selectors."
+  ],
+  "followup": {
+    "exact_candidate_sha": "dbae35d184974c22b08da2426804facc5550acec",
+    "runner_sha256": "7b9c61e60cae2aaa3c80e2e71fee7bf9badd44ba4330b02d930003af6dfd8b3d",
+    "original_case_failures": 3,
+    "single_layer_control_case_passes": 3,
+    "single_layer_subcases_passed": 12,
+    "unsupported_array_subcase_occurrences": 9,
+    "receipt": "tests.json#followup.targeted_cts"
+  }
+}
