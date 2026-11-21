@@ -5,7 +5,7 @@ use windows::{
         Foundation::RECT,
         Graphics::{
             Direct3D::{
-                Fxc::D3DDisassemble, D3D_FEATURE_LEVEL_11_1,
+                Fxc::D3DDisassemble, D3D11_SRV_DIMENSION_TEXTURE2D, D3D_FEATURE_LEVEL_11_1,
                 D3D_PRIMITIVE_TOPOLOGY_3_CONTROL_POINT_PATCHLIST,
                 D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST,
             },
@@ -17,6 +17,9 @@ use windows::{
 
 use super::{Fl11_1Device, ShaderModel5Stage as Stage};
 use crate::dx11::{enumerate_native_adapters, FeatureLevel, NativeAdapter};
+
+#[path = "fl11_1_packed.rs"]
+mod packed;
 
 const HLSL: &str = include_str!("fixtures/fl11_1.hlsl");
 const GRAPHICS: [(Stage, &str, &str); 5] = [
@@ -1013,24 +1016,32 @@ fn acquire_key(mutex: &IDXGIKeyedMutex, key: u64) {
 fn tier_fl11_1_packed_color_mips() {
     let (_, owner) = exact_hardware();
     let device = owner.device();
-    let dxbc = compile(
-        Stage::Compute,
-        r#"
+    let source = r#"
         Texture2D<float4> color : register(t0);
         SamplerState point_clamp : register(s0);
         RWBuffer<uint> output : register(u0);
         [numthreads(1, 1, 1)]
+        #ifdef DYNAMIC_LOD
+        void main(uint3 index : SV_DispatchThreadID) {
+            float lod = 1 + index.x;
+        #else
         void main() {
-            uint4 sample_value = (uint4)round(color.SampleLevel(point_clamp, float2(0.5, 0.5), 1) * 255);
+            float lod = 1;
+        #endif
+            uint4 sample_value = (uint4)round(color.SampleLevel(point_clamp, float2(0.5, 0.5), lod) * 255);
             uint4 load_value = (uint4)round(color.Load(int3(0, 0, 1)) * 255);
-            [unroll] for (uint i = 0; i < 4; ++i) {
-                output[i] = sample_value[i];
-                output[4 + i] = load_value[i];
-            }
+            // FXC can omit the green and blue sample stores when this is
+            // written as a single unrolled loop over both vectors.
+            output[0] = sample_value.x;
+            output[1] = sample_value.y;
+            output[2] = sample_value.z;
+            output[3] = sample_value.w;
+            output[4] = load_value.x;
+            output[5] = load_value.y;
+            output[6] = load_value.z;
+            output[7] = load_value.w;
         }
-    "#,
-        "main",
-    );
+    "#;
     let result = buffer(
         device,
         D3D11_BUFFER_DESC {
@@ -1042,10 +1053,35 @@ fn tier_fl11_1_packed_color_mips() {
     );
     let uavs = [Some(buffer_uav(device, &result, 8, false))];
     unsafe {
-        let (mut shader, mut sampler) = (None, None);
-        device
-            .CreateComputeShader(&dxbc, None, Some(&mut shader))
-            .unwrap();
+        let shaders =
+            [("literal", ""), ("dynamic", "#define DYNAMIC_LOD\n")].map(|(name, define)| {
+                let dxbc = compile(Stage::Compute, &format!("{define}{source}"), "main");
+                let assembly =
+                    D3DDisassemble(dxbc.as_ptr().cast(), dxbc.len(), 0, PCSTR::null()).unwrap();
+                let bytes = core::slice::from_raw_parts(
+                    assembly.GetBufferPointer().cast::<u8>(),
+                    assembly.GetBufferSize(),
+                );
+                let text = core::str::from_utf8(bytes).unwrap();
+                let sampling = text
+                    .lines()
+                    .find(|line| line.trim_start().starts_with("sample_l"))
+                    .unwrap();
+                std::println!("packed {name} bytecode: {sampling}");
+                assert_eq!(
+                    text.lines()
+                        .filter(|line| line.trim_start().starts_with("store_uav_typed"))
+                        .count(),
+                    8,
+                    "both four-channel results must be written\n{text}",
+                );
+                let mut shader = None;
+                device
+                    .CreateComputeShader(&dxbc, None, Some(&mut shader))
+                    .unwrap();
+                (name, shader.unwrap())
+            });
+        let mut sampler = None;
         device
             .CreateSamplerState(
                 &D3D11_SAMPLER_DESC {
@@ -1090,6 +1126,15 @@ fn tier_fl11_1_packed_color_mips() {
                 let resource = texture(device, desc);
                 let mut view = None;
                 device.CreateShaderResourceView(&resource, None, Some(&mut view)).unwrap();
+                let mut explicit = None;
+                device.CreateShaderResourceView(&resource, Some(&D3D11_SHADER_RESOURCE_VIEW_DESC {
+                    Format: format,
+                    ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2D,
+                    Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
+                        Texture2D: D3D11_TEX2D_SRV { MostDetailedMip: 0, MipLevels: 2 },
+                    },
+                }), Some(&mut explicit)).unwrap();
+                let views = [("default", view), ("explicit", explicit)];
                 let data = [packed; 4];
                 ctx.UpdateSubresource1(&resource, 0, None, data.as_ptr().cast(), 4, 0, 0);
                 let staging = texture(device, D3D11_TEXTURE2D_DESC {
@@ -1103,17 +1148,25 @@ fn tier_fl11_1_packed_color_mips() {
                     if generated {
                         if !generate { continue; }
                         ctx.UpdateSubresource1(&resource, 1, None, [0u16].as_ptr().cast(), 2, 0, 0);
-                        ctx.GenerateMips(view.as_ref().unwrap());
+                        ctx.GenerateMips(views[0].1.as_ref().unwrap());
                     } else {
                         ctx.UpdateSubresource1(&resource, 1, None, data.as_ptr().cast(), 2, 0, 0);
                     }
-                    ctx.CSSetShader(shader.as_ref(), None);
-                    ctx.CSSetShaderResources(0, Some(core::slice::from_ref(&view)));
-                    ctx.CSSetSamplers(0, Some(core::slice::from_ref(&sampler)));
-                    ctx.CSSetUnorderedAccessViews(0, 1, Some(uavs.as_ptr()), None);
-                    ctx.Dispatch(1, 1, 1);
-                    ctx.ClearState();
-                    let values = read_buffer(device, ctx, &result, 8);
+                    for (lod, shader) in &shaders {
+                        for (descriptor, view) in &views {
+                            ctx.CSSetShader(shader, None);
+                            ctx.CSSetShaderResources(0, Some(core::slice::from_ref(view)));
+                            ctx.CSSetSamplers(0, Some(core::slice::from_ref(&sampler)));
+                            ctx.CSSetUnorderedAccessViews(0, 1, Some(uavs.as_ptr()), None);
+                            ctx.Dispatch(1, 1, 1);
+                            ctx.ClearState();
+                            let values = read_buffer(device, ctx, &result, 8);
+                            std::println!("{format:?} lod={lod} srv={descriptor} sampled/loaded={values:?} generated={generated}");
+                            if values[..4] != rgba || values[4..] != rgba {
+                                failed.push((format, generated, *lod, *descriptor));
+                            }
+                        }
+                    }
                     ctx.CopyResource(&staging, &resource);
                     let mips = [0, 1].map(|level| {
                         let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
@@ -1122,10 +1175,8 @@ fn tier_fl11_1_packed_color_mips() {
                         ctx.Unmap(&staging, level);
                         value
                     });
-                    std::println!("{format:?} packed={mips:04x?} sampled/loaded={values:?} generated={generated}");
-                    if mips != [packed; 2] || values[..4] != rgba || values[4..] != rgba {
-                        failed.push((format, generated));
-                    }
+                    std::println!("{format:?} packed={mips:04x?} generated={generated}");
+                    assert_eq!(mips, [packed; 2], "{format:?} generated={generated}");
                 }
             }
             assert!(failed.is_empty(), "packed mip cases with incorrect pixels: {failed:?}");
