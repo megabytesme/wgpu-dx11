@@ -1,0 +1,22 @@
+
+running 2 tests
+test public_dx11_fragment_3d_texture_load_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=single-mip fragment 3D textureLoad emulation with reachable helpers
+PASS: Core rejected a multi-mip 3D textureLoad view before HAL execution
+PASS: FL9_1 3D textureLoad read 2 distinct volume texels, returned zero for out-of-bounds/nonzero-mip cases, nested straight-line helpers matched direct loads, and a sparse group-1/binding-42 uniform tinted the selected load across 384 pixels; Core rejected control flow before HAL
+ok
+test public_dx11_r8_rg8_rgb565_render_attachments_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+Public R8Unorm reports query-gated blending support
+Public R8Unorm format projection: TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | BLENDABLE) }
+Public Rg8Unorm reports query-gated blending support
+Public Rg8Unorm format projection: TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | BLENDABLE | SINGLE_MIP_ONLY) }
+Public Rgb5g6b5Unorm reports query-gated blending support
+Public Rgb5g6b5Unorm format projection: TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE) }
+PASS: query-gated R8Unorm color attachment accepted alpha blending
+PASS: FL9_1 R8Unorm attachment draw sampled within expected quantization of [113, 0, 0, 255]; first pixel [113, 0, 0, 255]; 64/64 sampled pixels and 64/64 copied attachment texels matched
+PASS: query-gated Rg8Unorm color attachment accepted alpha blending
+PASS: FL9_1 Rg8Unorm attachment draw sampled within expected quantization of [113, 97, 0, 255]; first pixel [113, 97, 0, 255]; 64/64 sampled pixels and 64/64 copied attachment texels matched
+PASS: query-gated Rgb5g6b5Unorm color attachment accepted alpha blending
+PASS: FL9_1 Rgb5g6b5Unorm attachment draw sampled within expected quantization of [115, 97, 99, 255]; first pixel [115, 97, 99, 255]; 64/64 sampled pixels and 64/64 copied attachment texels matched
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 176 filtered out; finished in 0.83s

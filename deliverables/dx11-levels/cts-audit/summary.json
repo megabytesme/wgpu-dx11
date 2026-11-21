@@ -1,0 +1,53 @@
+{
+  "state": "INCOMPLETE",
+  "classification_policy": "Conservative: no skip is waived without per-case reason and capability applicability evidence.",
+  "source_pins": {
+    "wgpu_candidate": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+    "wgpu_baseline": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+    "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+  },
+  "inputs": {
+    "tests_json": {
+      "path": "C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\deliverables\\dx11-levels\\FL9_1\\tests.json",
+      "sha256": "edc349f033a7116d95829e8f16e893a2b3e4de3367a49dfc3091b1f9cd7921cf"
+    },
+    "transcript": {
+      "path": "E:\\Temp\\wgpu_dx11_curated_cts_after_texture_ok_gate_20261117.log",
+      "sha256": "9f447e888b7b2c2fa9cd6afa7227a2e9eed25846964103d0606bb40c3a175e6a"
+    },
+    "test_list": {
+      "path": "C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\cts_runner\\test.lst",
+      "sha256": "4c0b42ac45af18f805713b79cba55456d29c304a4ef02094c2cb90aa43cdc103"
+    },
+    "cts_revision_file": {
+      "path": "C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\cts_runner\\revision.txt",
+      "sha256": "322082bbfbccc725b1481ada23613dc14e5872685e93a7c7c6be0425688a46b0"
+    }
+  },
+  "counts": {
+    "selector_summaries": 1686,
+    "runtime_skipped_cases": 4720,
+    "selectors_with_skips": 335,
+    "runtime_skip_disposition": "UNRESOLVED_MANDATORY_REVIEW",
+    "excluded_selectors_reported_by_receipt": 1197,
+    "test_list_noncomment_rows": 2883,
+    "excluded_selectors_extracted": 1197,
+    "excluded_selector_disposition": "UNRESOLVED_CASE_LEVEL_REVIEW"
+  },
+  "checks": {
+    "selector_summaries": true,
+    "passed": true,
+    "warnings": true,
+    "skipped": true,
+    "failed": true,
+    "test_list_sha256": true,
+    "cts_revision": true,
+    "excluded_count": true,
+    "list_partition": true
+  },
+  "limitations": [
+    "The retained CTS transcript contains selector summaries only; it does not identify the exact skipped subcases or why they skipped.",
+    "Selectors are reconstructed from pinned test.lst and the xtask exact backend exclusion rule. Classification is heuristic triage, not proof of individual-case applicability; upstream selectors outside this list are not audited.",
+    "The transcript SHA is recorded independently; the receipt's full_transcript_sha256 refers to its original captured run transcript and differs from the retained summary log when logs were transformed."
+  ]
+}

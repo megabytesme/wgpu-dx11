@@ -53,3 +53,5 @@ The fork journal records 17,962 passes, 4,720 skips and zero failures across 1,6
 | DRS and timing | Before timing-driven DRS, verify timestamp ordering, disjoint and conversion. Test the existing CPU/frame-pressure fallback and full-resolution HUD independently. |
 
 Benchmark the same pinned scene, camera, settings, resolution, VSync, pack and thermal state. Compare exact FL9_1 first with FL9_1 compatibility on a higher native level, then with the genuine higher HAL/public path when available. The new native smoke supplies no Horizon performance comparison. [Horizon and presentation research](../deliverables/dx11-levels/research-integration.md)
+
+For native reference controls, exact-candidate reruns, CTS triage and the per-feature graph, see [Implementation support](wgpu-dx11-implementation-support.md).

@@ -1,0 +1,103 @@
+{
+  "schema_version": 1,
+  "harness_commit": "028635225ad96e93fbbbc8e2b4598966c84dabec",
+  "build_host": "Ben-Desktop",
+  "msvc": "14.44.35207",
+  "sdk_headers_and_fxc": "10.0.19041.0",
+  "arm_import_library_sdk": "10.0.15063.0",
+  "native_control_results": [
+    {
+      "architecture": "x64",
+      "runtime": "Win32",
+      "result": "PASS",
+      "adapter": "NVIDIA GeForce RTX 3090 Ti",
+      "adapter_luids": [
+        "00000000:00014a80",
+        "00000000:3a38dc76"
+      ],
+      "driver": "32.0.16.2101",
+      "exact_levels_per_adapter": 7,
+      "binary_sha256": "bf48bdb96462d950d0f5ca179edbd16637290be9ae03361cad25bd0c36a36bcd",
+      "original_capture_sha256": "dffdf3245cb8a61eccf77be2a0bc30419192c3c3370d0fd2f917d6a799f2708b",
+      "raw_log": "evidence/desktop-x64-native-reference.txt",
+      "raw_sha256": "4136c4755ff52d2254df97bc508ee52041cb104899dfe23b7e445c1f824b5817",
+      "build_directory": "C:\\Users\\ben\\AppData\\Local\\Temp/dx11-roadmap-qa-nov21-x64-reviewed"
+    },
+    {
+      "architecture": "x86",
+      "runtime": "Win32",
+      "result": "PASS",
+      "adapter": "NVIDIA GeForce RTX 3090 Ti",
+      "adapter_luids": [
+        "00000000:00014a80",
+        "00000000:3a38dc76"
+      ],
+      "driver": "32.0.16.2101",
+      "exact_levels_per_adapter": 7,
+      "binary_sha256": "0462f86fc56fe644622c162e2e1cfecc88549f9ed7ddaa95a353e0dca1c8687a",
+      "original_capture_sha256": "c49cc26aeb4de4912b97102a3f6ebf04f438f40e9f0bc0f3f225e6bb0954721f",
+      "raw_log": "evidence/desktop-x86-native-reference.txt",
+      "raw_sha256": "5da75422904ba61df308c4fdd17322a00bb2c9b884b7da910b4f459acc73acf3",
+      "build_directory": "C:\\Users\\ben\\AppData\\Local\\Temp/dx11-roadmap-qa-nov21-x86-reviewed"
+    }
+  ],
+  "candidate_public_results": [
+    {
+      "candidate": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+      "exact_level": "9_1",
+      "architecture": "x64",
+      "passed": 2,
+      "binary_sha256": "6b59ec06d6995d47347f65af2f01f7381a9c9a4e13c4a44279eface695c4483a",
+      "raw": "evidence/desktop-x64-fl91-reviewed.txt",
+      "raw_sha256": "295969ca04b0506069c4fb1c6e61a7c1e953820ace1d4c56692c6aca67464156",
+      "original_normalized_stdout_sha256": "5b7d7985b8e36b9d1eba8e2e85c3dc5e3bb4921be4148482159435197f112f1a"
+    },
+    {
+      "candidate": "912fc25d497f872e744185a2564555647e4e2b46",
+      "exact_level": "9_2",
+      "architecture": "x64",
+      "passed": 4,
+      "binary_sha256": "0358ed99efaabf69522edb280adc2eb457e41dff371cc6ebe7471d27837d01f2",
+      "raw": "evidence/desktop-x64-fl92-candidate.txt",
+      "raw_sha256": "6bf843ab5239e5330f40820a35ba38b43f604e2eb400d477c6d03a6a82182391",
+      "original_normalized_stdout_sha256": "4b5ccdb92d72863cedbd5719d1c0990ecbc208d07391585ce863cdcaca3a420b"
+    },
+    {
+      "candidate": "912fc25d497f872e744185a2564555647e4e2b46",
+      "exact_level": "9_2",
+      "architecture": "x64",
+      "passed": 1,
+      "binary_sha256": "518b3d5b11fcc6410d7043bce722e2b2be621f8076190f56511f76fd3b42f1ac",
+      "raw": "evidence/desktop-x64-fl92-r16unorm-candidate.txt",
+      "raw_sha256": "b9afc9cf63b23632fa6b3b27fc4938448b33f5ce1ad40af2bc9b513a1cddd02c",
+      "original_normalized_stdout_sha256": "f2dd4f4074b04bd5297a3bce50d0493508ce88dfd7135c25833a2db64f9c59b7"
+    }
+  ],
+  "fl92_archive_sha256": "77d3cfd22ce9004a68dc936f0a447320d1caeba09f9844d7e65082cab38dafe5",
+  "fl92_source_dir": "C:\\Users\\ben\\AppData\\Local\\Temp/dx11-roadmap-qa-fl92-912fc25d/src",
+  "fl92_build_dir": "E:/Temp/dx11-roadmap-qa-fl92-912fc25d-target",
+  "fl92_build_command": "cargo test --locked --offline -p wgpu --no-default-features --features std,dx11,wgsl --test dx11_fl92 --test dx11_fl92_r16unorm --no-run",
+  "fl92_run_flags": "--ignored --nocapture --test-threads=1",
+  "mobile": [
+    {
+      "architecture": "arm",
+      "package": "C:\\Users\\ben\\AppData\\Local\\Temp/dx11-roadmap-qa-nov21-arm-reviewed/Dx11TierProbe-arm.appx",
+      "package_version": "1.0.0.1",
+      "signature": "SignTool verified",
+      "package_sha256": "7f78b0f417f2cc82c3daf3d9f84e543d05657e7fc59b5e2504488feaa9ea9eb1",
+      "state": "NOT_RUN",
+      "restriction": "Pinned Lumia HTTPS helper timed out during /api/os/devicefamily before old package deployment"
+    },
+    {
+      "architecture": "arm64",
+      "package": "C:\\Users\\ben\\AppData\\Local\\Temp/dx11-roadmap-qa-nov21-arm64-reviewed/Dx11TierProbe-arm64.appx",
+      "package_version": "1.0.0.1",
+      "signature": "SignTool verified",
+      "package_sha256": "8d160829b787a9b48f11b27f6e9f158a193ff519225613e3dc8893324d4cda99",
+      "state": "NOT_RUN",
+      "restriction": "Surface 192.168.1.227 port 22 SSH timed out twice before transfer"
+    }
+  ],
+  "previous_surface_smoke": "hardware-probes.json",
+  "tier_certification": "INCOMPLETE"
+}

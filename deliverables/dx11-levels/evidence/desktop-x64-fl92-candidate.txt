@@ -1,0 +1,18 @@
+
+running 4 tests
+test forced_dx11_tier_occlusion_queries ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_2; physical DXGI adapter; driver version 32.0.16.2101" native=L9_2 arch=x86_64
+Verified direct and cross-submission occlusion resolves, including visible, depth-occluded, stencil depth-fail, unused, and reused slots
+ok
+test forced_dx11_tier_overlapping_attributes_and_uint32_indices ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_2; physical DXGI adapter; driver version 32.0.16.2101" native=L9_2 arch=x86_64
+Verified 64 overlapping indexed pixels with [65535, 65536, 65537]
+ok
+test forced_dx11_tier_sample_blend_scissor_and_limits ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_2; physical DXGI adapter; driver version 32.0.16.2101" native=L9_2 arch=x86_64
+Rejected 3D texture width 257 (limit 256)
+Verified 64 Rgba8Unorm draw/scissor pixels
+Verified 64 Rg16Snorm draw/scissor pixels
+ok
+test forced_dx11_tier_two_sided_stencil ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_2; physical DXGI adapter; driver version 32.0.16.2101" native=L9_2 arch=x86_64
+Verified 64 two-sided stencil pixels
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.51s
