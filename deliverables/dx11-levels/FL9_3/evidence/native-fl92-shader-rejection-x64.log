@@ -1,0 +1,16 @@
+
+running 1 test
+test dx11::interop::tests::tier_fl9_3_fl92_shader_rejection ... FL9_2 CreatePixelShader with FL9_3 bytecode: Ok(()), object=true
+
+thread 'dx11::interop::tests::tier_fl9_3_fl92_shader_rejection' (41936) panicked at wgpu-hal\src\dx11\interop.rs:180:9:
+driver accepted Level9_3 derivative bytecode on exact FL9_2
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    dx11::interop::tests::tier_fl9_3_fl92_shader_rejection
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 559 filtered out; finished in 0.26s
+

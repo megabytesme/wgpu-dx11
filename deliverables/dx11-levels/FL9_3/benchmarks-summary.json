@@ -1,0 +1,71 @@
+{
+  "candidate_sha": "bd6078df6f77ec9a687edadaae9479e950e3bab5",
+  "series": [
+    {
+      "architecture": "x64",
+      "level": "9_1",
+      "valid_samples": 5,
+      "failed_samples": 0,
+      "median_ms": 4.6312,
+      "p95_nearest_rank_ms": 6.0946,
+      "observed_peak_working_set_bytes": 60485632,
+      "peak_gpu_memory_bytes": null
+    },
+    {
+      "architecture": "x64",
+      "level": "9_2",
+      "valid_samples": 5,
+      "failed_samples": 0,
+      "median_ms": 4.8854,
+      "p95_nearest_rank_ms": 5.1416,
+      "observed_peak_working_set_bytes": 59813888,
+      "peak_gpu_memory_bytes": null
+    },
+    {
+      "architecture": "x64",
+      "level": "9_3",
+      "valid_samples": 5,
+      "failed_samples": 0,
+      "median_ms": 4.8534,
+      "p95_nearest_rank_ms": 5.4966,
+      "observed_peak_working_set_bytes": 60932096,
+      "peak_gpu_memory_bytes": null
+    },
+    {
+      "architecture": "x86",
+      "level": "9_1",
+      "valid_samples": 5,
+      "failed_samples": 0,
+      "median_ms": 9.0332,
+      "p95_nearest_rank_ms": 9.8878,
+      "observed_peak_working_set_bytes": 50348032,
+      "peak_gpu_memory_bytes": null
+    },
+    {
+      "architecture": "x86",
+      "level": "9_2",
+      "valid_samples": 5,
+      "failed_samples": 0,
+      "median_ms": 9.1369,
+      "p95_nearest_rank_ms": 11.2314,
+      "observed_peak_working_set_bytes": 50196480,
+      "peak_gpu_memory_bytes": null
+    },
+    {
+      "architecture": "x86",
+      "level": "9_3",
+      "valid_samples": 5,
+      "failed_samples": 0,
+      "median_ms": 7.8293,
+      "p95_nearest_rank_ms": 9.2752,
+      "observed_peak_working_set_bytes": 50372608,
+      "peak_gpu_memory_bytes": null
+    }
+  ],
+  "notes": [
+    "One warmup and five independent test processes per tier and architecture.",
+    "The 32x32 fixture and compiled binary are matched across tiers per architecture.",
+    "The metric includes command recording, submission and map completion. Process peak working set is sampled every 10 ms and GPU memory was not measured.",
+    "Windows scheduling and clocks were not pinned. Use this data for the scoped comparison, with further measurement required for performance qualification."
+  ]
+}

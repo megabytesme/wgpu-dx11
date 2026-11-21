@@ -1,0 +1,362 @@
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL9_3-Nov21\wgpu-hal)
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\hal_queue.rs:452:56
+    |
+452 |                 super::super::hal_device::device_error(windows::core::Error::from_hresult(code)),
+    |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: the lint level is defined here
+   --> wgpu-hal\src\lib.rs:238:5
+    |
+238 |     unused_qualifications
+    |     ^^^^^^^^^^^^^^^^^^^^^
+help: remove the unnecessary path segments
+    |
+452 -                 super::super::hal_device::device_error(windows::core::Error::from_hresult(code)),
+452 +                 super::super::hal_device::device_error(Error::from_hresult(code)),
+    |
+
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\hal_queue.rs:457:52
+    |
+457 |             super::super::hal_device::device_error(windows::core::Error::from_hresult(
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+457 -             super::super::hal_device::device_error(windows::core::Error::from_hresult(
+457 +             super::super::hal_device::device_error(Error::from_hresult(
+    |
+
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\hal_queue.rs:463:52
+    |
+463 |             super::super::hal_device::device_error(windows::core::Error::from_hresult(E_FAIL)),
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+463 -             super::super::hal_device::device_error(windows::core::Error::from_hresult(E_FAIL)),
+463 +             super::super::hal_device::device_error(Error::from_hresult(E_FAIL)),
+    |
+
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\hal_queue.rs:469:71
+    |
+469 |     fn dynamic_queue_submits_copy_batches_and_signals_real_fence() -> windows::core::Result<()> {
+    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+469 -     fn dynamic_queue_submits_copy_batches_and_signals_real_fence() -> windows::core::Result<()> {
+469 +     fn dynamic_queue_submits_copy_batches_and_signals_real_fence() -> Result<()> {
+    |
+
+warning: unnecessary qualification
+    --> wgpu-hal\src\dx11\hal_shader.rs:6198:13
+     |
+6198 |             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+help: remove the unnecessary path segments
+     |
+6198 -             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+6198 +             translate_naga_with_viewport_and_fl9_inputs(
+     |
+
+warning: unnecessary qualification
+    --> wgpu-hal\src\dx11\hal_shader.rs:6314:13
+     |
+6314 |             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+help: remove the unnecessary path segments
+     |
+6314 -             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+6314 +             translate_naga_with_viewport_and_fl9_inputs(
+     |
+
+warning: unnecessary qualification
+    --> wgpu-hal\src\dx11\hal_shader.rs:6550:13
+     |
+6550 |             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+help: remove the unnecessary path segments
+     |
+6550 -             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+6550 +             translate_naga_with_viewport_and_fl9_inputs(
+     |
+
+warning: function `adjust_raw_limits` is never used
+   --> wgpu-hal\src\auxil\mod.rs:128:15
+    |
+128 | pub(crate) fn adjust_raw_limits(mut limits: wgt::Limits) -> wgt::Limits {
+    |               ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: you seem to be trying to use `match` to destructure a single infallible pattern. Consider using `let`
+  --> wgpu-hal\src\dx11\adapter.rs:82:9
+   |
+82 | /         let native = match &self.inner {
+83 | |             AdapterInner::Native(native) => native,
+84 | |             #[cfg(feature = "dx11-test-fixture")]
+85 | |             AdapterInner::Fixture(native) => native,
+86 | |         };
+   | |__________^ help: try: `let AdapterInner::Native(native) = &self.inner;`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#infallible_destructuring_match
+   = note: `#[warn(clippy::infallible_destructuring_match)]` on by default
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1758:57
+     |
+1758 |                 .flush_mapped_ranges(staging.as_ref(), &[0..64])
+     |                                                         ^-----^
+     |                                                          |
+     |                                                          help: if you wanted an array of len 64, try: `0; 64`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#single_range_in_vec_init
+     = note: `#[warn(clippy::single_range_in_vec_init)]` on by default
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1887:56
+     |
+1887 |                 .flush_mapped_ranges(source.as_ref(), &[12..20])
+     |                                                        ^------^
+     |                                                         |
+     |                                                         help: if you wanted an array of len 20, try: `12; 20`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#single_range_in_vec_init
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1893:59
+     |
+1893 |                 .invalidate_mapped_ranges(dest.as_ref(), &[8..24])
+     |                                                           ^-----^
+     |                                                            |
+     |                                                            help: if you wanted an array of len 24, try: `8; 24`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#single_range_in_vec_init
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1908:56
+     |
+1908 |                 .flush_mapped_ranges(source.as_ref(), &[12..20])
+     |                                                        ^------^
+     |                                                         |
+     |                                                         help: if you wanted an array of len 20, try: `12; 20`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#single_range_in_vec_init
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1914:59
+     |
+1914 |                 .invalidate_mapped_ranges(dest.as_ref(), &[12..20])
+     |                                                           ^------^
+     |                                                            |
+     |                                                            help: if you wanted an array of len 20, try: `12; 20`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#single_range_in_vec_init
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1925:56
+     |
+1925 |                 .flush_mapped_ranges(source.as_ref(), &[0..32])
+     |                                                        ^-----^
+     |                                                         |
+     |                                                         help: if you wanted an array of len 32, try: `0; 32`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#single_range_in_vec_init
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1931:59
+     |
+1931 |                 .invalidate_mapped_ranges(dest.as_ref(), &[0..32])
+     |                                                           ^-----^
+     |                                                            |
+     |                                                            help: if you wanted an array of len 32, try: `0; 32`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#single_range_in_vec_init
+
+warning: this function has too many arguments (8/7)
+   --> wgpu-hal\src\dx11\hal_index.rs:219:5
+    |
+219 | /     fn try_native_u32_bounds(
+220 | |         &self,
+221 | |         context: &ID3D11DeviceContext,
+222 | |         first: u32,
+...   |
+227 | |         vertex_index_none: bool,
+228 | |     ) -> Result<NativeU32Outcome> {
+    | |_________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+    = note: `#[warn(clippy::too_many_arguments)]` on by default
+
+warning: this function has too many arguments (9/7)
+    --> wgpu-hal\src\dx11\hal_index.rs:1615:5
+     |
+1615 | /     pub(super) fn draw(
+1616 | |         &self,
+1617 | |         context: &ID3D11DeviceContext,
+1618 | |         first: u32,
+...    |
+1624 | |         vertex_index: Option<&(u32, ID3D11Buffer)>,
+1625 | |     ) -> Result<()> {
+     | |___________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+    --> wgpu-hal\src\dx11\hal_index.rs:2174:1
+     |
+2174 | / fn draw_indexed_triangle_batch(
+2175 | |     context: &ID3D11DeviceContext,
+2176 | |     vertices: &[(u32, ID3D11Buffer, u32, u64, u32, u32)],
+2177 | |     indices: &[u32],
+...    |
+2182 | |     vertex_index: Option<&(u32, ID3D11Buffer)>,
+2183 | | ) -> Result<()> {
+     | |_______________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+   --> wgpu-hal\src\dx11\hal_pipeline.rs:597:5
+    |
+597 | /     fn new(
+598 | |         owner: &NativeDevice,
+599 | |         binding: naga::ResourceBinding,
+600 | |         additional_bindings: alloc::vec::Vec<naga::ResourceBinding>,
+...   |
+605 | |         has_implicit_sample: bool,
+606 | |     ) -> Result<Self, crate::PipelineError> {
+    | |___________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: used import from `std` instead of `core`
+   --> wgpu-hal\src\dx11\hal_queue.rs:7:17
+    |
+  7 | use std::time::{Duration, Instant};
+    |                 ^^^^^^^^
+    |
+    = help: consider importing the item from `core`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#std_instead_of_core
+note: the lint level is defined here
+   --> wgpu-hal\src\lib.rs:233:5
+    |
+233 |     clippy::std_instead_of_core,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: used import from `std` instead of `core`
+  --> wgpu-hal\src\dx11\hal_queue.rs:35:36
+   |
+35 |     force_idle_query_pending_once: std::sync::atomic::AtomicBool,
+   |                                    ^^^ help: consider importing the item from `core`: `core`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#std_instead_of_core
+
+warning: used import from `std` instead of `core`
+  --> wgpu-hal\src\dx11\hal_queue.rs:51:44
+   |
+51 |             force_idle_query_pending_once: std::sync::atomic::AtomicBool::new(false),
+   |                                            ^^^ help: consider importing the item from `core`: `core`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#std_instead_of_core
+
+warning: called `unwrap` on `source_size` after checking its variant with `is_none`
+   --> wgpu-hal\src\dx11\hal_transfer.rs:881:25
+    |
+875 |                     || source_size.is_none()
+    |                        --------------------- the check is happening here
+...
+881 |                         source_size.unwrap(),
+    |                         ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: try using `match`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#unnecessary_unwrap
+    = note: `#[warn(clippy::unnecessary_unwrap)]` on by default
+
+warning: this function has too many arguments (9/7)
+   --> wgpu-hal\src\dx11\hal_transfer.rs:902:1
+    |
+902 | / fn write_packed_rows(
+903 | |     context: &ID3D11DeviceContext,
+904 | |     destination: &ID3D11Buffer,
+905 | |     destination_shadow: Option<&BufferCpuShadow>,
+...   |
+911 | |     source_pitch: u32,
+912 | | ) -> Result<()> {
+    | |_______________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: items after a test module
+   --> wgpu-hal\src\dx11\swapchain.rs:614:1
+    |
+614 | mod tests {
+    | ^^^^^^^^^
+...
+665 | impl Drop for CoreWindowFrame {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#items_after_test_module
+    = note: `#[warn(clippy::items_after_test_module)]` on by default
+    = help: move the items to before the test module was defined
+
+warning: this function has too many arguments (9/7)
+   --> wgpu-hal\src\dx11\texture.rs:459:5
+    |
+459 | /     pub(super) fn copy_region_from(
+460 | |         &self,
+461 | |         source: &Self,
+462 | |         src_mip: u32,
+...   |
+468 | |         extent: [u32; 2],
+469 | |     ) -> Result<()> {
+    | |___________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+    --> wgpu-hal\src\dx11\texture.rs:1955:5
+     |
+1955 | /     pub(super) fn create_hal_view(
+1956 | |         &self,
+1957 | |         texture: &NativeTexture,
+1958 | |         resource: bool,
+...    |
+1963 | |         mip_range: (u32, u32),
+1964 | |     ) -> Result<NativeTextureView> {
+     | |__________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#too_many_arguments
+
+warning: the loop variable `row` is used to index `rows`
+    --> wgpu-hal\src\dx11\texture.rs:3010:20
+     |
+3010 |         for row in 0..3usize {
+     |                    ^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_range_loop
+     = note: `#[warn(clippy::needless_range_loop)]` on by default
+help: consider using an iterator and enumerate()
+     |
+3010 -         for row in 0..3usize {
+3010 +         for (row, <item>) in rows.iter().enumerate() {
+     |
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+  --> wgpu-hal\src\dx11\..\..\tests\dx11\fl9_texel_load.rs:56:47
+   |
+56 |     let module = naga::front::wgsl::parse_str(&wgsl).map_err(|e| format!("{e:?}"))?;
+   |                                               ^^^^^ help: change this to: `wgsl`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.93.0/index.html#needless_borrow
+   = note: `#[warn(clippy::needless_borrow)]` on by default
+
+warning: `wgpu-hal` (lib test) generated 30 warnings (run `cargo clippy --fix --lib -p wgpu-hal --tests` to apply 19 suggestions)
+    Finished `dev` profile [unoptimized] target(s) in 16.27s

@@ -1,0 +1,7 @@
+
+running 1 test
+test exact_selector ... AdapterInfo { name: "NVIDIA GeForce RTX 3090 Ti", vendor: 4318, device: 8707, device_type: Other, device_pci_bus_id: "", driver: "D3D11", driver_info: "FL9_1; physical DXGI adapter; driver version 32.0.16.2101; requested L9_1; actual L9_1; LUID 0000000000014a80", backend: Dx11, subgroup_min_size: 4, subgroup_max_size: 128, transient_saves_memory: None, limit_bucket: None }
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.25s
+

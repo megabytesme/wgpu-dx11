@@ -1,0 +1,389 @@
+{
+  "schema_version": 1,
+  "status": "INCOMPLETE",
+  "candidate_sha": "bd6078df6f77ec9a687edadaae9479e950e3bab5",
+  "candidate_tree": "8af292ceb5f7cc0405f214f3b0e9b13c63ace8ef",
+  "baseline_sha": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+  "worktree": "C:\\dev\\personal\\wgpu-dx11-FL9_3-Nov21",
+  "build_commands": [
+    "cargo test --no-run --offline --locked -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl93 --test dx11_index_ranges --test dx11_fl91_scene",
+    "cargo test --no-run --offline --locked --target i686-pc-windows-msvc -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl93 --test dx11_index_ranges --test dx11_fl91_scene",
+    "cargo test --no-run --offline --locked -p wgpu-hal --no-default-features --features dx11 --lib",
+    "cargo clippy --offline --locked -p wgpu-hal --no-default-features --features dx11 --tests"
+  ],
+  "builds": [
+    {
+      "scope": "build x64 public render, index and scene tests",
+      "worktree": "C:\\dev\\personal\\wgpu-dx11-FL9_3-Nov21",
+      "build_directory": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target",
+      "result": "PASS",
+      "log": {
+        "path": "evidence/build-public-x64.log",
+        "sha256": "ec84ad92d77052d50f3d353334ca64c114cf56c657867326df951f5d5c7c726b"
+      }
+    },
+    {
+      "scope": "build x86 public render, index and scene tests",
+      "worktree": "C:\\dev\\personal\\wgpu-dx11-FL9_3-Nov21",
+      "build_directory": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target",
+      "result": "PASS",
+      "log": {
+        "path": "evidence/build-public-x86.log",
+        "sha256": "dba97913de9cabe188db90a7a8d2c5717e0d898e932bdd4df86994abf926714f"
+      }
+    },
+    {
+      "scope": "build x64 HAL unit tests",
+      "worktree": "C:\\dev\\personal\\wgpu-dx11-FL9_3-Nov21",
+      "build_directory": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target",
+      "result": "PASS",
+      "log": {
+        "path": "evidence/build-hal-x64.log",
+        "sha256": "23dedd689556bd6812758c455ab16c82e719500b7dba02e431bab2c4b6cfe58b"
+      }
+    },
+    {
+      "scope": "lint HAL tests",
+      "worktree": "C:\\dev\\personal\\wgpu-dx11-FL9_3-Nov21",
+      "build_directory": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target",
+      "result": "PASS",
+      "log": {
+        "path": "evidence/clippy-hal.log",
+        "sha256": "d2f773a45f2f08288bddbc6b5e9824754bf2202457bf8e51ee4b20dccd0a4dfb"
+      }
+    }
+  ],
+  "desktop_runs": [
+    {
+      "arch": "x64",
+      "name": "native-fl93",
+      "level": "9_3",
+      "legacy": null,
+      "executable": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe",
+      "arguments": [
+        "tier_fl9_3_native_formats_and_shader_profiles",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "d9a14f469bf9ebdc341052a4d31e3c62e7057f8edb34259d470cccb7caf3cd36",
+      "exit": 0,
+      "log": "evidence/native-fl93-x64.log",
+      "log_sha256": "dfdb711cce816301a8268b7e6c2e57296fa185d43f7dc74bb94e1ceedef60a69",
+      "result": "PASS",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe tier_fl9_3_native_formats_and_shader_profiles --nocapture --test-threads=1",
+      "scope": "focused desktop verification",
+      "note": "The first run's closing message for the interop control was incorrect. The separately logged native shader rejection test is authoritative for that negative."
+    },
+    {
+      "arch": "x64",
+      "name": "native-fl92-shader-rejection",
+      "level": "9_3",
+      "legacy": null,
+      "executable": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe",
+      "arguments": [
+        "tier_fl9_3_fl92_shader_rejection",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "d9a14f469bf9ebdc341052a4d31e3c62e7057f8edb34259d470cccb7caf3cd36",
+      "exit": 101,
+      "log": "evidence/native-fl92-shader-rejection-x64.log",
+      "log_sha256": "6685fdec9a5cd79dd56210c70c4501d0f2d40af7f7decf6b774e4c0eeef1d997",
+      "result": "FAIL",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe tier_fl9_3_fl92_shader_rejection --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x64",
+      "name": "level-selector-unit",
+      "level": "9_3",
+      "legacy": null,
+      "executable": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe",
+      "arguments": [
+        "exact_feature_level_never_falls_back",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "d9a14f469bf9ebdc341052a4d31e3c62e7057f8edb34259d470cccb7caf3cd36",
+      "exit": 0,
+      "log": "evidence/level-selector-unit-x64.log",
+      "log_sha256": "d7ab904997f80b2a2a22de6887f79459cbfde317f453d2f332037d0733545311",
+      "result": "PASS",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe exact_feature_level_never_falls_back --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x64",
+      "name": "public-9_3",
+      "level": "9_3",
+      "legacy": null,
+      "executable": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\dx11_fl93-be9831a806579f81.exe",
+      "arguments": [
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "113910e1e7c6cf7884cdf6fd7bf84d104494346afa2a98c7effe6db308da3b04",
+      "exit": 0,
+      "log": "evidence/public-9_3-x64.log",
+      "log_sha256": "5d4dc0421e17186441446627a7c95611d56349f5dc08080eb119b917817dabdf",
+      "result": "PASS",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\dx11_fl93-be9831a806579f81.exe --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x64",
+      "name": "public-9_2",
+      "level": "9_2",
+      "legacy": null,
+      "executable": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\dx11_fl93-be9831a806579f81.exe",
+      "arguments": [
+        "exact_selector",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "113910e1e7c6cf7884cdf6fd7bf84d104494346afa2a98c7effe6db308da3b04",
+      "exit": 0,
+      "log": "evidence/public-9_2-x64.log",
+      "log_sha256": "0c0337c3c503cc39dd499ee9e6aa98485caa0348d88a72ec7be0acf8863c8587",
+      "result": "PASS",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\dx11_fl93-be9831a806579f81.exe exact_selector --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x64",
+      "name": "public-9_1",
+      "level": "9_1",
+      "legacy": null,
+      "executable": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\dx11_fl93-be9831a806579f81.exe",
+      "arguments": [
+        "exact_selector",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "113910e1e7c6cf7884cdf6fd7bf84d104494346afa2a98c7effe6db308da3b04",
+      "exit": 0,
+      "log": "evidence/public-9_1-x64.log",
+      "log_sha256": "028feb211af21ac901e8f3dad794e824cf3c9892c35ca714a673e149148cac91",
+      "result": "PASS",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\dx11_fl93-be9831a806579f81.exe exact_selector --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x64",
+      "name": "public-10_0",
+      "level": "10_0",
+      "legacy": null,
+      "executable": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\dx11_fl93-be9831a806579f81.exe",
+      "arguments": [
+        "exact_selector",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "113910e1e7c6cf7884cdf6fd7bf84d104494346afa2a98c7effe6db308da3b04",
+      "exit": 0,
+      "log": "evidence/public-10_0-x64.log",
+      "log_sha256": "88b147a759f429e8935d0cfcadd1fb00e81f264a9e089ee10245b8220002b367",
+      "result": "PASS",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\dx11_fl93-be9831a806579f81.exe exact_selector --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x64",
+      "name": "public-selector-conflict",
+      "level": "9_3",
+      "legacy": "1",
+      "executable": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\dx11_fl93-be9831a806579f81.exe",
+      "arguments": [
+        "exact_selector",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "113910e1e7c6cf7884cdf6fd7bf84d104494346afa2a98c7effe6db308da3b04",
+      "exit": 0,
+      "log": "evidence/public-selector-conflict-x64.log",
+      "log_sha256": "8de72ec24c428c93a88be5c79f03700e5bb4d677d0102a0976d129b16fdab8e8",
+      "result": "PASS",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\dx11_fl93-be9831a806579f81.exe exact_selector --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x64",
+      "name": "index-legacy-fl91",
+      "level": null,
+      "legacy": "1",
+      "executable": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\dx11_index_ranges-9bf96daa91ff9775.exe",
+      "arguments": [
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "06ec04ab56939401cb24ffd29896cfa7433e66d975d5dad5d56ff0d56b0f49f7",
+      "exit": 0,
+      "log": "evidence/index-legacy-fl91-x64.log",
+      "log_sha256": "9979151916bd932acb675d1a68cc8236422017fbe196d62f25b0869d80bd029e",
+      "result": "PASS",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl9_3-Nov21\\target\\debug\\deps\\dx11_index_ranges-9bf96daa91ff9775.exe --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x86",
+      "name": "public-9_3",
+      "level": "9_3",
+      "legacy": null,
+      "executable": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl93-e212849726c52d8b.exe",
+      "arguments": [
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "2d43dabb80f0dd62bb1ce9dbeac2ed57354ec03d9426e41025c86fcbc8de7263",
+      "exit": 0,
+      "log": "evidence/public-9_3-x86.log",
+      "log_sha256": "34e48e98a384bc900b3ef9effa4900847ded7d9624fc611301fca5695f8cfff3",
+      "result": "PASS",
+      "command": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl93-e212849726c52d8b.exe --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x86",
+      "name": "public-9_2",
+      "level": "9_2",
+      "legacy": null,
+      "executable": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl93-e212849726c52d8b.exe",
+      "arguments": [
+        "exact_selector",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "2d43dabb80f0dd62bb1ce9dbeac2ed57354ec03d9426e41025c86fcbc8de7263",
+      "exit": 0,
+      "log": "evidence/public-9_2-x86.log",
+      "log_sha256": "f922fbaec35870ec4195c45697c127a11844e1319ba2d1ec9bc76b667f7ae5dd",
+      "result": "PASS",
+      "command": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl93-e212849726c52d8b.exe exact_selector --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x86",
+      "name": "public-9_1",
+      "level": "9_1",
+      "legacy": null,
+      "executable": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl93-e212849726c52d8b.exe",
+      "arguments": [
+        "exact_selector",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "2d43dabb80f0dd62bb1ce9dbeac2ed57354ec03d9426e41025c86fcbc8de7263",
+      "exit": 0,
+      "log": "evidence/public-9_1-x86.log",
+      "log_sha256": "2fd7d35f51a25b9783d603e64ad708ba836c39a644bab1ddc6772c9b8022105c",
+      "result": "PASS",
+      "command": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl93-e212849726c52d8b.exe exact_selector --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x86",
+      "name": "public-10_0",
+      "level": "10_0",
+      "legacy": null,
+      "executable": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl93-e212849726c52d8b.exe",
+      "arguments": [
+        "exact_selector",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "2d43dabb80f0dd62bb1ce9dbeac2ed57354ec03d9426e41025c86fcbc8de7263",
+      "exit": 0,
+      "log": "evidence/public-10_0-x86.log",
+      "log_sha256": "88b147a759f429e8935d0cfcadd1fb00e81f264a9e089ee10245b8220002b367",
+      "result": "PASS",
+      "command": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl93-e212849726c52d8b.exe exact_selector --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x86",
+      "name": "public-selector-conflict",
+      "level": "9_3",
+      "legacy": "1",
+      "executable": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl93-e212849726c52d8b.exe",
+      "arguments": [
+        "exact_selector",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "2d43dabb80f0dd62bb1ce9dbeac2ed57354ec03d9426e41025c86fcbc8de7263",
+      "exit": 0,
+      "log": "evidence/public-selector-conflict-x86.log",
+      "log_sha256": "8de72ec24c428c93a88be5c79f03700e5bb4d677d0102a0976d129b16fdab8e8",
+      "result": "PASS",
+      "command": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl93-e212849726c52d8b.exe exact_selector --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    },
+    {
+      "arch": "x86",
+      "name": "index-legacy-fl91",
+      "level": null,
+      "legacy": "1",
+      "executable": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_index_ranges-fbba3881196b062f.exe",
+      "arguments": [
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "executable_sha256": "dc601b1c327e612e8d64778472e23648e193986268f58a0d813bb795232ec1fe",
+      "exit": 0,
+      "log": "evidence/index-legacy-fl91-x86.log",
+      "log_sha256": "1e0e79ee195a900bf6b3121ee5aa708b7d9889a56252067d762d262a9b3ecb04",
+      "result": "PASS",
+      "command": "E:\\CodexScratch\\wgpu-fl9_3-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_index_ranges-fbba3881196b062f.exe --nocapture --test-threads=1",
+      "scope": "focused desktop verification"
+    }
+  ],
+  "compiler_evidence": [
+    {
+      "path": "evidence/profile.hlsl",
+      "sha256": "22c684bfd5ee01a75b39cfef34dcdcdf97d18350857b908196bef0f9aa2580cf"
+    },
+    {
+      "path": "evidence/mrt.hlsl",
+      "sha256": "bd81ec34ffc2a459d9e8593bd77ba6077129f7235751525afc86b3badf3544f3"
+    },
+    {
+      "path": "evidence/vs-vs_4_0_level_9_3.asm",
+      "sha256": "9cdd4eebbc17b17125cdc55d81e3ebeea8ac79d8ca927595cc6e19b83fb76836"
+    },
+    {
+      "path": "evidence/ps-ps_4_0_level_9_3.asm",
+      "sha256": "7202b5e276895372be4c6065b5d1ef8ffc87187cd2f98e79dcf90179b3b70ab2"
+    },
+    {
+      "path": "evidence/grad.asm",
+      "sha256": "f5566e4cc0289670613f8e66c47438f1bd37d86d61fffd2d8bbcfda13c8ec052"
+    }
+  ],
+  "desktop_source_provenance": "The desktop public and benchmark executables were built from the candidate's functional sources immediately before correcting one HAL test-only diagnostic message and adding the changelog.",
+  "unrun": [
+    {
+      "scope": "all inherited suites on the cumulative candidate",
+      "reason": "FL9_1 and FL9_2 reviewed certification gates are absent"
+    },
+    {
+      "scope": "native instancing, arbitrary border, method-level formats, resource boundaries and lifetime",
+      "reason": "required operations or coverage remain incomplete"
+    },
+    {
+      "scope": "exact-tier WebGPU CTS",
+      "reason": "the pinned branch's CTS runner checks physical adapter selection but lacks an observed-tier assertion. The sibling assertion change is unmerged."
+    },
+    {
+      "scope": "ARM64 Surface signed package, presentation and Horizon integration",
+      "reason": "SSH port timed out"
+    },
+    {
+      "scope": "Lumia ARM32 signed probe",
+      "reason": "paired Device Portal port timed out, so FL9_3 support could not be established"
+    },
+    {
+      "scope": "physical device loss and native-ceiling hardware",
+      "reason": "focused desktop probes ran offscreen on a modern NVIDIA driver"
+    }
+  ]
+}

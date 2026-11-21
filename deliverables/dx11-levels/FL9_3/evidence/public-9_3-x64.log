@@ -1,0 +1,34 @@
+
+running 2 tests
+test exact_selector ... AdapterInfo { name: "NVIDIA GeForce RTX 3090 Ti", vendor: 4318, device: 8707, device_type: Other, device_pci_bus_id: "", driver: "D3D11", driver_info: "FL9_3 (experimental); physical DXGI adapter; driver version 32.0.16.2101; requested L9_3; actual L9_3; LUID 0000000000014a80", backend: Dx11, subgroup_min_size: 4, subgroup_max_size: 128, transient_saves_memory: None, limit_bucket: None }
+ok
+test tier_fl9_3_mrt_derivatives_and_depth_readback ... Rejected controlled: Validation Error
+
+Caused by:
+  In Device::create_render_pipeline, label = 'controlled'
+    Fragment derivatives are not supported by this downlevel adapter
+
+Rejected fs: Validation Error
+
+Caused by:
+  In Device::create_render_pipeline, label = 'fs'
+    The number of color attachments 5 exceeds the limit 4
+
+Rejected fs: Validation Error
+
+Caused by:
+  In Device::create_render_pipeline, label = 'fs'
+    Downlevel flags DownlevelFlags(INDEPENDENT_BLEND) are required but not supported on the device.
+This is not an invalid use of WebGPU: the underlying API or device does not support enough features to be a fully compliant implementation. A subset of the features can still be used. If you are running this program on native and not in a browser and wish to work around this issue, call Adapter::downlevel_properties or Device::downlevel_properties to get a listing of the features the current platform supports.
+
+Rejected fs: Validation Error
+
+Caused by:
+  In Device::create_render_pipeline, label = 'fs'
+    Color attachment formats Rgba8Unorm and R8Unorm have different native bit depths
+
+Verified 256 pixels across four targets after four/one/four passes and a common-blend pass
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.51s
+
