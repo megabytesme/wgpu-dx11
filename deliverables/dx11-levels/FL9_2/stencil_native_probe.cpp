@@ -137,32 +137,24 @@ int probe(ID3D11Device* device, ID3D11DeviceContext* context) {
         D3D11_COMPARISON_EQUAL, 0);
     const auto ccw = rasterizer(device, TRUE, D3D11_CULL_NONE);
     const auto cw = rasterizer(device, FALSE, D3D11_CULL_NONE);
-    const auto cull_front = rasterizer(device, TRUE, D3D11_CULL_FRONT);
-    const auto cull_back = rasterizer(device, TRUE, D3D11_CULL_BACK);
+    const auto cull_front_ccw = rasterizer(device, TRUE, D3D11_CULL_FRONT);
+    const auto cull_back_ccw = rasterizer(device, TRUE, D3D11_CULL_BACK);
+    const auto cull_front_cw = rasterizer(device, FALSE, D3D11_CULL_FRONT);
+    const auto cull_back_cw = rasterizer(device, FALSE, D3D11_CULL_BACK);
 
     const D3D11_RECT left{0, 0, size / 2, size};
     const D3D11_RECT right{size / 2, 0, size, size};
     const D3D11_RECT full{0, 0, size, size};
     const float black[]{0, 0, 0, 1};
-    const auto run = [&](const char* name, ID3D11DepthStencilState* write,
-                         ID3D11RasterizerState* raster, bool left_red, bool right_red,
-                         bool write_color = false) {
+    const auto begin = [&](bool write_color) {
         context->ClearRenderTargetView(rtv.Get(), black);
         context->ClearDepthStencilView(dsv.Get(), D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL, 1, 0);
         context->OMSetRenderTargets(1, rtv.GetAddressOf(), dsv.Get());
         context->OMSetBlendState(write_color ? nullptr : no_color.Get(), nullptr, 0xffffffff);
-        context->OMSetDepthStencilState(write, stencil_reference);
-        context->RSSetState(raster);
-        context->RSSetScissorRects(1, &left);
-        context->Draw(3, 0);
-        context->RSSetScissorRects(1, &right);
-        context->Draw(3, 3);
-
-        if (write_color) {
-            context->ClearRenderTargetView(rtv.Get(), black);
-        }
+    };
+    const auto readback = [&](const char* name, UINT reference, bool left_red, bool right_red) {
         context->OMSetBlendState(nullptr, nullptr, 0xffffffff);
-        context->OMSetDepthStencilState(equal.Get(), stencil_reference);
+        context->OMSetDepthStencilState(equal.Get(), reference);
         context->RSSetState(ccw.Get());
         context->RSSetScissorRects(1, &full);
         context->Draw(3, 0);
@@ -184,15 +176,72 @@ int probe(ID3D11Device* device, ID3D11DeviceContext* context) {
         }
         context->Unmap(staging.Get(), 0);
         constexpr UINT half_pixels = size * size / 2;
-        std::printf("case=%s left_red=%u right_red=%u expected_left=%u expected_right=%u mismatches=%u\n",
-            name, red[0], red[1], left_red ? half_pixels : 0, right_red ? half_pixels : 0, mismatches);
+        std::printf("case=%s equality_reference=%u left_red=%u right_red=%u expected_left=%u expected_right=%u mismatches=%u\n",
+            name, reference, red[0], red[1], left_red ? half_pixels : 0, right_red ? half_pixels : 0, mismatches);
         return mismatches == 0;
+    };
+    const auto run = [&](const char* name, ID3D11DepthStencilState* write,
+                         ID3D11RasterizerState* raster, bool left_red, bool right_red,
+                         bool write_color = false) {
+        begin(write_color);
+        context->OMSetDepthStencilState(write, stencil_reference);
+        context->RSSetState(raster);
+        context->RSSetScissorRects(1, &left);
+        context->Draw(3, 0);
+        context->RSSetScissorRects(1, &right);
+        context->Draw(3, 3);
+        if (write_color) {
+            context->ClearRenderTargetView(rtv.Get(), black);
+        }
+        return readback(name, stencil_reference, left_red, right_red);
     };
 
     bool controls = run("symmetric_replace", replace.Get(), ccw.Get(), true, true);
     controls &= run("symmetric_keep", keep.Get(), ccw.Get(), false, false);
-    controls &= run("symmetric_replace_cull_back", replace.Get(), cull_back.Get(), true, false);
-    controls &= run("symmetric_replace_cull_front", replace.Get(), cull_front.Get(), false, true);
+    controls &= run("symmetric_replace_cull_back", replace.Get(), cull_back_ccw.Get(), true, false);
+    controls &= run("symmetric_replace_cull_front", replace.Get(), cull_front_ccw.Get(), false, true);
+    const auto increment = stencil_state(device, D3D11_STENCIL_OP_INCR_SAT, D3D11_STENCIL_OP_INCR_SAT,
+        D3D11_COMPARISON_ALWAYS, 0xff);
+    const struct {
+        ID3D11RasterizerState* cull_back;
+        ID3D11RasterizerState* cull_front;
+        UINT front_first;
+        UINT back_first;
+        const char* ordered_case;
+        const char* grouped_case;
+    } windings[] = {
+        {cull_back_ccw.Get(), cull_front_ccw.Get(), 0, 3, "ordered_ccw_front", "grouped_ccw_front"},
+        {cull_back_cw.Get(), cull_front_cw.Get(), 3, 0, "ordered_cw_front", "grouped_cw_front"},
+    };
+    for (const auto& winding : windings) {
+        const UINT draws[] = {winding.front_first, winding.back_first,
+            winding.front_first, winding.back_first, winding.front_first, winding.back_first};
+        begin(false);
+        context->RSSetScissorRects(1, &full);
+        for (UINT first : draws) {
+            context->RSSetState(winding.cull_back);
+            context->OMSetDepthStencilState(replace.Get(), stencil_reference);
+            context->Draw(3, first);
+            context->RSSetState(winding.cull_front);
+            context->OMSetDepthStencilState(increment.Get(), stencil_reference);
+            context->Draw(3, first);
+        }
+        controls &= readback(winding.ordered_case, 2, true, true);
+
+        begin(false);
+        context->RSSetScissorRects(1, &full);
+        context->RSSetState(winding.cull_back);
+        context->OMSetDepthStencilState(replace.Get(), stencil_reference);
+        for (UINT first : draws) {
+            context->Draw(3, first);
+        }
+        context->RSSetState(winding.cull_front);
+        context->OMSetDepthStencilState(increment.Get(), stencil_reference);
+        for (UINT first : draws) {
+            context->Draw(3, first);
+        }
+        controls &= readback(winding.grouped_case, 4, true, true);
+    }
     const auto asymmetric = stencil_state(device, D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_KEEP,
         D3D11_COMPARISON_ALWAYS, 0xff);
     bool asymmetric_matches = run("asymmetric_ccw_front", asymmetric.Get(), ccw.Get(), true, false);
