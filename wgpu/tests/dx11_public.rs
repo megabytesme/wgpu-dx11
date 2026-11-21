@@ -7502,7 +7502,7 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
              @group(0) @binding(7) var source: texture_2d<f32>;\n\
              @group(0) @binding(42) var source_sampler: sampler;\n\
              @fragment fn fs_write(input: VertexOut) -> @location(0) vec4f { return vec4f(0.2580645, 0.5079365, 0.516129, 1.0); }\n\
-             @fragment fn fs_blend(input: VertexOut) -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 0.5); }\n\
+             @fragment fn fs_blend(input: VertexOut) -> @location(0) vec4f { return vec4f(1.0, 0.0, 0.0, 0.25); }\n\
              @fragment fn fs(input: VertexOut) -> @location(0) vec4f { return textureSample(source, source_sampler, input.uv); }"
                 .into(),
         ),
@@ -7831,9 +7831,9 @@ fn public_dx11_r8_rg8_rgb565_render_attachments_at_fl91() {
             }
             println!("PASS: query-gated {format:?} color attachment accepted alpha blending");
             match format {
-                TextureFormat::R8Unorm => [160, 0, 0, 255],
-                TextureFormat::Rg8Unorm => [160, 65, 0, 255],
-                TextureFormat::Rgb5g6b5Unorm => [164, 65, 66, 255],
+                TextureFormat::R8Unorm => [113, 0, 0, 255],
+                TextureFormat::Rg8Unorm => [113, 97, 0, 255],
+                TextureFormat::Rgb5g6b5Unorm => [115, 97, 99, 255],
                 _ => unreachable!(),
             }
         } else {
@@ -21479,7 +21479,7 @@ fn public_dx11_fragment_3d_texture_load_at_fl91() {
         usage: BufferUsages::UNIFORM,
         mapped_at_creation: true,
     });
-    let tint = [0.5f32, 0.0, 0.25, 1.0];
+    let tint = [0.75f32, 0.0, 0.25, 1.0];
     let mut tint_bytes = [0u8; 16];
     for (index, value) in tint.iter().enumerate() {
         tint_bytes[index * 4..index * 4 + 4].copy_from_slice(&value.to_ne_bytes());
@@ -21777,7 +21777,7 @@ fn public_dx11_fragment_3d_texture_load_at_fl91() {
         [0, 0, 0, 0],
         [0, 0, 0, 0],
         [255, 0, 255, 255],
-        [127, 0, 64, 255],
+        [191, 0, 64, 255],
     ];
     {
         let pixels = readback
