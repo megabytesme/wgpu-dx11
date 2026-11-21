@@ -1327,18 +1327,16 @@ impl Surface {
             "Surface has no swap-chain configured",
         ))?;
 
-        self.egl
-            .instance
-            .make_current(
-                self.egl.display,
-                Some(sc.surface),
-                Some(sc.surface),
-                Some(self.egl.raw),
-            )
-            .map_err(|e| {
-                log::error!("make_current(surface) failed: {e}");
-                crate::SurfaceError::Lost
-            })?;
+        if let Err(error) = self.egl.instance.make_current(
+            self.egl.display,
+            Some(sc.surface),
+            Some(sc.surface),
+            Some(self.egl.raw),
+        ) {
+            log::error!("make_current(surface) failed: {error}");
+            self.release_present_context()?;
+            return Err(crate::SurfaceError::Lost);
+        }
 
         unsafe { gl.disable(glow::SCISSOR_TEST) };
         unsafe { gl.color_mask(true, true, true, true) };
@@ -1376,23 +1374,103 @@ impl Surface {
 
         unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None) };
 
-        self.egl
+        let present_result = self
+            .egl
             .instance
             .swap_buffers(self.egl.display, sc.surface)
-            .map_err(|e| {
-                log::error!("swap_buffers failed: {e}");
+            .map_err(|error| {
+                log::error!("swap_buffers failed: {error}");
                 crate::SurfaceError::Lost
-                // TODO: should we unset the current context here?
-            })?;
-        self.egl
+            });
+        // Release the window binding even when the swap fails. The UI thread
+        // needs this context for the next configure or unconfigure operation.
+        present_result.and(self.release_present_context())
+    }
+
+    fn release_present_context(&self) -> Result<(), crate::SurfaceError> {
+        if let Err(error) = self
+            .egl
             .instance
             .make_current(self.egl.display, None, None, None)
-            .map_err(|e| {
-                log::error!("make_current(null) failed: {e}");
-                crate::SurfaceError::Lost
-            })?;
-
+        {
+            log::error!("make_current(null) failed: {error}");
+            if let Err(error) = self.egl.instance.release_thread() {
+                log::error!("eglReleaseThread failed after unbind failure: {error}");
+            }
+            return Err(crate::SurfaceError::Lost);
+        }
         Ok(())
+    }
+
+    unsafe fn destroy_window_surface(
+        &self,
+        surface: khronos_egl::Surface,
+        _wl_window: Option<*mut WaylandWindow>,
+    ) -> Result<(), khronos_egl::Error> {
+        self.egl
+            .instance
+            .destroy_surface(self.egl.display, surface)?;
+        #[cfg(unix)]
+        if let Some(window) = _wl_window {
+            wayland_sys::ffi_dispatch!(
+                wayland_sys::egl::wayland_egl_handle(),
+                wl_egl_window_destroy,
+                window,
+            );
+        }
+        Ok(())
+    }
+
+    unsafe fn create_surface_buffers(
+        device: &super::Device,
+        config: &crate::SurfaceConfiguration,
+        internal_format: u32,
+    ) -> Result<(glow::Renderbuffer, glow::Framebuffer), crate::SurfaceError> {
+        let gl = &device.shared.context.lock();
+        let renderbuffer = unsafe { gl.create_renderbuffer() }.map_err(|error| {
+            log::error!("Internal swapchain renderbuffer creation failed: {error}");
+            crate::DeviceError::OutOfMemory
+        })?;
+        let framebuffer = match unsafe { gl.create_framebuffer() } {
+            Ok(framebuffer) => framebuffer,
+            Err(error) => {
+                unsafe { gl.delete_renderbuffer(renderbuffer) };
+                log::error!("Internal swapchain framebuffer creation failed: {error}");
+                return Err(crate::DeviceError::OutOfMemory.into());
+            }
+        };
+
+        let status = unsafe {
+            gl.bind_renderbuffer(glow::RENDERBUFFER, Some(renderbuffer));
+            gl.renderbuffer_storage(
+                glow::RENDERBUFFER,
+                internal_format,
+                config.extent.width as i32,
+                config.extent.height as i32,
+            );
+            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(framebuffer));
+            gl.framebuffer_renderbuffer(
+                glow::READ_FRAMEBUFFER,
+                glow::COLOR_ATTACHMENT0,
+                glow::RENDERBUFFER,
+                Some(renderbuffer),
+            );
+            let status = gl.check_framebuffer_status(glow::READ_FRAMEBUFFER);
+            gl.bind_renderbuffer(glow::RENDERBUFFER, None);
+            gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None);
+            status
+        };
+        if status != glow::FRAMEBUFFER_COMPLETE {
+            unsafe {
+                gl.delete_framebuffer(framebuffer);
+                gl.delete_renderbuffer(renderbuffer);
+            }
+            log::error!("Internal swapchain framebuffer is incomplete: status=0x{status:04x}");
+            return Err(crate::SurfaceError::Other(
+                "incomplete EGL surface framebuffer",
+            ));
+        }
+        Ok((renderbuffer, framebuffer))
     }
 
     unsafe fn unconfigure_impl(
@@ -1729,35 +1807,19 @@ impl crate::Surface for Surface {
         };
 
         let format_desc = device.shared.describe_texture_format(config.format);
-        let gl = &device.shared.context.lock();
-        let renderbuffer = unsafe { gl.create_renderbuffer() }.map_err(|error| {
-            log::error!("Internal swapchain renderbuffer creation failed: {error}");
-            crate::DeviceError::OutOfMemory
-        })?;
-        unsafe { gl.bind_renderbuffer(glow::RENDERBUFFER, Some(renderbuffer)) };
-        unsafe {
-            gl.renderbuffer_storage(
-                glow::RENDERBUFFER,
-                format_desc.internal,
-                config.extent.width as _,
-                config.extent.height as _,
-            )
+        let (renderbuffer, framebuffer) = match unsafe {
+            Self::create_surface_buffers(device, config, format_desc.internal)
+        } {
+            Ok(buffers) => buffers,
+            Err(error) => {
+                if let Err(cleanup_error) =
+                    unsafe { self.destroy_window_surface(surface, wl_window) }
+                {
+                    log::error!("Destroying an unconfigured EGL surface failed: {cleanup_error}");
+                }
+                return Err(error);
+            }
         };
-        let framebuffer = unsafe { gl.create_framebuffer() }.map_err(|error| {
-            log::error!("Internal swapchain framebuffer creation failed: {error}");
-            crate::DeviceError::OutOfMemory
-        })?;
-        unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, Some(framebuffer)) };
-        unsafe {
-            gl.framebuffer_renderbuffer(
-                glow::READ_FRAMEBUFFER,
-                glow::COLOR_ATTACHMENT0,
-                glow::RENDERBUFFER,
-                Some(renderbuffer),
-            )
-        };
-        unsafe { gl.bind_renderbuffer(glow::RENDERBUFFER, None) };
-        unsafe { gl.bind_framebuffer(glow::READ_FRAMEBUFFER, None) };
 
         let mut swapchain = self.swapchain.write();
         *swapchain = Some(Swapchain {
@@ -1775,19 +1837,8 @@ impl crate::Surface for Surface {
     }
 
     unsafe fn unconfigure(&self, device: &super::Device) {
-        if let Some((surface, _wl_window)) = unsafe { self.unconfigure_impl(device) } {
-            self.egl
-                .instance
-                .destroy_surface(self.egl.display, surface)
-                .unwrap();
-            #[cfg(unix)]
-            if let Some(window) = _wl_window {
-                wayland_sys::ffi_dispatch!(
-                    wayland_sys::egl::wayland_egl_handle(),
-                    wl_egl_window_destroy,
-                    window,
-                );
-            }
+        if let Some((surface, wl_window)) = unsafe { self.unconfigure_impl(device) } {
+            unsafe { self.destroy_window_surface(surface, wl_window) }.unwrap();
         }
     }
 
