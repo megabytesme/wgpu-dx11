@@ -15,12 +15,15 @@ use windows::{
         Foundation::{E_FAIL, E_INVALIDARG},
         Graphics::{
             Direct3D11::{
-                ID3D11DepthStencilView, ID3D11Texture2D, D3D11_CPU_ACCESS_READ,
-                D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ, D3D11_TEXTURE2D_DESC,
-                D3D11_USAGE_STAGING,
+                ID3D11DepthStencilView, ID3D11RenderTargetView, ID3D11Texture2D, D3D11_BOX,
+                D3D11_CPU_ACCESS_READ, D3D11_MAPPED_SUBRESOURCE, D3D11_MAP_READ,
+                D3D11_TEXTURE2D_DESC, D3D11_USAGE_STAGING,
             },
             Dxgi::{
-                Common::{DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC},
+                Common::{
+                    DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT, DXGI_FORMAT_B8G8R8A8_UNORM,
+                    DXGI_SAMPLE_DESC,
+                },
                 IDXGIDevice, IDXGIFactory2, IDXGISwapChain2, DXGI_ERROR_INVALID_CALL, DXGI_PRESENT,
                 DXGI_SCALING_NONE, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1,
                 DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT,
@@ -31,6 +34,67 @@ use windows::{
     },
 };
 
+#[cfg(feature = "dx11-native-hdr")]
+use windows::Win32::Graphics::{
+    Direct3D11::{
+        ID3D11Device, ID3D11DeviceContext, D3D11_FORMAT_SUPPORT_DISPLAY,
+        D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_TEXTURE2D,
+    },
+    Dxgi::{
+        Common::{
+            DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709, DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020,
+            DXGI_COLOR_SPACE_TYPE, DXGI_FORMAT_R10G10B10A2_UNORM, DXGI_FORMAT_R16G16B16A16_FLOAT,
+        },
+        IDXGISwapChain3, DXGI_ERROR_UNSUPPORTED, DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT,
+    },
+};
+
+/// Format and encoding of the opaque native HDR backbuffer.
+#[cfg(feature = "dx11-native-hdr")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeHdrEncoding {
+    /// Linear scRGB with Rec.709 primaries in RGBA16F.
+    ScRgb,
+    /// BT.2100 PQ with BT.2020 primaries in RGB10A2.
+    Bt2100Pq,
+}
+
+#[cfg(feature = "dx11-native-hdr")]
+impl NativeHdrEncoding {
+    fn format_and_color_space(self) -> (DXGI_FORMAT, DXGI_COLOR_SPACE_TYPE) {
+        match self {
+            Self::ScRgb => (
+                DXGI_FORMAT_R16G16B16A16_FLOAT,
+                DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709,
+            ),
+            Self::Bt2100Pq => (
+                DXGI_FORMAT_R10G10B10A2_UNORM,
+                DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020,
+            ),
+        }
+    }
+
+    fn apply(self, swapchain: &IDXGISwapChain2) -> Result<()> {
+        let (_, color_space) = self.format_and_color_space();
+        let swapchain: IDXGISwapChain3 = swapchain.cast()?;
+        let support = unsafe { swapchain.CheckColorSpaceSupport(color_space)? };
+        if support & DXGI_SWAP_CHAIN_COLOR_SPACE_SUPPORT_FLAG_PRESENT.0 as u32 == 0 {
+            return Err(Error::from_hresult(DXGI_ERROR_UNSUPPORTED));
+        }
+        unsafe { swapchain.SetColorSpace1(color_space) }
+    }
+}
+
+/// A first-pixel readback in native swap-chain storage order.
+#[cfg(feature = "dx11-native-hdr")]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum NativeHdrPixel {
+    /// Raw IEEE 754 binary16 bits in RGBA order.
+    Rgba16Float([u16; 4]),
+    /// Raw DXGI RGB10A2 bits, with R in the least significant 10 bits.
+    Rgb10a2Unorm(u32),
+}
+
 #[cfg(target_vendor = "uwp")]
 unsafe extern "C" {
     fn horizon_uwp_attach_game_swapchain(swap_chain: *mut core::ffi::c_void) -> i32;
@@ -40,6 +104,11 @@ unsafe extern "C" {
         scale_x: *mut f64,
         scale_y: *mut f64,
     );
+}
+
+#[cfg(all(feature = "dx11-native-hdr", target_vendor = "uwp"))]
+unsafe extern "C" {
+    fn horizon_uwp_detach_game_swapchain() -> i32;
 }
 
 #[cfg(target_vendor = "uwp")]
@@ -108,6 +177,9 @@ struct Inner {
     device: Arc<NativeDevice>,
     _window: Option<AgileReference<windows::UI::Core::ICoreWindow>>,
     swapchain: IDXGISwapChain2,
+    format: DXGI_FORMAT,
+    #[cfg(feature = "dx11-native-hdr")]
+    hdr_encoding: Option<NativeHdrEncoding>,
     frame_latency_waitable: Option<OwnedHandle>,
     flags: u32,
     is_swap_chain_panel: bool,
@@ -145,6 +217,64 @@ impl CoreWindowSwapchain {
         width: u32,
         height: u32,
     ) -> Result<Self> {
+        Self::new_with_format(
+            surface,
+            device,
+            width,
+            height,
+            DXGI_FORMAT_B8G8R8A8_UNORM,
+            #[cfg(feature = "dx11-native-hdr")]
+            None,
+        )
+    }
+
+    /// Create an opaque native HDR swap chain for an already selected HDR output.
+    ///
+    /// The caller owns display-mode detection and encoding of the supplied pixels.
+    /// PQ is restricted to HWND because the Advanced Color XAML composition path
+    /// uses FP16 scRGB. This path does not change public wgpu surface capabilities.
+    ///
+    /// # Safety
+    /// The caller must exclusively own the window's presentation for the chain's
+    /// lifetime, including clones and frames, and use it from the owning thread.
+    /// On UWP the caller must own the host game panel and detach this chain
+    /// before releasing ownership of the panel.
+    #[cfg(feature = "dx11-native-hdr")]
+    pub unsafe fn new_hdr(
+        surface: &Surface,
+        device: Arc<NativeDevice>,
+        width: u32,
+        height: u32,
+        encoding: NativeHdrEncoding,
+    ) -> Result<Self> {
+        if !crate::Surface::is_present_on_current_thread(surface) {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        if device.feature_level().as_raw() < super::FeatureLevel::L11_0.as_raw()
+            || (!surface.is_swap_chain_panel() && surface.hwnd().is_none())
+            || (encoding == NativeHdrEncoding::Bt2100Pq && surface.hwnd().is_none())
+        {
+            return Err(Error::from_hresult(DXGI_ERROR_UNSUPPORTED));
+        }
+        let (format, _) = encoding.format_and_color_space();
+        let required = (D3D11_FORMAT_SUPPORT_DISPLAY.0
+            | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+            | D3D11_FORMAT_SUPPORT_TEXTURE2D.0) as u32;
+        let support = unsafe { device.raw_device().CheckFormatSupport(format)? };
+        if support & required != required {
+            return Err(Error::from_hresult(DXGI_ERROR_UNSUPPORTED));
+        }
+        Self::new_with_format(surface, device, width, height, format, Some(encoding))
+    }
+
+    fn new_with_format(
+        surface: &Surface,
+        device: Arc<NativeDevice>,
+        width: u32,
+        height: u32,
+        format: DXGI_FORMAT,
+        #[cfg(feature = "dx11-native-hdr")] hdr_encoding: Option<NativeHdrEncoding>,
+    ) -> Result<Self> {
         if (width == 0) != (height == 0) {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
@@ -155,7 +285,7 @@ impl CoreWindowSwapchain {
         let mut desc = DXGI_SWAP_CHAIN_DESC1 {
             Width: width,
             Height: height,
-            Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+            Format: format,
             SampleDesc: DXGI_SAMPLE_DESC {
                 Count: 1,
                 Quality: 0,
@@ -185,11 +315,7 @@ impl CoreWindowSwapchain {
                 #[cfg(target_vendor = "uwp")]
                 {
                     let created = unsafe {
-                        factory.CreateSwapChainForComposition(
-                            device.raw_device(),
-                            &desc,
-                            None,
-                        )
+                        factory.CreateSwapChainForComposition(device.raw_device(), &desc, None)
                     };
                     let swapchain = match created {
                         Ok(sc) => sc,
@@ -209,10 +335,6 @@ impl CoreWindowSwapchain {
                         }
                         Err(err) => return Err(err),
                     };
-                    let hr = unsafe { horizon_uwp_attach_game_swapchain(swapchain.as_raw()) };
-                    if hr < 0 {
-                        return Err(Error::from_hresult(HRESULT(hr)));
-                    }
                     (swapchain, None)
                 }
                 #[cfg(not(target_vendor = "uwp"))]
@@ -233,6 +355,10 @@ impl CoreWindowSwapchain {
                 (swapchain, Some(retained_window))
             };
             let swapchain: IDXGISwapChain2 = swapchain.cast()?;
+            #[cfg(feature = "dx11-native-hdr")]
+            if let Some(encoding) = hdr_encoding {
+                encoding.apply(&swapchain)?;
+            }
             let frame_latency_waitable = if flags != 0 {
                 unsafe { swapchain.SetMaximumFrameLatency(1)? };
                 let handle = unsafe { swapchain.GetFrameLatencyWaitableObject() };
@@ -249,11 +375,21 @@ impl CoreWindowSwapchain {
             }
             (swapchain, frame_latency_waitable, retained_window)
         };
+        #[cfg(target_vendor = "uwp")]
+        if is_swap_chain_panel {
+            let hr = unsafe { horizon_uwp_attach_game_swapchain(swapchain.as_raw()) };
+            if hr < 0 {
+                return Err(Error::from_hresult(HRESULT(hr)));
+            }
+        }
         Ok(Self {
             inner: Arc::new(Inner {
                 device,
                 _window: retained_window,
                 swapchain,
+                format,
+                #[cfg(feature = "dx11-native-hdr")]
+                hdr_encoding,
                 frame_latency_waitable,
                 flags,
                 is_swap_chain_panel,
@@ -266,6 +402,33 @@ impl CoreWindowSwapchain {
                 test_next_present_wait_timeout: AtomicI32::new(0),
             }),
         })
+    }
+
+    /// Synchronously detach the privately owned HDR chain from the host's UWP game panel.
+    ///
+    /// # Safety
+    /// The caller must still exclusively own presentation to the host game panel
+    /// and must stop using this chain and release it before reconfiguring the panel.
+    #[cfg(all(feature = "dx11-native-hdr", target_vendor = "uwp"))]
+    pub unsafe fn detach_hdr_panel(&self) -> Result<()> {
+        if !self.inner.is_swap_chain_panel || self.inner.hdr_encoding.is_none() {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let _reservation = Reservation::new(&self.inner.state)?;
+        let wait = self.wait_for_pending_present_timeout(core::time::Duration::from_secs(2));
+        if unsafe { self.inner.device.raw_device().GetDeviceRemovedReason() }.is_ok() && !wait? {
+            return Err(Error::from_hresult(
+                windows::Win32::Graphics::Dxgi::DXGI_ERROR_WAIT_TIMEOUT,
+            ));
+        }
+        {
+            let context = self.inner.device.immediate_context();
+            unsafe {
+                context.OMSetRenderTargets(None, None::<&ID3D11DepthStencilView>);
+                context.Flush();
+            }
+        }
+        HRESULT(unsafe { horizon_uwp_detach_game_swapchain() }).ok()
     }
 
     #[cfg(feature = "dx11-test-fixture")]
@@ -473,9 +636,13 @@ impl CoreWindowSwapchain {
                 2,
                 width,
                 height,
-                DXGI_FORMAT_B8G8R8A8_UNORM,
+                self.inner.format,
                 DXGI_SWAP_CHAIN_FLAG(self.inner.flags as i32),
             )?;
+        }
+        #[cfg(feature = "dx11-native-hdr")]
+        if let Some(encoding) = self.inner.hdr_encoding {
+            encoding.apply(&self.inner.swapchain)?;
         }
         #[cfg(target_vendor = "uwp")]
         if self.inner.is_swap_chain_panel {
@@ -538,6 +705,34 @@ impl CoreWindowFrame {
     /// Clear the current backbuffer for the UWP diagnostic.
     #[doc(hidden)]
     pub fn clear(&self, color: [f32; 4]) -> Result<()> {
+        let view = self.create_render_target()?;
+        let context = self.inner.device.immediate_context();
+        unsafe { context.ClearRenderTargetView(&view, &color) };
+        Ok(())
+    }
+
+    /// Render into the acquired HDR backbuffer using the device's immediate context.
+    ///
+    /// # Safety
+    /// The callback must release all references to the view and its resource and
+    /// unbind them from the context before returning. The caller owns the
+    /// immediate-context state during this callback and must restore any state
+    /// expected by other users of the device. The callback cannot reenter an
+    /// operation that acquires the immediate-context lock.
+    #[cfg(feature = "dx11-native-hdr")]
+    pub unsafe fn with_hdr_render_target<T>(
+        &self,
+        render: impl FnOnce(&ID3D11Device, &ID3D11DeviceContext, &ID3D11RenderTargetView) -> Result<T>,
+    ) -> Result<T> {
+        if self.inner.hdr_encoding.is_none() {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let view = self.create_render_target()?;
+        let context = self.inner.device.immediate_context();
+        render(self.inner.device.raw_device(), &context, &view)
+    }
+
+    fn create_render_target(&self) -> Result<ID3D11RenderTargetView> {
         let texture = self
             .texture
             .as_ref()
@@ -550,12 +745,7 @@ impl CoreWindowFrame {
                 Some(&mut view),
             )?;
         }
-        let view = view.ok_or_else(|| Error::from_hresult(E_FAIL))?;
-        let context = self.inner.device.immediate_context();
-        unsafe {
-            context.ClearRenderTargetView(&view, &color);
-        }
-        Ok(())
+        view.ok_or_else(|| Error::from_hresult(E_FAIL))
     }
 
     /// Clear this frame and read its first BGRA pixel for the UWP diagnostic.
@@ -566,6 +756,28 @@ impl CoreWindowFrame {
     }
 
     pub(super) fn readback(&self) -> Result<[u8; 4]> {
+        self.readback_first_pixel(DXGI_FORMAT_B8G8R8A8_UNORM)
+    }
+
+    /// Read the first pixel of the HDR backbuffer without converting its encoding.
+    #[cfg(feature = "dx11-native-hdr")]
+    pub fn readback_hdr(&self) -> Result<NativeHdrPixel> {
+        match self.inner.hdr_encoding {
+            Some(NativeHdrEncoding::ScRgb) => {
+                let bytes: [u8; 8] = self.readback_first_pixel(DXGI_FORMAT_R16G16B16A16_FLOAT)?;
+                Ok(NativeHdrPixel::Rgba16Float(core::array::from_fn(|i| {
+                    u16::from_le_bytes([bytes[2 * i], bytes[2 * i + 1]])
+                })))
+            }
+            Some(NativeHdrEncoding::Bt2100Pq) => {
+                let bytes = self.readback_first_pixel(DXGI_FORMAT_R10G10B10A2_UNORM)?;
+                Ok(NativeHdrPixel::Rgb10a2Unorm(u32::from_le_bytes(bytes)))
+            }
+            None => Err(Error::from_hresult(E_INVALIDARG)),
+        }
+    }
+
+    fn readback_first_pixel<const N: usize>(&self, format: DXGI_FORMAT) -> Result<[u8; N]> {
         let texture = self
             .texture
             .as_ref()
@@ -573,6 +785,17 @@ impl CoreWindowFrame {
         let mut desc = D3D11_TEXTURE2D_DESC::default();
         unsafe {
             texture.GetDesc(&mut desc);
+        }
+        if desc.Format != format {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        #[cfg(feature = "dx11-native-hdr")]
+        let copy_only_first_pixel = self.inner.hdr_encoding.is_some();
+        #[cfg(not(feature = "dx11-native-hdr"))]
+        let copy_only_first_pixel = false;
+        if copy_only_first_pixel {
+            desc.Width = 1;
+            desc.Height = 1;
         }
         desc.Usage = D3D11_USAGE_STAGING;
         desc.BindFlags = 0;
@@ -588,15 +811,25 @@ impl CoreWindowFrame {
         let staging = staging.ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let context = self.inner.device.immediate_context();
         unsafe {
-            context.CopyResource(&staging, texture);
+            if copy_only_first_pixel {
+                let first_pixel = D3D11_BOX {
+                    right: 1,
+                    bottom: 1,
+                    back: 1,
+                    ..Default::default()
+                };
+                context.CopySubresourceRegion(&staging, 0, 0, 0, 0, texture, 0, Some(&first_pixel));
+            } else {
+                context.CopyResource(&staging, texture);
+            }
             let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
             context.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
-            if mapped.pData.is_null() || mapped.RowPitch < 4 {
+            if mapped.pData.is_null() || (mapped.RowPitch as usize) < N {
                 context.Unmap(&staging, 0);
                 return Err(Error::from_hresult(E_FAIL));
             }
-            let mut pixel = [0; 4];
-            core::ptr::copy_nonoverlapping(mapped.pData.cast::<u8>(), pixel.as_mut_ptr(), 4);
+            let mut pixel = [0; N];
+            core::ptr::copy_nonoverlapping(mapped.pData.cast::<u8>(), pixel.as_mut_ptr(), N);
             context.Unmap(&staging, 0);
             Ok(pixel)
         }
@@ -614,6 +847,163 @@ fn classify_present_status(status: HRESULT) -> Result<bool> {
 mod tests {
     use super::*;
     use core::time::Duration;
+
+    #[cfg(feature = "dx11-native-hdr")]
+    #[test]
+    fn hdr_encodings_preserve_native_format_color_pairs() {
+        assert_eq!(
+            NativeHdrEncoding::ScRgb.format_and_color_space(),
+            (
+                DXGI_FORMAT_R16G16B16A16_FLOAT,
+                DXGI_COLOR_SPACE_RGB_FULL_G10_NONE_P709,
+            )
+        );
+        assert_eq!(
+            NativeHdrEncoding::Bt2100Pq.format_and_color_space(),
+            (
+                DXGI_FORMAT_R10G10B10A2_UNORM,
+                DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020,
+            )
+        );
+    }
+
+    #[cfg(all(feature = "dx11-native-hdr", not(target_vendor = "uwp")))]
+    #[test]
+    #[ignore = "requires an interactive desktop with Windows HDR enabled"]
+    fn hdr_hwnd_storage_and_sdr_recreation() -> Result<()> {
+        use core::num::NonZeroIsize;
+        use windows::{
+            core::w,
+            Win32::{
+                Foundation::HWND,
+                Graphics::Dxgi::{
+                    IDXGIOutput6, IDXGISwapChain4, DXGI_HDR_METADATA_HDR10,
+                    DXGI_HDR_METADATA_TYPE_HDR10, DXGI_HDR_METADATA_TYPE_NONE,
+                },
+                UI::WindowsAndMessaging::{
+                    CreateWindowExW, DestroyWindow, WINDOW_EX_STYLE, WS_OVERLAPPED, WS_VISIBLE,
+                },
+            },
+        };
+
+        struct Window(HWND);
+        impl Drop for Window {
+            fn drop(&mut self) {
+                let _ = unsafe { DestroyWindow(self.0) };
+            }
+        }
+
+        let adapter = super::super::enumerate_native_adapters()?
+            .into_iter()
+            .find(|adapter| !adapter.identity().software)
+            .expect("physical D3D11 adapter");
+        let native = Arc::new(adapter.open_device(&super::super::FeatureLevel::ALL_DESCENDING)?);
+        let fl91 = Arc::new(adapter.open_device(&[super::super::FeatureLevel::L9_1])?);
+        let dxgi: IDXGIDevice = native.raw_device().cast()?;
+        let adapter = unsafe { dxgi.GetAdapter()? };
+        let hdr_output = (0..)
+            .map_while(|i| unsafe { adapter.EnumOutputs(i).ok() })
+            .filter_map(|output| output.cast::<IDXGIOutput6>().ok())
+            .filter_map(|output| unsafe { output.GetDesc1().ok() })
+            .find(|desc| {
+                desc.AttachedToDesktop.as_bool()
+                    && desc.ColorSpace == DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020
+            })
+            .expect("an active HDR display on the selected adapter");
+        let bounds = hdr_output.DesktopCoordinates;
+        let window = Window(unsafe {
+            CreateWindowExW(
+                WINDOW_EX_STYLE::default(),
+                w!("STATIC"),
+                w!("D3D11 HDR native swap chain test"),
+                WS_OVERLAPPED | WS_VISIBLE,
+                bounds.left + 100,
+                bounds.top + 100,
+                128,
+                128,
+                None,
+                None,
+                None,
+                None,
+            )?
+        });
+        let surface = Surface::from_hwnd(NonZeroIsize::new(window.0 .0 as isize).unwrap());
+        let timeout = Duration::from_secs(2);
+        let cases = [
+            (
+                NativeHdrEncoding::ScRgb,
+                [-0.25, 1.0, 4.0, 1.0],
+                NativeHdrPixel::Rgba16Float([0xb400, 0x3c00, 0x4400, 0x3c00]),
+            ),
+            (
+                NativeHdrEncoding::Bt2100Pq,
+                [1.0, 0.0, 1.0, 1.0],
+                NativeHdrPixel::Rgb10a2Unorm(0xfff0_03ff),
+            ),
+        ];
+        for (encoding, color, expected) in cases {
+            let result =
+                unsafe { CoreWindowSwapchain::new_hdr(&surface, fl91.clone(), 64, 64, encoding) };
+            assert_eq!(result.unwrap_err().code(), DXGI_ERROR_UNSUPPORTED);
+            let swapchain = unsafe {
+                CoreWindowSwapchain::new_hdr(&surface, native.clone(), 64, 64, encoding)?
+            };
+            let output: IDXGIOutput6 =
+                unsafe { swapchain.inner.swapchain.GetContainingOutput()? }.cast()?;
+            let desc = unsafe { output.GetDesc1()? };
+            assert_eq!(desc.ColorSpace, DXGI_COLOR_SPACE_RGB_FULL_G2084_NONE_P2020);
+            let chain_desc = unsafe { swapchain.inner.swapchain.GetDesc1()? };
+            assert_eq!(chain_desc.AlphaMode, DXGI_ALPHA_MODE_IGNORE);
+            assert_eq!(chain_desc.Format, encoding.format_and_color_space().0);
+            if encoding == NativeHdrEncoding::Bt2100Pq {
+                let chain: IDXGISwapChain4 = swapchain.inner.swapchain.cast()?;
+                let metadata = DXGI_HDR_METADATA_HDR10 {
+                    RedPrimary: [35400, 14600],
+                    GreenPrimary: [8500, 39850],
+                    BluePrimary: [6550, 2300],
+                    WhitePoint: [15635, 16450],
+                    MaxMasteringLuminance: 1000,
+                    MinMasteringLuminance: 50,
+                    MaxContentLightLevel: 1000,
+                    MaxFrameAverageLightLevel: 400,
+                };
+                // DXGI_HDR_METADATA_HDR10 is repr(C) with 28 occupied bytes.
+                let bytes =
+                    unsafe { core::mem::transmute::<DXGI_HDR_METADATA_HDR10, [u8; 28]>(metadata) };
+                unsafe {
+                    chain.SetHDRMetaData(DXGI_HDR_METADATA_TYPE_HDR10, Some(&bytes))?;
+                    chain.SetHDRMetaData(DXGI_HDR_METADATA_TYPE_NONE, None)?;
+                }
+            }
+            for extent in [[64, 64], [96, 96]] {
+                assert_eq!(swapchain.size()?, extent);
+                let frame = swapchain.acquire(Some(timeout))?.expect("HDR frame");
+                unsafe {
+                    frame.with_hdr_render_target(|_, context, target| {
+                        context.ClearRenderTargetView(target, &color);
+                        Ok(())
+                    })?;
+                }
+                assert_eq!(frame.readback_hdr()?, expected);
+                assert!(frame.present_for_hal(1)?, "HDR frame was occluded");
+                if extent == [64, 64] {
+                    assert!(swapchain.resize_timeout(96, 96, timeout)?);
+                }
+            }
+            assert!(swapchain.wait_for_pending_present_timeout(timeout)?);
+            drop(swapchain);
+            unsafe { native.immediate_context().Flush() };
+        }
+        let sdr = CoreWindowSwapchain::new(&surface, fl91, 64, 64)?;
+        let frame = sdr.acquire(Some(timeout))?.expect("SDR frame");
+        assert_eq!(
+            frame.clear_and_readback([0.0, 1.0, 0.0, 1.0])?,
+            [0, 255, 0, 255]
+        );
+        assert!(frame.present_for_hal(1)?, "SDR frame was occluded");
+        assert!(sdr.wait_for_pending_present_timeout(timeout)?);
+        Ok(())
+    }
 
     #[test]
     fn reservation_releases_on_return_and_unwind() {

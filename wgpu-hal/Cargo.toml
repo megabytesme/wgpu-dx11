@@ -153,6 +153,9 @@ dx11 = [
 ## Unsafe, non-enumerated D3D11 fixture for tightly controlled core tests.
 dx11-test-fixture = ["dx11"]
 
+## Enables the opt-in native D3D11 HDR presentation interface.
+dx11-native-hdr = ["dx11"]
+
 ## Enables the DX12 backend when targeting Windows.
 dx12 = [
     "dep:arrayvec",
@@ -394,7 +397,10 @@ naga = { workspace = true, features = ["glsl-in", "wgsl-in", "termcolor"] }
 winit.workspace = true # for "halmark" example
 
 [target.'cfg(windows)'.dev-dependencies]
-windows = { workspace = true, features = ["Win32_UI_WindowsAndMessaging"] }
+windows = { workspace = true, features = [
+    "Win32_Graphics_Gdi",
+    "Win32_UI_WindowsAndMessaging",
+] }
 
 ### Platform: Windows + MacOS + Linux for "raw-gles" example ###
 [target.'cfg(not(any(target_arch = "wasm32", target_os = "ios", target_os = "visionos", target_env = "ohos")))'.dev-dependencies]

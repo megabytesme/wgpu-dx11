@@ -45,6 +45,9 @@ pub use instance::Instance;
 pub use surface::Surface;
 #[doc(hidden)]
 pub use swapchain::{CoreWindowFrame, CoreWindowSwapchain};
+#[cfg(feature = "dx11-native-hdr")]
+#[doc(hidden)]
+pub use swapchain::{NativeHdrEncoding, NativeHdrPixel};
 
 use alloc::{string::String, vec::Vec};
 use windows::core::Result;
