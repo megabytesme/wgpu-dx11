@@ -1516,6 +1516,7 @@ impl crate::Device for super::Device {
                 fl9_texture_sample_compare_offset_proof: None,
                 fl9_viewport_transform: None,
                 fl9_instance_index_input: false,
+                fl9_omit_unused_fragment_position: false,
                 fl9_vertex_index_input: false,
                 fl9_vertex_index_vector_indexing: false,
                 fl9_uniform_index_arguments: Vec::new(),

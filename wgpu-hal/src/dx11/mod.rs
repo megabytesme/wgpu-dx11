@@ -10,6 +10,7 @@ mod capabilities;
 mod command;
 mod device;
 mod fence;
+pub mod fl10;
 mod hal_bind_group;
 mod hal_device;
 mod hal_encoder;

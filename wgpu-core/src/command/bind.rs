@@ -354,14 +354,7 @@ fn sampler_mip_pair_compatible(
 }
 
 fn sampler_supports_explicit_lod(level: u32, compatibility: hal::SamplerMipCompatibility) -> bool {
-    match compatibility {
-        hal::SamplerMipCompatibility::Unrestricted => true,
-        hal::SamplerMipCompatibility::RaisedMaximum {
-            original,
-            anisotropic,
-        } => !anisotropic && original >= level as f32,
-        hal::SamplerMipCompatibility::SingleMip => false,
-    }
+    compatibility.supports_fixed_mip(level)
 }
 
 fn fl9_texture_sample_level_view_compatible(
@@ -924,9 +917,11 @@ impl Binder {
                                 })
                             })
                 }) {
-                    return Err(DrawError::IncompatibleTextureSampleLevelSampler {
-                        group: pair.sampler_group,
-                        binding: pair.sampler_binding,
+                    return Err(DrawError::IncompatibleSamplerMipRange {
+                        texture_group: pair.texture_group,
+                        texture_binding: pair.texture_binding,
+                        sampler_group: pair.sampler_group,
+                        sampler_binding: pair.sampler_binding,
                     });
                 }
             }

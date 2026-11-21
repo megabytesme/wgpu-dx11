@@ -4,7 +4,7 @@ use parking_lot::{Mutex, MutexGuard};
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
-        Foundation::{E_FAIL, E_INVALIDARG, HMODULE},
+        Foundation::{E_FAIL, E_INVALIDARG, HMODULE, LUID},
         Graphics::{
             Direct3D::{D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL},
             Direct3D11::{
@@ -97,6 +97,11 @@ impl NativeAdapter {
     /// Adapter identity as reported by DXGI.
     pub fn identity(&self) -> &AdapterIdentity {
         &self.identity
+    }
+
+    /// Adapter identifier unique within the current Windows session.
+    pub fn luid(&self) -> Result<LUID> {
+        Ok(unsafe { self.raw.GetDesc1()? }.AdapterLuid)
     }
 
     /// Driver-package version when DXGI exposes it for this adapter.
@@ -193,6 +198,9 @@ impl NativeAdapter {
             .find(|level| level.as_raw() == selected.0 as u32)
             .ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let raw = device.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+        if unsafe { raw.GetFeatureLevel() } != selected {
+            return Err(Error::from_hresult(E_FAIL));
+        }
         let immediate = context.ok_or_else(|| Error::from_hresult(E_FAIL))?;
         let idle_query = {
             let desc = D3D11_QUERY_DESC {
@@ -216,6 +224,7 @@ impl NativeAdapter {
             immediate: Mutex::new(immediate),
             idle_query: Mutex::new(Some(idle_query)),
             level,
+            portable_fl10: false,
             timestamp_frequency,
             debug_info_queue,
             #[cfg(any(test, feature = "dx11-test-fixture"))]
@@ -235,6 +244,7 @@ pub struct NativeDevice {
     immediate: Mutex<ID3D11DeviceContext>,
     pub(super) idle_query: Mutex<Option<ID3D11Asynchronous>>,
     level: FeatureLevel,
+    portable_fl10: bool,
     timestamp_frequency: Option<u64>,
     #[cfg_attr(not(test), allow(dead_code))]
     debug_info_queue: Option<ID3D11InfoQueue>,
@@ -247,6 +257,23 @@ pub struct NativeDevice {
 }
 
 impl NativeDevice {
+    pub(super) fn enable_portable_fl10(&mut self) {
+        debug_assert_eq!(self.level, FeatureLevel::L10_0);
+        self.portable_fl10 = true;
+    }
+
+    pub(super) fn color_attachment_limit(&self) -> usize {
+        if self.portable_fl10 { crate::MAX_COLOR_ATTACHMENTS } else { 1 }
+    }
+
+    pub(super) fn supports_portable_occlusion(&self) -> bool {
+        self.portable_fl10
+    }
+
+    pub(super) fn supports_alpha_to_coverage(&self) -> bool {
+        self.portable_fl10
+    }
+
     #[cfg(test)]
     pub(super) fn clear_debug_messages(&self) {
         if let Some(queue) = &self.debug_info_queue {

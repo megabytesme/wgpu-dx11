@@ -118,6 +118,8 @@ pub trait DynRayTracingPipeline: DynResource + fmt::Debug {}
 pub enum SamplerMipCompatibility {
     /// The sampler translation is compatible with any nonempty mip range.
     Unrestricted,
+    /// The native maximum is retained, including for multi-mip views.
+    NativeMaximum(f32),
     /// The sampler translation is compatible only with a one-mip view.
     SingleMip,
     /// The native maximum was raised; multi-mip views require the original
@@ -132,12 +134,22 @@ impl SamplerMipCompatibility {
             return false;
         }
         match self {
-            Self::Unrestricted => true,
+            Self::Unrestricted | Self::NativeMaximum(_) => true,
             Self::SingleMip => mip_levels == 1,
             Self::RaisedMaximum {
                 original,
                 anisotropic,
             } => mip_levels == 1 || (!anisotropic && original >= (mip_levels - 1) as f32),
+        }
+    }
+
+    /// Checks whether an exact mip can be substituted without defeating the sampler's LOD clamp.
+    pub fn supports_fixed_mip(self, level: u32) -> bool {
+        match self {
+            Self::Unrestricted => true,
+            Self::NativeMaximum(maximum) => maximum >= level as f32,
+            Self::RaisedMaximum { original, anisotropic } => !anisotropic && original >= level as f32,
+            Self::SingleMip => false,
         }
     }
 }

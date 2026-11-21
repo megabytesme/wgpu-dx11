@@ -1,6 +1,12 @@
 #![cfg(all(windows, feature = "dx11", feature = "wgsl"))]
 
-use std::{future::Future, sync::Arc, task::Wake, thread, time::Duration};
+use std::{
+    future::Future,
+    sync::Arc,
+    task::Wake,
+    thread,
+    time::{Duration, Instant},
+};
 use wgpu::*;
 
 struct ThreadWaker(thread::Thread);
@@ -48,6 +54,234 @@ fn mapped_buffer(
 }
 
 #[test]
+fn public_fl10_eight_color_targets_with_shared_blend_and_independent_masks() {
+    if std::env::var_os("WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL").as_deref() != Some("10_0".as_ref())
+    {
+        return;
+    }
+    let mut instance_desc = InstanceDescriptor::new_without_display_handle();
+    instance_desc.backends = Backends::DX11;
+    let instance = Instance::new(instance_desc);
+    let adapter = poll_ready(instance.enumerate_adapters(Backends::DX11))
+        .into_iter()
+        .next()
+        .expect("exact FL10_0 hardware");
+    let native = unsafe { adapter.as_hal::<wgpu_hal::api::Dx11>() }.unwrap();
+    assert_eq!(native.feature_level().as_raw(), 0xa000);
+    assert!(!native.is_software());
+    drop(native);
+    let limits = adapter.limits();
+    assert_eq!(limits.max_color_attachments, 8);
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        required_limits: limits,
+        ..Default::default()
+    }))
+    .unwrap();
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: None,
+        source: ShaderSource::Wgsl(
+            r"
+@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f {
+    return vec4f(p, 0.0, 1.0);
+}
+struct ColorOut {
+    @location(0) a: vec4f,
+    @location(1) b: vec4f,
+    @location(2) c: vec4f,
+    @location(3) d: vec4f,
+    @location(4) e: vec4f,
+    @location(5) f: vec4f,
+    @location(6) g: vec4f,
+    @location(7) h: vec4f,
+}
+@fragment fn ps() -> ColorOut {
+    return ColorOut(vec4f(.125), vec4f(.25), vec4f(.375), vec4f(.45),
+                    vec4f(.625), vec4f(.75), vec4f(.875), vec4f(1.0));
+}"
+            .into(),
+        ),
+    });
+    let format = TextureFormat::Rgba8Unorm;
+    let masks = [
+        ColorWrites::RED,
+        ColorWrites::GREEN,
+        ColorWrites::BLUE,
+        ColorWrites::ALPHA,
+    ];
+    let targets = core::array::from_fn::<_, 8, _>(|i| {
+        Some(ColorTargetState {
+            format,
+            blend: Some(BlendState {
+                color: BlendComponent {
+                    src_factor: BlendFactor::One,
+                    dst_factor: BlendFactor::One,
+                    operation: BlendOperation::Add,
+                },
+                alpha: BlendComponent::REPLACE,
+            }),
+            write_mask: masks[i % 4],
+        })
+    });
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL10_0 eight color targets"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: Default::default(),
+            buffers: &[Some(VertexBufferLayout {
+                array_stride: 8,
+                step_mode: VertexStepMode::Vertex,
+                attributes: &[VertexAttribute {
+                    format: VertexFormat::Float32x2,
+                    offset: 0,
+                    shader_location: 0,
+                }],
+            })],
+        },
+        primitive: Default::default(),
+        depth_stencil: None,
+        multisample: Default::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("ps"),
+            compilation_options: Default::default(),
+            targets: &targets,
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let vertex_bytes: Vec<u8> = [-1.0_f32, -1.0, 3.0, -1.0, -1.0, 3.0]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let vertices = mapped_buffer(&device, "MRT vertices", &vertex_bytes, BufferUsages::VERTEX);
+    let size = Extent3d {
+        width: 4,
+        height: 4,
+        depth_or_array_layers: 1,
+    };
+    let images = core::array::from_fn::<_, 8, _>(|_| {
+        device.create_texture(&TextureDescriptor {
+            label: None,
+            size,
+            dimension: TextureDimension::D2,
+            format,
+            mip_level_count: 1,
+            sample_count: 1,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        })
+    });
+    let views = images
+        .each_ref()
+        .map(|image| image.create_view(&Default::default()));
+    let colors = views.each_ref().map(|view| {
+        Some(RenderPassColorAttachment {
+            view,
+            depth_slice: None,
+            resolve_target: None,
+            ops: Operations {
+                load: LoadOp::Clear(Color {
+                    r: 0.0625,
+                    g: 0.0625,
+                    b: 0.0625,
+                    a: 0.0625,
+                }),
+                store: StoreOp::Store,
+            },
+        })
+    });
+    let staging = device.create_buffer(&BufferDescriptor {
+        label: None,
+        size: 8 * 4 * 256 + 16,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    assert!(adapter
+        .get_downlevel_capabilities()
+        .flags
+        .contains(DownlevelFlags::OCCLUSION_QUERY));
+    let queries = device.create_query_set(&QuerySetDescriptor {
+        label: None,
+        ty: QueryType::Occlusion,
+        count: 2,
+    });
+    let resolved = device.create_buffer(&BufferDescriptor {
+        label: None,
+        size: 16,
+        usage: BufferUsages::QUERY_RESOLVE | BufferUsages::COPY_SRC,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&Default::default());
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            color_attachments: &colors,
+            occlusion_query_set: Some(&queries),
+            ..Default::default()
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertices.slice(..));
+        pass.begin_occlusion_query(0);
+        pass.draw(0..3, 0..1);
+        pass.end_occlusion_query();
+    }
+    encoder.resolve_query_set(&queries, 0..2, &resolved, 0);
+    encoder.copy_buffer_to_buffer(&resolved, 0, &staging, 8 * 1024, 16);
+    for (i, image) in images.iter().enumerate() {
+        encoder.copy_texture_to_buffer(
+            image.as_image_copy(),
+            TexelCopyBufferInfo {
+                buffer: &staging,
+                layout: TexelCopyBufferLayout {
+                    offset: i as u64 * 1024,
+                    bytes_per_row: Some(256),
+                    rows_per_image: None,
+                },
+            },
+            size,
+        );
+    }
+    let index = queue.submit([encoder.finish()]);
+    let (send, recv) = std::sync::mpsc::channel();
+    staging
+        .slice(..)
+        .map_async(MapMode::Read, move |result| send.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(index),
+            timeout: Some(Duration::from_secs(10)),
+        })
+        .unwrap();
+    recv.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
+    let data = staging.get_mapped_range(..).unwrap();
+    for (i, expected) in [48, 80, 112, 115, 175, 207, 239, 255]
+        .into_iter()
+        .enumerate()
+    {
+        let mut pixel = [16; 4];
+        pixel[i % 4] = expected;
+        for y in 0..4 {
+            for x in 0..4 {
+                let offset = i * 1024 + y * 256 + x * 4;
+                assert_eq!(
+                    &data[offset..offset + 4],
+                    &pixel,
+                    "target {i} pixel ({x}, {y})"
+                );
+            }
+        }
+    }
+    let query_bytes = &data[8 * 1024..];
+    let counts: Vec<_> = query_bytes
+        .chunks_exact(8)
+        .map(|bytes| u64::from_ne_bytes(bytes.try_into().unwrap()))
+        .collect();
+    assert_eq!(counts, [16, 0]);
+    println!("PASS: public eight SM4 render targets with independent masks, shared blending, and occlusion resolve 16/0");
+}
+
+#[test]
 fn public_dx11_textured_depth_tested_3d_scene_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
@@ -55,19 +289,28 @@ fn public_dx11_textured_depth_tested_3d_scene_at_fl91() {
     let instance = Instance::new(descriptor);
     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
     let Some(adapter) = adapters.into_iter().next() else {
-        assert!(
-            !required,
-            "strict mode requires a physical FL9_1 D3D11 adapter"
-        );
-        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        assert!(!required, "strict mode requires a physical D3D11 adapter");
+        println!("SKIP: public D3D11 enumeration found no physical adapter");
         return;
     };
     let info = adapter.get_info();
     assert_eq!(info.backend, Backend::Dx11);
-    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.starts_with("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
+    let native = unsafe { adapter.as_hal::<wgpu_hal::api::Dx11>() }.unwrap();
+    assert!(!native.is_software());
+    let level = native.feature_level();
+    match std::env::var("WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL").as_deref() {
+        Ok("9_1") => assert_eq!(level.as_raw(), 0x9100),
+        Ok("10_0") => assert_eq!(level.as_raw(), 0xa000),
+        _ if std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1") => {
+            assert_eq!(level.as_raw(), 0x9100);
+        }
+        _ => {}
+    }
+    drop(native);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=textured perspective cube with D16 depth",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} projection=FL9_1 actual={level:?} software=false; workload=textured perspective cube with D16 depth",
         info.name, info.vendor, info.device, info.driver_info
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -436,6 +679,54 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         mapped_at_creation: false,
     });
 
+    let record_scene = |encoder: &mut CommandEncoder, index_buffer: &Buffer, use_depth, draws| {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some(if use_depth {
+                "FL9_1 textured cube depth pass"
+            } else {
+                "FL9_1 textured cube painter-order control pass"
+            }),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: use_depth.then_some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(if use_depth {
+            &pipeline
+        } else {
+            &painter_pipeline
+        });
+        pass.set_bind_group(
+            0,
+            if use_depth {
+                &bind_group
+            } else {
+                &painter_bind_group
+            },
+            &[],
+        );
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
+        for _ in 0..draws {
+            pass.draw_indexed(0..36, 0, 0..1);
+        }
+    };
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 render scene in opposite primitive orders"),
     });
@@ -445,52 +736,7 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         (2 * 32 * 256, &forward_indices, false),
         (3 * 32 * 256, &reverse_indices, false),
     ] {
-        {
-            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some(if use_depth {
-                    "FL9_1 textured cube depth pass"
-                } else {
-                    "FL9_1 textured cube painter-order control pass"
-                }),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &color_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(Color::BLACK),
-                        store: StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: use_depth.then_some(RenderPassDepthStencilAttachment {
-                    view: &depth_view,
-                    depth_ops: Some(Operations {
-                        load: LoadOp::Clear(1.0),
-                        store: StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(if use_depth {
-                &pipeline
-            } else {
-                &painter_pipeline
-            });
-            pass.set_bind_group(
-                0,
-                if use_depth {
-                    &bind_group
-                } else {
-                    &painter_bind_group
-                },
-                &[],
-            );
-            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
-            pass.draw_indexed(0..36, 0, 0..1);
-        }
+        record_scene(&mut encoder, index_buffer, use_depth, 1);
         encoder.copy_texture_to_buffer(
             TexelCopyTextureInfo {
                 texture: &color_texture,
@@ -579,4 +825,35 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
     println!(
         "PASS: public FL9_1 perspective cube sampled a 2x2 face texture and used D16 depth; depth-tested opposite face orders matched all 1,024 pixels, while painter-order controls differed at {painter_order_differences} pixels; clear/red/green/blue/yellow={colors:?}"
     );
+
+    if std::env::var_os("WGPU_DX11_SCENE_BENCH").is_some_and(|value| value == "1") {
+        const WARMUPS: usize = 5;
+        const SAMPLES: usize = 25;
+        for draws in [1, 128] {
+            let mut timings = Vec::with_capacity(SAMPLES);
+            for index in 0..(WARMUPS + SAMPLES) {
+                let start = Instant::now();
+                let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("D3D11 benchmark scene"),
+                });
+                record_scene(&mut encoder, &forward_indices, true, draws);
+                let submission = queue.submit([encoder.finish()]);
+                device
+                    .poll(PollType::Wait {
+                        submission_index: Some(submission),
+                        timeout: Some(Duration::from_secs(10)),
+                    })
+                    .expect("wait for D3D11 benchmark submission");
+                if index >= WARMUPS {
+                    timings.push(start.elapsed().as_secs_f64() * 1000.0);
+                }
+            }
+            timings.sort_by(f64::total_cmp);
+            println!(
+                "BENCHMARK projection=FL9_1 actual={level:?} draws={draws} warmups={WARMUPS} samples={SAMPLES} median_ms={:.4} p95_ms={:.4}",
+                timings[SAMPLES / 2],
+                timings[(SAMPLES * 95).div_ceil(100) - 1],
+            );
+        }
+    }
 }

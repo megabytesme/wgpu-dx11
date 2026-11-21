@@ -267,11 +267,14 @@ pub enum ShaderModel {
     V6_7,
     V6_8,
     V6_9,
+    // Appended to preserve existing serialized variant indices.
+    V4_0 = -1,
 }
 
 impl ShaderModel {
     pub const fn to_str(self) -> &'static str {
         match self {
+            Self::V4_0 => "4_0",
             Self::V5_0 => "5_0",
             Self::V5_1 => "5_1",
             Self::V6_0 => "6_0",
@@ -604,6 +607,9 @@ pub struct Options {
     /// WebGPU instance index in its second register for every emulated draw.
     pub fl9_instance_index_input: bool,
 
+    /// Omit a fragment position input proved unread by the caller.
+    pub fl9_omit_unused_fragment_position: bool,
+
     /// Map the selected vertex entry point's `vertex_index` input to a
     /// backend-provided `NAGA_VERTEX_INDEX` input semantic.
     pub fl9_vertex_index_input: bool,
@@ -686,6 +692,7 @@ impl Default for Options {
             fl9_texture_sample_compare_offset_proof: None,
             fl9_viewport_transform: None,
             fl9_instance_index_input: false,
+            fl9_omit_unused_fragment_position: false,
             fl9_vertex_index_input: false,
             fl9_vertex_index_vector_indexing: false,
             fl9_uniform_index_arguments: Vec::new(),

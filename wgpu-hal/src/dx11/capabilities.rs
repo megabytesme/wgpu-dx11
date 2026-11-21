@@ -908,14 +908,19 @@ impl Capabilities {
         };
         limits.max_vertex_attributes = 16;
         limits.max_vertex_buffer_array_stride = 2048;
-        // FL9_1 compiled pixel shaders accept eight inputs total, including SV_Position.
-        limits.max_inter_stage_shader_variables = 7;
+        limits.max_inter_stage_shader_variables = 8;
         limits.max_color_attachments = self.backend.color_attachments;
-        limits.max_color_attachment_bytes_per_sample = 8;
+        limits.max_color_attachment_bytes_per_sample = 8 * self.backend.color_attachments;
         limits.max_buffers_and_acceleration_structures_per_shader_stage =
             self.backend.vertex_buffers + uniform_buffers_per_stage;
 
         let mut flags = wgt::DownlevelFlags::empty();
+        if self.backend.color_attachments > 1 && self.hardware.separate_alpha_blend {
+            flags |= wgt::DownlevelFlags::SEPARATE_ALPHA_BLEND;
+        }
+        if self.backend.color_attachments > 1 {
+            flags |= wgt::DownlevelFlags::OCCLUSION_QUERY;
+        }
         if self.backend.uniform_binding_sizes_unaligned_16 {
             flags |= wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED;
         }
@@ -940,6 +945,7 @@ impl Capabilities {
             shader_model: wgt::ShaderModel::Sm2,
             limits: wgt::DownlevelLimits {
                 empty_binding_visibility: false,
+                independent_color_write_masks: self.backend.color_attachments > 1,
                 texture_1d: false,
                 texture_3d: texture_3d_sampling,
                 texture_3d_usage_mask: if texture_3d_sampling {
@@ -1410,7 +1416,11 @@ impl Capabilities {
                 rgba4444_unorm: format(DXGI_FORMAT_B4G4R4A4_UNORM),
                 vertex_input_formats,
             },
-            backend: BackendCapabilities::CURRENT,
+            backend: BackendCapabilities {
+                alpha_to_coverage: device.supports_alpha_to_coverage(),
+                color_attachments: device.color_attachment_limit() as u32,
+                ..BackendCapabilities::CURRENT
+            },
         }
     }
 

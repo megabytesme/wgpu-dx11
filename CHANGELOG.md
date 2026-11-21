@@ -54,6 +54,9 @@ Bottom level categories:
 
 #### Hal
 
+- Add exact native FL10_0 selection for D3D11 development and an experimental native SM4 geometry and stream-output interface.
+- Add eight portable color attachments with shared blending, alpha-to-coverage, and occlusion queries on opt-in D3D11 FL10_0. Preserve finite sampler LOD limits during D3D11 mip substitution.
+
 - Accept alpha-equivalent color and alpha blend equations in the opt-in FL9_1 D3D11 backend without enabling separate-alpha blending.
 - Emulate the direct single-mip fragment `textureSampleGrad` subset in the opt-in FL9_1 D3D11 backend.
 - Extend the opt-in FL9_1 D3D11 literal-zero texture-sampling subset to support bounded helper coordinate arithmetic and validate render-bundle view compatibility.

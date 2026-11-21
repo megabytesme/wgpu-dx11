@@ -1550,6 +1550,9 @@ pub struct DownlevelLimits {
     /// Whether fragment shaders may use derivatives or explicit texture gradients.
     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
     pub fragment_derivatives: bool,
+    /// Allows per-target color write masks with a shared blend equation.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub independent_color_write_masks: bool,
     /// Bit mask of vertex formats supported by the adapter.
     ///
     /// Bit `n` corresponds to the discriminant of [`VertexFormat`] with value `n`. This lets
@@ -1727,6 +1730,7 @@ impl Default for DownlevelLimits {
             fragment_texture_sample_compare_offset_2d_single_mip: false,
             texture_sample_bias_requires_compatible_sampler: false,
             fragment_derivatives: true,
+            independent_color_write_masks: false,
             vertex_format_mask: Self::webgpu_vertex_format_mask(),
         }
     }
@@ -2045,6 +2049,7 @@ impl DownlevelLimits {
             && (!self.texture_sample_bias_requires_compatible_sampler
                 || required.texture_sample_bias_requires_compatible_sampler)
             && (!required.fragment_derivatives || self.fragment_derivatives)
+            && (!required.independent_color_write_masks || self.independent_color_write_masks)
             && self.vertex_format_mask & required.vertex_format_mask == required.vertex_format_mask
     }
 }

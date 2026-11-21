@@ -27,17 +27,6 @@ pub(super) struct TextureInfo {
 
 pub(super) type SamplerLod = crate::SamplerMipCompatibility;
 
-fn sampler_supports_explicit_lod(level: u32, lod: SamplerLod) -> bool {
-    match lod {
-        SamplerLod::Unrestricted => true,
-        SamplerLod::RaisedMaximum {
-            original,
-            anisotropic,
-        } => !anisotropic && original >= level as f32,
-        SamplerLod::SingleMip => false,
-    }
-}
-
 #[derive(Clone, Debug, Default)]
 pub(super) struct SamplingResources {
     pub textures: Vec<TextureInfo>,
@@ -170,7 +159,7 @@ pub(super) fn compatible(
                     || (mip_level < texture.mip_levels
                         && texture.sample_level_mip_views_available
                         && lod_min_clamp_zero
-                        && (mip_level == 0 || sampler_supports_explicit_lod(mip_level, lod)))
+                        && (mip_level == 0 || lod.supports_fixed_mip(mip_level)))
             })
             && texture.mip_levels
                 <= texture.size[0]

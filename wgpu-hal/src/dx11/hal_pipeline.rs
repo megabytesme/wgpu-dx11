@@ -693,7 +693,7 @@ pub struct RenderPipeline {
     pub(super) stencil_write: bool,
     pub(super) sample_mask: u32,
     pub(super) sample_count: u32,
-    pub(super) target_format: Option<wgt::TextureFormat>,
+    pub(super) target_formats: [Option<wgt::TextureFormat>; crate::MAX_COLOR_ATTACHMENTS],
     pub(super) bindings: Arc<super::hal_bind_group::BindingPlan>,
     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
     pub(super) texel_load: Option<TexelLoadPipeline>,
@@ -2429,7 +2429,10 @@ mod tests {
         desc.multisample.count = 16;
         assert!(unsafe { device.create_render_pipeline(&desc) }.is_err());
         assert!(Arc::ptr_eq(&pipeline.owner, &native));
-        assert_eq!(pipeline.target_format, Some(wgt::TextureFormat::Rgba8Unorm));
+        assert_eq!(
+            pipeline.target_formats,
+            core::array::from_fn(|slot| (slot == 0).then_some(wgt::TextureFormat::Rgba8Unorm))
+        );
         let target = native.create_rgba_render_target(8, 8)?;
         let vertices: [f32; 6] = [-1., -1., 3., -1., -1., 3.];
         let buffer = unsafe {
@@ -2867,16 +2870,27 @@ impl RenderPipeline {
                 "D3D11 FL9 vertex_index does not support this primitive topology".into(),
             ));
         }
-        let target = match desc.color_targets {
-            [Some(target)] => Some(target),
-            [] | [None] => None,
-            _ => return Err(invalid()),
-        };
-        if (target.is_some() && fragment.is_none())
-            || (target.is_none() && desc.depth_stencil.is_none())
+        if desc.color_targets.len() > owner.color_attachment_limit() {
+            return Err(invalid());
+        }
+        let mut target_formats = [None; crate::MAX_COLOR_ATTACHMENTS];
+        for (format, target) in target_formats.iter_mut().zip(desc.color_targets) {
+            *format = target.as_ref().map(|target| target.format);
+        }
+        let mut targets = desc.color_targets.iter().flatten();
+        let first_target = targets.next();
+        let alpha_to_coverage = desc.multisample.alpha_to_coverage_enabled;
+        if (first_target.is_some() && fragment.is_none())
+            || (first_target.is_none() && desc.depth_stencil.is_none())
+            || first_target.is_some_and(|first| {
+                targets.any(|target| {
+                    target.blend != first.blend
+                })
+            })
         {
             return Err(invalid());
         }
+        let targets = || desc.color_targets.iter().flatten();
         if !Arc::ptr_eq(owner, &desc.layout.owner)
             || !vertex_stage.module.belongs_to(owner)
             || fragment.is_some_and(|stage| !stage.module.belongs_to(owner))
@@ -2889,7 +2903,10 @@ impl RenderPipeline {
                 ..desc.primitive
             }) != wgt::PrimitiveState::default()
             || !matches!(desc.multisample.count, 1 | 2 | 4 | 8 | 16)
-            || desc.multisample.alpha_to_coverage_enabled
+            || (alpha_to_coverage
+                && (!owner.supports_alpha_to_coverage()
+                    || desc.multisample.count == 1
+                    || target_formats[0].is_none()))
             || desc.multiview_mask.is_some()
             || desc.cache.is_some()
             || vertex_buffers.iter().flatten().any(|buffer| {
@@ -2898,7 +2915,7 @@ impl RenderPipeline {
                     || buffer.attributes.is_empty()
                     || buffer.attributes.len() > 16
             })
-            || target.is_some_and(|target| {
+            || targets().any(|target| {
                 !matches!(
                     target.format,
                     wgt::TextureFormat::Rgba8Unorm
@@ -2910,7 +2927,7 @@ impl RenderPipeline {
                         | wgt::TextureFormat::Rgb5g6b5Unorm
                 )
             })
-            || target.is_some_and(|target| color_write_mask(target.write_mask).is_none())
+            || targets().any(|target| color_write_mask(target.write_mask).is_none())
         {
             return Err(invalid());
         }
@@ -2920,8 +2937,8 @@ impl RenderPipeline {
             return Err(invalid());
         }
         if desc.multisample.count > 1
-            && ((target.is_none() && desc.depth_stencil.is_none())
-                || target.is_some_and(|target| {
+            && ((first_target.is_none() && desc.depth_stencil.is_none())
+                || targets().any(|target| {
                     super::capabilities::Capabilities::query(owner)
                         .check_private_texture_2d(
                             target.format,
@@ -2941,18 +2958,32 @@ impl RenderPipeline {
         {
             return Err(invalid());
         }
-        let mut blend_desc = target
+        let mut blend_desc = first_target
             .map(|target| {
-                blend_target_desc(
-                    target.blend,
-                    target.write_mask,
-                    owner.separate_alpha_supported(),
-                )
-                .ok_or_else(invalid)
+                let mask = targets().fold(wgt::ColorWrites::empty(), |mask, target| {
+                    mask | target.write_mask
+                });
+                let common =
+                    blend_target_desc(target.blend, mask, owner.separate_alpha_supported())
+                        .ok_or_else(invalid)?;
+                let mut blend = native_blend_desc(common);
+                blend.AlphaToCoverageEnable = alpha_to_coverage.into();
+                if desc.color_targets.len() > 1 {
+                    blend.IndependentBlendEnable = true.into();
+                    blend.RenderTarget.fill(common);
+                    for (slot, native) in blend.RenderTarget.iter_mut().enumerate() {
+                        native.RenderTargetWriteMask = desc
+                            .color_targets
+                            .get(slot)
+                            .and_then(Option::as_ref)
+                            .map_or(0, |target| target.write_mask.bits() as u8);
+                    }
+                }
+                Ok::<_, crate::PipelineError>(blend)
             })
             .transpose()?;
-        if let (Some(target), Some(blend_desc)) = (target, blend_desc) {
-            if blend_desc.BlendEnable.as_bool() {
+        if blend_desc.is_some_and(|blend| blend.RenderTarget[0].BlendEnable.as_bool()) {
+            for target in targets().filter(|target| !target.write_mask.is_empty()) {
                 let format = match target.format {
                     wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
                     wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -3000,7 +3031,9 @@ impl RenderPipeline {
             let emulate_never_with_stencil = suppress_draws && stencil_enable;
             if suppress_draws {
                 if let Some(blend_desc) = blend_desc.as_mut() {
-                    blend_desc.RenderTargetWriteMask = 0;
+                    for target in &mut blend_desc.RenderTarget {
+                        target.RenderTargetWriteMask = 0;
+                    }
                 }
             }
             let comparison = if emulate_never_with_stencil {
@@ -3211,7 +3244,9 @@ impl RenderPipeline {
             Err(crate::PipelineError::Linkage(_, _)) => None,
             Err(error) => return Err(error),
         };
+        let sm4_fragment = desc.color_targets.len() > 1;
         let texel_load_binding = fragment
+            .filter(|_| !sm4_fragment)
             .map(|fragment| {
                 fragment
                     .module
@@ -3261,13 +3296,21 @@ impl RenderPipeline {
             ));
         }
         let pixel_code = if let Some(fragment) = fragment {
-            fragment
+            if sm4_fragment {
+                fragment.module.compile_sm4_fragment(
+                    fragment.entry_point,
+                    &fragment_bindings,
+                    fragment.constants,
+                )?
+            } else {
+                fragment
                 .module
                 .compile_fragment_with_synthetic_output_if_needed(
                     fragment.entry_point,
                     &fragment_bindings,
                     fragment.constants,
                 )?
+            }
         } else {
             super::shader::compile_hlsl(
                 "float4 main() : SV_Target { return float4(0, 0, 0, 0); }",
@@ -3463,9 +3506,13 @@ impl RenderPipeline {
             if depth_state.is_none() {
                 return Err(invalid());
             }
-            if let Some(target_desc) = blend_desc {
-                if target_desc.BlendEnable.as_bool() || target_desc.RenderTargetWriteMask != 0x0f {
-                    let desc = native_blend_desc(target_desc);
+            if let Some(desc) = blend_desc {
+                let target = desc.RenderTarget[0];
+                if desc.IndependentBlendEnable.as_bool()
+                    || desc.AlphaToCoverageEnable.as_bool()
+                    || target.BlendEnable.as_bool()
+                    || target.RenderTargetWriteMask != 0x0f
+                {
                     owner
                         .raw_device()
                         .CreateBlendState(&desc, Some(&mut blend))
@@ -3497,7 +3544,7 @@ impl RenderPipeline {
                 desc.multisample.count,
             ),
             sample_count: desc.multisample.count,
-            target_format: target.map(|target| target.format),
+            target_formats,
             bindings: desc.layout.bindings.clone(),
             sampling_pairs: Arc::new(sampling_pairs),
             texel_load,

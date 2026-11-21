@@ -180,6 +180,8 @@ fn sampler_lod(
             original: desc.lod_clamp.end,
             anisotropic: desc.anisotropy_clamp > 1,
         }
+    } else if desc.lod_clamp.end != f32::MAX {
+        super::sampling::SamplerLod::NativeMaximum(desc.lod_clamp.end)
     } else {
         super::sampling::SamplerLod::Unrestricted
     }

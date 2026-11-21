@@ -13,6 +13,7 @@ use alloc::{
     sync::{Arc, Weak},
     vec::Vec,
 };
+use arrayvec::ArrayVec;
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
@@ -201,6 +202,8 @@ pub(super) enum NativeCommand {
     Copy(NativeBufferCopy),
     ClearBuffer(NativeBufferClear),
     WriteTimestamp(ID3D11Asynchronous),
+    BeginOcclusion(ID3D11Asynchronous),
+    EndOcclusion,
     CopyQueryResults {
         queries: Vec<ID3D11Asynchronous>,
         buffer: ID3D11Buffer,
@@ -218,8 +221,7 @@ pub(super) enum NativeCommand {
     #[cfg(feature = "dx11-test-fixture")]
     InjectedDeviceRemoval,
     BeginRender {
-        target: Option<RenderTarget>,
-        clear: Option<[f32; 4]>,
+        colors: ArrayVec<Option<(RenderTarget, Option<[f32; 4]>)>, { crate::MAX_COLOR_ATTACHMENTS }>,
         depth: Option<DepthAttachment>,
         viewport_buffer: ID3D11Buffer,
         width: u32,
@@ -401,7 +403,7 @@ pub(super) enum NativeCommand {
         instance_bindings: InstanceBindings,
     },
     EndRender {
-        resolve: Option<ResolveOperation>,
+        resolves: ArrayVec<ResolveOperation, { crate::MAX_COLOR_ATTACHMENTS }>,
     },
 }
 
@@ -604,18 +606,19 @@ impl CommandBuffer {
         retained: &mut Vec<Arc<ID3D11RenderTargetView>>,
     ) -> Result<()> {
         for command in &self.commands {
-            if let NativeCommand::BeginRender {
-                target: Some(RenderTarget::Surface(target)),
-                ..
-            } = command
-            {
-                let target = target
-                    .upgrade()
-                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
-                retained
-                    .try_reserve(1)
-                    .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
-                retained.push(target);
+            if let NativeCommand::BeginRender { colors, .. } = command {
+                for (target, _) in colors.iter().flatten() {
+                    let RenderTarget::Surface(target) = target else {
+                        continue;
+                    };
+                    let target = target
+                        .upgrade()
+                        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                    retained
+                        .try_reserve(1)
+                        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+                    retained.push(target);
+                }
             }
         }
         Ok(())
@@ -623,12 +626,25 @@ impl CommandBuffer {
 
     /// The caller must hold the owning device's immediate-context mutex.
     pub(super) fn replay(&self, context: &ID3D11DeviceContext) -> Result<()> {
+        struct ActiveOcclusion<'a> {
+            context: &'a ID3D11DeviceContext,
+            query: Option<&'a ID3D11Asynchronous>,
+        }
+        impl Drop for ActiveOcclusion<'_> {
+            fn drop(&mut self) {
+                if let Some(query) = self.query.take() {
+                    unsafe { self.context.End(query) };
+                }
+            }
+        }
+        let mut occlusion = ActiveOcclusion { context, query: None };
         let mut active_depth_state = None;
         let mut active_blend_state = None;
         let mut active_sample_mask = u32::MAX;
         let mut blend_constant = [0.0; 4];
         let mut stencil_reference = 0;
         let mut active_vertex_index_slot = None;
+        let mut active_color_slots = 0;
         for command in &self.commands {
             unsafe {
                 match command {
@@ -662,6 +678,17 @@ impl CommandBuffer {
                         }
                     }
                     NativeCommand::WriteTimestamp(query) => context.End(query),
+                    NativeCommand::BeginOcclusion(query) => {
+                        if occlusion.query.is_some() {
+                            return Err(Error::from_hresult(E_INVALIDARG));
+                        }
+                        context.Begin(query);
+                        occlusion.query = Some(query);
+                    }
+                    NativeCommand::EndOcclusion => {
+                        let query = occlusion.query.take().ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                        context.End(query);
+                    }
                     NativeCommand::CopyQueryResults {
                         queries,
                         buffer,
@@ -721,14 +748,21 @@ impl CommandBuffer {
                         ));
                     }
                     NativeCommand::BeginRender {
-                        target,
-                        clear,
+                        colors,
                         depth,
                         viewport_buffer,
                         width,
                         height,
                     } => {
-                        let target = target.as_ref().map(RenderTarget::resolve).transpose()?;
+                        let targets = colors
+                            .iter()
+                            .map(|attachment| {
+                                attachment
+                                    .as_ref()
+                                    .map(|(target, _)| target.resolve())
+                                    .transpose()
+                            })
+                            .collect::<Result<ArrayVec<_, { crate::MAX_COLOR_ATTACHMENTS }>>>()?;
                         active_depth_state = None;
                         active_blend_state = None;
                         active_sample_mask = u32::MAX;
@@ -736,17 +770,11 @@ impl CommandBuffer {
                         stencil_reference = 0;
                         context.ClearState();
                         active_vertex_index_slot = None;
-                        if let Some(target) = &target {
-                            context.OMSetRenderTargets(
-                                Some(&[Some(target.clone())]),
-                                depth.as_ref().map(|attachment| &attachment.view),
-                            );
-                        } else {
-                            context.OMSetRenderTargets(
-                                None,
-                                depth.as_ref().map(|attachment| &attachment.view),
-                            );
-                        }
+                        active_color_slots = targets.len();
+                        context.OMSetRenderTargets(
+                            (!targets.is_empty()).then_some(targets.as_slice()),
+                            depth.as_ref().map(|attachment| &attachment.view),
+                        );
                         context.OMSetBlendState(None, None, u32::MAX);
                         context.OMSetDepthStencilState(None, stencil_reference);
                         let identity: [f32; 4] = [1., 1., 0., 0.];
@@ -777,8 +805,10 @@ impl CommandBuffer {
                             right: *width as i32,
                             bottom: *height as i32,
                         }]));
-                        if let (Some(target), Some(color)) = (&target, clear) {
-                            context.ClearRenderTargetView(target, color);
+                        for (target, attachment) in targets.iter().zip(colors) {
+                            if let (Some(target), Some((_, Some(clear)))) = (target, attachment) {
+                                context.ClearRenderTargetView(target, clear);
+                            }
                         }
                         if let Some(attachment) = depth {
                             let mut flags = 0;
@@ -865,9 +895,10 @@ impl CommandBuffer {
                         source_box,
                     } => uniform.execute(context, *vertex_slot, *fragment_slot, source_box)?,
                     NativeCommand::RefreshSampledTextures { textures } => {
-                        let mut targets = [None];
+                        let mut targets = [const { None }; crate::MAX_COLOR_ATTACHMENTS];
                         let mut depth = None;
-                        context.OMGetRenderTargets(Some(&mut targets), Some(&mut depth));
+                        let targets = &mut targets[..active_color_slots];
+                        context.OMGetRenderTargets(Some(targets), Some(&mut depth));
                         context.OMSetRenderTargets(None, None);
                         context.PSSetShaderResources(
                             0,
@@ -877,11 +908,10 @@ impl CommandBuffer {
                             texture.execute(context);
                         }
                         context.OMSetRenderTargets(
-                            if targets[0].is_some() {
-                                Some(&targets)
-                            } else {
-                                None
-                            },
+                            targets
+                                .iter()
+                                .rposition(Option::is_some)
+                                .map(|last| &targets[..=last]),
                             depth.as_ref(),
                         );
                     }
@@ -1621,9 +1651,9 @@ impl CommandBuffer {
                         context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
                         result?;
                     }
-                    NativeCommand::EndRender { resolve } => {
+                    NativeCommand::EndRender { resolves } => {
                         context.ClearState();
-                        if let Some(resolve) = resolve {
+                        for resolve in resolves {
                             context.ResolveSubresource(
                                 &resolve.destination,
                                 resolve.destination_subresource,

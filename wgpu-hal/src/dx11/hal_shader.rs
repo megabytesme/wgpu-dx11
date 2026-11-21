@@ -1,10 +1,10 @@
 //! Owned Naga shader modules for the private D3D11 HAL.
 #[cfg(test)]
-use super::shader::{compile_naga_with_bindings, translate_naga_with_viewport_and_fl9_inputs};
+use super::shader::translate_naga_with_viewport_and_fl9_inputs;
 use super::{
     device::NativeDevice,
     shader::{
-        compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices, shader_binding_kind,
+        compile_naga_with_bindings, compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices, shader_binding_kind,
         Fl9ShaderInputOptions, NagaCompileError, ShaderBinding, ShaderBindingKind, ShaderProfile,
     },
 };
@@ -15316,6 +15316,25 @@ impl ShaderModule {
             true,
             constants,
         )
+    }
+
+    pub(super) fn compile_sm4_fragment(
+        &self,
+        entry: &str,
+        bindings: &[ShaderBinding],
+        constants: &naga::back::PipelineConstants,
+    ) -> Result<Vec<u8>, crate::PipelineError> {
+        let stage = naga::ShaderStage::Fragment;
+        let visibility = wgt::ShaderStages::FRAGMENT;
+        let (module, info) = naga::back::pipeline_constants::process_overrides(
+            &self.shader.module,
+            &self.shader.info,
+            Some((stage, entry)),
+            constants,
+        )
+        .map_err(|error| crate::PipelineError::PipelineConstants(visibility, error.to_string()))?;
+        compile_naga_with_bindings(&module, &info, stage, entry, ShaderProfile::Pixel4_0, bindings)
+            .map_err(|error| crate::PipelineError::Linkage(visibility, alloc::format!("{error:?}")))
     }
 
     pub(super) fn compile_with_viewport_and_constants(

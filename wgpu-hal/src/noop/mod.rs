@@ -278,6 +278,7 @@ pub const CAPABILITIES: crate::Capabilities = {
                 fragment_texture_sample_compare_offset_2d_single_mip: false,
                 texture_sample_bias_requires_compatible_sampler: false,
                 fragment_derivatives: true,
+                independent_color_write_masks: false,
                 vertex_format_mask: wgt::DownlevelLimits::webgpu_vertex_format_mask(),
             },
             shader_model: wgt::ShaderModel::Sm5,

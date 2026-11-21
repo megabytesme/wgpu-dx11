@@ -1167,10 +1167,7 @@ impl crate::Device for Device {
         &self,
         desc: &wgt::QuerySetDescriptor<Label>,
     ) -> Result<<Self::A as Api>::QuerySet, DeviceError> {
-        if !matches!(desc.ty, wgt::QueryType::Timestamp) {
-            return Err(DeviceError::Unexpected);
-        }
-        super::query::QuerySet::new(&self.native, desc.count).map_err(device_error)
+        super::query::QuerySet::new(&self.native, desc.ty, desc.count).map_err(device_error)
     }
 
     unsafe fn destroy_query_set(&self, set: <Self::A as Api>::QuerySet) {

@@ -7,8 +7,8 @@ use windows::{
         Foundation::{E_FAIL, E_INVALIDARG, E_OUTOFMEMORY, S_FALSE, S_OK},
         Graphics::Direct3D11::{
             ID3D11Asynchronous, ID3D11Device, ID3D11DeviceContext, D3D11_ASYNC_GETDATA_DONOTFLUSH,
-            D3D11_QUERY_DATA_TIMESTAMP_DISJOINT, D3D11_QUERY_DESC, D3D11_QUERY_TIMESTAMP,
-            D3D11_QUERY_TIMESTAMP_DISJOINT,
+            D3D11_QUERY_DATA_TIMESTAMP_DISJOINT, D3D11_QUERY_DESC, D3D11_QUERY_OCCLUSION,
+            D3D11_QUERY_TIMESTAMP, D3D11_QUERY_TIMESTAMP_DISJOINT,
         },
         System::{SystemInformation::GetTickCount64, Threading::Sleep},
     },
@@ -17,23 +17,30 @@ use windows::{
 #[derive(Debug)]
 pub struct QuerySet {
     owner: ID3D11Device,
+    kind: wgt::QueryType,
     queries: Vec<ID3D11Asynchronous>,
 }
 
 impl QuerySet {
-    pub(super) fn new(device: &NativeDevice, count: u32) -> Result<Self> {
-        if count == 0
-            || count > wgt::QUERY_SET_MAX_QUERIES
-            || device.timestamp_frequency().is_none()
-        {
+    pub(super) fn new(device: &NativeDevice, kind: wgt::QueryType, count: u32) -> Result<Self> {
+        if count == 0 || count > wgt::QUERY_SET_MAX_QUERIES {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
+        let native_kind = match kind {
+            wgt::QueryType::Timestamp if device.timestamp_frequency().is_some() => {
+                D3D11_QUERY_TIMESTAMP
+            }
+            wgt::QueryType::Occlusion if device.supports_portable_occlusion() => {
+                D3D11_QUERY_OCCLUSION
+            }
+            _ => return Err(Error::from_hresult(E_INVALIDARG)),
+        };
         let mut queries = Vec::new();
         queries
             .try_reserve_exact(count as usize)
             .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
         let desc = D3D11_QUERY_DESC {
-            Query: D3D11_QUERY_TIMESTAMP,
+            Query: native_kind,
             MiscFlags: 0,
         };
         for _ in 0..count {
@@ -47,6 +54,7 @@ impl QuerySet {
         }
         Ok(Self {
             owner: device.raw_device().clone(),
+            kind,
             queries,
         })
     }
@@ -57,6 +65,10 @@ impl QuerySet {
 
     pub(super) fn query(&self, index: u32) -> Option<ID3D11Asynchronous> {
         self.queries.get(index as usize).cloned()
+    }
+
+    pub(super) fn kind(&self) -> wgt::QueryType {
+        self.kind
     }
 
     pub(super) fn contains_range(&self, range: &core::ops::Range<u32>) -> bool {

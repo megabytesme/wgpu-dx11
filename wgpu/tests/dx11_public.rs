@@ -1009,6 +1009,12 @@ fn public_dx11_nonzero_group_sparse_uniform_renders_at_fl91() {
     );
 }
 
+fn exact_native_level(adapter: &Adapter) -> u32 {
+    let native = unsafe { adapter.as_hal::<wgpu::hal::api::Dx11>() }.expect("DX11 adapter");
+    assert!(!native.is_software());
+    native.feature_level().as_raw()
+}
+
 fn expect_validation_error(device: &Device, label: &str, operation: impl FnOnce()) {
     let scope = device.push_error_scope(ErrorFilter::Validation);
     operation();
@@ -6566,7 +6572,7 @@ fn public_dx11_byte_aligned_vertex_attribute_offset_at_fl91() {
         label: Some("byte-aligned vertex attribute offset shader"),
         source: ShaderSource::Wgsl(
             "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p * 2.0 - vec2f(1.0), 0.0, 1.0); }\n\
-             @fragment fn fs() -> @location(0) vec4f { return vec4f(0.125, 0.5, 0.875, 1.0); }"
+             @fragment fn fs() -> @location(0) vec4f { return vec4f(0.125, 0.625, 0.875, 1.0); }"
                 .into(),
         ),
     });
@@ -6764,14 +6770,14 @@ fn public_dx11_byte_aligned_vertex_attribute_offset_at_fl91() {
                 let offset = y * 256 + x * 4;
                 assert_eq!(
                     &pixels[offset..offset + 4],
-                    &[32, 128, 223, 255],
+                    &[32, 159, 223, 255],
                     "byte-aligned vertex input pixel ({x}, {y})"
                 );
             }
         }
     }
     readback.unmap();
-    println!("PASS: FL9_1 Unorm8x2 at byte offset 2 rendered the full target; 64/64 pixels matched [32, 128, 223, 255]");
+    println!("PASS: FL9_1 Unorm8x2 at byte offset 2 rendered the full target; 64/64 pixels matched [32, 159, 223, 255]");
 }
 
 #[test]
@@ -9688,13 +9694,14 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
     assert_eq!(info.backend, Backend::Dx11);
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
-    let srgb_features = adapter.get_texture_format_features(TextureFormat::Rgba8UnormSrgb);
-    assert!(
-        !srgb_features
-            .flags
-            .contains(TextureFormatFeatureFlags::BLENDABLE),
-        "FL9_1 sRGB blending does not match wgpu linear-space semantics: {srgb_features:?}"
-    );
+    let srgb_supported = adapter.get_texture_format_features(TextureFormat::Rgba8UnormSrgb)
+        .flags.contains(TextureFormatFeatureFlags::BLENDABLE);
+    if exact_native_level(&adapter) <= 0x9300 {
+        assert!(!srgb_supported, "FL9.x hardware blends sRGB targets in sRGB space");
+    }
+    let separate_alpha = adapter.get_downlevel_capabilities().flags
+        .contains(DownlevelFlags::SEPARATE_ALPHA_BLEND);
+    let format = if srgb_supported { TextureFormat::Rgba8UnormSrgb } else { TextureFormat::Rgba8Unorm };
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
         info.name, info.vendor, info.device, info.driver, info.driver_info
@@ -9742,7 +9749,7 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D2,
-        format: TextureFormat::Rgba8Unorm,
+        format,
         usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
         view_formats: &[],
     });
@@ -9816,34 +9823,24 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
         ));
     });
     println!("PASS: public core rejected source-alpha-saturated blending before HAL");
-    expect_validation_error(&device, "separate alpha blend equations", || {
-        drop(render_pipeline(
-            "overlay",
-            Some(BlendState {
+    if !separate_alpha {
+        expect_validation_error(&device, "separate alpha blend equations", || {
+            drop(render_pipeline("overlay", Some(BlendState {
                 color: component,
-                alpha: BlendComponent {
-                    src_factor: BlendFactor::One,
-                    dst_factor: BlendFactor::Zero,
-                    operation: BlendOperation::Add,
-                },
-            }),
-            TextureFormat::Rgba8Unorm,
-        ));
-    });
-    println!("PASS: public core rejected separate alpha equations before HAL");
-    expect_validation_error(&device, "FL9_1 sRGB target blending", || {
-        drop(render_pipeline(
-            "overlay",
-            Some(premultiplied_over),
-            TextureFormat::Rgba8UnormSrgb,
-        ));
-    });
-    println!("PASS: public core rejected FL9_1 sRGB blending before HAL");
-    let base = render_pipeline("blue", None, TextureFormat::Rgba8Unorm);
+                alpha: BlendComponent::REPLACE,
+            }), TextureFormat::Rgba8Unorm));
+        });
+    }
+    if !srgb_supported {
+        expect_validation_error(&device, "sRGB target blending", || {
+            drop(render_pipeline("overlay", Some(premultiplied_over), TextureFormat::Rgba8UnormSrgb));
+        });
+    }
+    let base = render_pipeline("blue", None, format);
     let overlay = render_pipeline(
         "overlay",
         Some(premultiplied_over),
-        TextureFormat::Rgba8Unorm,
+        format,
     );
     let alpha_equivalent_blend = BlendState {
         color: BlendComponent {
@@ -9857,11 +9854,11 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
             operation: BlendOperation::Add,
         },
     };
-    let alpha_equivalent_base = render_pipeline("blue_alpha", None, TextureFormat::Rgba8Unorm);
+    let alpha_equivalent_base = render_pipeline("blue_alpha", None, format);
     let alpha_equivalent_overlay = render_pipeline(
         "overlay",
         Some(alpha_equivalent_blend),
-        TextureFormat::Rgba8Unorm,
+        format,
     );
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 public blend commands"),
@@ -9971,7 +9968,8 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
         .expect("map public blend readback");
     {
         let data = readback.slice(..).get_mapped_range().expect("mapped data");
-        for (region_offset, expected) in [(0, [128, 0, 128, 255]), (8 * 256, [128, 0, 255, 128])] {
+        let half = if srgb_supported { 188 } else { 128 };
+        for (region_offset, expected) in [(0, [half, 0, half, 255]), (8 * 256, [half, 0, 255, 128])] {
             for y in 0..8 {
                 for x in 0..8 {
                     let offset = region_offset + y * 256 + x * 4;
@@ -9988,7 +9986,7 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
         }
     }
     readback.unmap();
-    println!("PASS: public FL9_1 premultiplied blend matched [128, 0, 128, 255], and alpha-equivalent inverse-color blend matched [128, 0, 255, 128], all 64 pixels each");
+    println!("PASS: public premultiplied and alpha-equivalent blends matched all pixels in {format:?}");
 }
 
 #[test]
@@ -10355,7 +10353,12 @@ fn public_dx11_texture_dimension_2d_boundary_at_fl91() {
     assert_eq!(info.backend, Backend::Dx11);
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     let limits = adapter.limits();
-    assert_eq!(limits.max_texture_dimension_2d, 2048);
+    assert_eq!(limits.max_texture_dimension_2d, match exact_native_level(&adapter) {
+        0x9100 | 0x9200 => 2048,
+        0x9300 => 4096,
+        0xa000 | 0xa100 => 8192,
+        _ => 16384,
+    });
     let max_texture_dimension_2d = limits.max_texture_dimension_2d;
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; max_texture_dimension_2d={}",
@@ -16150,9 +16153,9 @@ fn public_dx11_rg16_snorm_mip_copy_and_readback_at_fl91() {
         println!("SKIP: selected FL9_1 device did not query Rg16Snorm mip support");
         return;
     }
-    assert!(!features
-        .flags
-        .contains(TextureFormatFeatureFlags::FILTERABLE));
+    if exact_native_level(&adapter) == 0x9100 {
+        assert!(!features.flags.contains(TextureFormatFeatureFlags::FILTERABLE));
+    }
     assert!(adapter
         .features()
         .contains(Features::TEXTURE_FORMAT_16BIT_NORM));
@@ -25095,9 +25098,15 @@ fn public_dx11_enforces_query_type_feature_gates_at_fl91() {
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
     let downlevel = adapter.get_downlevel_capabilities();
-    assert!(!downlevel.flags.contains(DownlevelFlags::OCCLUSION_QUERY));
+    let occlusion = downlevel.flags.contains(DownlevelFlags::OCCLUSION_QUERY);
+    assert_eq!(
+        occlusion,
+        exact_native_level(&adapter) == 0xa000
+            && std::env::var_os("WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL")
+                .is_some_and(|level| level == "10_0")
+    );
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false occlusion_queries=false",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} occlusion_queries={occlusion}",
         info.name, info.vendor, info.device, info.driver_info
     );
     let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -25107,18 +25116,16 @@ fn public_dx11_enforces_query_type_feature_gates_at_fl91() {
         ..Default::default()
     }))
     .expect("request the selected FL9_1 device");
-    expect_validation_error_containing(
-        &device,
-        "FL9_1 occlusion query set",
-        "OCCLUSION_QUERY",
-        || {
-            drop(device.create_query_set(&QuerySetDescriptor {
-                label: Some("unsupported FL9_1 occlusion queries"),
-                ty: QueryType::Occlusion,
-                count: 1,
-            }));
-        },
-    );
+    if !occlusion {
+        expect_validation_error_containing(
+            &device,
+            "occlusion query set",
+            "OCCLUSION_QUERY",
+            || drop(device.create_query_set(&QuerySetDescriptor {
+                label: None, ty: QueryType::Occlusion, count: 1,
+            })),
+        );
+    }
     expect_validation_error_containing(
         &device,
         "FL9_1 timestamp query set without requested feature",
@@ -25144,7 +25151,7 @@ fn public_dx11_enforces_query_type_feature_gates_at_fl91() {
         },
     );
     println!(
-        "PASS: public core requires explicit timestamp features and rejects occlusion and pipeline-statistics query sets; the separate strict timestamp test verifies execution"
+        "PASS: public core requires explicit timestamp features, gates occlusion, and rejects pipeline-statistics query sets"
     );
 }
 
@@ -33772,11 +33779,11 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
         .collect::<Vec<_>>()
         .join(", ");
     let positive_values = (0..8)
-        .map(|_| "vec4f(0.03125, 0.015625, 0.0078125, 0.125)")
+        .map(|i| format!("vec4f({}.0, {}.0, 1.0, 8.0) / 512.0", i + 1, 8 - i))
         .collect::<Vec<_>>()
         .join(", ");
     let positive_sum = (0..8)
-        .map(|location| format!("input.value{location}"))
+        .map(|location| format!("input.value{location} * {}.0", location + 1))
         .collect::<Vec<_>>()
         .join(" + ");
     let positive_shader = device.create_shader_module(ShaderModuleDescriptor {
@@ -33784,7 +33791,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
         source: ShaderSource::Wgsl(
             format!(
                 "struct VertexOut {{ @builtin(position) position: vec4f, {positive_fields} }}\n\
-                 struct FragmentIn {{ {positive_fields} }}\n\
+                 struct FragmentIn {{ @builtin(position) position: vec4f, {positive_fields} }}\n\
                  @vertex fn vs(@location(0) position: vec2f) -> VertexOut {{\n\
                      return VertexOut(vec4f(position, 0.5, 1.0), {positive_values});\n\
                  }}\n\
@@ -33939,7 +33946,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
                 let offset = y * 256 + x * 4;
                 assert_eq!(
                     &pixels[offset..offset + 4],
-                    [64, 32, 16, 255],
+                    [102, 60, 18, 143],
                     "eight varying output pixel ({x}, {y})"
                 );
             }
@@ -33956,7 +33963,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
         .collect::<Vec<_>>()
         .join(", ");
     let over_limit_sum = (0..9)
-        .map(|location| format!("input.value{location}"))
+        .map(|location| format!("input.value{location} * {}.0", location + 1))
         .collect::<Vec<_>>()
         .join(" + ");
     let over_limit_wgsl = format!(
@@ -34002,7 +34009,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
         },
     );
     println!(
-        "PASS: eight matched vec4 varyings at locations 0–7 rendered [64, 32, 16, 255] in 64/64 pixels; Core rejected location 8 against max_inter_stage_shader_variables before HAL"
+        "PASS: eight matched vec4 varyings at locations 0–7 rendered [102, 60, 18, 143] in 64/64 pixels; Core rejected location 8 against max_inter_stage_shader_variables before HAL"
     );
 }
 
@@ -34035,7 +34042,13 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
         .get_downlevel_capabilities()
         .limits
         .max_texture_repeat_per_primitive;
-    assert_eq!(max_repeat, 128);
+    let level = exact_native_level(&adapter);
+    assert_eq!(max_repeat, match level {
+        0x9100 => 128,
+        0x9200 => 2048,
+        0x9300 | 0xa000 | 0xa100 => 8192,
+        _ => 16384,
+    });
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; max_texture_repeat_per_primitive={max_repeat}",
         info.name, info.vendor, info.device, info.driver_info
@@ -34052,19 +34065,14 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
         ("repeat", AddressMode::Repeat),
         ("mirror repeat", AddressMode::MirrorRepeat),
     ] {
+        let sampler = SamplerDescriptor {
+            address_mode_u: address_mode,
+            ..Default::default()
+        };
         expect_validation_error_containing(&device, name, "TextureRepeatLimitExceeded", || {
-            drop(device.create_sampler(&SamplerDescriptor {
-                address_mode_u: address_mode,
-                mag_filter: FilterMode::Nearest,
-                min_filter: FilterMode::Nearest,
-                mipmap_filter: MipmapFilterMode::Nearest,
-                ..Default::default()
-            }));
+            drop(device.create_sampler(&sampler));
         });
     }
-    println!(
-        "PASS: public Core rejected repeat and mirror-repeat sampler creation using the projected FL9_1 limit before HAL"
-    );
 }
 
 #[test]
@@ -36783,7 +36791,12 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     let downlevel = adapter.get_downlevel_capabilities();
     assert!(downlevel.flags.contains(DownlevelFlags::CUBE_TEXTURES));
     assert!(!downlevel.flags.contains(DownlevelFlags::TEXTURE_2D_ARRAYS));
-    assert_eq!(downlevel.limits.max_texture_cube_dimension, 512);
+    assert_eq!(downlevel.limits.max_texture_cube_dimension, match exact_native_level(&adapter) {
+        0x9100 | 0x9200 => 512,
+        0x9300 => 4096,
+        0xa000 | 0xa100 => 8192,
+        _ => 16384,
+    });
     assert_eq!(downlevel.limits.max_texture_to_buffer_copy_layers, 6);
     assert!(downlevel
         .limits
@@ -36852,8 +36865,9 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
     expect_validation_error(&device, "NPOT cube texture", || {
         let _ = device.create_texture(&cube_descriptor(6, 6, 1));
     });
-    expect_validation_error(&device, "oversized FL9_1 cube texture", || {
-        let _ = device.create_texture(&cube_descriptor(1024, 1024, 1));
+    let oversized = downlevel.limits.max_texture_cube_dimension * 2;
+    expect_validation_error(&device, "oversized cube texture", || {
+        let _ = device.create_texture(&cube_descriptor(oversized, oversized, 1));
     });
     if !cube_mips_supported {
         expect_validation_error(&device, "unsupported mipmapped FL9_1 cube texture", || {
@@ -37568,7 +37582,11 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
         println!("SKIP: selected FL9_1 device did not report 3D texture support");
         return;
     }
-    assert_eq!(adapter.limits().max_texture_dimension_3d, 256);
+    assert_eq!(adapter.limits().max_texture_dimension_3d, match exact_native_level(&adapter) {
+        0x9100 => 256,
+        0x9200 | 0x9300 => 512,
+        _ => 2048,
+    });
     println!(
         "FL9_1 3D volume mip support: {}",
         downlevel.limits.texture_3d_mipmaps

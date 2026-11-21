@@ -1,12 +1,15 @@
 //! In-memory FXC shader compilation. WGSL lowering is not implemented here.
 use alloc::{ffi::CString, format, string::String, vec::Vec};
 #[cfg(not(target_vendor = "uwp"))]
-use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
+use windows::Win32::Graphics::Direct3D::Fxc::{D3DCompile, D3DReflect};
 use windows::{
-    core::PCSTR,
+    core::{Interface, PCSTR},
     Win32::{
         Foundation::E_INVALIDARG,
-        Graphics::Direct3D::{Fxc::D3DCOMPILE_ENABLE_STRICTNESS, ID3DBlob},
+        Graphics::{
+            Direct3D::{Fxc::D3DCOMPILE_ENABLE_STRICTNESS, ID3DBlob, D3D_NAME_POSITION},
+            Direct3D11::{ID3D11ShaderReflection, D3D11_SHADER_DESC, D3D11_SIGNATURE_PARAMETER_DESC},
+        },
     },
 };
 #[cfg(not(target_vendor = "uwp"))]
@@ -19,6 +22,7 @@ pub(crate) enum ShaderProfile {
     VertexLevel9_1,
     PixelLevel9_1,
     PixelLevel9_3,
+    Pixel4_0,
     Pixel4_1,
     Vertex5_0,
     Pixel5_0,
@@ -31,6 +35,7 @@ impl ShaderProfile {
             Self::VertexLevel9_1 => PCSTR(c"vs_4_0_level_9_1".as_ptr().cast()),
             Self::PixelLevel9_1 => PCSTR(c"ps_4_0_level_9_1".as_ptr().cast()),
             Self::PixelLevel9_3 => PCSTR(c"ps_4_0_level_9_3".as_ptr().cast()),
+            Self::Pixel4_0 => PCSTR(c"ps_4_0".as_ptr().cast()),
             Self::Pixel4_1 => PCSTR(c"ps_4_1".as_ptr().cast()),
             Self::Vertex5_0 => PCSTR(c"vs_5_0".as_ptr().cast()),
             Self::Pixel5_0 => PCSTR(c"ps_5_0".as_ptr().cast()),
@@ -45,6 +50,7 @@ pub(super) struct Fl9ShaderInputOptions {
     pub instance_index_input: bool,
     pub vertex_index_input: bool,
     pub vertex_index_vector_indexing: bool,
+    pub omit_unused_fragment_position: bool,
     pub texel_load_binding: Option<naga::ResourceBinding>,
     pub additional_texel_load_bindings: [Option<naga::ResourceBinding>; 7],
     pub texel_load_coordinate_conversion: Option<naga::Handle<naga::Expression>>,
@@ -93,14 +99,14 @@ type D3DCompileFn = unsafe extern "system" fn(
 ) -> windows::core::HRESULT;
 
 #[cfg(target_vendor = "uwp")]
-fn dynamic_d3d_compile() -> Option<D3DCompileFn> {
-    static D3D_COMPILE: std::sync::OnceLock<Option<D3DCompileFn>> = std::sync::OnceLock::new();
-    *D3D_COMPILE.get_or_init(|| {
-        #[link(name = "WindowsApp")]
-        unsafe extern "system" {
-            fn LoadPackagedLibrary(filename: *const u16, reserved: u32) -> isize;
-            fn GetProcAddress(module: isize, proc_name: *const u8) -> *const core::ffi::c_void;
-        }
+fn dynamic_d3d_compiler_symbol(name: &core::ffi::CStr) -> *const core::ffi::c_void {
+    #[link(name = "WindowsApp")]
+    unsafe extern "system" {
+        fn LoadPackagedLibrary(filename: *const u16, reserved: u32) -> isize;
+        fn GetProcAddress(module: isize, proc_name: *const u8) -> *const core::ffi::c_void;
+    }
+    static MODULE: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
+    let module = *MODULE.get_or_init(|| {
         #[cfg_attr(
             not(target_arch = "x86"),
             link(name = "kernel32.dll", kind = "raw-dylib", modifiers = "+verbatim")
@@ -122,15 +128,13 @@ fn dynamic_d3d_compile() -> Option<D3DCompileFn> {
         if module == 0 {
             module = unsafe { LoadLibraryExW(name.as_ptr(), 0, 0) };
         }
-        if module == 0 {
-            return None;
-        }
-        let symbol = unsafe { GetProcAddress(module, c"D3DCompile".as_ptr().cast()) };
-        if symbol.is_null() {
-            return None;
-        }
-        Some(unsafe { core::mem::transmute::<*const core::ffi::c_void, D3DCompileFn>(symbol) })
-    })
+        module
+    });
+    if module == 0 {
+        core::ptr::null()
+    } else {
+        unsafe { GetProcAddress(module, name.as_ptr().cast()) }
+    }
 }
 
 /// Compile HLSL in memory to DXBC without file access or include handlers.
@@ -141,6 +145,14 @@ pub(crate) fn compile_hlsl(
     source: &str,
     entry: &str,
     profile: ShaderProfile,
+) -> Result<Vec<u8>, ShaderCompileError> {
+    compile_hlsl_target(source, entry, profile.target())
+}
+
+pub(super) fn compile_hlsl_target(
+    source: &str,
+    entry: &str,
+    target: PCSTR,
 ) -> Result<Vec<u8>, ShaderCompileError> {
     let entry = CString::new(entry).map_err(|_| ShaderCompileError {
         code: E_INVALIDARG.0,
@@ -157,7 +169,7 @@ pub(crate) fn compile_hlsl(
             None,
             None::<&ID3DInclude>,
             PCSTR(entry.as_ptr().cast()),
-            profile.target(),
+            target,
             D3DCOMPILE_ENABLE_STRICTNESS,
             0,
             &mut code,
@@ -166,12 +178,15 @@ pub(crate) fn compile_hlsl(
     };
     #[cfg(target_vendor = "uwp")]
     let result = {
-        let Some(d3d_compile) = dynamic_d3d_compile() else {
+        let symbol = dynamic_d3d_compiler_symbol(c"D3DCompile");
+        if symbol.is_null() {
             return Err(ShaderCompileError {
                 code: windows::Win32::Foundation::E_NOTIMPL.0,
                 message: String::from("d3dcompiler_47.dll is unavailable in this UWP environment"),
             });
-        };
+        }
+        let d3d_compile =
+            unsafe { core::mem::transmute::<*const core::ffi::c_void, D3DCompileFn>(symbol) };
         unsafe {
             d3d_compile(
                 source.as_ptr().cast(),
@@ -180,7 +195,7 @@ pub(crate) fn compile_hlsl(
                 core::ptr::null(),
                 core::ptr::null_mut(),
                 PCSTR(entry.as_ptr().cast()),
-                profile.target(),
+                target,
                 D3DCOMPILE_ENABLE_STRICTNESS,
                 0,
                 &mut code,
@@ -215,6 +230,57 @@ pub(crate) fn compile_hlsl(
         });
     }
     Ok(bytes.to_vec())
+}
+
+fn unused_fragment_position(bytecode: &[u8]) -> windows::core::Result<bool> {
+    let mut reflector = core::ptr::null_mut();
+    #[cfg(target_vendor = "uwp")]
+    let reflect = {
+        type Reflect = unsafe extern "system" fn(
+            *const core::ffi::c_void,
+            usize,
+            *const windows::core::GUID,
+            *mut *mut core::ffi::c_void,
+        ) -> windows::core::HRESULT;
+        let symbol = dynamic_d3d_compiler_symbol(c"D3DReflect");
+        if symbol.is_null() {
+            return Err(windows::core::Error::from_hresult(
+                windows::Win32::Foundation::E_NOTIMPL,
+            ));
+        }
+        unsafe { core::mem::transmute::<*const core::ffi::c_void, Reflect>(symbol) }
+    };
+    #[cfg(not(target_vendor = "uwp"))]
+    let reflect = D3DReflect;
+
+    let result = unsafe {
+        reflect(
+            bytecode.as_ptr().cast(),
+            bytecode.len(),
+            &ID3D11ShaderReflection::IID,
+            &mut reflector,
+        )
+    };
+    #[cfg(target_vendor = "uwp")]
+    let result = result.ok();
+    result?;
+    if reflector.is_null() {
+        return Ok(false);
+    }
+    let reflector = unsafe { ID3D11ShaderReflection::from_raw(reflector) };
+    let mut desc = D3D11_SHADER_DESC::default();
+    unsafe { reflector.GetDesc(&mut desc)? };
+    let mut position = None;
+    for index in 0..desc.InputParameters {
+        let mut input = D3D11_SIGNATURE_PARAMETER_DESC::default();
+        unsafe { reflector.GetInputParameterDesc(index, &mut input)? };
+        if input.SystemValueType == D3D_NAME_POSITION {
+            if position.replace(input.ReadWriteMask).is_some() || input.SemanticIndex != 0 {
+                return Ok(false);
+            }
+        }
+    }
+    Ok(position == Some(0))
 }
 
 /// Narrow Naga-to-DXBC errors. Only explicitly mapped bindings are supported.
@@ -421,6 +487,34 @@ pub(super) fn compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         input_options,
         uniform_index_arguments,
     )?;
+    let error = match compile_hlsl(&source, &name, profile) {
+        Ok(bytecode) => return Ok(bytecode),
+        Err(error) => error,
+    };
+    // FXC counts a declared SV_Position against the eight level-9 input slots
+    // even when the shader never reads it. Reflect the optimized code from the
+    // same source to prove that removing it cannot change a live input.
+    if !matches!(profile, ShaderProfile::PixelLevel9_1)
+        || !error.message.contains("X4506")
+        || !compile_hlsl(&source, &name, ShaderProfile::Pixel4_0)
+            .ok()
+            .is_some_and(|code| unused_fragment_position(&code).unwrap_or(false))
+    {
+        return Err(NagaCompileError::Compilation(error));
+    }
+    let (source, name) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+        module,
+        info,
+        stage,
+        entry,
+        profile,
+        bindings,
+        Fl9ShaderInputOptions {
+            omit_unused_fragment_position: true,
+            ..input_options
+        },
+        uniform_index_arguments,
+    )?;
     compile_hlsl(&source, &name, profile).map_err(NagaCompileError::Compilation)
 }
 
@@ -462,6 +556,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         ShaderProfile::VertexLevel9_1 | ShaderProfile::Vertex5_0 => naga::ShaderStage::Vertex,
         ShaderProfile::PixelLevel9_1
         | ShaderProfile::PixelLevel9_3
+        | ShaderProfile::Pixel4_0
         | ShaderProfile::Pixel4_1
         | ShaderProfile::Pixel5_0 => naga::ShaderStage::Fragment,
         ShaderProfile::Compute5_0 => naga::ShaderStage::Compute,
@@ -568,7 +663,11 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1 | ShaderProfile::PixelLevel9_3
     );
     let mut options = hlsl::Options {
-        shader_model: hlsl::ShaderModel::V5_0,
+        shader_model: if matches!(profile, ShaderProfile::Pixel4_0) {
+            hlsl::ShaderModel::V4_0
+        } else {
+            hlsl::ShaderModel::V5_0
+        },
         fake_missing_bindings: false,
         direct_sampler_bindings: true,
         fl9_viewport_transform: if input_options.viewport_transform
@@ -580,6 +679,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         },
         fl9_instance_index_input: input_options.instance_index_input
             && stage == naga::ShaderStage::Vertex,
+        fl9_omit_unused_fragment_position: input_options.omit_unused_fragment_position,
         fl9_vertex_index_input: input_options.vertex_index_input
             && stage == naga::ShaderStage::Vertex,
         fl9_vertex_index_vector_indexing: input_options.vertex_index_vector_indexing
@@ -1699,6 +1799,30 @@ mod tests {
         )
         .unwrap_err();
         assert!(matches!(error, NagaCompileError::Compilation(_)));
+    }
+
+    #[test]
+    fn fragment_position_reflection_distinguishes_live_components() {
+        for (body, unused) in [
+            ("return input.color;", true),
+            ("return input.color + alias.position.w;", false),
+            (
+                "if (input.color.x > 0.5) return read_position(alias); return input.color;",
+                false,
+            ),
+            ("return ddx(alias.position.x) + input.color;", false),
+        ] {
+            let source = format!(
+                "struct Input {{ float4 position : SV_Position; float4 color : TEXCOORD0; }};
+                 float4 read_position(Input arg) {{ return arg.position; }}
+                 float4 main(Input input) : SV_Target {{
+                     Input alias = input;
+                     {body}
+                 }}"
+            );
+            let code = compile_hlsl(&source, "main", ShaderProfile::Pixel4_0).unwrap();
+            assert_eq!(unused_fragment_position(&code).unwrap(), unused, "{body}");
+        }
     }
 
     #[test]

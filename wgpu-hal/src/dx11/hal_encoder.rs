@@ -14,6 +14,7 @@ use crate::*;
 use alloc::sync::Arc;
 #[allow(unused_imports)]
 use alloc::{boxed::Box, vec::Vec};
+use arrayvec::ArrayVec;
 #[allow(unused_imports)]
 use core::{
     num::{NonZeroU32, NonZeroU64},
@@ -35,15 +36,22 @@ pub struct CommandEncoder {
 }
 #[derive(Debug)]
 struct RenderState {
-    format: Option<wgt::TextureFormat>,
+    formats: [Option<wgt::TextureFormat>; MAX_COLOR_ATTACHMENTS],
     depth_format: Option<wgt::TextureFormat>,
     depth_stencil_read_only: bool,
     extent: [u32; 2],
     sample_count: u32,
-    target: Option<windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
-    resolve: Option<ResolveOperation>,
+    targets: ArrayVec<
+        (
+            windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView,
+            u32,
+        ),
+        MAX_COLOR_ATTACHMENTS,
+    >,
+    resolves: ArrayVec<ResolveOperation, MAX_COLOR_ATTACHMENTS>,
+    occlusion_set: Option<windows::Win32::Graphics::Direct3D11::ID3D11Asynchronous>,
+    active_occlusion: Option<u32>,
     end_timestamp: Option<windows::Win32::Graphics::Direct3D11::ID3D11Asynchronous>,
-    target_mip: Option<u32>,
     pipeline: bool,
     active_plan: Option<Arc<super::hal_bind_group::BindingPlan>>,
     last_layout: Option<Arc<super::hal_bind_group::BindingPlan>>,
@@ -553,6 +561,95 @@ impl RenderState {
     }
 }
 
+type PreparedColorAttachment = (
+    windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView,
+    wgt::TextureFormat,
+    Option<[f32; 4]>,
+    Option<ResolveOperation>,
+);
+
+impl CommandEncoder {
+    fn prepare_color_attachment(
+        &self,
+        color: &ColorAttachment<'_, super::texture::NativeTextureView>,
+        extent: [u32; 2],
+        sample_count: u32,
+    ) -> Result<PreparedColorAttachment, DeviceError> {
+        use windows::Win32::Graphics::Dxgi::Common::*;
+        let color_usage = wgt::TextureUses::COLOR_TARGET;
+        let valid_usage =
+            |usage| usage == color_usage || usage == color_usage | wgt::TextureUses::TRANSIENT;
+        if color.depth_slice.is_some() || !valid_usage(color.target.usage) {
+            return Err(DeviceError::Unexpected);
+        }
+        let (target, format, size) = self
+            .device
+            .render_target_view(color.target.view)
+            .map_err(super::hal_device::device_error)?;
+        if size != extent
+            || self
+                .device
+                .render_target_sample_count(color.target.view)
+                .map_err(super::hal_device::device_error)?
+                != sample_count
+        {
+            return Err(DeviceError::Unexpected);
+        }
+        let clear = attachment_needs_clear(color.ops)
+            .ok_or(DeviceError::Unexpected)?
+            .then_some([
+                color.clear_value.r as f32,
+                color.clear_value.g as f32,
+                color.clear_value.b as f32,
+                color.clear_value.a as f32,
+            ]);
+        let resolve = if let Some(attachment) = &color.resolve_target {
+            let native_format = match format {
+                wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
+                wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
+                wgt::TextureFormat::Rgb5g6b5Unorm => DXGI_FORMAT_B5G6R5_UNORM,
+                _ => return Err(DeviceError::Unexpected),
+            };
+            let (view, resolve_format, resolve_size) = self
+                .device
+                .render_target_view(attachment.view)
+                .map_err(super::hal_device::device_error)?;
+            if sample_count <= 1
+                || !self
+                    .device
+                    .color_multisample_resolve_supported(native_format, sample_count)
+                || self
+                    .device
+                    .render_target_sample_count(attachment.view)
+                    .map_err(super::hal_device::device_error)?
+                    != 1
+                || !valid_usage(attachment.usage)
+                || format != resolve_format
+                || resolve_size != extent
+            {
+                return Err(DeviceError::Unexpected);
+            }
+            let source =
+                unsafe { target.GetResource() }.map_err(super::hal_device::device_error)?;
+            let destination =
+                unsafe { view.GetResource() }.map_err(super::hal_device::device_error)?;
+            if source.as_raw() == destination.as_raw() {
+                return Err(DeviceError::Unexpected);
+            }
+            Some(ResolveOperation {
+                source,
+                destination,
+                source_subresource: color.target.view.mip_base(),
+                destination_subresource: attachment.view.mip_base(),
+                format: native_format,
+            })
+        } else {
+            None
+        };
+        Ok((target, format, clear, resolve))
+    }
+}
+
 fn attachment_needs_clear(ops: AttachmentOps) -> Option<bool> {
     if !ops.difference(AttachmentOps::all()).is_empty() {
         return None;
@@ -622,6 +719,7 @@ impl CommandEncoder {
         DeviceError,
     > {
         if !set.belongs_to(&self.device)
+            || !matches!(set.kind(), wgt::QueryType::Timestamp)
             || (beginning_index.is_none() && end_index.is_none())
             || (beginning_index.is_some() && beginning_index == end_index)
         {
@@ -1032,7 +1130,7 @@ impl crate::CommandEncoder for CommandEncoder {
             };
             resources.uniforms.push(binding);
         }
-        if let Some(target) = &render.target {
+        for (target, mip) in &render.targets {
             let Ok(target) = (unsafe { target.GetResource() }) else {
                 self.reject();
                 return;
@@ -1047,9 +1145,7 @@ impl crate::CommandEncoder for CommandEncoder {
                     return;
                 };
                 if sampled.as_raw() == target.as_raw()
-                    && !render.target_mip.is_some_and(|target_mip| {
-                        disjoint_sample(texture.mip_base, texture.mip_count, target_mip)
-                    })
+                    && !disjoint_sample(texture.mip_base, texture.mip_count, *mip)
                 {
                     self.reject();
                     return;
@@ -1089,15 +1185,45 @@ impl crate::CommandEncoder for CommandEncoder {
     unsafe fn end_debug_marker(&mut self) {}
 
     unsafe fn begin_query(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
-        self.reject()
+        let Some(render) = &mut self.render else {
+            self.reject();
+            return;
+        };
+        if !set.belongs_to(&self.device)
+            || !matches!(set.kind(), wgt::QueryType::Occlusion)
+            || render.occlusion_set.is_none()
+            || render.occlusion_set != set.query(0)
+            || render.active_occlusion.is_some()
+        {
+            self.reject();
+            return;
+        }
+        let Some(query) = set.query(index) else {
+            self.reject();
+            return;
+        };
+        render.active_occlusion = Some(index);
+        self.record(NativeCommand::BeginOcclusion(query));
     }
 
     unsafe fn end_query(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
-        self.reject()
+        let Some(render) = &mut self.render else {
+            self.reject();
+            return;
+        };
+        if !set.belongs_to(&self.device)
+            || render.active_occlusion != Some(index)
+            || render.occlusion_set != set.query(0)
+        {
+            self.reject();
+            return;
+        }
+        render.active_occlusion = None;
+        self.record(NativeCommand::EndOcclusion);
     }
 
     unsafe fn write_timestamp(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
-        if !set.belongs_to(&self.device) {
+        if !set.belongs_to(&self.device) || !matches!(set.kind(), wgt::QueryType::Timestamp) {
             self.reject();
             return;
         }
@@ -1178,44 +1304,12 @@ impl crate::CommandEncoder for CommandEncoder {
             },
             None => (None, None),
         };
-        let color = match desc.color_attachments {
-            [] | [None] => None,
-            [Some(color)] => Some(color),
-            _ => {
-                self.reject();
-                return Err(DeviceError::Unexpected);
-            }
-        };
-        let clear = if let Some(color) = color {
-            match attachment_needs_clear(color.ops) {
-                Some(true) => Some([
-                    color.clear_value.r as f32,
-                    color.clear_value.g as f32,
-                    color.clear_value.b as f32,
-                    color.clear_value.a as f32,
-                ]),
-                Some(false) => None,
-                None => {
-                    self.reject();
-                    return Err(DeviceError::Unexpected);
-                }
-            }
-        } else {
-            None
-        };
         if self.recording.is_none()
             || self.render.is_some()
             || self.compute
             || !matches!(desc.sample_count, 1 | 2 | 4 | 8 | 16)
             || desc.multiview_mask.is_some()
-            || desc.occlusion_query_set.is_some()
-            || color.is_some_and(|color| {
-                color.depth_slice.is_some()
-                    || (color.target.usage != wgt::TextureUses::COLOR_TARGET
-                        && color.target.usage
-                            != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
-            })
-            || (desc.sample_count == 1 && color.is_some_and(|color| color.resolve_target.is_some()))
+            || desc.color_attachments.len() > self.device.color_attachment_limit()
             || desc.extent.width == 0
             || desc.extent.height == 0
             || desc.extent.width > i32::MAX as u32
@@ -1226,33 +1320,50 @@ impl crate::CommandEncoder for CommandEncoder {
             return Err(DeviceError::Unexpected);
         }
         let extent = [desc.extent.width, desc.extent.height];
-        let (target, format) = if let Some(color) = color {
-            let (target, format, size) = match self.device.render_target_view(color.target.view) {
-                Ok(info) => info,
-                Err(_) => {
-                    self.reject();
-                    return Err(DeviceError::Unexpected);
-                }
-            };
-            if size != extent {
+        let mut colors = ArrayVec::new();
+        let mut targets = ArrayVec::new();
+        let mut resolves = ArrayVec::new();
+        let mut formats = [None; MAX_COLOR_ATTACHMENTS];
+        let occlusion_set = if let Some(set) = desc.occlusion_query_set {
+            if !set.belongs_to(&self.device) || !matches!(set.kind(), wgt::QueryType::Occlusion) {
                 self.reject();
                 return Err(DeviceError::Unexpected);
             }
-            (Some(target), Some(format))
+            set.query(0)
         } else {
-            (None, None)
+            None
         };
-        let target_sample_count = if let Some(color) = color {
-            match self.device.render_target_sample_count(color.target.view) {
-                Ok(sample_count) if sample_count == desc.sample_count => sample_count,
-                _ => {
-                    self.reject();
-                    return Err(DeviceError::Unexpected);
-                }
+        let mut bytes_per_pixel = None;
+        for (slot, color) in desc.color_attachments.iter().enumerate() {
+            let Some(color) = color else {
+                colors.push(None);
+                continue;
+            };
+            let (target, format, clear, resolve) =
+                match self.prepare_color_attachment(color, extent, desc.sample_count) {
+                    Ok(attachment) => attachment,
+                    Err(error) => {
+                        self.failure = Some(error.clone());
+                        return Err(error);
+                    }
+                };
+            let byte_count = format.block_copy_size(None);
+            if bytes_per_pixel.is_some() && byte_count != bytes_per_pixel {
+                self.reject();
+                return Err(DeviceError::Unexpected);
             }
-        } else {
-            1
-        };
+            bytes_per_pixel = byte_count;
+            formats[slot] = Some(format);
+            targets.push((target.clone(), color.target.view.mip_base()));
+            let recorded = match color.target.view.recorded_surface_target() {
+                Some(weak) => RenderTarget::Surface(weak),
+                None => RenderTarget::Owned(target),
+            };
+            colors.push(Some((recorded, clear)));
+            if let Some(resolve) = resolve {
+                resolves.push(resolve);
+            }
+        }
         let depth = if let Some(attachment) = &desc.depth_stencil_attachment {
             let (view, format, size, sample_count) = match self
                 .device
@@ -1315,89 +1426,10 @@ impl crate::CommandEncoder for CommandEncoder {
         } else {
             None
         };
-        if target.is_none() && depth.is_none() {
+        if targets.is_empty() && depth.is_none() {
             self.reject();
             return Err(DeviceError::Unexpected);
         }
-        let resolve = if let Some(attachment) =
-            color.and_then(|color| color.resolve_target.as_ref())
-        {
-            let Some(source_view) = target.as_ref() else {
-                self.reject();
-                return Err(DeviceError::Unexpected);
-            };
-            let (resolve_view, resolve_format, resolve_size) =
-                match self.device.render_target_view(attachment.view) {
-                    Ok(info) => info,
-                    Err(_) => {
-                        self.reject();
-                        return Err(DeviceError::Unexpected);
-                    }
-                };
-            let resolve_samples = match self.device.render_target_sample_count(attachment.view) {
-                Ok(sample_count) => sample_count,
-                Err(_) => {
-                    self.reject();
-                    return Err(DeviceError::Unexpected);
-                }
-            };
-            let native_resolve_format = match resolve_format {
-                wgt::TextureFormat::Rgba8Unorm => {
-                    windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM
-                }
-                wgt::TextureFormat::Bgra8Unorm => {
-                    windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM
-                }
-                wgt::TextureFormat::Rgb5g6b5Unorm => {
-                    windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B5G6R5_UNORM
-                }
-                _ => {
-                    self.reject();
-                    return Err(DeviceError::Unexpected);
-                }
-            };
-            if target_sample_count <= 1
-                || !self
-                    .device
-                    .color_multisample_resolve_supported(native_resolve_format, target_sample_count)
-                || resolve_samples != 1
-                || (attachment.usage != wgt::TextureUses::COLOR_TARGET
-                    && attachment.usage
-                        != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
-                || format != Some(resolve_format)
-                || resolve_size != extent
-            {
-                self.reject();
-                return Err(DeviceError::Unexpected);
-            }
-            let source = match unsafe { source_view.GetResource() } {
-                Ok(resource) => resource,
-                Err(error) => {
-                    self.reject();
-                    return Err(super::hal_device::device_error(error));
-                }
-            };
-            let destination = match unsafe { resolve_view.GetResource() } {
-                Ok(resource) => resource,
-                Err(error) => {
-                    self.reject();
-                    return Err(super::hal_device::device_error(error));
-                }
-            };
-            if source.as_raw() == destination.as_raw() {
-                self.reject();
-                return Err(DeviceError::Unexpected);
-            }
-            Some(ResolveOperation {
-                source,
-                destination,
-                source_subresource: color.map(|color| color.target.view.mip_base()).unwrap_or(0),
-                destination_subresource: attachment.view.mip_base(),
-                format: native_resolve_format,
-            })
-        } else {
-            None
-        };
         let viewport_buffer = match self.viewport_buffer() {
             Ok(buffer) => buffer,
             Err(error) => {
@@ -1406,17 +1438,18 @@ impl crate::CommandEncoder for CommandEncoder {
             }
         };
         self.render = Some(RenderState {
-            format,
+            formats,
             depth_format: depth.as_ref().map(|depth| depth.format),
             depth_stencil_read_only: desc.depth_stencil_attachment.as_ref().is_some_and(
                 |attachment| attachment.target.usage == wgt::TextureUses::DEPTH_STENCIL_READ,
             ),
             extent,
             sample_count: desc.sample_count,
-            target: target.clone(),
-            resolve,
+            targets,
+            resolves,
+            occlusion_set,
+            active_occlusion: None,
             end_timestamp,
-            target_mip: color.map(|color| color.target.view.mip_base()),
             pipeline: false,
             active_plan: None,
             last_layout: None,
@@ -1441,18 +1474,11 @@ impl crate::CommandEncoder for CommandEncoder {
             viewport_remap: false,
             vertex_shaders: None,
         });
-        let target = target.map(|target| {
-            match color.and_then(|color| color.target.view.recorded_surface_target()) {
-                Some(weak) => RenderTarget::Surface(weak),
-                None => RenderTarget::Owned(target),
-            }
-        });
         if let Some(query) = begin_timestamp {
             self.record(NativeCommand::WriteTimestamp(query));
         }
         self.record(NativeCommand::BeginRender {
-            target,
-            clear,
+            colors,
             depth,
             viewport_buffer,
             width: extent[0],
@@ -1469,8 +1495,12 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
+        if render.active_occlusion.is_some() {
+            self.reject();
+            return;
+        }
         self.record(NativeCommand::EndRender {
-            resolve: render.resolve,
+            resolves: render.resolves,
         });
         if let Some(query) = render.end_timestamp {
             self.record(NativeCommand::WriteTimestamp(query));
@@ -1483,7 +1513,7 @@ impl crate::CommandEncoder for CommandEncoder {
             return;
         };
         if !Arc::ptr_eq(&pipeline.owner, &self.device)
-            || pipeline.target_format != render.format
+            || pipeline.target_formats != render.formats
             || pipeline.sample_count != render.sample_count
             || pipeline.depth_format != render.depth_format
             || (render.depth_stencil_read_only && (pipeline.depth_write || pipeline.stencil_write))
@@ -5956,7 +5986,8 @@ mod uniform_tests {
     }
 
     #[test]
-    fn default_dx11_adapter_unlocks_high_resolution_and_fast_indexed_draws() -> windows::core::Result<()> {
+    fn default_dx11_adapter_unlocks_high_resolution_and_fast_indexed_draws(
+    ) -> windows::core::Result<()> {
         use crate::Instance as _;
         if std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1") {
             return Ok(());
@@ -5967,7 +5998,11 @@ mod uniform_tests {
             return Ok(());
         };
         assert!(exposed.info.driver_info.contains("FL9_1"));
-        assert!(!exposed.info.driver_info.to_ascii_lowercase().contains("software"));
+        assert!(!exposed
+            .info
+            .driver_info
+            .to_ascii_lowercase()
+            .contains("software"));
         let level = exposed.adapter.feature_level();
         let expected_max =
             super::super::capabilities::HardwareGuarantees::for_level(level).texture_2d_dimension;
