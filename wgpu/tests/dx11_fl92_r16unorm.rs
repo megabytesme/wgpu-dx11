@@ -39,9 +39,7 @@ fn wait<T>(future: impl Future<Output = T>) -> T {
     }
 }
 
-#[test]
-#[ignore = "requires an explicitly forced D3D11 feature level and a physical GPU"]
-fn forced_dx11_unorm16_upload_and_sample() {
+fn forced_dx11_adapter() -> (Adapter, FeatureLevel) {
     let requested = std::env::var("WGPU_DX11_FEATURE_LEVEL")
         .expect("set WGPU_DX11_FEATURE_LEVEL to 9_1 or 9_2");
     let level = match requested.as_str() {
@@ -66,7 +64,13 @@ fn forced_dx11_unorm16_upload_and_sample() {
         adapter.get_info(),
         std::env::consts::ARCH
     );
+    (adapter, level)
+}
 
+#[test]
+#[ignore = "requires an explicitly forced D3D11 feature level and a physical GPU"]
+fn forced_dx11_unorm16_upload_and_sample() {
+    let (adapter, level) = forced_dx11_adapter();
     let formats = [
         (TextureFormat::R16Unorm, 1),
         (TextureFormat::Rg16Unorm, 2),
@@ -97,8 +101,32 @@ fn forced_dx11_unorm16_upload_and_sample() {
         assert!(caps.flags.contains(
             TextureFormatFeatureFlags::FILTERABLE | TextureFormatFeatureFlags::SINGLE_MIP_ONLY,
         ));
-        check_upload_and_sample(&device, &queue, format, components);
+        check_upload_and_sample(&device, &queue, format, components, TextureDimension::D2);
     }
+}
+
+#[test]
+#[ignore = "requires exact D3D11 FL9_1 or FL9_2 on a physical GPU with R16_UNORM volume support"]
+fn forced_dx11_r16unorm_volume_upload_and_sample() {
+    let (adapter, level) = forced_dx11_adapter();
+    let format = TextureFormat::R16Unorm;
+    assert_eq!(
+        adapter
+            .get_downlevel_capabilities()
+            .limits
+            .supports_texture_3d_format(format),
+        level == FeatureLevel::L9_2,
+    );
+    if level == FeatureLevel::L9_1 {
+        return;
+    }
+    let (device, queue) = wait(adapter.request_device(&DeviceDescriptor {
+        required_features: Features::TEXTURE_FORMAT_16BIT_NORM,
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .unwrap();
+    check_upload_and_sample(&device, &queue, format, 1, TextureDimension::D3);
 }
 
 fn check_upload_and_sample(
@@ -106,7 +134,10 @@ fn check_upload_and_sample(
     queue: &Queue,
     format: TextureFormat,
     components: usize,
+    dimension: TextureDimension,
 ) {
+    let volume = dimension == TextureDimension::D3;
+    let upload_slice = u32::from(volume);
     let write_texel = |bytes: &mut [u8], value: u16| {
         for component in bytes.chunks_exact_mut(2) {
             component.copy_from_slice(&value.to_le_bytes());
@@ -123,10 +154,13 @@ fn check_upload_and_sample(
     }
     let source_desc = TextureDescriptor {
         label: Some("UNORM16 sampled upload"),
-        size: SIZE,
+        size: Extent3d {
+            depth_or_array_layers: 1 + upload_slice,
+            ..SIZE
+        },
         mip_level_count: 1,
         sample_count: 1,
-        dimension: TextureDimension::D2,
+        dimension,
         format,
         usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
@@ -138,12 +172,25 @@ fn check_upload_and_sample(
     });
     assert!(wait(validation.pop()).is_some());
     drop(invalid);
+    if volume {
+        let validation = device.push_error_scope(ErrorFilter::Validation);
+        let invalid_copy_source = device.create_texture(&TextureDescriptor {
+            usage: source_desc.usage | TextureUsages::COPY_SRC,
+            ..source_desc
+        });
+        assert!(wait(validation.pop()).is_some());
+        drop(invalid_copy_source);
+    }
 
     let source = device.create_texture(&source_desc);
     let source_view = source.create_view(&TextureViewDescriptor::default());
     queue.write_texture(
         TexelCopyTextureInfo {
-            origin: Origin3d { x: 1, y: 0, z: 0 },
+            origin: Origin3d {
+                x: 1,
+                y: 0,
+                z: upload_slice,
+            },
             ..source.as_image_copy()
         },
         &queue_bytes,
@@ -174,6 +221,8 @@ fn check_upload_and_sample(
 
     let target = device.create_texture(&TextureDescriptor {
         label: Some("UNORM16 sample readback target"),
+        size: SIZE,
+        dimension: TextureDimension::D2,
         format: TextureFormat::Rgba8Unorm,
         usage: TextureUsages::COPY_SRC | TextureUsages::RENDER_ATTACHMENT,
         ..source_desc
@@ -184,27 +233,44 @@ fn check_upload_and_sample(
         mag_filter: FilterMode::Linear,
         ..Default::default()
     });
+    let (texture_type, fragment) = if volume {
+        (
+            "texture_3d<f32>",
+            "
+    let front = textureSample(image, image_sampler, vec3f(input.uv, 0.25)).r;
+    let middle = textureSample(image, image_sampler, vec3f(input.uv, 0.5)).r;
+    let back = textureSample(image, image_sampler, vec3f(input.uv, 0.75)).r;
+    return vec4f(back, front, middle, 1.0);",
+        )
+    } else {
+        (
+            "texture_2d<f32>",
+            "return textureSample(image, image_sampler, input.uv);",
+        )
+    };
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: None,
         source: ShaderSource::Wgsl(
-            r#"
-struct VertexOutput {
+            format!(
+                r#"
+struct VertexOutput {{
     @builtin(position) position: vec4f,
     @location(0) uv: vec2f,
-}
-@group(0) @binding(0) var image: texture_2d<f32>;
+}}
+@group(0) @binding(0) var image: {texture_type};
 @group(0) @binding(1) var image_sampler: sampler;
 
 @vertex
-fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOutput {
+fn vs(@location(0) position: vec2f, @location(1) uv: vec2f) -> VertexOutput {{
     return VertexOutput(vec4f(position, 0.0, 1.0), uv);
-}
+}}
 
 @fragment
-fn fs(input: VertexOutput) -> @location(0) vec4f {
-    return textureSample(image, image_sampler, input.uv);
-}
+fn fs(input: VertexOutput) -> @location(0) vec4f {{
+    {fragment}
+}}
 "#
+            )
             .into(),
         ),
     });
@@ -277,7 +343,11 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
             layout: copy_layout,
         },
         TexelCopyTextureInfo {
-            origin: Origin3d { x: 3, y: 0, z: 0 },
+            origin: Origin3d {
+                x: 3,
+                y: 0,
+                z: upload_slice,
+            },
             ..source.as_image_copy()
         },
         Extent3d { width: 1, ..SIZE },
@@ -335,6 +405,7 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
             for (column, red) in expected_row.iter().enumerate() {
                 let offset = index * image_size as usize + row * PITCH as usize + column * 4;
                 let expected = match components {
+                    1 if volume => [*red, 0, red / 2, 255],
                     1 => [*red, 0, 0, 255],
                     2 => [*red, *red, 0, 255],
                     4 => [*red; 4],
@@ -343,7 +414,7 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
                 for (channel, value) in expected.into_iter().enumerate() {
                     assert!(
                         pixels[offset + channel].abs_diff(value) <= 1,
-                        "{format:?} image {index} at ({column}, {row}) channel {channel}: expected {value}, got {}",
+                        "{format:?} {dimension:?} image {index} at ({column}, {row}) channel {channel}: expected {value}, got {}",
                         pixels[offset + channel]
                     );
                 }
@@ -351,6 +422,6 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         }
     }
     println!(
-        "Verified {format:?} sampled centers and linear interpolation from zero-init, queue upload and encoder copy"
+        "Verified {format:?} {dimension:?} sampled centers and linear interpolation from zero-init, queue upload and encoder copy"
     );
 }

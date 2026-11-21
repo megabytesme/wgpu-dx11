@@ -710,8 +710,7 @@ impl Capabilities {
     }
 
     pub fn private_fl91_fragment_texture_dimensions_3d_float(&self) -> bool {
-        self.backend.fl91_fragment_texture_dimensions_3d_float
-            && self.texture_3d_format_mask() != 0
+        self.backend.fl91_fragment_texture_dimensions_3d_float && self.texture_3d_format_mask() != 0
     }
 
     pub fn private_fl91_fragment_texture_dimensions_cube_float(&self) -> bool {
@@ -723,8 +722,7 @@ impl Capabilities {
     }
 
     pub fn private_fl91_fragment_texture_num_levels_3d_float(&self) -> bool {
-        self.backend.fl91_fragment_texture_num_levels_3d_float
-            && self.texture_3d_format_mask() != 0
+        self.backend.fl91_fragment_texture_num_levels_3d_float && self.texture_3d_format_mask() != 0
     }
 
     pub fn private_fl91_fragment_texture_num_levels_cube_float(&self) -> bool {
@@ -766,12 +764,15 @@ impl Capabilities {
                 mask
             }
         });
-        let rg8_unorm = wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Rg8Unorm);
+        let mut formats = guaranteed_formats;
         if matches!(self.driver.rg8_unorm, Query::Value(bits) if bits & required == required) {
-            guaranteed_formats | rg8_unorm
-        } else {
-            guaranteed_formats
+            formats |= wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Rg8Unorm);
         }
+        let r16 = wgt::TextureFormat::R16Unorm;
+        if self.fl92_unorm16_supports(r16, required | D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32) {
+            formats |= wgt::DownlevelLimits::texture_3d_format_bit(r16);
+        }
+        formats
     }
 
     pub fn texture_3d_mipmaps(&self) -> bool {
@@ -1894,11 +1895,15 @@ impl Capabilities {
     }
 
     pub(super) fn fl92_unorm16_sampled(&self, format: wgt::TextureFormat) -> bool {
+        let required =
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+        self.fl92_unorm16_supports(format, required)
+    }
+
+    fn fl92_unorm16_supports(&self, format: wgt::TextureFormat, required: u32) -> bool {
         let Some(index) = Self::unorm16_sampled_index(format) else {
             return false;
         };
-        let required =
-            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
         self.experimental_fl92
             && matches!(self.driver.unorm16_sampled[index], Query::Value(bits) if bits & required == required)
     }
@@ -2809,6 +2814,24 @@ mod tests {
             caps.driver.unorm16_sampled[index] = Query::Unavailable(-1);
             assert!(caps.texture_format_capabilities(format).is_empty());
         }
+    }
+
+    #[test]
+    fn fl92_r16_unorm_volume_requires_native_3d_sampling() {
+        let format = wgt::TextureFormat::R16Unorm;
+        let format_bit = wgt::DownlevelLimits::texture_3d_format_bit(format);
+        let index = Capabilities::unorm16_sampled_index(format).unwrap();
+        let supported_2d =
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+        let supported_3d = supported_2d | D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32;
+        let mut caps = model(FeatureLevel::L9_2);
+        caps.driver.unorm16_sampled[index] = Query::Value(supported_3d);
+        assert_eq!(caps.texture_3d_format_mask() & format_bit, 0);
+        caps.experimental_fl92 = true;
+        assert_eq!(caps.texture_3d_format_mask() & format_bit, format_bit);
+        caps.driver.unorm16_sampled[index] = Query::Value(supported_2d);
+        assert_eq!(caps.texture_3d_format_mask() & format_bit, 0);
+        assert!(caps.fl92_unorm16_sampled(format));
     }
 
     #[test]

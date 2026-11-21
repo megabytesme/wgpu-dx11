@@ -243,6 +243,9 @@ impl crate::Device for Device {
                     | wgt::TextureUses::COPY_SRC
                     | wgt::TextureUses::RESOURCE)
                     .contains(desc.usage)
+                || (desc.format == wgt::TextureFormat::R16Unorm
+                    && (desc.mip_level_count != 1
+                        || desc.usage.contains(wgt::TextureUses::COPY_SRC)))
                 || (desc.mip_level_count > 1 && !capabilities.texture_3d_mipmaps())
                 || desc.sample_count != 1
                 || desc.size.width == 0
