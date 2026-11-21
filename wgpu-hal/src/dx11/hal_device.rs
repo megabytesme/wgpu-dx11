@@ -30,6 +30,13 @@ impl Device {
         &self.native
     }
 
+    /// Access the experimental native interface on an exact FL11_0 device.
+    #[cfg(feature = "dx11-fl11_0")]
+    pub fn native_fl11_0(&self) -> Option<super::NativeFl11_0<'_>> {
+        (self.native.feature_level() == super::FeatureLevel::L11_0)
+            .then(|| super::NativeFl11_0::new(&self.native))
+    }
+
     #[cfg(any(test, feature = "dx11-test-fixture"))]
     #[doc(hidden)]
     pub fn test_fixture_remove_device_on_next_oom_check(&self) {

@@ -10,6 +10,8 @@ mod capabilities;
 mod command;
 mod device;
 mod fence;
+#[cfg(feature = "dx11-fl11_0")]
+mod fl11_0;
 mod hal_bind_group;
 mod hal_device;
 mod hal_encoder;
@@ -38,6 +40,8 @@ pub use api::{Api, Unavailable};
 pub use device::{
     enumerate_native_adapters, AdapterIdentity, FeatureLevel, NativeAdapter, NativeDevice,
 };
+#[cfg(feature = "dx11-fl11_0")]
+pub use fl11_0::{NativeFl11_0, NativeFl11_0Commands, Sm5CompileError, Sm5Stage};
 pub use hal_device::Device;
 pub use hal_encoder::CommandEncoder;
 pub use hal_queue::Queue;

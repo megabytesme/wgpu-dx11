@@ -152,6 +152,7 @@ dx11 = [
 
 ## Unsafe, non-enumerated D3D11 fixture for tightly controlled core tests.
 dx11-test-fixture = ["dx11"]
+dx11-fl11_0 = ["dx11"]
 
 ## Enables the DX12 backend when targeting Windows.
 dx12 = [

@@ -59,6 +59,29 @@ impl Queue {
         Arc::ptr_eq(&self.device, device)
     }
 
+    /// Execute an FL11_0 native command list on the same immediate context as HAL submissions.
+    ///
+    /// Submission orders GPU work and does not wait for completion. Resources in the list must
+    /// be independent of resources tracked by wgpu. The list is consumed even on error.
+    #[cfg(feature = "dx11-fl11_0")]
+    pub fn submit_native_fl11_0(
+        &self,
+        commands: super::NativeFl11_0Commands,
+    ) -> Result<(), crate::DeviceError> {
+        if !self.belongs_to(&commands.device) {
+            return Err(crate::DeviceError::Unexpected);
+        }
+        let context = self.device.immediate_context();
+        self.device
+            .check_device_removed_reason()
+            .map_err(super::hal_device::device_error)?;
+        unsafe { context.ExecuteCommandList(&commands.list, true) };
+        self.submission_generation.fetch_add(1, Ordering::AcqRel);
+        self.device
+            .check_device_removed_reason()
+            .map_err(super::hal_device::device_error)
+    }
+
     #[cfg(any(test, feature = "dx11-test-fixture"))]
     #[doc(hidden)]
     pub fn test_fixture_remove_device_on_next_wait_for_idle(&self) {

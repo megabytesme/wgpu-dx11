@@ -2,6 +2,8 @@
 use alloc::{ffi::CString, format, string::String, vec::Vec};
 #[cfg(not(target_vendor = "uwp"))]
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
+#[cfg(not(target_vendor = "uwp"))]
+use windows::Win32::Graphics::Direct3D::ID3DInclude;
 use windows::{
     core::PCSTR,
     Win32::{
@@ -9,8 +11,6 @@ use windows::{
         Graphics::Direct3D::{Fxc::D3DCOMPILE_ENABLE_STRICTNESS, ID3DBlob},
     },
 };
-#[cfg(not(target_vendor = "uwp"))]
-use windows::Win32::Graphics::Direct3D::ID3DInclude;
 
 /// Explicit shader targets supported by this diagnostic compiler seam.
 #[allow(dead_code)]
@@ -23,6 +23,12 @@ pub(crate) enum ShaderProfile {
     Vertex5_0,
     Pixel5_0,
     Compute5_0,
+    #[cfg(feature = "dx11-fl11_0")]
+    Geometry5_0,
+    #[cfg(feature = "dx11-fl11_0")]
+    Hull5_0,
+    #[cfg(feature = "dx11-fl11_0")]
+    Domain5_0,
 }
 
 impl ShaderProfile {
@@ -35,6 +41,12 @@ impl ShaderProfile {
             Self::Vertex5_0 => PCSTR(c"vs_5_0".as_ptr().cast()),
             Self::Pixel5_0 => PCSTR(c"ps_5_0".as_ptr().cast()),
             Self::Compute5_0 => PCSTR(c"cs_5_0".as_ptr().cast()),
+            #[cfg(feature = "dx11-fl11_0")]
+            Self::Geometry5_0 => PCSTR(c"gs_5_0".as_ptr().cast()),
+            #[cfg(feature = "dx11-fl11_0")]
+            Self::Hull5_0 => PCSTR(c"hs_5_0".as_ptr().cast()),
+            #[cfg(feature = "dx11-fl11_0")]
+            Self::Domain5_0 => PCSTR(c"ds_5_0".as_ptr().cast()),
         }
     }
 }
@@ -465,6 +477,10 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
         | ShaderProfile::Pixel4_1
         | ShaderProfile::Pixel5_0 => naga::ShaderStage::Fragment,
         ShaderProfile::Compute5_0 => naga::ShaderStage::Compute,
+        #[cfg(feature = "dx11-fl11_0")]
+        ShaderProfile::Geometry5_0 | ShaderProfile::Hull5_0 | ShaderProfile::Domain5_0 => {
+            return Err(NagaCompileError::StageMismatch);
+        }
     };
     if expected != stage {
         return Err(NagaCompileError::StageMismatch);

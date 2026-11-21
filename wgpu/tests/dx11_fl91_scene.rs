@@ -1,6 +1,12 @@
 #![cfg(all(windows, feature = "dx11", feature = "wgsl"))]
 
-use std::{future::Future, sync::Arc, task::Wake, thread, time::Duration};
+use std::{
+    future::Future,
+    sync::Arc,
+    task::Wake,
+    thread,
+    time::{Duration, Instant},
+};
 use wgpu::*;
 
 struct ThreadWaker(thread::Thread);
@@ -47,6 +53,41 @@ fn mapped_buffer(
     buffer
 }
 
+#[cfg(not(target_vendor = "uwp"))]
+fn peak_process_memory() -> std::io::Result<(usize, usize)> {
+    use std::ffi::c_void;
+
+    #[repr(C)]
+    #[derive(Default)]
+    struct Counters {
+        size: u32,
+        page_faults: u32,
+        peak_working_set: usize,
+        working_set: usize,
+        peak_paged_pool: usize,
+        paged_pool: usize,
+        peak_nonpaged_pool: usize,
+        nonpaged_pool: usize,
+        commit: usize,
+        peak_commit: usize,
+    }
+
+    #[link(name = "kernel32")]
+    unsafe extern "system" {
+        fn GetCurrentProcess() -> *mut c_void;
+        fn K32GetProcessMemoryInfo(process: *mut c_void, output: *mut Counters, size: u32) -> i32;
+    }
+    let size = std::mem::size_of::<Counters>() as u32;
+    let mut counters = Counters {
+        size,
+        ..Default::default()
+    };
+    if unsafe { K32GetProcessMemoryInfo(GetCurrentProcess(), &mut counters, size) } == 0 {
+        return Err(std::io::Error::last_os_error());
+    }
+    Ok((counters.peak_working_set, counters.peak_commit))
+}
+
 #[test]
 fn public_dx11_textured_depth_tested_3d_scene_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
@@ -66,9 +107,18 @@ fn public_dx11_textured_depth_tested_3d_scene_at_fl91() {
     assert_eq!(info.backend, Backend::Dx11);
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
+    let requested = std::env::var("WGPU_DX11_EXACT_FEATURE_LEVEL").ok();
+    let active = {
+        let hal = unsafe { adapter.as_hal::<wgpu::hal::api::Dx11>() }.unwrap();
+        assert!(!hal.is_software());
+        hal.feature_level().name()
+    };
+    if let Some(requested) = requested.as_deref() {
+        assert_eq!(active, requested);
+    }
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=textured perspective cube with D16 depth",
-        info.name, info.vendor, info.device, info.driver_info
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested={requested:?} active={active} software=false; workload=textured perspective cube with D16 depth",
+        info.name, info.vendor, info.device, info.driver_info,
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public DX11 FL9_1 textured 3D scene"),
@@ -436,16 +486,8 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         mapped_at_creation: false,
     });
 
-    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
-        label: Some("FL9_1 render scene in opposite primitive orders"),
-    });
-    for (target_offset, index_buffer, use_depth) in [
-        (0, &forward_indices, true),
-        (32 * 256, &reverse_indices, true),
-        (2 * 32 * 256, &forward_indices, false),
-        (3 * 32 * 256, &reverse_indices, false),
-    ] {
-        {
+    let record_scene =
+        |encoder: &mut CommandEncoder, index_buffer: &Buffer, use_depth: bool, draws: u32| {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                 label: Some(if use_depth {
                     "FL9_1 textured cube depth pass"
@@ -489,8 +531,20 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
             );
             pass.set_vertex_buffer(0, vertex_buffer.slice(..));
             pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
-            pass.draw_indexed(0..36, 0, 0..1);
-        }
+            for _ in 0..draws {
+                pass.draw_indexed(0..36, 0, 0..1);
+            }
+        };
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+        label: Some("FL9_1 render scene in opposite primitive orders"),
+    });
+    for (target_offset, index_buffer, use_depth) in [
+        (0, &forward_indices, true),
+        (32 * 256, &reverse_indices, true),
+        (2 * 32 * 256, &forward_indices, false),
+        (3 * 32 * 256, &reverse_indices, false),
+    ] {
+        record_scene(&mut encoder, index_buffer, use_depth, 1);
         encoder.copy_texture_to_buffer(
             TexelCopyTextureInfo {
                 texture: &color_texture,
@@ -579,4 +633,40 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
     println!(
         "PASS: public FL9_1 perspective cube sampled a 2x2 face texture and used D16 depth; depth-tested opposite face orders matched all 1,024 pixels, while painter-order controls differed at {painter_order_differences} pixels; clear/red/green/blue/yellow={colors:?}"
     );
+    if std::env::var_os("WGPU_DX11_SCENE_BENCH").is_some_and(|value| value == "1") {
+        assert_eq!(requested.as_deref(), Some(active));
+        for draws in [1, 128] {
+            const WARMUPS: usize = 5;
+            const SAMPLES: usize = 25;
+            let mut timings = [0.0f64; SAMPLES];
+            for sample in 0..(WARMUPS + SAMPLES) {
+                let start = Instant::now();
+                let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("D3D11 matched scene benchmark"),
+                });
+                record_scene(&mut encoder, &forward_indices, true, draws);
+                let index = queue.submit([encoder.finish()]);
+                device
+                    .poll(PollType::Wait {
+                        submission_index: Some(index),
+                        timeout: Some(Duration::from_secs(10)),
+                    })
+                    .unwrap();
+                if sample >= WARMUPS {
+                    timings[sample - WARMUPS] = start.elapsed().as_secs_f64() * 1000.0;
+                }
+            }
+            timings.sort_by(f64::total_cmp);
+            println!(
+                "BENCHMARK active={active} draws={draws} warmups={WARMUPS} samples={SAMPLES} median_ms={:.4} p95_ms={:.4}",
+                timings[SAMPLES / 2],
+                timings[(95 * SAMPLES).div_ceil(100) - 1],
+            );
+        }
+        #[cfg(not(target_vendor = "uwp"))]
+        {
+            let (peak_working_set, peak_commit) = peak_process_memory().unwrap();
+            println!("MEMORY active={active} peak_working_set_bytes={peak_working_set} peak_commit_bytes={peak_commit}");
+        }
+    }
 }

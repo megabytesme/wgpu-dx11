@@ -54,6 +54,7 @@ Bottom level categories:
 
 #### Hal
 
+- Add exact physical D3D11 feature-level selection and an opt-in FL11_0 native command-list and Shader Model 5.0 interface.
 - Accept alpha-equivalent color and alpha blend equations in the opt-in FL9_1 D3D11 backend without enabling separate-alpha blending.
 - Emulate the direct single-mip fragment `textureSampleGrad` subset in the opt-in FL9_1 D3D11 backend.
 - Extend the opt-in FL9_1 D3D11 literal-zero texture-sampling subset to support bounded helper coordinate arithmetic and validate render-bundle view compatibility.

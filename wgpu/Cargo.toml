@@ -53,6 +53,7 @@ default = [
 # and HWND rendering on Windows.
 dx11 = ["wgpu-core?/dx11"]
 dx11-test-fixture = ["dx11", "wgsl", "wgpu-hal/dx11-test-fixture"]
+dx11-fl11_0 = ["dx11", "wgpu-hal/dx11-fl11_0"]
 dx12 = ["wgpu-core?/dx12"]
 
 ## Enables the Metal backend on macOS & iOS.
