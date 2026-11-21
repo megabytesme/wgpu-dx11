@@ -61,6 +61,21 @@ function New-PixelVaryingShader {
     "float4 main($($inputs -join ', ')) : SV_TARGET { return $($terms -join ' + '); }"
 }
 
+function New-IndependentSampleShader {
+    param([int]$SampleCount)
+    $inputCount = [int][Math]::Ceiling($SampleCount / 8)
+    $inputs = (0..($inputCount - 1) | ForEach-Object { "float2 uv$_ : TEXCOORD$_" }) -join ', '
+    foreach ($texture in 0..7) {
+        "Texture2D<float4> image$texture : register(t$texture); SamplerState samp$texture : register(s$texture);"
+    }
+    $samples = foreach ($sample in 0..($SampleCount - 1)) {
+        $texture = $sample % 8
+        $coord = [int][Math]::Floor($sample / 8)
+        "image$texture.Sample(samp$texture, uv$coord)"
+    }
+    "float4 main($inputs) : SV_TARGET { return $($samples -join ' + '); }"
+}
+
 $cases = @(
     @{
         id = 'vertex-instructions-256'
@@ -85,6 +100,18 @@ $cases = @(
         profile = 'ps_4_0_level_9_1'
         source = New-ArithmeticShader 'SV_TARGET' 31 'v * addend'
         compiler_error = 'X5608:.*\(65\).*64'
+    }
+    @{
+        id = 'pixel-texture-instructions-32'
+        profile = 'ps_4_0_level_9_1'
+        source = New-IndependentSampleShader 32
+        assembly_match = '\(32 texture,'
+    }
+    @{
+        id = 'pixel-texture-instructions-33'
+        profile = 'ps_4_0_level_9_1'
+        source = New-IndependentSampleShader 33
+        compiler_error = 'X5233:.*\(33\).*32'
     }
     @{
         id = 'pixel-dependency-order-three'
