@@ -486,3 +486,274 @@ fn tier_fl9_3_mrt_derivatives_and_depth_readback() {
     }
     println!("Verified 256 pixels across four targets after four/one/four passes and a common-blend pass");
 }
+
+#[test]
+fn tier_fl9_3_public_texture_extent_validation() {
+    if std::env::var_os("WGPU_DX11_FEATURE_LEVEL").as_deref() != Some("9_3".as_ref()) {
+        return;
+    }
+    let adapter = adapters()
+        .into_iter()
+        .next()
+        .expect("physical FL9_3 adapter");
+    let downlevel = adapter.get_downlevel_capabilities();
+    let limits = adapter.limits();
+    assert_eq!(limits.max_texture_dimension_2d, 4096);
+    assert_eq!(downlevel.limits.max_texture_cube_dimension, 4096);
+    let volume_limit = limits.max_texture_dimension_3d;
+    assert!(
+        matches!(volume_limit, 256 | 512),
+        "probed volume limit {volume_limit}"
+    );
+    let (device, _queue) = wait(adapter.request_device(&DeviceDescriptor {
+        required_limits: limits,
+        ..Default::default()
+    }))
+    .expect("FL9_3 device");
+    device.on_uncaptured_error(std::sync::Arc::new(|error: Error| {
+        panic!("Unexpected GPU error: {error}")
+    }));
+    device.set_device_lost_callback(|reason, message| {
+        eprintln!("Extent fixture device lost: {reason:?} {message}")
+    });
+    assert_eq!(device.limits().max_texture_dimension_3d, volume_limit);
+    let flat = [[4096, 1, 1], [1, 4096, 1]];
+    let volume = [
+        [volume_limit, 1, 1],
+        [1, volume_limit, 1],
+        [1, 1, volume_limit],
+    ];
+    for (dimension, axes) in [
+        (TextureDimension::D2, flat.as_slice()),
+        (TextureDimension::D3, volume.as_slice()),
+    ] {
+        for &[width, height, depth_or_array_layers] in axes {
+            let create = |width, height, depth_or_array_layers| {
+                device.create_texture(&TextureDescriptor {
+                    label: Some("FL9_3 texture extent boundary"),
+                    size: Extent3d {
+                        width,
+                        height,
+                        depth_or_array_layers,
+                    },
+                    mip_level_count: 1,
+                    sample_count: 1,
+                    dimension,
+                    format: TextureFormat::Rgba8Unorm,
+                    usage: TextureUsages::TEXTURE_BINDING,
+                    view_formats: &[],
+                })
+            };
+            let validation = device.push_error_scope(ErrorFilter::Validation);
+            let internal = device.push_error_scope(ErrorFilter::Internal);
+            println!("Creating public {dimension:?} {width}x{height}x{depth_or_array_layers}");
+            let texture = create(width, height, depth_or_array_layers);
+            let _view = texture.create_view(&Default::default());
+            assert!(
+                wait(internal.pop()).is_none(),
+                "valid {dimension:?} boundary"
+            );
+            assert!(
+                wait(validation.pop()).is_none(),
+                "valid {dimension:?} boundary"
+            );
+            let exceeds = |axis| match (axis, dimension) {
+                (1, _) => 1,
+                (_, TextureDimension::D3) => axis * 2,
+                _ => axis + 1,
+            };
+            let oversized = device.push_error_scope(ErrorFilter::Validation);
+            let _invalid = create(
+                exceeds(width),
+                exceeds(height),
+                exceeds(depth_or_array_layers),
+            );
+            let error = wait(oversized.pop())
+                .expect("dimension over public limit")
+                .to_string();
+            assert!(
+                error.contains("exceeds")
+                    && error.contains(&width.max(height).max(depth_or_array_layers).to_string()),
+                "{error}"
+            );
+            println!("{dimension:?} boundary {width}x{height}x{depth_or_array_layers} passed; oversize rejected");
+        }
+    }
+}
+
+#[test]
+fn tier_fl9_3_public_half_float_indexed_instancing() {
+    if std::env::var_os("WGPU_DX11_FEATURE_LEVEL").as_deref() != Some("9_3".as_ref()) {
+        return;
+    }
+    let adapter = adapters()
+        .into_iter()
+        .next()
+        .expect("physical FL9_3 adapter");
+    let formats = &adapter.get_downlevel_capabilities().limits;
+    assert!(formats.supports_vertex_format(VertexFormat::Float16x2));
+    assert!(formats.supports_vertex_format(VertexFormat::Float16x4));
+    let (device, queue) = wait(adapter.request_device(&DeviceDescriptor {
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("FL9_3 device");
+    device.on_uncaptured_error(std::sync::Arc::new(|error: Error| {
+        panic!("Unexpected GPU error: {error}")
+    }));
+
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_3 half-float indexed instancing"),
+        source: ShaderSource::Wgsl(
+            r#"
+            struct Out { @builtin(position) p: vec4f, @location(0) color: vec4f }
+            @vertex fn vs(@location(0) p: vec2f, @location(1) instance: vec4f) -> Out {
+                return Out(vec4f(p.x * 0.5 + instance.x, p.y, 0.5, 1.0), vec4f(instance.yzw, 1.0));
+            }
+            @fragment fn fs(input: Out) -> @location(0) vec4f { return input.color; }
+        "#
+            .into(),
+        ),
+    });
+    let format = TextureFormat::Rgba8Unorm;
+    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("FL9_3 half-float indexed instancing"),
+        layout: None,
+        vertex: VertexState {
+            module: &shader,
+            entry_point: Some("vs"),
+            compilation_options: Default::default(),
+            buffers: &[
+                Some(VertexBufferLayout {
+                    array_stride: 4,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &vertex_attr_array![0 => Float16x2],
+                }),
+                Some(VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Instance,
+                    attributes: &vertex_attr_array![1 => Float16x4],
+                }),
+            ],
+        },
+        primitive: PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: Default::default(),
+        fragment: Some(FragmentState {
+            module: &shader,
+            entry_point: Some("fs"),
+            compilation_options: Default::default(),
+            targets: &[target(format, ColorWrites::ALL)],
+        }),
+        multiview_mask: None,
+        cache: None,
+    });
+    let upload = |data: &[u8], usage| {
+        let buffer = device.create_buffer(&BufferDescriptor {
+            label: None,
+            size: data.len() as u64,
+            usage,
+            mapped_at_creation: true,
+        });
+        buffer
+            .slice(..)
+            .get_mapped_range_mut()
+            .unwrap()
+            .copy_from_slice(data);
+        buffer.unmap();
+        buffer
+    };
+    let vertex = [0xbc00u16, 0xbc00, 0x4200, 0xbc00, 0xbc00, 0x4200].map(u16::to_le_bytes);
+    let instances = [
+        0u16, 0, 0, 0x3c00, // x = 0, blue sentinel
+        0xb800, 0x3c00, 0, 0, // x = -0.5, red
+        0x3800, 0, 0x3c00, 0, // x = 0.5, green
+    ]
+    .map(u16::to_le_bytes);
+    let indices = [0u16, 1, 2, 3].map(u16::to_le_bytes);
+    let vertex = upload(vertex.as_flattened(), BufferUsages::VERTEX);
+    let instances = upload(instances.as_flattened(), BufferUsages::VERTEX);
+    let indices = upload(indices.as_flattened(), BufferUsages::INDEX);
+
+    let size = Extent3d {
+        width: 8,
+        height: 8,
+        depth_or_array_layers: 1,
+    };
+    let output = device.create_texture(&TextureDescriptor {
+        label: None,
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        view_formats: &[],
+    });
+    let view = output.create_view(&Default::default());
+    let readback = device.create_buffer(&BufferDescriptor {
+        label: None,
+        size: 8 * 256,
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&Default::default());
+    {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            ..Default::default()
+        });
+        pass.set_pipeline(&pipeline);
+        pass.set_vertex_buffer(0, vertex.slice(..));
+        pass.set_vertex_buffer(1, instances.slice(..));
+        pass.set_index_buffer(indices.slice(..), IndexFormat::Uint16);
+        pass.draw_indexed(1..4, -1, 1..3);
+    }
+    encoder.copy_texture_to_buffer(
+        output.as_image_copy(),
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(8),
+            },
+        },
+        size,
+    );
+    let index = queue.submit([encoder.finish()]);
+    let (sender, receiver) = std::sync::mpsc::channel();
+    readback
+        .slice(..)
+        .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+    device
+        .poll(PollType::Wait {
+            submission_index: Some(index),
+            timeout: Some(Duration::from_secs(15)),
+        })
+        .unwrap();
+    receiver
+        .recv_timeout(Duration::from_secs(15))
+        .unwrap()
+        .unwrap();
+    let data = readback.slice(..).get_mapped_range().unwrap();
+    for (y, row) in data.chunks_exact(256).enumerate() {
+        for (x, pixel) in row[..32].chunks_exact(4).enumerate() {
+            let expected = if x < 4 {
+                [255, 0, 0, 255]
+            } else {
+                [0, 255, 0, 255]
+            };
+            assert_eq!(pixel, expected, "pixel ({x}, {y})");
+        }
+    }
+    println!("Float16x2 and Float16x4 indexed instancing matched 64 pixels");
+}

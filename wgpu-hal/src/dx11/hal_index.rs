@@ -27,6 +27,11 @@ use windows::{
     },
 };
 
+#[cfg(test)]
+std::thread_local! {
+    pub(super) static NATIVE_INSTANCE_DRAWS: core::cell::Cell<u32> = const { core::cell::Cell::new(0) };
+}
+
 pub(super) const MAX_IDENTITY_VERTEX_INDEX: u32 = 65_534;
 
 #[derive(Debug)]
@@ -1168,6 +1173,95 @@ impl IndexBinding {
 
     #[expect(
         clippy::too_many_arguments,
+        reason = "Native instancing carries validated draw and stream bounds"
+    )]
+    fn try_draw_instanced(
+        &self,
+        context: &ID3D11DeviceContext,
+        first: u32,
+        count: u32,
+        base: i32,
+        vertices: &[(u32, ID3D11Buffer, u32, u64, u32, u32)],
+        (max_vertices, instances): (u32, u32),
+        bindings: &super::command::InstanceBindings,
+    ) -> Result<bool> {
+        let Some(layouts) = &bindings.layouts else {
+            return Ok(false);
+        };
+        if instances < 2
+            || bindings.first.checked_add(instances - 1).is_none()
+            || bindings.streams.is_empty()
+            || count
+                .checked_mul(instances)
+                .is_none_or(|total| total > max_vertices)
+            || !count.is_multiple_of(3)
+        {
+            return Ok(false);
+        }
+        let vertex_layouts = || vertices.iter().map(|vertex| (vertex.3, vertex.4, vertex.5));
+        let format = if self.is_u32() {
+            if !matches!(
+                self.try_native_u32_bounds(
+                    context,
+                    first,
+                    count,
+                    base,
+                    vertex_layouts(),
+                    false,
+                    true
+                )?,
+                NativeU32Outcome::DrawNative
+            ) {
+                return Ok(false);
+            }
+            DXGI_FORMAT_R32_UINT
+        } else {
+            let start = self.offset as usize + first as usize * 2;
+            let valid = self.with_index_bytes(context, |bytes| {
+                Ok((0..count as usize).all(|index| {
+                    let value = read_index_at(bytes, start, false, index);
+                    let effective = i64::from(value) + i64::from(base);
+                    effective <= i64::from(self.hardware_max_index)
+                        && multi_u32_index_in_bounds(value, base, vertex_layouts())
+                }))
+            })?;
+            if !valid {
+                return Ok(false);
+            }
+            DXGI_FORMAT_R16_UINT
+        };
+
+        unsafe {
+            context.IASetInputLayout(&layouts.native);
+            for (slot, buffer, offset, _, stride, _) in vertices {
+                context.IASetVertexBuffers(
+                    *slot,
+                    1,
+                    Some(&Some(buffer.clone())),
+                    Some(stride),
+                    Some(offset),
+                );
+            }
+            for (slot, buffer, offset, stride) in &bindings.streams {
+                context.IASetVertexBuffers(
+                    *slot,
+                    1,
+                    Some(&Some(buffer.clone())),
+                    Some(stride),
+                    Some(offset),
+                );
+            }
+            context.IASetIndexBuffer(&self.buffer, format, self.offset);
+            context.DrawIndexedInstanced(count, instances, first, base, bindings.first);
+            context.IASetInputLayout(&layouts.emulated);
+        }
+        #[cfg(test)]
+        NATIVE_INSTANCE_DRAWS.with(|draws| draws.set(draws.get() + 1));
+        Ok(true)
+    }
+
+    #[expect(
+        clippy::too_many_arguments,
         reason = "Indexed replay needs stream and instance state"
     )]
     pub(super) fn draw_multi(
@@ -1200,6 +1294,17 @@ impl IndexBinding {
         if count == 0 || instances == 0 {
             return Ok(());
         }
+        if self.try_draw_instanced(
+            context,
+            first,
+            count,
+            base,
+            vertices,
+            draw_limits,
+            instance_bindings,
+        )? {
+            return Ok(());
+        }
         match self.try_native_u32_bounds(
             context,
             first,
@@ -1227,9 +1332,15 @@ impl IndexBinding {
                     context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R32_UINT, self.offset);
                     for instance in 0..instances {
                         instance_bindings.bind(context, instance)?;
-                        super::command::draw_batches(first, complete, 1, max_vertices, |first, count| {
-                            context.DrawIndexed(count, first, base);
-                        })?;
+                        super::command::draw_batches(
+                            first,
+                            complete,
+                            1,
+                            max_vertices,
+                            |first, count| {
+                                context.DrawIndexed(count, first, base);
+                            },
+                        )?;
                     }
                 }
                 return Ok(());
@@ -1274,8 +1385,8 @@ impl IndexBinding {
                         valid &= (0..=i64::from(self.max_index)).contains(&effective);
                     }
                 }
-                let signed_vertex_indices =
-                    vertex_index.is_some() && effective_values.iter().any(|&effective| effective < 0);
+                let signed_vertex_indices = vertex_index.is_some()
+                    && effective_values.iter().any(|&effective| effective < 0);
                 let plan = if valid && !native && !signed_vertex_indices {
                     let (vertex_offset, vertex_bytes, stride, extent) = vertices
                         .first()

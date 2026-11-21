@@ -228,6 +228,7 @@ impl NativeAdapter {
             idle_query: Mutex::new(Some(idle_query)),
             level,
             experimental_fl93: false,
+            fl93_volume: None,
             native_sampler_lod_clamp,
             timestamp_frequency,
             debug_info_queue,
@@ -249,6 +250,7 @@ pub struct NativeDevice {
     pub(super) idle_query: Mutex<Option<ID3D11Asynchronous>>,
     level: FeatureLevel,
     experimental_fl93: bool,
+    pub(super) fl93_volume: Option<super::capabilities::VolumeSupport>,
     pub(super) native_sampler_lod_clamp: bool,
     timestamp_frequency: Option<u64>,
     #[cfg_attr(not(test), allow(dead_code))]
@@ -335,6 +337,7 @@ impl NativeDevice {
 
     pub(super) fn enable_experimental_fl93(&mut self) {
         assert_eq!(self.level, FeatureLevel::L9_3);
+        self.fl93_volume = Some(super::capabilities::VolumeSupport::probe_fl93(&self.raw));
         self.experimental_fl93 = true;
     }
 

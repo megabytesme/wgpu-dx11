@@ -60,6 +60,10 @@ impl Device {
 }
 
 #[cfg(test)]
+#[path = "../../tests/dx11/fl93_resources.rs"]
+mod fl93_resources;
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use crate::dx11::{
@@ -130,6 +134,11 @@ mod tests {
                 assert!(vertex.is_some() && pixel.is_some());
                 for (format, expected) in [
                     (DXGI_FORMAT_B8G8R8X8_UNORM, &[0u8, 0, 255][..]),
+                    (DXGI_FORMAT_B8G8R8X8_UNORM_SRGB, &[0u8, 0, 255][..]),
+                    (
+                        DXGI_FORMAT_R16G16B16A16_FLOAT,
+                        &[0u8, 60, 0, 0, 0, 0, 0, 60][..],
+                    ),
                     (
                         DXGI_FORMAT_R32G32B32A32_FLOAT,
                         &[0, 0, 128, 63, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 128, 63][..],

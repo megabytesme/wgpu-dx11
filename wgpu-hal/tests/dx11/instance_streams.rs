@@ -7,6 +7,27 @@ use core::time::Duration;
 
 #[test]
 fn fl91_instance_rate_vertex_streams() -> windows::core::Result<()> {
+    instance_rate_vertex_streams(FeatureLevel::L9_1)
+}
+
+#[test]
+fn fl92_instance_rate_vertex_streams() -> windows::core::Result<()> {
+    if std::env::var_os("WGPU_DX11_FEATURE_LEVEL").is_none_or(|value| value != "9_2") {
+        return Ok(());
+    }
+    instance_rate_vertex_streams(FeatureLevel::L9_2)
+}
+
+#[test]
+fn tier_fl9_3_native_indexed_instancing() -> windows::core::Result<()> {
+    if std::env::var_os("WGPU_DX11_FEATURE_LEVEL").is_none_or(|value| value != "9_3") {
+        return Ok(());
+    }
+    instance_rate_vertex_streams(FeatureLevel::L9_3)
+}
+
+fn instance_rate_vertex_streams(level: FeatureLevel) -> windows::core::Result<()> {
+    use super::super::hal_index::NATIVE_INSTANCE_DRAWS;
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -15,12 +36,16 @@ fn fl91_instance_rate_vertex_streams() -> windows::core::Result<()> {
         std::println!("SKIP: no physical D3D11 adapter");
         return Ok(());
     };
-    let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
-    assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+    let mut native = adapter.open_device(&[level])?;
+    assert_eq!(native.feature_level(), level);
+    if level == FeatureLevel::L9_3 {
+        native.enable_experimental_fl93();
+    }
     std::println!(
-        "Hardware: {:?}; requested and actual FL9_1",
+        "Hardware: {:?}; requested and actual {level:?}",
         adapter.identity()
     );
+    let native = Arc::new(native);
     let device = Device::new(native.clone());
     let queue = Queue::new(native.clone());
     let module = naga::front::wgsl::parse_str(
@@ -28,6 +53,9 @@ fn fl91_instance_rate_vertex_streams() -> windows::core::Result<()> {
         struct Out { @builtin(position) position: vec4f, @location(0) color: vec4f }
         @vertex fn vs(@location(0) p: vec2f, @location(1) instance: vec4f, @location(2) tint: vec4f) -> Out {
             return Out(vec4f(p.x * 0.5 + instance.x, p.y, 0.5, 1.0), vec4f(instance.yzw, 1.0) * tint);
+        }
+        @vertex fn vs_unused(@location(0) p: vec2f, @location(1) unused: vec4f, @location(2) tint: vec4f) -> Out {
+            return Out(vec4f(p, 0.5, 1.0), vec4f(1.0, 0.0, 0.0, 1.0));
         }
         @fragment fn fs(input: Out) -> @location(0) vec4f { return input.color; }
         "#,
@@ -102,14 +130,14 @@ fn fl91_instance_rate_vertex_streams() -> windows::core::Result<()> {
         zero_initialize_workgroup_memory: false,
     };
     let targets = [Some(wgt::TextureFormat::Rgba8Unorm.into())];
-    let make_pipeline = |topology| unsafe {
+    let make_pipeline = |topology, entry| unsafe {
         device
             .create_render_pipeline(&crate::RenderPipelineDescriptor {
                 label: None,
                 layout: &layout,
                 vertex_processor: crate::VertexProcessor::Standard {
                     vertex_buffers: &buffers,
-                    vertex_stage: stage("vs"),
+                    vertex_stage: stage(entry),
                 },
                 primitive: wgt::PrimitiveState {
                     topology,
@@ -124,8 +152,13 @@ fn fl91_instance_rate_vertex_streams() -> windows::core::Result<()> {
             })
             .expect("FL9_1 instance-rate vertex inputs")
     };
-    let list = make_pipeline(wgt::PrimitiveTopology::TriangleList);
-    let strip = make_pipeline(wgt::PrimitiveTopology::TriangleStrip);
+    let list = make_pipeline(wgt::PrimitiveTopology::TriangleList, "vs");
+    let strip = make_pipeline(wgt::PrimitiveTopology::TriangleStrip, "vs");
+    let unused = make_pipeline(wgt::PrimitiveTopology::TriangleList, "vs_unused");
+    assert_eq!(list.instanced_input.is_some(), level == FeatureLevel::L9_3);
+    assert!(strip.instanced_input.is_none());
+    assert!(unused.instanced_input.is_none());
+    unsafe { device.destroy_render_pipeline(unused) };
     let mut positions_data = vec![0u8; 8 + 12];
     for point in [[-1.0f32, -1.0], [3.0, -1.0], [-1.0, 3.0]] {
         positions_data.extend_from_slice(&[0; 4]);
@@ -148,25 +181,32 @@ fn fl91_instance_rate_vertex_streams() -> windows::core::Result<()> {
     for value in [1.0f32; 4] {
         tint_data.extend_from_slice(&value.to_ne_bytes());
     }
-    let indices16: Vec<u8> = [1u16, 2, 3, 0]
+    let indices16: Vec<u8> = [0u16, 0, 0, 0, 601, 602, 603, 0]
         .into_iter()
         .flat_map(u16::to_ne_bytes)
         .collect();
-    let mut high_positions = vec![0u8; 8 + 70_001 * 12];
+    let high_index: u32 = if level == FeatureLevel::L9_3 {
+        1_048_575
+    } else {
+        70_000
+    };
+    let mut high_positions = vec![0u8; 8 + (high_index as usize + 1) * 12];
     for (index, point) in [
         (65_530usize, [-1.0f32, -1.0]),
         (65_531, [1.0, -1.0]),
         (65_532, [-1.0, 3.0]),
         (1, [0.0, -1.0]),
         (65_536, [2.0, -1.0]),
-        (70_000, [0.0, 3.0]),
+        (high_index as usize, [0.0, 3.0]),
     ] {
         let bytes = &mut high_positions[8 + index * 12..8 + (index + 1) * 12];
         bytes[4..8].copy_from_slice(&point[0].to_ne_bytes());
         bytes[8..12].copy_from_slice(&point[1].to_ne_bytes());
     }
-    let indices32: Vec<u8> = [65_530u32, 65_531, 65_532, 1, 65_536, 70_000]
+    let indexed_vertices = [65_530, 65_531, 65_532, 1, 65_536, high_index];
+    let indices32: Vec<u8> = indexed_vertices
         .into_iter()
+        .chain(indexed_vertices.map(|index| index + 1))
         .flat_map(u32::to_ne_bytes)
         .collect();
     let create_buffer = |size, usage| unsafe {
@@ -287,7 +327,7 @@ fn fl91_instance_rate_vertex_streams() -> windows::core::Result<()> {
             .unwrap()
     };
     let mut commands = Vec::new();
-    for run in 0..4 {
+    for run in 0..6 {
         let command = unsafe {
             encoder.begin_encoding(None).unwrap();
             if run == 0 {
@@ -315,25 +355,42 @@ fn fl91_instance_rate_vertex_streams() -> windows::core::Result<()> {
             encoder.set_vertex_buffer(
                 0,
                 crate::BufferBinding::new_unchecked(
-                    if run == 3 { &high_position } else { &position },
+                    if matches!(run, 3 | 5) {
+                        &high_position
+                    } else {
+                        &position
+                    },
                     8,
                     None,
                 ),
             );
             encoder.set_vertex_buffer(1, crate::BufferBinding::new_unchecked(&tint, 12, None));
             encoder.set_vertex_buffer(15, crate::BufferBinding::new_unchecked(&instance, 12, None));
-            if run == 2 {
+            if matches!(run, 2 | 4) {
                 encoder.set_index_buffer(
-                    crate::BufferBinding::new_unchecked(&index16, 0, None),
+                    crate::BufferBinding::new_unchecked(&index16, 4, None),
                     wgt::IndexFormat::Uint16,
                 );
-                encoder.draw_indexed(0, 3, 0, 1, 2);
-            } else if run == 3 {
+                encoder.draw_indexed(2, 3, -600, 1, 2);
+                if run == 4 {
+                    encoder.set_scissor_rect(&crate::Rect {
+                        x: 3,
+                        y: 4,
+                        w: 1,
+                        h: 1,
+                    });
+                    encoder.draw(1, 3, 0, 1);
+                }
+            } else if matches!(run, 3 | 5) {
                 encoder.set_index_buffer(
                     crate::BufferBinding::new_unchecked(&index32, 0, None),
                     wgt::IndexFormat::Uint32,
                 );
-                encoder.draw_indexed(0, 6, 0, 1, 2);
+                if run == 3 {
+                    encoder.draw_indexed(0, 6, 0, 1, 2);
+                } else {
+                    encoder.draw_indexed(6, 6, -1, 1, 2);
+                }
             } else if run == 0 {
                 encoder.draw(1, 3, 1, 1);
                 encoder.set_render_pipeline(&strip);
@@ -376,12 +433,19 @@ fn fl91_instance_rate_vertex_streams() -> windows::core::Result<()> {
     let fence = native.create_native_fence();
     for (run, command) in commands.iter().enumerate() {
         let value = run as u64 + 1;
+        let before = NATIVE_INSTANCE_DRAWS.with(|draws| draws.get());
         unsafe { queue.submit(&[command], &[], (&fence, value)).unwrap() };
+        let after = NATIVE_INSTANCE_DRAWS.with(|draws| draws.get());
+        let expected_native = u32::from(level == FeatureLevel::L9_3 && matches!(run, 2..=4));
+        assert_eq!(after - before, expected_native, "run {run}");
+        std::println!("{level:?} run {run}: native indexed instance calls={expected_native}");
         assert!(native.wait_native_fence(&fence, value, Some(Duration::from_secs(5)))?);
         let pixels = native.read_rgba_texture(&target, 0, 0)?;
         assert_eq!(pixels.len(), 8 * 8 * 4);
         for (index, pixel) in pixels.chunks_exact(4).enumerate() {
-            let expected = if index % 8 < 4 {
+            let expected = if run == 4 && index == 4 * 8 + 3 {
+                [0, 0, 255, 255]
+            } else if index % 8 < 4 {
                 [255, 0, 0, 255]
             } else {
                 [0, 255, 0, 255]
@@ -398,7 +462,7 @@ fn fl91_instance_rate_vertex_streams() -> windows::core::Result<()> {
         device.destroy_pipeline_layout(layout);
         device.destroy_shader_module(shader);
     }
-    std::println!("PASS: FL9_1 instance streams, 4 full-image executions");
+    std::println!("PASS: {level:?} instance streams, six full-image executions, max fixture index {high_index}");
     Ok(())
 }
 

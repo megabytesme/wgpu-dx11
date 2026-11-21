@@ -4,14 +4,16 @@ use super::device::{FeatureLevel, NativeDevice};
 use core::num::NonZeroU64;
 use windows::Win32::Graphics::{
     Direct3D11::{
-        D3D11_CULL_NONE, D3D11_FEATURE_D3D9_OPTIONS, D3D11_FEATURE_D3D9_SHADOW_SUPPORT,
-        D3D11_FEATURE_DATA_D3D9_OPTIONS, D3D11_FEATURE_DATA_D3D9_SHADOW_SUPPORT,
-        D3D11_FILL_WIREFRAME, D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_DEPTH_STENCIL,
+        ID3D11Device, D3D11_BIND_SHADER_RESOURCE, D3D11_CULL_NONE, D3D11_FEATURE_D3D9_OPTIONS,
+        D3D11_FEATURE_D3D9_SHADOW_SUPPORT, D3D11_FEATURE_DATA_D3D9_OPTIONS,
+        D3D11_FEATURE_DATA_D3D9_SHADOW_SUPPORT, D3D11_FILL_WIREFRAME,
+        D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_DEPTH_STENCIL,
         D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER, D3D11_FORMAT_SUPPORT_MIP,
         D3D11_FORMAT_SUPPORT_MULTISAMPLE_RENDERTARGET, D3D11_FORMAT_SUPPORT_MULTISAMPLE_RESOLVE,
         D3D11_FORMAT_SUPPORT_RENDER_TARGET, D3D11_FORMAT_SUPPORT_SHADER_SAMPLE,
         D3D11_FORMAT_SUPPORT_TEXTURE2D, D3D11_FORMAT_SUPPORT_TEXTURE3D,
-        D3D11_FORMAT_SUPPORT_TEXTURECUBE, D3D11_RASTERIZER_DESC,
+        D3D11_FORMAT_SUPPORT_TEXTURECUBE, D3D11_RASTERIZER_DESC, D3D11_TEXTURE3D_DESC,
+        D3D11_USAGE_DEFAULT,
     },
     Dxgi::Common::{
         DXGI_FORMAT, DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM,
@@ -625,9 +627,83 @@ impl BackendCapabilities {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) struct VolumeSupport {
+    pub dimension: u32,
+    format_mask: u32,
+}
+
+impl VolumeSupport {
+    pub(super) fn probe_fl93(device: &ID3D11Device) -> Self {
+        use wgt::TextureFormat::*;
+        use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8_UNORM;
+
+        // The 10Level9 method table and the feature-level overview disagree on
+        // the FL9_3 volume limit. Test both documented extents on the device.
+        const OVERVIEW_DIMENSION: u32 = 256;
+        let mut max_dimension =
+            HardwareGuarantees::for_level(FeatureLevel::L9_3).texture_3d_dimension;
+        let mut format_mask = 0;
+        for (format, native) in [
+            (Rgba8Unorm, DXGI_FORMAT_R8G8B8A8_UNORM),
+            (Bgra8Unorm, DXGI_FORMAT_B8G8R8A8_UNORM),
+            (Bgra8UnormSrgb, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB),
+            (R8Unorm, DXGI_FORMAT_R8_UNORM),
+            (Rg8Unorm, DXGI_FORMAT_R8G8_UNORM),
+        ] {
+            let required =
+                (D3D11_FORMAT_SUPPORT_TEXTURE3D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+            if !matches!(unsafe { device.CheckFormatSupport(native) }, Ok(bits) if bits & required == required)
+            {
+                continue;
+            }
+            let supported = core::iter::once(max_dimension)
+                .chain((max_dimension > OVERVIEW_DIMENSION).then_some(OVERVIEW_DIMENSION))
+                .find(|&dimension| {
+                    [(dimension, 1, 1), (1, dimension, 1), (1, 1, dimension)]
+                        .into_iter()
+                        .all(|(width, height, depth)| {
+                            let desc = D3D11_TEXTURE3D_DESC {
+                                Width: width,
+                                Height: height,
+                                Depth: depth,
+                                MipLevels: 1,
+                                Format: native,
+                                Usage: D3D11_USAGE_DEFAULT,
+                                BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
+                                ..Default::default()
+                            };
+                            let mut texture = None;
+                            if unsafe { device.CreateTexture3D(&desc, None, Some(&mut texture)) }
+                                .is_err()
+                            {
+                                return false;
+                            }
+                            let Some(texture) = texture else { return false };
+                            let mut view = None;
+                            (unsafe {
+                                device.CreateShaderResourceView(&texture, None, Some(&mut view))
+                            })
+                            .is_ok()
+                                && view.is_some()
+                        })
+                });
+            if let Some(dimension) = supported {
+                max_dimension = dimension;
+                format_mask |= wgt::DownlevelLimits::texture_3d_format_bit(format);
+            }
+        }
+        Self {
+            dimension: if format_mask == 0 { 0 } else { max_dimension },
+            format_mask,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct Capabilities {
     pub hardware: HardwareGuarantees,
     pub experimental_fl93: bool,
+    pub volume_probe: Option<VolumeSupport>,
     pub driver: DriverCapabilities,
     pub backend: BackendCapabilities,
 }
@@ -754,11 +830,16 @@ impl Capabilities {
             }
         });
         let rg8_unorm = wgt::DownlevelLimits::texture_3d_format_bit(wgt::TextureFormat::Rg8Unorm);
-        if matches!(self.driver.rg8_unorm, Query::Value(bits) if bits & required == required) {
+        let formats = if matches!(self.driver.rg8_unorm, Query::Value(bits) if bits & required == required)
+        {
             guaranteed_formats | rg8_unorm
         } else {
             guaranteed_formats
-        }
+        };
+        formats
+            & self
+                .volume_probe
+                .map_or(u32::MAX, |probed| probed.format_mask)
     }
 
     pub fn texture_3d_mipmaps(&self) -> bool {
@@ -871,7 +952,10 @@ impl Capabilities {
         limits.max_texture_dimension_1d = 2048;
         limits.max_texture_dimension_2d = self.hardware.texture_2d_dimension;
         limits.max_texture_dimension_3d = if texture_3d_sampling {
-            self.hardware.texture_3d_dimension
+            self.volume_probe
+                .map_or(self.hardware.texture_3d_dimension, |probed| {
+                    probed.dimension
+                })
         } else {
             0
         };
@@ -1385,6 +1469,7 @@ impl Capabilities {
         Self {
             hardware: HardwareGuarantees::for_level(device.feature_level()),
             experimental_fl93: device.experimental_fl93(),
+            volume_probe: device.fl93_volume,
             driver: DriverCapabilities {
                 native_sampler_lod_clamp: device.native_sampler_lod_clamp,
                 timestamp_frequency: device
@@ -2253,6 +2338,7 @@ mod tests {
         Capabilities {
             hardware: HardwareGuarantees::for_level(level),
             experimental_fl93: false,
+            volume_probe: None,
             driver: DriverCapabilities {
                 native_sampler_lod_clamp: HardwareGuarantees::for_level(level).sampler_lod_clamp,
                 timestamp_frequency: Query::Value(1_000_000_000),

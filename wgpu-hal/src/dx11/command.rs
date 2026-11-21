@@ -70,8 +70,15 @@ pub(super) enum RenderTarget {
 #[derive(Debug)]
 pub(super) struct InstanceBindings {
     pub first: u32,
+    pub layouts: Option<InstancedLayouts>,
     pub streams: Vec<(u32, ID3D11Buffer, u32, u32)>,
     pub instance_index: Option<(ID3D11Buffer, [f32; 4])>,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct InstancedLayouts {
+    pub native: ID3D11InputLayout,
+    pub emulated: ID3D11InputLayout,
 }
 
 impl InstanceBindings {

@@ -924,8 +924,13 @@ impl NativeDevice {
         mip_levels: u32,
         format: DXGI_FORMAT,
     ) -> Result<NativeTexture> {
-        let maximum = super::capabilities::HardwareGuarantees::for_level(self.feature_level())
-            .texture_3d_dimension;
+        let maximum = self.fl93_volume.map_or_else(
+            || {
+                super::capabilities::HardwareGuarantees::for_level(self.feature_level())
+                    .texture_3d_dimension
+            },
+            |volume| volume.dimension,
+        );
         if width == 0
             || height == 0
             || depth == 0

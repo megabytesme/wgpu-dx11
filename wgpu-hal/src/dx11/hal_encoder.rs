@@ -3,8 +3,8 @@
 
 use super::{
     command::{
-        CommandBuffer, DepthAttachment, InstanceBindings, NativeCommand, RenderTarget,
-        ResolveOperation, VertexIndexDraw,
+        CommandBuffer, DepthAttachment, InstanceBindings, InstancedLayouts, NativeCommand,
+        RenderTarget, ResolveOperation, VertexIndexDraw,
     },
     device::NativeDevice,
     Api as Dx11Api,
@@ -63,6 +63,7 @@ struct RenderState {
     viewport_buffer: windows::Win32::Graphics::Direct3D11::ID3D11Buffer,
     viewport_transform: [f32; 4],
     uses_instance_index: bool,
+    instanced_layouts: Option<InstancedLayouts>,
     uses_vertex_index: bool,
     vertex_index: Option<(u32, windows::Win32::Graphics::Direct3D11::ID3D11Buffer)>,
     vertices: [Option<(windows::Win32::Graphics::Direct3D11::ID3D11Buffer, u32, u64)>;
@@ -188,6 +189,11 @@ impl RenderState {
         }
         Some(InstanceBindings {
             first,
+            layouts: if self.viewport_remap {
+                None
+            } else {
+                self.instanced_layouts.clone()
+            },
             streams,
             instance_index: self
                 .uses_instance_index
@@ -1420,6 +1426,7 @@ impl crate::CommandEncoder for CommandEncoder {
             viewport_buffer: viewport_buffer.clone(),
             viewport_transform: [1., 1., 0., 0.],
             uses_instance_index: false,
+            instanced_layouts: None,
             uses_vertex_index: false,
             vertex_index: None,
             vertices: core::array::from_fn(|_| None),
@@ -1488,6 +1495,11 @@ impl crate::CommandEncoder for CommandEncoder {
         render.strip_index_format = pipeline.strip_index_format;
         render.vertex_shaders = Some((pipeline.vertex.clone(), pipeline.vertex_viewport.clone()));
         render.uses_instance_index = pipeline.uses_instance_index;
+        render.instanced_layouts = pipeline
+            .instanced_input
+            .clone()
+            .zip(pipeline.input.clone())
+            .map(|(native, emulated)| InstancedLayouts { native, emulated });
         render.uses_vertex_index = pipeline.uses_vertex_index;
         render.vertex_index = pipeline
             .vertex_index_slot

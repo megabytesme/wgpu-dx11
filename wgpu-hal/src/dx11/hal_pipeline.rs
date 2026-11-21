@@ -26,12 +26,13 @@ use windows::{
             D3D11_DEPTH_STENCIL_DESC, D3D11_DEPTH_WRITE_MASK_ALL, D3D11_DEPTH_WRITE_MASK_ZERO,
             D3D11_FILL_SOLID, D3D11_FILL_WIREFRAME, D3D11_FILTER_MIN_MAG_MIP_POINT,
             D3D11_FORMAT_SUPPORT_BLENDABLE, D3D11_FORMAT_SUPPORT_IA_VERTEX_BUFFER,
-            D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_VERTEX_DATA, D3D11_RASTERIZER_DESC,
-            D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC, D3D11_STENCIL_OP,
-            D3D11_STENCIL_OP_DECR, D3D11_STENCIL_OP_DECR_SAT, D3D11_STENCIL_OP_INCR,
-            D3D11_STENCIL_OP_INCR_SAT, D3D11_STENCIL_OP_INVERT, D3D11_STENCIL_OP_KEEP,
-            D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_ZERO, D3D11_SUBRESOURCE_DATA,
-            D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DEFAULT, D3D11_USAGE_IMMUTABLE,
+            D3D11_INPUT_ELEMENT_DESC, D3D11_INPUT_PER_INSTANCE_DATA, D3D11_INPUT_PER_VERTEX_DATA,
+            D3D11_RASTERIZER_DESC, D3D11_RENDER_TARGET_BLEND_DESC, D3D11_SAMPLER_DESC,
+            D3D11_STENCIL_OP, D3D11_STENCIL_OP_DECR, D3D11_STENCIL_OP_DECR_SAT,
+            D3D11_STENCIL_OP_INCR, D3D11_STENCIL_OP_INCR_SAT, D3D11_STENCIL_OP_INVERT,
+            D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_ZERO,
+            D3D11_SUBRESOURCE_DATA, D3D11_TEXTURE_ADDRESS_CLAMP, D3D11_USAGE_DEFAULT,
+            D3D11_USAGE_IMMUTABLE,
         },
         Dxgi::Common::{
             DXGI_FORMAT, DXGI_FORMAT_B5G6R5_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -685,6 +686,7 @@ pub struct RenderPipeline {
     pub(super) vertex_viewport: Option<ID3D11VertexShader>,
     pub(super) fragment: ID3D11PixelShader,
     pub(super) input: Option<ID3D11InputLayout>,
+    pub(super) instanced_input: Option<ID3D11InputLayout>,
     pub(super) rasterizer: ID3D11RasterizerState,
     pub(super) blend: Option<ID3D11BlendState>,
     pub(super) depth_state: Option<ID3D11DepthStencilState>,
@@ -3328,6 +3330,7 @@ impl RenderPipeline {
                 .filter_map(|(slot, layout)| layout.as_ref().map(|_| slot)),
         );
         let mut locations = 0u32;
+        let mut instance_locations = 0u32;
         for (slot, layout) in vertex_buffers.iter().enumerate() {
             let Some(layout) = layout else { continue };
             let mut vertex_extent = 0u32;
@@ -3363,6 +3366,9 @@ impl RenderPipeline {
                     .assign(slot, (offset, end))
                     .ok_or_else(invalid)?;
                 locations |= 1 << attribute.shader_location;
+                if layout.step_mode == wgt::VertexStepMode::Instance {
+                    instance_locations |= 1 << attribute.shader_location;
+                }
                 vertex_extent = vertex_extent.max(end);
                 input_desc.push(D3D11_INPUT_ELEMENT_DESC {
                     SemanticName: PCSTR(c"LOC".as_ptr().cast()),
@@ -3414,6 +3420,7 @@ impl RenderPipeline {
         let (mut vertex, mut fragment, mut input, mut rasterizer, mut blend, mut depth_state) =
             (None, None, None, None, None, None);
         let mut vertex_index_buffer = None;
+        let mut instanced_input = None;
         let mut viewport_vertex = None;
         let failure = |error: windows::core::Error| pipeline_object_creation_error(&error);
         unsafe {
@@ -3480,6 +3487,38 @@ impl RenderPipeline {
                     return Err(invalid());
                 }
             }
+            if owner.experimental_fl93()
+                && desc.primitive.topology == wgt::PrimitiveTopology::TriangleList
+                && !uses_vertex_index
+                && !uses_instance_index
+                && vertex_slots.logical_slots[0].is_some_and(|slot| {
+                    matches!(
+                        vertex_layouts[slot],
+                        Some((_, _, wgt::VertexStepMode::Vertex))
+                    )
+                })
+                && super::shader::uses_vertex_locations(&vertex_code, instance_locations)
+            {
+                for element in &mut input_desc {
+                    if instance_locations & (1 << element.SemanticIndex) != 0 {
+                        element.InputSlotClass = D3D11_INPUT_PER_INSTANCE_DATA;
+                        element.InstanceDataStepRate = 1;
+                    }
+                }
+                match owner.raw_device().CreateInputLayout(
+                    &input_desc,
+                    &vertex_code,
+                    Some(&mut instanced_input),
+                ) {
+                    Ok(()) => {}
+                    Err(error) if viewport_shader_fatal_error(&error).is_some() => {
+                        return Err(failure(error));
+                    }
+                    Err(error) => {
+                        log::debug!("FL9_3 native instanced input layout unavailable: {error}");
+                    }
+                }
+            }
             owner
                 .raw_device()
                 .CreateRasterizerState(&raster_desc, Some(&mut rasterizer))
@@ -3513,6 +3552,7 @@ impl RenderPipeline {
             vertex_viewport: viewport_vertex,
             fragment: fragment.ok_or_else(invalid)?,
             input,
+            instanced_input,
             rasterizer: rasterizer.ok_or_else(invalid)?,
             blend,
             depth_state,

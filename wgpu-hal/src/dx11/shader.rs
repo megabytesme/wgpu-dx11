@@ -81,6 +81,48 @@ pub(crate) struct ShaderCompileError {
     pub(crate) message: String,
 }
 
+/// FXC emits an ISGN chunk whose input read masks identify the consumed LOC semantics.
+pub(super) fn uses_vertex_locations(dxbc: &[u8], locations: u32) -> bool {
+    fn word(bytes: &[u8], offset: usize) -> Option<usize> {
+        let word = bytes.get(offset..)?.first_chunk::<4>()?;
+        usize::try_from(u32::from_le_bytes(*word)).ok()
+    }
+
+    if locations == 0 || !dxbc.starts_with(b"DXBC") {
+        return false;
+    }
+    let Some(offsets) = dxbc.get(32..) else {
+        return false;
+    };
+    for offset in offsets.chunks_exact(4).take(word(dxbc, 28).unwrap_or(0)) {
+        let Some(chunk) = word(offset, 0).and_then(|offset| dxbc.get(offset..)) else {
+            continue;
+        };
+        if !chunk.starts_with(b"ISGN") {
+            continue;
+        }
+        let Some(signature) = word(chunk, 4).and_then(|size| chunk.get(8..)?.get(..size)) else {
+            return false;
+        };
+        let Some(elements) = word(signature, 4).and_then(|start| signature.get(start..)) else {
+            return false;
+        };
+        return elements
+            .chunks_exact(24)
+            .take(word(signature, 0).unwrap_or(0))
+            .any(|element| {
+                element[21] != 0
+                    && word(element, 4).is_some_and(|slot| {
+                        slot < u32::BITS as usize && locations & (1 << slot) != 0
+                    })
+                    && word(element, 0)
+                        .and_then(|name| signature.get(name..))
+                        .is_some_and(|name| name.starts_with(b"LOC\0"))
+            });
+    }
+    false
+}
+
 fn blob_bytes(blob: &ID3DBlob) -> &[u8] {
     let size = unsafe { blob.GetBufferSize() };
     let ptr = unsafe { blob.GetBufferPointer() }.cast::<u8>();
