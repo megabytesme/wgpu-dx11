@@ -28,6 +28,31 @@ The targeted fixtures cover SM5 profile disassembly, triangle tessellation and g
 
 The desktop benchmark uses the same 32×32 textured cube, RGBA8 color target and D16 depth target at exact FL9_1, FL10_1 and FL11_0. Separate processes measure command recording through completion wait at one and 128 draws per submission, then report peak working set and peak committed bytes. These runs compare the current portable path. GPU-only timestamps and a signed HorizonUWP comparison need separate evidence.
 
+## Candidate results
+
+Source commit `ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f` passed all five targeted native fixtures in both x64 and x86 processes on the RTX 3090 Ti. Both runs verified the public adapter's exact FL11_0, FL10_1 and FL9_1 selections and rejected the invalid FL12_0 request. Indirect tessellated draw readback matched 64 pixels with two input patches. Compute readback returned 4,218,889, and BC7 sRGB readback matched the expected linear conversion.
+
+The x64 forced FL9_1 public run reported 176 passing test functions, including four conditional skip messages, and one failing test. `public_dx11_inter_stage_varying_limit_at_fl91` reports seven variables and expects eight. Strict CTS verified live physical FL11_0 and passed five of seven selected cases. Two command-buffer copy cases failed because the conservative projection rejects `COPY_SRC | COPY_DST` on `Rgba8Uint`. The limits cases validated the reported projection.
+
+| Requested and active level | Median, 1 draw | Median, 128 draws | Peak working set | Peak committed bytes |
+| --- | ---: | ---: | ---: | ---: |
+| FL9_1 | 0.2575 ms | 0.8516 ms | 59,846,656 B | 64,696,320 B |
+| FL10_1 | 0.2567 ms | 0.8697 ms | 59,682,816 B | 64,573,440 B |
+| FL11_0 | 0.2629 ms | 0.9065 ms | 59,854,848 B | 65,720,320 B |
+
+Each level produced the same readback histogram. The raw benchmark captures 25 samples after five warmups for each draw count. [Benchmark manifest](../deliverables/dx11-levels/FL11_0/benchmarks.json)
+
+Build the strict CTS runner with the pinned toolchain and a configured MSVC environment. The x64 build used the cached Rusty V8 137.3.0 release library from the identical lockfile in the FL9_2 lane. The linker option disables PDB generation for this disposable runner.
+
+```powershell
+cargo rustc -p cts_runner --bin cts_runner --features deno_webgpu/dx11 --locked --offline -- -C link-arg=/DEBUG:NONE
+pwsh -NoProfile -File deliverables/dx11-levels/FL11_0/run-cts.ps1 -Runner "$env:CARGO_TARGET_DIR/debug/cts_runner.exe" -CtsCheckout $pinnedCtsCheckout -OutputDirectory "$scratch/cts-evidence"
+```
+
+The pinned CTS checkout is `3fdd32363410f2bd4e3e2f046980967e6abc27e6`. The archived runner receipt counts repeated failure-log headers. The test manifest uses the authoritative CTS summaries and reports two failures.
+
+Scoped rustfmt and HAL Clippy completed. The whole-workspace rustfmt check still finds formatting differences in the pinned baseline files. Clippy reported 30 warnings in existing code.
+
 ## Remaining qualification
 
 - The FL9_1 public regression and certification status are separate from the higher-tier native fixtures. See the exact-candidate results and inherited failures in [the test manifest](../deliverables/dx11-levels/FL11_0/tests.json).

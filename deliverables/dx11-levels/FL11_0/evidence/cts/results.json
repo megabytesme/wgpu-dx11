@@ -1,0 +1,86 @@
+{
+  "runner_sha256": "2adc6a420a5711137ef6879236701f9c50b01a7a5b0977130baa4495b023bc95",
+  "requested": "11_0",
+  "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+  "source_changes": [],
+  "cts_sha": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+  "hardware_required": true,
+  "results": [
+    {
+      "log_sha256": "680be0407cbb1579ce32e110efea8a0c7d8a25573545c033371b74f01abf9692",
+      "command": [
+        "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11_0-cts-target\\debug\\cts_runner.exe",
+        "./tools/run_deno",
+        "--verbose",
+        "webgpu:api,operation,command_buffer,basic:*"
+      ],
+      "exit_code": 1,
+      "log": "command-buffer-basic.txt",
+      "id": "command-buffer-basic",
+      "exact_hardware": true,
+      "list_sha256": "7f031fab012bcff4fbfae13f33558b400796bb095441c80229e6cecd9bb39e2f",
+      "passed": 1,
+      "listed": 3,
+      "failed": 4,
+      "skipped": 0,
+      "list": "command-buffer-basic-list.txt"
+    },
+    {
+      "log_sha256": "d5d22600039cb40586b46a5f8d0a88d12513c6c2ccf5ebf211849e8a72b1d13b",
+      "command": [
+        "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11_0-cts-target\\debug\\cts_runner.exe",
+        "./tools/run_deno",
+        "--verbose",
+        "webgpu:api,validation,capability_checks,limits,maxComputeWorkgroupSizeZ:validate,*"
+      ],
+      "exit_code": 0,
+      "log": "workgroup-size-z.txt",
+      "id": "workgroup-size-z",
+      "exact_hardware": true,
+      "list_sha256": "ed343e5963ac8d4f68e56d23977d849e1b17301edfd541ccaa654be39ef1be6f",
+      "passed": 1,
+      "listed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "list": "workgroup-size-z-list.txt"
+    },
+    {
+      "log_sha256": "83088c678f82781573451231658fe7e6fdd8734a29bc5da568a471200fca4c1b",
+      "command": [
+        "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11_0-cts-target\\debug\\cts_runner.exe",
+        "./tools/run_deno",
+        "--verbose",
+        "webgpu:api,validation,capability_checks,limits,maxComputeWorkgroupsPerDimension:validate,*"
+      ],
+      "exit_code": 0,
+      "log": "workgroups-per-dimension.txt",
+      "id": "workgroups-per-dimension",
+      "exact_hardware": true,
+      "list_sha256": "877765664db71912fe9978d7a16a029726d3f4a5e3564da0bd539d87ce455518",
+      "passed": 1,
+      "listed": 1,
+      "failed": 0,
+      "skipped": 0,
+      "list": "workgroups-per-dimension-list.txt"
+    },
+    {
+      "log_sha256": "fddcb1668a7311a7efff21c9d64784af12440470836bf705ed8eaf970085d5fc",
+      "command": [
+        "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11_0-cts-target\\debug\\cts_runner.exe",
+        "./tools/run_deno",
+        "--verbose",
+        "webgpu:api,validation,capability_checks,limits,maxStorageBufferBindingSize:validate,*"
+      ],
+      "exit_code": 0,
+      "log": "storage-buffer-binding-size.txt",
+      "id": "storage-buffer-binding-size",
+      "exact_hardware": true,
+      "list_sha256": "e28afd4e31e5ac012dbd12ab7d4253be954941601d046faa196e68fb958f2514",
+      "passed": 2,
+      "listed": 2,
+      "failed": 0,
+      "skipped": 0,
+      "list": "storage-buffer-binding-size-list.txt"
+    }
+  ]
+}

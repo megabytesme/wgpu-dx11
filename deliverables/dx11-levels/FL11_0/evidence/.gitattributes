@@ -1,0 +1,2 @@
+*.txt -text whitespace=cr-at-eol,-blank-at-eof
+results.json -text whitespace=cr-at-eol

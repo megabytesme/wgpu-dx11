@@ -27,6 +27,13 @@ $selectors = [ordered]@{
     'storage-buffer-binding-size' = 'webgpu:api,validation,capability_checks,limits,maxStorageBufferBindingSize:validate,*'
 }
 
+function Read-CtsSummaryCount([string]$Log, [string]$Label) {
+    $pattern = '^' + $Label + '\s*=\s*(\d+)\s*/'
+    $summary = @(Select-String -LiteralPath $Log -Pattern $pattern)
+    if ($summary.Count -ne 1) { return $null }
+    [int]$summary[0].Matches[0].Groups[1].Value
+}
+
 $runs = [Collections.Generic.List[object]]::new()
 Push-Location -LiteralPath $CtsCheckout
 $lockPath = Join-Path $CoordinationDirectory 'locks/desktop-gpu.lock'
@@ -68,9 +75,10 @@ try {
             list = Split-Path -Leaf $listPath
             list_sha256 = (Get-FileHash -LiteralPath $listPath).Hash.ToLowerInvariant()
             listed = @(Select-String -LiteralPath $listPath -Pattern '^webgpu:').Count
-            passed = @(Select-String -LiteralPath $log -Pattern '^\[pass\]').Count
-            skipped = @(Select-String -LiteralPath $log -Pattern '^\[skip\]').Count
-            failed = @(Select-String -LiteralPath $log -Pattern '^\[(fail|warn)\]').Count
+            passed = Read-CtsSummaryCount $log 'Passed\s+w/o warnings'
+            warned = Read-CtsSummaryCount $log 'Passed with warnings'
+            skipped = Read-CtsSummaryCount $log 'Skipped'
+            failed = Read-CtsSummaryCount $log 'Failed'
             exact_hardware = [bool](Select-String -LiteralPath $log -SimpleMatch 'D3D11 strict exact hardware selection: FL11_0')
         })
     }
@@ -91,7 +99,8 @@ try {
     Pop-Location
 }
 if ($runs.Count -ne $selectors.Count -or @($runs | Where-Object {
-    $_.exit_code -ne 0 -or -not $_.exact_hardware -or $_.passed -ne $_.listed
+    $_.exit_code -ne 0 -or -not $_.exact_hardware -or $_.passed -ne $_.listed -or
+    $_.failed -ne 0 -or $_.warned -ne 0 -or $_.skipped -ne 0
 }).Count -gt 0) {
     throw "CTS coverage is incomplete. See $out."
 }

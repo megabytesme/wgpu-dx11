@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+  "physical_runs": [
+    {
+      "id": "desktop-x64",
+      "host": "BEN-DESKTOP",
+      "os": "Microsoft Windows 11 Pro",
+      "os_build": "26300",
+      "process_architecture": "x86_64",
+      "adapter": "NVIDIA GeForce RTX 3090 Ti",
+      "pci_vendor_device": "10de:2203",
+      "luid": "00000000:00014a80",
+      "driver": "32.0.16.2101",
+      "d3dcompiler_47": "10.0.26100.9818 (WinBuild.160101.0800)",
+      "wddm": null,
+      "software": false,
+      "requested": "11_0",
+      "returned": "11_0",
+      "get_feature_level": "0xb000",
+      "runtime": "desktop Win32",
+      "evidence": "evidence/x64/hal-fl11_0.txt",
+      "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f"
+    },
+    {
+      "id": "desktop-x86",
+      "host": "BEN-DESKTOP",
+      "os": "Microsoft Windows 11 Pro",
+      "os_build": "26300",
+      "process_architecture": "x86",
+      "adapter": "NVIDIA GeForce RTX 3090 Ti",
+      "pci_vendor_device": "10de:2203",
+      "luid": "00000000:00014a80",
+      "driver": "32.0.16.2101",
+      "d3dcompiler_47": "10.0.26100.9818 (WinBuild.160101.0800)",
+      "wddm": null,
+      "software": false,
+      "requested": "11_0",
+      "returned": "11_0",
+      "get_feature_level": "0xb000",
+      "runtime": "desktop Win32",
+      "evidence": "evidence/x86/hal-fl11_0.txt",
+      "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f"
+    }
+  ],
+  "outstanding": [
+    {
+      "id": "surface-arm64",
+      "state": "blocked",
+      "detail": "Ben-Tablet SSH at 192.168.1.227:22 timed out. Wake the device and make its configured SSH service reachable, then run a signed exact-tier AppContainer fixture."
+    },
+    {
+      "id": "lumia-arm32",
+      "state": "blocked",
+      "detail": "Paired Device Portal address 192.168.1.157:443 timed out. Wake the device and enable Device Portal and device discovery, then probe physical FL11_0 capability with the configured TLS pairing."
+    },
+    {
+      "id": "native-ceiling",
+      "state": "unknown",
+      "detail": "Desktop RTX 3090 Ti was forced down. Independent native-ceiling hardware remains untested."
+    },
+    {
+      "id": "physical-removal",
+      "state": "unknown",
+      "detail": "Only a synthetic HAL removal return was injected, plus an actual healthy-device result and a later successful submission."
+    }
+  ],
+  "roadmap_control": {
+    "revision": "126114a9fa069194e2bd63ac8e8d46c327a35d83",
+    "path": "deliverables/dx11-levels/hardware-probes.json"
+  }
+}

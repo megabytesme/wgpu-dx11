@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "scope": "Matched offscreen 32x32 textured scene with RGBA8 color and D16 depth. Current portable projection at each exact hardware level.",
+  "timing_scope": "Host elapsed time from encoder creation through GPU submission wait, including driver and software overhead.",
+  "memory_scope": "Process lifetime peak working set and commit from GetProcessMemoryInfo. Separate process for each level.",
+  "results": [
+    {
+      "level": "9_1",
+      "device": "desktop-x64",
+      "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+      "readback_pixel_histogram": [
+        779,
+        154,
+        0,
+        21,
+        70
+      ],
+      "samples": [
+        {
+          "draws": 1,
+          "warmups": 5,
+          "samples": 25,
+          "median_ms": 0.2575,
+          "p95_ms": 0.2859
+        },
+        {
+          "draws": 128,
+          "warmups": 5,
+          "samples": 25,
+          "median_ms": 0.8516,
+          "p95_ms": 0.8908
+        }
+      ],
+      "peak_process_working_set_bytes": 59846656,
+      "peak_process_commit_bytes": 64696320,
+      "log": "evidence/x64/scene-9_1.txt",
+      "log_sha256": "a185d35fa27ed63f6e049e108dddb54c6454b1e57a359d75f6e4ae00251ecedd"
+    },
+    {
+      "level": "10_1",
+      "device": "desktop-x64",
+      "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+      "readback_pixel_histogram": [
+        779,
+        154,
+        0,
+        21,
+        70
+      ],
+      "samples": [
+        {
+          "draws": 1,
+          "warmups": 5,
+          "samples": 25,
+          "median_ms": 0.2567,
+          "p95_ms": 0.3064
+        },
+        {
+          "draws": 128,
+          "warmups": 5,
+          "samples": 25,
+          "median_ms": 0.8697,
+          "p95_ms": 0.9493
+        }
+      ],
+      "peak_process_working_set_bytes": 59682816,
+      "peak_process_commit_bytes": 64573440,
+      "log": "evidence/x64/scene-10_1.txt",
+      "log_sha256": "a0dec4112a9c9cdc3ab6142662f51a4e0d0d2f02779daf960d5878e358483965"
+    },
+    {
+      "level": "11_0",
+      "device": "desktop-x64",
+      "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+      "readback_pixel_histogram": [
+        779,
+        154,
+        0,
+        21,
+        70
+      ],
+      "samples": [
+        {
+          "draws": 1,
+          "warmups": 5,
+          "samples": 25,
+          "median_ms": 0.2629,
+          "p95_ms": 0.5337
+        },
+        {
+          "draws": 128,
+          "warmups": 5,
+          "samples": 25,
+          "median_ms": 0.9065,
+          "p95_ms": 1.2946
+        }
+      ],
+      "peak_process_working_set_bytes": 59854848,
+      "peak_process_commit_bytes": 65720320,
+      "log": "evidence/x64/scene-11_0.txt",
+      "log_sha256": "7bfdd8897d88e7e7d904ba709b6913560a505c6380ed3e5bf7f11a98825186e3"
+    }
+  ],
+  "outstanding": [
+    "GPU-only disjoint-checked timing",
+    "GPU memory peak",
+    "Signed HorizonUWP matched scene and product performance on required architectures"
+  ]
+}

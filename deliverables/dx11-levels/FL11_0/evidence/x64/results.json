@@ -1,0 +1,280 @@
+{
+  "utc": "2026-11-21T13:53:55.9300606Z",
+  "host": "BEN-DESKTOP",
+  "d3dcompiler_version": "10.0.26100.9818 (WinBuild.160101.0800)",
+  "builds": [
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--no-run",
+        "--message-format=json",
+        "-p",
+        "wgpu-hal",
+        "--lib",
+        "--no-default-features",
+        "--features",
+        "dx11-fl11_0"
+      ],
+      "exit_code": 0,
+      "suite": "hal"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--no-run",
+        "--message-format=json",
+        "-p",
+        "wgpu",
+        "--no-default-features",
+        "--features",
+        "dx11-fl11_0,wgsl,std",
+        "--test",
+        "dx11_fl11_0"
+      ],
+      "exit_code": 0,
+      "suite": "exact"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--no-run",
+        "--message-format=json",
+        "-p",
+        "wgpu",
+        "--no-default-features",
+        "--features",
+        "dx11,wgsl,std",
+        "--test",
+        "dx11_public"
+      ],
+      "exit_code": 0,
+      "suite": "fl91-public"
+    },
+    {
+      "command": [
+        "cargo",
+        "test",
+        "--locked",
+        "--offline",
+        "--no-run",
+        "--message-format=json",
+        "-p",
+        "wgpu",
+        "--no-default-features",
+        "--features",
+        "dx11,wgsl,std",
+        "--test",
+        "dx11_fl91_scene"
+      ],
+      "exit_code": 0,
+      "suite": "scene"
+    }
+  ],
+  "driver_packages": [
+    {
+      "Name": "NVIDIA GeForce RTX 3090 Ti",
+      "DriverVersion": "32.0.16.2101"
+    }
+  ],
+  "os_build": "26300",
+  "os": "Microsoft Windows 11 Pro",
+  "rustc": "rustc 1.93.1 (01f6ddf75 2026-02-11)",
+  "target_directory": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target",
+  "results": [
+    {
+      "force_fl9_1": null,
+      "exit_code": 0,
+      "skipped": 0,
+      "log_sha256": "e2b43a6dd2ed574ab4df51edeb8d05913a79c86c2177316f49ceee77090a8115",
+      "requested": "11_0",
+      "log": "hal-fl11_0.txt",
+      "suite": "hal-fl11_0",
+      "binary_sha256": "4813b2ed516c6b4c2df30d1e69d77db1e8be4b54cddb7b8fcf439f59c4c3d906",
+      "ignored": 0,
+      "command": [
+        "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\wgpu_hal-6f6bbb0d9c91dd96.exe",
+        "--nocapture",
+        "--test-threads=1",
+        "tier_fl11_0"
+      ],
+      "passed": 5,
+      "failed": 0
+    },
+    {
+      "force_fl9_1": null,
+      "exit_code": 0,
+      "skipped": 0,
+      "log_sha256": "c50d5fedf440cda8bcaca6547522aa0c2e7bed2322d913392aafed04c7a222b7",
+      "requested": "11_0",
+      "log": "hal-selector.txt",
+      "suite": "hal-selector",
+      "binary_sha256": "4813b2ed516c6b4c2df30d1e69d77db1e8be4b54cddb7b8fcf439f59c4c3d906",
+      "ignored": 0,
+      "command": [
+        "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\wgpu_hal-6f6bbb0d9c91dd96.exe",
+        "--nocapture",
+        "--test-threads=1",
+        "exact_selector"
+      ],
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "force_fl9_1": null,
+      "exit_code": 0,
+      "skipped": 0,
+      "log_sha256": "9badfc60258951a4d55ac31d2bf950d2ab77934c71dc79c1d88b4c88d2ca6480",
+      "requested": "11_0",
+      "log": "public-fl11_0.txt",
+      "suite": "public-fl11_0",
+      "binary_sha256": "8f53b77041f2369ee4a12d90dcb4ebacd65f01381dcd2dfe7e0b403a6fd313e3",
+      "ignored": 0,
+      "command": [
+        "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "force_fl9_1": null,
+      "exit_code": 0,
+      "skipped": 0,
+      "log_sha256": "f05583e98c9af2ebbcff2b1af2e59276a1b2505471dbefa353ee46707436baa1",
+      "requested": "10_1",
+      "log": "public-fl10_1.txt",
+      "suite": "public-fl10_1",
+      "binary_sha256": "8f53b77041f2369ee4a12d90dcb4ebacd65f01381dcd2dfe7e0b403a6fd313e3",
+      "ignored": 0,
+      "command": [
+        "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "force_fl9_1": null,
+      "exit_code": 0,
+      "skipped": 0,
+      "log_sha256": "9bf818f6a6101adf2f1b7c35ff0a42db2f379bbb9bd95cdf4622e0461b905461",
+      "requested": "9_1",
+      "log": "public-fl9_1.txt",
+      "suite": "public-fl9_1",
+      "binary_sha256": "8f53b77041f2369ee4a12d90dcb4ebacd65f01381dcd2dfe7e0b403a6fd313e3",
+      "ignored": 0,
+      "command": [
+        "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "force_fl9_1": null,
+      "exit_code": 0,
+      "skipped": 0,
+      "log_sha256": "b08328e79eceb80bea082d9d029ef69fd5f05afcc915df3d4743d1df6b84eb69",
+      "requested": "12_0",
+      "log": "public-invalid.txt",
+      "suite": "public-invalid",
+      "binary_sha256": "8f53b77041f2369ee4a12d90dcb4ebacd65f01381dcd2dfe7e0b403a6fd313e3",
+      "ignored": 0,
+      "command": [
+        "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "force_fl9_1": null,
+      "exit_code": 0,
+      "skipped": 0,
+      "log_sha256": "a185d35fa27ed63f6e049e108dddb54c6454b1e57a359d75f6e4ae00251ecedd",
+      "requested": "9_1",
+      "log": "scene-9_1.txt",
+      "suite": "scene-9_1",
+      "binary_sha256": "2493f30a876cfe93768877d01b7d167d5a474ca6cb09764bc20d2a79ce88721c",
+      "ignored": 0,
+      "command": [
+        "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_fl91_scene-2991dfe87b0d8915.exe",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "force_fl9_1": null,
+      "exit_code": 0,
+      "skipped": 0,
+      "log_sha256": "a0dec4112a9c9cdc3ab6142662f51a4e0d0d2f02779daf960d5878e358483965",
+      "requested": "10_1",
+      "log": "scene-10_1.txt",
+      "suite": "scene-10_1",
+      "binary_sha256": "2493f30a876cfe93768877d01b7d167d5a474ca6cb09764bc20d2a79ce88721c",
+      "ignored": 0,
+      "command": [
+        "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_fl91_scene-2991dfe87b0d8915.exe",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "force_fl9_1": null,
+      "exit_code": 0,
+      "skipped": 0,
+      "log_sha256": "7bfdd8897d88e7e7d904ba709b6913560a505c6380ed3e5bf7f11a98825186e3",
+      "requested": "11_0",
+      "log": "scene-11_0.txt",
+      "suite": "scene-11_0",
+      "binary_sha256": "2493f30a876cfe93768877d01b7d167d5a474ca6cb09764bc20d2a79ce88721c",
+      "ignored": 0,
+      "command": [
+        "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_fl91_scene-2991dfe87b0d8915.exe",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "passed": 1,
+      "failed": 0
+    },
+    {
+      "force_fl9_1": "1",
+      "exit_code": 101,
+      "skipped": 4,
+      "log_sha256": "0959c28ab5135911e68ea36197a57c492d84b63a87073d37c852f2e8aceff0af",
+      "requested": null,
+      "log": "fl91-public-all.txt",
+      "suite": "fl91-public-all",
+      "binary_sha256": "ed679a184ba0636a04e1eb07078330122aa3d88c1b230443343c0b06b6ec914f",
+      "ignored": 0,
+      "command": [
+        "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_public-fa43eb6c1f2344b5.exe",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "passed": 176,
+      "failed": 1
+    }
+  ],
+  "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+  "source_changes": [],
+  "worktree": "C:\\dev\\personal\\wgpu-dx11-FL11_0-Nov21",
+  "architecture": "x64"
+}

@@ -1,0 +1,7 @@
+ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_0-Nov21\wgpu-hal)
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_0-Nov21\wgpu-core\platform-deps\windows-linux-android)
+   Compiling wgpu-core v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_0-Nov21\wgpu-core)
+   Compiling deno_webgpu v0.181.0 (C:\dev\personal\wgpu-dx11-FL11_0-Nov21\deno_webgpu)
+   Compiling cts_runner v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_0-Nov21\cts_runner)
+    Finished `dev` profile [unoptimized] target(s) in 38.24s

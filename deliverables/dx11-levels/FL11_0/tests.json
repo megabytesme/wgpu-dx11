@@ -1,0 +1,480 @@
+{
+  "schema_version": 1,
+  "state": "INCOMPLETE",
+  "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+  "baseline": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+  "roadmap_sha": "126114a9fa069194e2bd63ac8e8d46c327a35d83",
+  "cases": [
+    {
+      "id": "exact-hardware",
+      "coverage": "The live HAL adapter matches the singleton FL11_0 request. The public projection and an interleaved empty native/portable queue submit also passed.",
+      "requirements": [
+        "FL11_0.OP.exact_device",
+        "FL11_0.METHOD.ID3D11Device.GetFeatureLevel",
+        "FL11_0.HAL.Instance.enumerate_adapters"
+      ],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe --nocapture --test-threads=1",
+          "log": "evidence/x64/public-fl11_0.txt",
+          "log_sha256": "9badfc60258951a4d55ac31d2bf950d2ab77934c71dc79c1d88b4c88d2ca6480",
+          "binary_sha256": "8f53b77041f2369ee4a12d90dcb4ebacd65f01381dcd2dfe7e0b403a6fd313e3"
+        },
+        {
+          "result": "pass",
+          "device": "desktop-x86",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl11_0-1abd9982f1c8a1e1.exe --nocapture --test-threads=1",
+          "log": "evidence/x86/public-fl11_0.txt",
+          "log_sha256": "b3c42be34a8408f9341c7bdb17c13f5700034affc5c8b2ca41c72ffabe8802a8",
+          "binary_sha256": "5fd7174ec4d68459b565b88c31d82f6ebaea3f3271079fe46380e376a036b54e"
+        }
+      ]
+    },
+    {
+      "id": "exact-predecessor-control",
+      "coverage": "Exact physical FL10_1 enumeration and portable queue completion. The FL11_0 native interface is absent there.",
+      "requirements": [],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "10_1",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe --nocapture --test-threads=1",
+          "log": "evidence/x64/public-fl10_1.txt",
+          "log_sha256": "f05583e98c9af2ebbcff2b1af2e59276a1b2505471dbefa353ee46707436baa1",
+          "binary_sha256": "8f53b77041f2369ee4a12d90dcb4ebacd65f01381dcd2dfe7e0b403a6fd313e3"
+        },
+        {
+          "result": "pass",
+          "device": "desktop-x86",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "10_1",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl11_0-1abd9982f1c8a1e1.exe --nocapture --test-threads=1",
+          "log": "evidence/x86/public-fl10_1.txt",
+          "log_sha256": "315e7087105b94c81ac42abfe25afd3d3ae9f10cd0328499c46ff0dadd1e192e",
+          "binary_sha256": "5fd7174ec4d68459b565b88c31d82f6ebaea3f3271079fe46380e376a036b54e"
+        }
+      ]
+    },
+    {
+      "id": "exact-fl91-control",
+      "coverage": "Exact physical FL9_1 enumeration and portable queue completion.",
+      "requirements": [],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "9_1",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe --nocapture --test-threads=1",
+          "log": "evidence/x64/public-fl9_1.txt",
+          "log_sha256": "9bf818f6a6101adf2f1b7c35ff0a42db2f379bbb9bd95cdf4622e0461b905461",
+          "binary_sha256": "8f53b77041f2369ee4a12d90dcb4ebacd65f01381dcd2dfe7e0b403a6fd313e3"
+        },
+        {
+          "result": "pass",
+          "device": "desktop-x86",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "9_1",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl11_0-1abd9982f1c8a1e1.exe --nocapture --test-threads=1",
+          "log": "evidence/x86/public-fl9_1.txt",
+          "log_sha256": "8c53c196094d63e00a6a4c784de84f03cc02be427b3abfe012dda41e6bb0ab11",
+          "binary_sha256": "5fd7174ec4d68459b565b88c31d82f6ebaea3f3271079fe46380e376a036b54e"
+        }
+      ]
+    },
+    {
+      "id": "exact-invalid",
+      "coverage": "Invalid 12_0 selector produced no DX11 adapter.",
+      "requirements": [],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "12_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_fl11_0-324f241f2d7fcfc5.exe --nocapture --test-threads=1",
+          "log": "evidence/x64/public-invalid.txt",
+          "log_sha256": "b08328e79eceb80bea082d9d029ef69fd5f05afcc915df3d4743d1df6b84eb69",
+          "binary_sha256": "8f53b77041f2369ee4a12d90dcb4ebacd65f01381dcd2dfe7e0b403a6fd313e3"
+        },
+        {
+          "result": "pass",
+          "device": "desktop-x86",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "12_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl11_0-1abd9982f1c8a1e1.exe --nocapture --test-threads=1",
+          "log": "evidence/x86/public-invalid.txt",
+          "log_sha256": "b08328e79eceb80bea082d9d029ef69fd5f05afcc915df3d4743d1df6b84eb69",
+          "binary_sha256": "5fd7174ec4d68459b565b88c31d82f6ebaea3f3271079fe46380e376a036b54e"
+        }
+      ]
+    },
+    {
+      "id": "selector-inputs",
+      "coverage": "All exact known names, invalid input, legacy force, and legacy/exact conflict.",
+      "requirements": [],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\wgpu_hal-6f6bbb0d9c91dd96.exe --nocapture --test-threads=1 exact_selector",
+          "log": "evidence/x64/hal-selector.txt",
+          "log_sha256": "c50d5fedf440cda8bcaca6547522aa0c2e7bed2322d913392aafed04c7a222b7",
+          "binary_sha256": "4813b2ed516c6b4c2df30d1e69d77db1e8be4b54cddb7b8fcf439f59c4c3d906"
+        },
+        {
+          "result": "pass",
+          "device": "desktop-x86",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-fdd4fe3b42cdc93f.exe --nocapture --test-threads=1 exact_selector",
+          "log": "evidence/x86/hal-selector.txt",
+          "log_sha256": "c50d5fedf440cda8bcaca6547522aa0c2e7bed2322d913392aafed04c7a222b7",
+          "binary_sha256": "81c3d7ceb537bbaf286920677f829004cdad54246ea8906fd7c209df4f94b1a6"
+        }
+      ]
+    },
+    {
+      "id": "compute",
+      "coverage": "1,024 invocations using Z=64 and 32 KiB group-shared memory. Native u0 raw and u7 structured and typed uses, atomic addition, a GPU-written 12-byte indirect dispatch, structured SRV and a typed R32_UINT read and store. Readback is 4218889. Exact FL10_1 rejects this cs_5_0 shader.",
+      "requirements": [
+        "FL11_0.OP.compute_profile",
+        "FL11_0.OP.compute_thread_count",
+        "FL11_0.OP.compute_group_z",
+        "FL11_0.OP.compute_shared_memory",
+        "FL11_0.OP.cs_uav_slots",
+        "FL11_0.OP.uav_typed_loads",
+        "FL11_0.OP.uav_interlocked",
+        "FL11_0.OP.indirect_dispatch",
+        "FL11_0.OP.resolve_and_readback",
+        "FL11_0.METHOD.ID3D11Device.CreateBuffer",
+        "FL11_0.METHOD.ID3D11Device.CreateComputeShader",
+        "FL11_0.METHOD.ID3D11Device.CreateUnorderedAccessView",
+        "FL11_0.METHOD.ID3D11Device.CreateShaderResourceView",
+        "FL11_0.METHOD.ID3D11DeviceContext.Dispatch",
+        "FL11_0.METHOD.ID3D11DeviceContext.DispatchIndirect",
+        "FL11_0.METHOD.ID3D11DeviceContext.CSSetShader",
+        "FL11_0.METHOD.ID3D11DeviceContext.CSSetShaderResources",
+        "FL11_0.METHOD.ID3D11DeviceContext.CSSetUnorderedAccessViews"
+      ],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\wgpu_hal-6f6bbb0d9c91dd96.exe --nocapture --test-threads=1 tier_fl11_0",
+          "log": "evidence/x64/hal-fl11_0.txt",
+          "log_sha256": "e2b43a6dd2ed574ab4df51edeb8d05913a79c86c2177316f49ceee77090a8115",
+          "binary_sha256": "4813b2ed516c6b4c2df30d1e69d77db1e8be4b54cddb7b8fcf439f59c4c3d906"
+        },
+        {
+          "result": "pass",
+          "device": "desktop-x86",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-fdd4fe3b42cdc93f.exe --nocapture --test-threads=1 tier_fl11_0",
+          "log": "evidence/x86/hal-fl11_0.txt",
+          "log_sha256": "88cf8e7fa8123d57a07a11641424ae17002c4f6c9625254fb63f3827044bdc8c",
+          "binary_sha256": "81c3d7ceb537bbaf286920677f829004cdad54246ea8906fd7c209df4f94b1a6"
+        }
+      ]
+    },
+    {
+      "id": "shader-rejections",
+      "coverage": "FXC rejects Z=65, embedded NUL entry point and selecting a compute entry for a hull shader.",
+      "requirements": [],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\wgpu_hal-6f6bbb0d9c91dd96.exe --nocapture --test-threads=1 tier_fl11_0",
+          "log": "evidence/x64/hal-fl11_0.txt",
+          "log_sha256": "e2b43a6dd2ed574ab4df51edeb8d05913a79c86c2177316f49ceee77090a8115",
+          "binary_sha256": "4813b2ed516c6b4c2df30d1e69d77db1e8be4b54cddb7b8fcf439f59c4c3d906"
+        },
+        {
+          "result": "pass",
+          "device": "desktop-x86",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-fdd4fe3b42cdc93f.exe --nocapture --test-threads=1 tier_fl11_0",
+          "log": "evidence/x86/hal-fl11_0.txt",
+          "log_sha256": "88cf8e7fa8123d57a07a11641424ae17002c4f6c9625254fb63f3827044bdc8c",
+          "binary_sha256": "81c3d7ceb537bbaf286920677f829004cdad54246ea8906fd7c209df4f94b1a6"
+        }
+      ]
+    },
+    {
+      "id": "graphics",
+      "coverage": "VS/HS/DS/GS/PS 5.0 compiled, created and executed with triangle tessellation. GPU-generated draw and indexed-draw arguments at nonzero byte offsets exercised first instance and signed base vertex and a zero-count control. Both halves produced 64/64 green pixels total. Pipeline statistics reported 2 IA primitives, 2 HS, 38 DS and 48 GS invocations on the test GPU.",
+      "requirements": [
+        "FL11_0.OP.vertex_profile",
+        "FL11_0.OP.pixel_profile",
+        "FL11_0.OP.geometry_shader",
+        "FL11_0.OP.tessellation_shaders",
+        "FL11_0.OP.pipeline_statistics",
+        "FL11_0.OP.raw_pipeline_statistics",
+        "FL11_0.OP.indirect_draw",
+        "FL11_0.METHOD.ID3D11Device.CreateVertexShader",
+        "FL11_0.METHOD.ID3D11Device.CreateHullShader",
+        "FL11_0.METHOD.ID3D11Device.CreateDomainShader",
+        "FL11_0.METHOD.ID3D11Device.CreateGeometryShader",
+        "FL11_0.METHOD.ID3D11Device.CreatePixelShader",
+        "FL11_0.METHOD.ID3D11Device.CreateInputLayout",
+        "FL11_0.METHOD.ID3D11Device.CreateRenderTargetView",
+        "FL11_0.METHOD.ID3D11Device.CreateRasterizerState",
+        "FL11_0.METHOD.ID3D11Device.CreateQuery",
+        "FL11_0.METHOD.ID3D11DeviceContext.VSSetShader",
+        "FL11_0.METHOD.ID3D11DeviceContext.HSSetShader",
+        "FL11_0.METHOD.ID3D11DeviceContext.DSSetShader",
+        "FL11_0.METHOD.ID3D11DeviceContext.GSSetShader",
+        "FL11_0.METHOD.ID3D11DeviceContext.PSSetShader",
+        "FL11_0.METHOD.ID3D11DeviceContext.DrawInstancedIndirect",
+        "FL11_0.METHOD.ID3D11DeviceContext.DrawIndexedInstancedIndirect",
+        "FL11_0.METHOD.ID3D11DeviceContext.IASetIndexBuffer",
+        "FL11_0.METHOD.ID3D11DeviceContext.IASetVertexBuffers",
+        "FL11_0.METHOD.ID3D11DeviceContext.IASetPrimitiveTopology",
+        "FL11_0.METHOD.ID3D11DeviceContext.OMSetRenderTargets",
+        "FL11_0.METHOD.ID3D11DeviceContext.Begin",
+        "FL11_0.METHOD.ID3D11DeviceContext.End",
+        "FL11_0.METHOD.ID3D11DeviceContext.GetData"
+      ],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\wgpu_hal-6f6bbb0d9c91dd96.exe --nocapture --test-threads=1 tier_fl11_0",
+          "log": "evidence/x64/hal-fl11_0.txt",
+          "log_sha256": "e2b43a6dd2ed574ab4df51edeb8d05913a79c86c2177316f49ceee77090a8115",
+          "binary_sha256": "4813b2ed516c6b4c2df30d1e69d77db1e8be4b54cddb7b8fcf439f59c4c3d906"
+        },
+        {
+          "result": "pass",
+          "device": "desktop-x86",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-fdd4fe3b42cdc93f.exe --nocapture --test-threads=1 tier_fl11_0",
+          "log": "evidence/x86/hal-fl11_0.txt",
+          "log_sha256": "88cf8e7fa8123d57a07a11641424ae17002c4f6c9625254fb63f3827044bdc8c",
+          "binary_sha256": "81c3d7ceb537bbaf286920677f829004cdad54246ea8906fd7c209df4f94b1a6"
+        }
+      ]
+    },
+    {
+      "id": "compressed-views",
+      "coverage": "BC6H UF16/SF16 and BC7 linear/sRGB typed views backed by typeless storage. Padded BC7 upload, 8x8 base and 1x1 tail, full resource copy, GPU loads, sRGB conversion, invalid cast and invalid UAV creation. Additional shape and sampling capability bits were queried only.",
+      "requirements": [
+        "FL11_0.OP.bc67",
+        "FL11_0.METHOD.ID3D11Device.CheckFormatSupport",
+        "FL11_0.METHOD.ID3D11Device.CreateTexture2D",
+        "FL11_0.METHOD.ID3D11DeviceContext.CopyResource",
+        "FL11_0.METHOD.ID3D11DeviceContext.Map",
+        "FL11_0.METHOD.ID3D11DeviceContext.Unmap",
+        "FL11_0.DXGI.DXGI_FORMAT_BC6H_UF16.texture2d",
+        "FL11_0.DXGI.DXGI_FORMAT_BC6H_UF16.shader_load",
+        "FL11_0.DXGI.DXGI_FORMAT_BC6H_UF16.cast_within_bit_layout",
+        "FL11_0.DXGI.DXGI_FORMAT_BC6H_SF16.texture2d",
+        "FL11_0.DXGI.DXGI_FORMAT_BC6H_SF16.shader_load",
+        "FL11_0.DXGI.DXGI_FORMAT_BC6H_SF16.cast_within_bit_layout",
+        "FL11_0.DXGI.DXGI_FORMAT_BC7_UNORM.texture2d",
+        "FL11_0.DXGI.DXGI_FORMAT_BC7_UNORM.shader_load",
+        "FL11_0.DXGI.DXGI_FORMAT_BC7_UNORM.cast_within_bit_layout",
+        "FL11_0.DXGI.DXGI_FORMAT_BC7_UNORM_SRGB.texture2d",
+        "FL11_0.DXGI.DXGI_FORMAT_BC7_UNORM_SRGB.shader_load",
+        "FL11_0.DXGI.DXGI_FORMAT_BC7_UNORM_SRGB.cast_within_bit_layout",
+        "FL11_0.DXGI.DXGI_FORMAT_BC7_UNORM.mipmap",
+        "FL11_0.DXGI.DXGI_FORMAT_BC7_UNORM_SRGB.mipmap"
+      ],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\wgpu_hal-6f6bbb0d9c91dd96.exe --nocapture --test-threads=1 tier_fl11_0",
+          "log": "evidence/x64/hal-fl11_0.txt",
+          "log_sha256": "e2b43a6dd2ed574ab4df51edeb8d05913a79c86c2177316f49ceee77090a8115",
+          "binary_sha256": "4813b2ed516c6b4c2df30d1e69d77db1e8be4b54cddb7b8fcf439f59c4c3d906"
+        },
+        {
+          "result": "pass",
+          "device": "desktop-x86",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-fdd4fe3b42cdc93f.exe --nocapture --test-threads=1 tier_fl11_0",
+          "log": "evidence/x86/hal-fl11_0.txt",
+          "log_sha256": "88cf8e7fa8123d57a07a11641424ae17002c4f6c9625254fb63f3827044bdc8c",
+          "binary_sha256": "81c3d7ceb537bbaf286920677f829004cdad54246ea8906fd7c209df4f94b1a6"
+        }
+      ]
+    },
+    {
+      "id": "native-list-ownership",
+      "coverage": "Foreign command-list rejection, recording error propagation, injected device-removal code, healthy resubmission and queue idle completion.",
+      "requirements": [
+        "FL11_0.OP.sync_completion",
+        "FL11_0.METHOD.ID3D11Device.CreateDeferredContext",
+        "FL11_0.METHOD.ID3D11DeviceContext.FinishCommandList",
+        "FL11_0.METHOD.ID3D11DeviceContext.ExecuteCommandList"
+      ],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\wgpu_hal-6f6bbb0d9c91dd96.exe --nocapture --test-threads=1 tier_fl11_0",
+          "log": "evidence/x64/hal-fl11_0.txt",
+          "log_sha256": "e2b43a6dd2ed574ab4df51edeb8d05913a79c86c2177316f49ceee77090a8115",
+          "binary_sha256": "4813b2ed516c6b4c2df30d1e69d77db1e8be4b54cddb7b8fcf439f59c4c3d906"
+        },
+        {
+          "result": "pass",
+          "device": "desktop-x86",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": "11_0",
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-fdd4fe3b42cdc93f.exe --nocapture --test-threads=1 tier_fl11_0",
+          "log": "evidence/x86/hal-fl11_0.txt",
+          "log_sha256": "88cf8e7fa8123d57a07a11641424ae17002c4f6c9625254fb63f3827044bdc8c",
+          "binary_sha256": "81c3d7ceb537bbaf286920677f829004cdad54246ea8906fd7c209df4f94b1a6"
+        }
+      ]
+    },
+    {
+      "id": "inherited-fl91-public",
+      "coverage": "Pinned public suite in legacy exact FL9_1 mode. Record the inter-stage varying failure and skips separately from the FL11_0 suite.",
+      "requirements": [],
+      "runs": [
+        {
+          "result": "fail",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "requested": null,
+          "command": "E:\\CodexScratch\\wgpu-fl11_0-Nov21\\target\\debug\\deps\\dx11_public-fa43eb6c1f2344b5.exe --nocapture --test-threads=1",
+          "log": "evidence/x64/fl91-public-all.txt",
+          "log_sha256": "0959c28ab5135911e68ea36197a57c492d84b63a87073d37c852f2e8aceff0af",
+          "binary_sha256": "ed679a184ba0636a04e1eb07078330122aa3d88c1b230443343c0b06b6ec914f"
+        }
+      ]
+    },
+    {
+      "id": "cts-command-buffer-basic",
+      "coverage": "Requested FL11_0 with strict DX11 hardware selection. Cases which skipped or exercised the conservative FL9_1 projection leave FL11_0 functionality unqualified.",
+      "requirements": [],
+      "runs": [
+        {
+          "result": "fail",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "cts_sha": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+          "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11_0-cts-target\\debug\\cts_runner.exe ./tools/run_deno --verbose webgpu:api,operation,command_buffer,basic:*",
+          "log": "evidence/cts/command-buffer-basic.txt",
+          "log_sha256": "680be0407cbb1579ce32e110efea8a0c7d8a25573545c033371b74f01abf9692",
+          "listed": 3,
+          "passed": 1,
+          "warned": 0,
+          "failed": 2,
+          "skipped": 0,
+          "exact_hardware": true,
+          "exit_code": 1
+        }
+      ]
+    },
+    {
+      "id": "cts-workgroup-size-z",
+      "coverage": "Requested FL11_0 with strict DX11 hardware selection. Cases which skipped or exercised the conservative FL9_1 projection leave FL11_0 functionality unqualified.",
+      "requirements": [],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "cts_sha": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+          "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11_0-cts-target\\debug\\cts_runner.exe ./tools/run_deno --verbose webgpu:api,validation,capability_checks,limits,maxComputeWorkgroupSizeZ:validate,*",
+          "log": "evidence/cts/workgroup-size-z.txt",
+          "log_sha256": "d5d22600039cb40586b46a5f8d0a88d12513c6c2ccf5ebf211849e8a72b1d13b",
+          "listed": 1,
+          "passed": 1,
+          "warned": 0,
+          "failed": 0,
+          "skipped": 0,
+          "exact_hardware": true,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "id": "cts-workgroups-per-dimension",
+      "coverage": "Requested FL11_0 with strict DX11 hardware selection. Cases which skipped or exercised the conservative FL9_1 projection leave FL11_0 functionality unqualified.",
+      "requirements": [],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "cts_sha": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+          "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11_0-cts-target\\debug\\cts_runner.exe ./tools/run_deno --verbose webgpu:api,validation,capability_checks,limits,maxComputeWorkgroupsPerDimension:validate,*",
+          "log": "evidence/cts/workgroups-per-dimension.txt",
+          "log_sha256": "83088c678f82781573451231658fe7e6fdd8734a29bc5da568a471200fca4c1b",
+          "listed": 1,
+          "passed": 1,
+          "warned": 0,
+          "failed": 0,
+          "skipped": 0,
+          "exact_hardware": true,
+          "exit_code": 0
+        }
+      ]
+    },
+    {
+      "id": "cts-storage-buffer-binding-size",
+      "coverage": "Requested FL11_0 with strict DX11 hardware selection. Cases which skipped or exercised the conservative FL9_1 projection leave FL11_0 functionality unqualified.",
+      "requirements": [],
+      "runs": [
+        {
+          "result": "pass",
+          "device": "desktop-x64",
+          "source_sha": "ad37b24ca1fd9152629d3b17f7dbb52e41e5a83f",
+          "cts_sha": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+          "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl11_0-cts-target\\debug\\cts_runner.exe ./tools/run_deno --verbose webgpu:api,validation,capability_checks,limits,maxStorageBufferBindingSize:validate,*",
+          "log": "evidence/cts/storage-buffer-binding-size.txt",
+          "log_sha256": "fddcb1668a7311a7efff21c9d64784af12440470836bf705ed8eaf970085d5fc",
+          "listed": 2,
+          "passed": 2,
+          "warned": 0,
+          "failed": 0,
+          "skipped": 0,
+          "exact_hardware": true,
+          "exit_code": 0
+        }
+      ]
+    }
+  ],
+  "raw_receipts": [
+    "evidence/x64/results.json",
+    "evidence/x86/results.json",
+    "evidence/cts/results.json"
+  ],
+  "unqualified": [
+    "Full precursor certification and inherited exact-candidate regression",
+    "Elevated portable shader, storage, query, format, limits, and indirect Core/HAL operations",
+    "Untested mandatory native cases, including stream output, viewport/sample positions, remaining tessellation variants, MSAA, and exact resource limits",
+    "Signed ARM64 and ARM32 AppContainer tests, historical hardware, swapchain and physical device removal",
+    "HorizonUWP shader pack, DRS, HUD, mod markers, presentation, and workload performance"
+  ]
+}
