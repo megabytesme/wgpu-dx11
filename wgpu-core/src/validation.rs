@@ -467,8 +467,7 @@ fn collect_call_arguments(
     }
 }
 
-// A direct constant coordinate leaves the native sampler responsible for filtering,
-// derivative-based LOD and mip selection.
+// Prove the coordinate without changing native filtering or mip selection.
 fn fl9_repeat_coordinate_bounded(
     module: &naga::Module,
     expressions: &naga::Arena<naga::Expression>,
@@ -495,6 +494,7 @@ fn fl9_repeat_coordinate_bounded(
             op: naga::UnaryOperator::Negate,
             expr,
         } => bounded(expr),
+        naga::Expression::Select { accept, reject, .. } => bounded(accept) && bounded(reject),
         naga::Expression::Constant(constant) => fl9_repeat_coordinate_bounded(
             module,
             &module.global_expressions,
@@ -11522,6 +11522,18 @@ mod tests {
             @fragment fn mixed(@location(0) uv: vec2f) -> @location(0) vec4f {
                 return known() + textureSample(image, dynamic_sampler, uv);
             }
+            @fragment fn selected(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let coordinate = select(vec2f(-63.0), vec2f(63.0), uv >= vec2f(0.5));
+                return textureSample(image, bounded_sampler, coordinate);
+            }
+            @fragment fn selected_unproven(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let coordinate = select(uv, UV, uv.x >= 0.5);
+                return textureSample(image, bounded_sampler, coordinate);
+            }
+            @fragment fn selected_out_of_range(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let coordinate = select(UV, vec2f(64.0), uv.x >= 0.5);
+                return textureSample(image, bounded_sampler, coordinate);
+            }
             @fragment fn aliased_sampler() -> @location(0) vec4f {
                 return unknown(bounded_sampler);
             }
@@ -11547,6 +11559,7 @@ mod tests {
             Interface::new_with_bounded_repeat(&module, &info, wgt::Limits::defaults(), true);
         let get = |entry| interface.unproven_repeat_samplers_used(entry).unwrap();
         assert!(get("isolated").is_empty());
+        assert!(get("selected").is_empty());
         assert_eq!(
             get("mixed"),
             [naga::ResourceBinding {
@@ -11558,7 +11571,14 @@ mod tests {
             group: 1,
             binding: 1,
         };
-        for entry in ["aliased_sampler", "offset", "gradient", "large"] {
+        for entry in [
+            "aliased_sampler",
+            "offset",
+            "gradient",
+            "large",
+            "selected_unproven",
+            "selected_out_of_range",
+        ] {
             assert_eq!(get(entry), [bounded], "{entry}");
         }
     }

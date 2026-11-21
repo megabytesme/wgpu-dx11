@@ -57,6 +57,7 @@ $fxc = Get-Item -LiteralPath $FxcPath
 $source = Get-Item -LiteralPath (Join-Path $PSScriptRoot 'SamplingDiscriminator.hlsl')
 $entries = [ordered]@{
     native_sample = $true
+    bounded_select = $true
     uniform_rebase = $true
     repeat_folded = $true
     mirror_folded = $true

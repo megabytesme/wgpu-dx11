@@ -13,6 +13,11 @@ float4 native_sample(float2 uv : TEXCOORD0) : SV_TARGET {
     return image.Sample(image_sampler, uv);
 }
 
+float4 bounded_select(float2 uv : TEXCOORD0) : SV_TARGET {
+    float2 coordinate = uv >= float2(0.5, 0.5) ? float2(63.0, 63.0) : float2(-63.0, -63.0);
+    return image.Sample(image_sampler, coordinate);
+}
+
 float4 uniform_rebase(float2 uv : TEXCOORD0) : SV_TARGET {
     return image.Sample(image_sampler, uv - even_offset);
 }

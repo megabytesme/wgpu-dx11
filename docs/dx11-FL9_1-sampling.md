@@ -15,11 +15,12 @@ $fxc = 'C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/fxc.exe'
 powershell.exe -NoProfile -File deliverables/dx11-levels/FL9_1/Test-SamplingDiscriminator.ps1 -FxcPath $fxc
 ```
 
-Both x64 and x86 FXC `10.0.26100.9457` matched all 18 expected compiler outcomes and the CPU reference. The x64 binary hash is `3c1d8f3aa0d1c970732f14d61d3a4b5dfa8ca4b7c81d567643f39f6cef412010`. The x86 binary hash is `eba158a54af629d29f124c91e8c1fd8d9082cc7dec1701c00188bd41b3c20511`. Both runs used HLSL with LF line endings, SHA-256 `9189aec21ca5f16471f84a749c558f63018f4a425cfbf0ca97c4b56fa67d3ba4`.
+Both x64 and x86 FXC `10.0.26100.9457` matched all 20 expected compiler outcomes and the CPU reference. The x64 binary hash is `3c1d8f3aa0d1c970732f14d61d3a4b5dfa8ca4b7c81d567643f39f6cef412010`. The x86 binary hash is `eba158a54af629d29f124c91e8c1fd8d9082cc7dec1701c00188bd41b3c20511`. Both runs used HLSL with LF line endings, SHA-256 `a388fd5cae6b25a98c75da7e8ce78aa4e3c153d4ef117d5cca07da038208e6fb`.
 
 | Pixel entry point | `ps_4_0_level_9_1` result | `ps_5_0` control |
 | --- | --- | --- |
 | `native_sample` | Compiles, 1 texture and 1 arithmetic instruction | Compiles |
+| `bounded_select` | Compiles, 1 texture and 3 arithmetic instructions | Compiles |
 | `uniform_rebase` | Compiles, 1 texture and 2 arithmetic instructions | Compiles |
 | `repeat_folded` | Compiles, 1 texture and 2 arithmetic instructions | Compiles |
 | `mirror_folded` | Compiles, 1 texture and 6 arithmetic instructions | Compiles |
@@ -41,7 +42,13 @@ For a hardware run, assign mip colors red, green, blue, yellow and magenta in or
 
 Primitive- or draw-uniform translation by two periods at a time preserves either periodic mode. It is an option when an entry point owns the input or can prove the actual sample coordinates. Preserve every nonperiodic coordinate, leave native sampling intact, and require the translated coordinate interval to fit a conservative subset of the native cap. Where possible, perform the translation before interpolation so a large unneeded coordinate offset cannot consume interpolator precision. Verify bounds for the actual rasterization and sample paths, including clipped primitives, helper lanes and floating-point interpolation error. For a first typed extension, use immutable owned vertices, a fixed affine UV varying, constant positive clip W, bounded screen-space slopes, and a guard band for derivative helpers. Reject inputs outside that contract, unsupported view/sampler combinations and unknown conditional-NPOT WRAP support before issuing the draw. Splitting an ordinary draw or changing vertex/index streams can change primitive IDs, clipping and ordering, so keep those transformations out of the transparent path.
 
-For ordinary wgpu, any expanded static proof should accept the user-authored value only when every lane, including helper lanes, remains in the interval. Use the current pipeline and binding validation paths, and retain the source-view and selected-sampler checks for accepted pairs in direct and bundle draws. Shader reflection cannot derive a conservative input interval from arbitrary vertex buffers, uniforms, sampled data or runtime math. Binding a periodic sampler also cannot justify changing clamp samples through the same pipeline and layout.
+The static proof also accepts user-authored WGSL `select` when both arms are proved within the existing interval. Each component stays bounded regardless of the runtime condition, including in helper lanes. The original `select` and native sample are preserved. The existing view and sampler checks still apply to direct and bundle draws. Shader reflection cannot derive a conservative input interval from arbitrary vertex buffers, uniforms, sampled data or runtime math. Binding a periodic sampler also cannot justify changing clamp samples through the same pipeline and layout. [Core proof and regression](../wgpu-core/src/validation.rs)
+
+The focused Core regression passed on Ben-Desktop with the Windows SDK `10.0.26100.0` and target directory `E:/Temp/wgpu-fl91-sampling-target`. It covers a vector condition selecting endpoints in `[-63, 63]` and rejects either a runtime-unproven arm or a literal arm outside that interval. The same binary passed all 52 `validation::tests::` cases.
+
+```powershell
+cargo +1.93.1 test --locked --offline -p wgpu-core --lib --features dx11,wgsl validation::tests::fl9_repeat_proof_uses_selected_entry_and_reflected_sampler -- --exact
+```
 
 Single-mip uncompressed 2D float sampling with equal min/mag filters and anisotropy 1 leaves room for separate emulation. Mask the periodic axes, resolve taps with the selected address mode, and keep texture-view dimensions and filtering checks bound to the actual pair. Nearest and periodic bilinear taps require distinct controls, including odd NPOT extents, negative coordinates, both axes and seam ties. Even at one mip, differing min/mag filters can expose derivative changes. Anisotropy can expose tap changes independently of mip selection. The existing single-mip Grad compatibility path uses draw-time checks on both view and sampler and does not establish general explicit gradient support. [Existing single-mip compatibility checks](../wgpu-core/src/command/bind.rs)
 

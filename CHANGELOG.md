@@ -46,7 +46,7 @@ Bottom level categories:
 
 #### DX11
 
-- Allow Repeat and MirrorRepeat at FL9_1 for draws whose texture coordinates Core can prove stay within the native repeat limit.
+- Allow Repeat and MirrorRepeat at FL9_1 for draws whose texture coordinates Core can prove stay within the native repeat limit, including WGSL `select` with bounded coordinates in both arms.
 - Allow single-sample sRGB blending at FL9_1 when a readback probe verifies linear-space blending for the selected device and format.
 
 #### General
