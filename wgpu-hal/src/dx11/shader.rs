@@ -20,6 +20,7 @@ pub(crate) enum ShaderProfile {
     VertexLevel9_1,
     PixelLevel9_1,
     PixelLevel9_3,
+    Vertex4_1,
     Pixel4_1,
     Vertex5_0,
     Pixel5_0,
@@ -32,6 +33,7 @@ impl ShaderProfile {
             Self::VertexLevel9_1 => c"vs_4_0_level_9_1",
             Self::PixelLevel9_1 => c"ps_4_0_level_9_1",
             Self::PixelLevel9_3 => c"ps_4_0_level_9_3",
+            Self::Vertex4_1 => c"vs_4_1",
             Self::Pixel4_1 => c"ps_4_1",
             Self::Vertex5_0 => c"vs_5_0",
             Self::Pixel5_0 => c"ps_5_0",
@@ -469,7 +471,9 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
 ) -> Result<(String, String), NagaCompileError> {
     use naga::back::hlsl;
     let expected = match profile {
-        ShaderProfile::VertexLevel9_1 | ShaderProfile::Vertex5_0 => naga::ShaderStage::Vertex,
+        ShaderProfile::VertexLevel9_1 | ShaderProfile::Vertex4_1 | ShaderProfile::Vertex5_0 => {
+            naga::ShaderStage::Vertex
+        }
         ShaderProfile::PixelLevel9_1
         | ShaderProfile::PixelLevel9_3
         | ShaderProfile::Pixel4_1

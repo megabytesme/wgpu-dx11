@@ -84,6 +84,9 @@ impl crate::Instance for Instance {
             }
         };
         let force_fl91 = std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1");
+        #[cfg(feature = "dx11-experimental-fl10")]
+        let force_fl101 = !force_fl91
+            && std::env::var_os("WGPU_DX11_EXPERIMENTAL_FL10_1").is_some_and(|v| v == "1");
         let requested: &[super::FeatureLevel] = if force_fl91 {
             &[super::FeatureLevel::L9_1]
         } else {
@@ -97,7 +100,16 @@ impl crate::Instance for Instance {
                 }
                 let identity = adapter.identity().clone();
                 let driver_version = adapter.driver_version();
-                let native = match adapter.open_device(requested) {
+                #[cfg(feature = "dx11-experimental-fl10")]
+                let opened = if force_fl101 {
+                    super::exact::ExactDevice::open(&adapter, super::FeatureLevel::L10_1)
+                        .and_then(super::exact::ExactDevice::into_experimental_fl10_1)
+                } else {
+                    adapter.open_device(requested)
+                };
+                #[cfg(not(feature = "dx11-experimental-fl10"))]
+                let opened = adapter.open_device(requested);
+                let native = match opened {
                     Ok(native) => native,
                     Err(error) => {
                         log::debug!(

@@ -563,8 +563,14 @@ fn blend_component_desc(
     ))
 }
 
-fn native_blend_desc(target: D3D11_RENDER_TARGET_BLEND_DESC) -> D3D11_BLEND_DESC {
-    let mut desc = D3D11_BLEND_DESC::default();
+fn native_blend_desc(
+    target: D3D11_RENDER_TARGET_BLEND_DESC,
+    alpha_to_coverage: bool,
+) -> D3D11_BLEND_DESC {
+    let mut desc = D3D11_BLEND_DESC {
+        AlphaToCoverageEnable: alpha_to_coverage.into(),
+        ..Default::default()
+    };
     for target_desc in desc.RenderTarget.iter_mut().take(4) {
         *target_desc = target;
     }
@@ -859,7 +865,7 @@ mod tests {
         assert_eq!(target.BlendOp, D3D11_BLEND_OP_ADD);
         assert_eq!(target.BlendOpAlpha, D3D11_BLEND_OP_ADD);
 
-        let native = native_blend_desc(target);
+        let native = native_blend_desc(target, false);
         assert!(native.RenderTarget[..4]
             .iter()
             .all(|target| target.BlendEnable.as_bool()));
@@ -2872,6 +2878,7 @@ impl RenderPipeline {
             [] | [None] => None,
             _ => return Err(invalid()),
         };
+        let alpha_to_coverage = desc.multisample.alpha_to_coverage_enabled;
         if (target.is_some() && fragment.is_none())
             || (target.is_none() && desc.depth_stencil.is_none())
         {
@@ -2889,7 +2896,10 @@ impl RenderPipeline {
                 ..desc.primitive
             }) != wgt::PrimitiveState::default()
             || !matches!(desc.multisample.count, 1 | 2 | 4 | 8 | 16)
-            || desc.multisample.alpha_to_coverage_enabled
+            || (alpha_to_coverage
+                && (!owner.experimental_fl10_1()
+                    || desc.multisample.count == 1
+                    || target.is_none()))
             || desc.multiview_mask.is_some()
             || desc.cache.is_some()
             || vertex_buffers.iter().flatten().any(|buffer| {
@@ -3464,8 +3474,11 @@ impl RenderPipeline {
                 return Err(invalid());
             }
             if let Some(target_desc) = blend_desc {
-                if target_desc.BlendEnable.as_bool() || target_desc.RenderTargetWriteMask != 0x0f {
-                    let desc = native_blend_desc(target_desc);
+                if target_desc.BlendEnable.as_bool()
+                    || target_desc.RenderTargetWriteMask != 0x0f
+                    || alpha_to_coverage
+                {
+                    let desc = native_blend_desc(target_desc, alpha_to_coverage);
                     owner
                         .raw_device()
                         .CreateBlendState(&desc, Some(&mut blend))

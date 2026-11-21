@@ -103,6 +103,15 @@ impl ExactDevice {
         self.native.feature_level()
     }
 
+    pub(super) fn into_experimental_fl10_1(self) -> Result<NativeDevice> {
+        if self.actual_level() != FeatureLevel::L10_1 {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let mut native = self.native;
+        native.enable_experimental_fl10_1();
+        Ok(native)
+    }
+
     /// DXGI description and PCI IDs of the selected adapter.
     pub fn adapter_identity(&self) -> &AdapterIdentity {
         &self.identity

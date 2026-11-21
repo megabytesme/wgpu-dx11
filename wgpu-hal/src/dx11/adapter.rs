@@ -28,7 +28,9 @@ impl Adapter {
         info.device = identity.device_id;
         info.driver = String::from("D3D11");
         let level = native.feature_level();
-        let level_tag = if level == super::FeatureLevel::L9_1 {
+        let level_tag = if native.experimental_fl10_1() {
+            String::from("FL10_1 (experimental portable subset)")
+        } else if level == super::FeatureLevel::L9_1 {
             String::from("FL9_1")
         } else {
             alloc::format!("FL9_1 (hardware {level:?})")

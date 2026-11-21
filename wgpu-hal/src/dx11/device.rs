@@ -216,6 +216,7 @@ impl NativeAdapter {
             immediate: Mutex::new(immediate),
             idle_query: Mutex::new(Some(idle_query)),
             level,
+            experimental_fl10_1: false,
             timestamp_frequency,
             debug_info_queue,
             #[cfg(any(test, feature = "dx11-test-fixture"))]
@@ -235,6 +236,7 @@ pub struct NativeDevice {
     immediate: Mutex<ID3D11DeviceContext>,
     pub(super) idle_query: Mutex<Option<ID3D11Asynchronous>>,
     level: FeatureLevel,
+    experimental_fl10_1: bool,
     timestamp_frequency: Option<u64>,
     #[cfg_attr(not(test), allow(dead_code))]
     debug_info_queue: Option<ID3D11InfoQueue>,
@@ -247,6 +249,16 @@ pub struct NativeDevice {
 }
 
 impl NativeDevice {
+    #[cfg(feature = "dx11-experimental-fl10")]
+    pub(super) fn enable_experimental_fl10_1(&mut self) {
+        debug_assert_eq!(self.level, FeatureLevel::L10_1);
+        self.experimental_fl10_1 = true;
+    }
+
+    pub(super) fn experimental_fl10_1(&self) -> bool {
+        self.experimental_fl10_1
+    }
+
     #[cfg(test)]
     pub(super) fn clear_debug_messages(&self) {
         if let Some(queue) = &self.debug_info_queue {

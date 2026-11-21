@@ -52,6 +52,8 @@ default = [
 # Enables the experimental FL9_1-only D3D11 backend for restricted offscreen
 # and HWND rendering on Windows.
 dx11 = ["wgpu-core?/dx11"]
+## Enables the opt-in exact FL10.1 D3D11 renderer on Windows.
+dx11-experimental-fl10 = ["dx11", "wgpu-hal/dx11-experimental-fl10"]
 dx11-test-fixture = ["dx11", "wgsl", "wgpu-hal/dx11-test-fixture"]
 dx12 = ["wgpu-core?/dx12"]
 

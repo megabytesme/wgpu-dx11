@@ -1410,7 +1410,10 @@ impl Capabilities {
                 rgba4444_unorm: format(DXGI_FORMAT_B4G4R4A4_UNORM),
                 vertex_input_formats,
             },
-            backend: BackendCapabilities::CURRENT,
+            backend: BackendCapabilities {
+                alpha_to_coverage: device.experimental_fl10_1(),
+                ..BackendCapabilities::CURRENT
+            },
         }
     }
 

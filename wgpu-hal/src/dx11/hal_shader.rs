@@ -15373,9 +15373,25 @@ impl ShaderModule {
             .iter()
             .position(|candidate| candidate.stage == stage && candidate.name == entry)
             .ok_or(crate::PipelineError::EntryPoint(stage))?;
-        let profile =
-            selected_shader_profile(stage).ok_or(crate::PipelineError::EntryPoint(stage))?;
         let entry_info = info.get_entry_point(entry_index);
+        let legacy_profile =
+            selected_shader_profile(stage).ok_or(crate::PipelineError::EntryPoint(stage))?;
+        let profile = if self.owner.experimental_fl10_1()
+            && !input_options.vertex_index_input
+            && !input_options.instance_index_input
+            && !module
+                .global_variables
+                .iter()
+                .any(|(handle, global)| global.binding.is_some() && !entry_info[handle].is_empty())
+        {
+            match stage {
+                naga::ShaderStage::Vertex => ShaderProfile::Vertex4_1,
+                naga::ShaderStage::Fragment => ShaderProfile::Pixel4_1,
+                _ => unreachable!(),
+            }
+        } else {
+            legacy_profile
+        };
         input_options.vertex_index_vector_indexing =
             matches!(profile, ShaderProfile::VertexLevel9_1)
                 && input_options.vertex_index_input
