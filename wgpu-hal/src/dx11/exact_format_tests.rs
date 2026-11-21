@@ -1,10 +1,308 @@
 use super::*;
-use windows::Win32::Graphics::Direct3D::D3D_SRV_DIMENSION_TEXTURECUBEARRAY;
+use windows::Win32::Graphics::Direct3D::{
+    D3D_SRV_DIMENSION_TEXTURE2D, D3D_SRV_DIMENSION_TEXTURECUBEARRAY,
+};
+
+const LINEAR_PIXEL: &str = "
+    Texture2D<float4> image : register(t0);
+    SamplerState linear_sampler : register(s0);
+    float4 main() : SV_Target { return image.SampleLevel(linear_sampler, float2(.5, .5), 0); }
+";
 
 fn view(device: &ID3D11Device, image: &ID3D11Texture2D) -> Result<ID3D11RenderTargetView> {
     let mut view = None;
     unsafe { device.CreateRenderTargetView(image, None, Some(&mut view))? };
     view.ok_or_else(|| Error::from_hresult(E_FAIL))
+}
+
+fn shader_view(device: &ID3D11Device, image: &ID3D11Texture2D) -> Result<ID3D11ShaderResourceView> {
+    let mut view = None;
+    unsafe { device.CreateShaderResourceView(image, None, Some(&mut view))? };
+    view.ok_or_else(|| Error::from_hresult(E_FAIL))
+}
+
+fn sample_linear(
+    device: &ID3D11Device,
+    ctx: &ID3D11DeviceContext,
+    vs: &[u8],
+    ps: &[u8],
+    image: ID3D11ShaderResourceView,
+) -> Result<Vec<[u8; 4]>> {
+    let vs = vertex_shader(device, vs)?;
+    let ps = pixel_shader(device, ps)?;
+    let mut sampler = None;
+    unsafe {
+        device.CreateSamplerState(
+            &D3D11_SAMPLER_DESC {
+                Filter: D3D11_FILTER_MIN_MAG_MIP_LINEAR,
+                AddressU: D3D11_TEXTURE_ADDRESS_CLAMP,
+                AddressV: D3D11_TEXTURE_ADDRESS_CLAMP,
+                AddressW: D3D11_TEXTURE_ADDRESS_CLAMP,
+                ComparisonFunc: D3D11_COMPARISON_NEVER,
+                MaxAnisotropy: 1,
+                MaxLOD: f32::MAX,
+                ..Default::default()
+            },
+            Some(&mut sampler),
+        )?;
+        let (target, rtv) = render_target(device, 1, 1);
+        ctx.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        ctx.RSSetViewports(Some(&[viewport(1.0, 1.0)]));
+        ctx.OMSetRenderTargets(Some(&[Some(rtv)]), None);
+        ctx.VSSetShader(&vs, None);
+        ctx.PSSetShader(&ps, None);
+        ctx.PSSetShaderResources(0, Some(&[Some(image)]));
+        ctx.PSSetSamplers(0, Some(&[sampler]));
+        ctx.Draw(3, 0);
+        ctx.OMSetRenderTargets(None, None);
+        read_pixels(device, ctx, &target, 1, 1)
+    }
+}
+
+#[test]
+#[ignore = "requires an exclusively scheduled physical D3D11 adapter"]
+fn exact_fl10_float32_format_linear_filtering() -> Result<()> {
+    let exact = open(&hardware(), FeatureLevel::L10_1);
+    let vs = exact
+        .compile_hlsl(FULL_SCREEN, "main", ShaderStage::Vertex)
+        .unwrap();
+    let ps = exact
+        .compile_hlsl(LINEAR_PIXEL, "main", ShaderStage::Pixel)
+        .unwrap();
+    let cases = [
+        (DXGI_FORMAT_R32_FLOAT, 1, "R32_FLOAT"),
+        (DXGI_FORMAT_R32G32_FLOAT, 2, "R32G32_FLOAT"),
+        (DXGI_FORMAT_R32G32B32A32_FLOAT, 4, "R32G32B32A32_FLOAT"),
+    ];
+    for (format, channels, name) in cases {
+        let flags = exact.check_format_support(format)?;
+        assert_ne!(flags & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32, 0);
+        let source = [
+            [0.125_f32, 0.0, 1.0, 0.25],
+            [0.375, 0.125, 0.875, 0.5],
+            [0.625, 0.375, 0.625, 0.75],
+            [0.875, 0.5, 0.5, 1.0],
+        ];
+        let packed: Vec<_> = source
+            .iter()
+            .flat_map(|texel| &texel[..channels])
+            .copied()
+            .collect();
+        let pixels = unsafe {
+            exact.with_native(|device, ctx| {
+                let image = texture(
+                    device,
+                    &D3D11_TEXTURE2D_DESC {
+                        BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
+                        ..texture_desc(format, 2, 2)
+                    },
+                    Some(&D3D11_SUBRESOURCE_DATA {
+                        pSysMem: packed.as_ptr().cast(),
+                        SysMemPitch: (channels * 2 * size_of::<f32>()) as u32,
+                        SysMemSlicePitch: size_of_val(packed.as_slice()) as u32,
+                    }),
+                );
+                sample_linear(device, ctx, &vs, &ps, shader_view(device, &image)?)
+            })?
+        };
+        let mut expected = [0.0, 0.0, 0.0, 1.0];
+        expected[..channels].copy_from_slice(&[0.5, 0.25, 0.75, 0.625][..channels]);
+        std::println!("{name} CheckFormatSupport={flags:#010x} filtered center={pixels:?}");
+        assert_unorm8(&pixels, &[expected]);
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires an exclusively scheduled physical D3D11 adapter"]
+fn exact_fl10_depth_view_linear_filtering() -> Result<()> {
+    let exact = open(&hardware(), FeatureLevel::L10_1);
+    let vs = exact
+        .compile_hlsl(FULL_SCREEN, "main", ShaderStage::Vertex)
+        .unwrap();
+    let ps = exact
+        .compile_hlsl(LINEAR_PIXEL, "main", ShaderStage::Pixel)
+        .unwrap();
+    let depths = [0.125_f32, 0.375, 0.625, 0.875];
+    let d24 = depths.map(|depth| ((depth * 16_777_215.0).round() as u32) | (0x7f << 24));
+    let d32 = depths.map(|depth| [depth.to_bits(), 0x7f]);
+    let cases = [
+        (
+            DXGI_FORMAT_R24G8_TYPELESS,
+            DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
+            d24.as_ptr().cast(),
+            8,
+            "R24_UNORM_X8_TYPELESS",
+        ),
+        (
+            DXGI_FORMAT_R32G8X24_TYPELESS,
+            DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS,
+            d32.as_ptr().cast(),
+            16,
+            "R32_FLOAT_X8X24_TYPELESS",
+        ),
+    ];
+    for (resource_format, view_format, data, pitch, name) in cases {
+        let flags = exact.check_format_support(view_format)?;
+        assert_ne!(
+            flags & D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0 as u32,
+            0,
+            "{name}"
+        );
+        let pixels = unsafe {
+            exact.with_native(|device, ctx| {
+                let image = texture(
+                    device,
+                    &D3D11_TEXTURE2D_DESC {
+                        BindFlags: (D3D11_BIND_DEPTH_STENCIL | D3D11_BIND_SHADER_RESOURCE).0 as u32,
+                        ..texture_desc(resource_format, 2, 2)
+                    },
+                    Some(&D3D11_SUBRESOURCE_DATA {
+                        pSysMem: data,
+                        SysMemPitch: pitch,
+                        SysMemSlicePitch: pitch * 2,
+                    }),
+                );
+                let mut view = None;
+                device.CreateShaderResourceView(
+                    &image,
+                    Some(&D3D11_SHADER_RESOURCE_VIEW_DESC {
+                        Format: view_format,
+                        ViewDimension: D3D_SRV_DIMENSION_TEXTURE2D,
+                        Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
+                            Texture2D: D3D11_TEX2D_SRV {
+                                MostDetailedMip: 0,
+                                MipLevels: 1,
+                            },
+                        },
+                    }),
+                    Some(&mut view),
+                )?;
+                sample_linear(device, ctx, &vs, &ps, view.unwrap())
+            })?
+        };
+        std::println!("{name} CheckFormatSupport={flags:#010x} filtered center={pixels:?}");
+        assert_unorm8(&pixels, &[[0.5, 0.0, 0.0, 1.0]]);
+    }
+    Ok(())
+}
+
+#[test]
+#[ignore = "requires an exclusively scheduled physical D3D11 adapter"]
+fn exact_fl10_normalized_format_blending() -> Result<()> {
+    let exact = open(&hardware(), FeatureLevel::L10_1);
+    let vs = exact
+        .compile_hlsl(FULL_SCREEN, "main", ShaderStage::Vertex)
+        .unwrap();
+    let source_ps = exact
+        .compile_hlsl(
+            "float4 main() : SV_Target { return float4(.5, .5, .5, .5); }",
+            "main",
+            ShaderStage::Pixel,
+        )
+        .unwrap();
+    let read_ps = exact
+        .compile_hlsl(
+            "Texture2D<float4> image : register(t0);
+         float4 main() : SV_Target {
+             float4 raw = image.Load(int3(0, 0, 0));
+             return float4(raw.rgb * .5 + .5, raw.a);
+         }",
+            "main",
+            ShaderStage::Pixel,
+        )
+        .unwrap();
+    let cases = [
+        (DXGI_FORMAT_R8_SNORM, 1, true, "R8_SNORM"),
+        (DXGI_FORMAT_R8G8_SNORM, 2, true, "R8G8_SNORM"),
+        (DXGI_FORMAT_R8G8B8A8_SNORM, 4, true, "R8G8B8A8_SNORM"),
+        (DXGI_FORMAT_R16_SNORM, 1, true, "R16_SNORM"),
+        (DXGI_FORMAT_R16G16_SNORM, 2, true, "R16G16_SNORM"),
+        (
+            DXGI_FORMAT_R16G16B16A16_SNORM,
+            4,
+            true,
+            "R16G16B16A16_SNORM",
+        ),
+        (DXGI_FORMAT_R16_UNORM, 1, false, "R16_UNORM"),
+        (DXGI_FORMAT_R16G16_UNORM, 2, false, "R16G16_UNORM"),
+        (
+            DXGI_FORMAT_R16G16B16A16_UNORM,
+            4,
+            false,
+            "R16G16B16A16_UNORM",
+        ),
+    ];
+    for (format, channels, signed, name) in cases {
+        let flags = exact.check_format_support(format)?;
+        assert_ne!(flags & D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32, 0, "{name}");
+        let clear = if signed { -1.0 } else { 0.25 };
+        let pixels = unsafe {
+            exact.with_native(|device, ctx| {
+                let vs = vertex_shader(device, &vs)?;
+                let source_ps = pixel_shader(device, &source_ps)?;
+                let read_ps = pixel_shader(device, &read_ps)?;
+                let image = texture(
+                    device,
+                    &D3D11_TEXTURE2D_DESC {
+                        BindFlags: (D3D11_BIND_SHADER_RESOURCE | D3D11_BIND_RENDER_TARGET).0 as u32,
+                        ..texture_desc(format, 1, 1)
+                    },
+                    None,
+                );
+                let rtv = view(device, &image)?;
+                let mut blend = None;
+                let channel_blend = D3D11_RENDER_TARGET_BLEND_DESC {
+                    BlendEnable: true.into(),
+                    SrcBlend: D3D11_BLEND_ONE,
+                    DestBlend: D3D11_BLEND_ONE,
+                    BlendOp: D3D11_BLEND_OP_ADD,
+                    SrcBlendAlpha: D3D11_BLEND_ONE,
+                    DestBlendAlpha: D3D11_BLEND_ONE,
+                    BlendOpAlpha: D3D11_BLEND_OP_ADD,
+                    RenderTargetWriteMask: D3D11_COLOR_WRITE_ENABLE_ALL.0 as u8,
+                };
+                device.CreateBlendState(
+                    &D3D11_BLEND_DESC {
+                        RenderTarget: [channel_blend; 8],
+                        ..Default::default()
+                    },
+                    Some(&mut blend),
+                )?;
+                ctx.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+                ctx.RSSetViewports(Some(&[viewport(1.0, 1.0)]));
+                ctx.ClearRenderTargetView(&rtv, &[clear, clear, clear, 0.0]);
+                ctx.OMSetRenderTargets(Some(&[Some(rtv)]), None);
+                ctx.OMSetBlendState(blend.as_ref(), None, u32::MAX);
+                ctx.VSSetShader(&vs, None);
+                ctx.PSSetShader(&source_ps, None);
+                ctx.Draw(3, 0);
+                ctx.OMSetRenderTargets(None, None);
+
+                let (target, rtv) = render_target(device, 1, 1);
+                ctx.OMSetRenderTargets(Some(&[Some(rtv)]), None);
+                ctx.OMSetBlendState(None, None, u32::MAX);
+                ctx.PSSetShaderResources(0, Some(&[Some(shader_view(device, &image)?)]));
+                ctx.PSSetShader(&read_ps, None);
+                ctx.Draw(3, 0);
+                ctx.OMSetRenderTargets(None, None);
+                read_pixels(device, ctx, &target, 1, 1)
+            })?
+        };
+        let mut expected = [128_u8, 128, 128, 255];
+        expected[..channels.min(3)].fill(if signed { 64 } else { 223 });
+        if channels == 4 {
+            expected[3] = 128;
+        }
+        std::println!("{name} CheckFormatSupport={flags:#010x} blended readback={pixels:?}");
+        for (actual, expected) in pixels[0].into_iter().zip(expected) {
+            assert!(
+                actual.abs_diff(expected) <= 2,
+                "{name}: expected {expected}, got {actual}"
+            );
+        }
+    }
+    Ok(())
 }
 
 #[test]
