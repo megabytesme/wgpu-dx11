@@ -1,0 +1,6 @@
+
+thread 'public_dx11_r8_rg8_rgb565_render_attachments_at_fl91' (10832) panicked at wgpu\tests\dx11_public.rs:7995:25:
+assertion `left == right` failed: R8Unorm rendered copy-source texel (0, 0)
+  left: [161]
+ right: [160]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

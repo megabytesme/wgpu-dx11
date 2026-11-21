@@ -1,0 +1,18 @@
+**********************************************************************
+** Visual Studio 2026 Developer Command Prompt vError: Unknown error
+** Copyright (c) 2026 Microsoft Corporation
+**********************************************************************
+   Compiling v8 v137.3.0
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal)
+   Compiling wgpu-core v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-core)
+   Compiling serde_v8 v0.264.0
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-core\platform-deps\windows-linux-android)
+   Compiling deno_core v0.355.0
+   Compiling deno_url v0.214.0
+   Compiling deno_webidl v0.214.0
+   Compiling deno_features v0.11.0
+   Compiling deno_web v0.245.0
+   Compiling deno_console v0.214.0
+   Compiling deno_webgpu v0.181.0 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\deno_webgpu)
+   Compiling cts_runner v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\cts_runner)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 40.56s

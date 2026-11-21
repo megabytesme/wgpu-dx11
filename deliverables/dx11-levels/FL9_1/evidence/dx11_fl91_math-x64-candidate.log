@@ -1,0 +1,14 @@
+
+running 1 test
+test public_dx11_fl91_runtime_float_math_executes_and_reads_back ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; workload=runtime-uniform modf/asinh/acosh/atanh and fraction-only frexp readback plus full-result rejection
+PASS: FL9_1 runtime-uniform modf matched [96, 128, 64, 255] at all 64 pixels
+PASS: FL9_1 runtime-uniform asinh matched [112, 64, 128, 255] at all 64 pixels
+PASS: FL9_1 runtime-uniform acosh matched [168, 64, 128, 255] at all 64 pixels
+PASS: FL9_1 runtime-uniform atanh matched [140, 64, 128, 255] at all 64 pixels
+PASS: FL9_1 runtime-uniform frexp_fraction_positive matched [191, 64, 128, 255] at all 64 pixels
+PASS: FL9_1 runtime-uniform frexp_fraction_negative matched [32, 64, 128, 255] at all 64 pixels
+PASS: FL9_1 runtime-uniform frexp_fraction_zero matched [128, 64, 128, 255] at all 64 pixels
+EXPECTED REJECTION: FL9_1 frexp uses unsupported runtime integer shader semantics
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s

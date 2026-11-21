@@ -1,0 +1,102 @@
+{
+  "tier": "FL9_1",
+  "disposition": "INCOMPLETE",
+  "utc": "2026-11-21T08:13:38.252377Z",
+  "sources": {
+    "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+    "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+    "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+    "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+  },
+  "forced_hardware": [
+    {
+      "id": "desktop-x64",
+      "host": "BEN-DESKTOP",
+      "platform": "Windows / x64",
+      "os_build": "10.0.26300.0",
+      "adapter": "NVIDIA GeForce RTX 3090 Ti",
+      "vendor_device": "10de:2203",
+      "driver": "32.0.16.2101",
+      "software": false,
+      "requested_level": "FL9_1",
+      "actual_level": "FL9_1",
+      "max_level": "FL11_1"
+    },
+    {
+      "id": "desktop-x86",
+      "host": "BEN-DESKTOP",
+      "platform": "Windows / x86",
+      "os_build": "10.0.26300.0",
+      "adapter": "NVIDIA GeForce RTX 3090 Ti",
+      "vendor_device": "10de:2203",
+      "driver": "32.0.16.2101",
+      "software": false,
+      "requested_level": "FL9_1",
+      "actual_level": "FL9_1",
+      "max_level": "FL11_1"
+    },
+    {
+      "id": "surface-arm64",
+      "host": "BEN-TABLET",
+      "platform": "Windows / arm64",
+      "os_build": "10.0.26320.0",
+      "adapter": "Qualcomm(R) Adreno(TM) 680 GPU",
+      "vendor_device": "4d4f4351:41333430",
+      "driver": "27.20.2160.0",
+      "software": false,
+      "requested_level": "FL9_1",
+      "actual_level": "FL9_1",
+      "max_level": "FL11_1"
+    }
+  ],
+  "coverage": [
+    {
+      "id": "surface-signed-uwp",
+      "scope": "physical_product_uwp",
+      "state": "blocked",
+      "host": "BEN-TABLET",
+      "reason": "Console session 1 was locked (LogonUI present).",
+      "earlier_result": "Separate signed 1.0.1.0 fixture on FL11_1 using the FL9_1 compatibility shaders",
+      "earlier_receipt": "C:/dev/personal/MCHorizonUWP-nightly-2026-11-20/docs/nightly-runtime-completion-2026-11-21.md",
+      "artifact": {
+        "path": "evidence/surface-console.log",
+        "sha256": "575b27cb3ebf8a3e9c97a8d96b52d702ceadb3044acdf062ae07b52988db9e4c"
+      }
+    },
+    {
+      "id": "lumia-signed-uwp",
+      "scope": "physical_product_uwp",
+      "state": "blocked",
+      "host": "Lumia 950 XL",
+      "reason": "Pinned Windows PowerShell Device Portal request returned HTTP 503 over direct LAN. The later HTTPS retry timed out.",
+      "artifact": {
+        "path": "evidence/lumia-portal.log",
+        "sha256": "3f6862c73bd09c31dd184e97356ae3281b89514fc45542a27f2f35d2e99c00bf"
+      },
+      "earlier_result": "Adreno 430 driver 11.18.1078.53, signed FL11_1 compatibility gameplay and a separate forced FL9_1 attempt without a frame callback",
+      "earlier_receipt": "C:/dev/personal/MCHorizonUWP-nightly-2026-11-20/docs/nightly-lumia-drs-2026-11-21.md",
+      "retry_artifact": {
+        "path": "evidence/lumia-portal-retry.log",
+        "sha256": "e818a66ff76d4ae480a933576fd12e1d85ed9857570dc7400409a4cf4f77cdc4"
+      }
+    },
+    {
+      "id": "native-ceiling-fl91",
+      "scope": "physical_native_ceiling",
+      "state": "blocked",
+      "reason": "Both available physical adapters reported a D3D11 ceiling of FL11_1."
+    },
+    {
+      "id": "physical-device-removal",
+      "scope": "physical_forced",
+      "state": "unverified",
+      "reason": "Fixture injection confirms API error propagation. No physical removal or reset occurred."
+    },
+    {
+      "id": "warp-or-reference",
+      "scope": "software",
+      "state": "unverified",
+      "reason": "The exact-level hardware selection tests use physical adapters. A software/reference comparison remains open."
+    }
+  ]
+}

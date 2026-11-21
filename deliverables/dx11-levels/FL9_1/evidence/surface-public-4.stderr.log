@@ -1,0 +1,10 @@
+
+thread 'public_dx11_hwnd_surface_presents_on_its_window_thread' (22312) panicked at wgpu\src\backend\wgpu_core.rs:3999:18:
+wgpu error: Validation Error
+
+Caused by:
+  In Surface::configure
+    Invalid surface
+
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

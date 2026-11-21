@@ -1,0 +1,21 @@
+
+running 5 tests
+test public_dx11_hwnd_present_device_loss_reaches_callback ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=synthetic HWND Present device loss
+PASS: a derived view kept the discarded surface backbuffer alive, core rejected reconfiguration before ResizeBuffers, and retry succeeded after the view was dropped
+PASS: injected DXGI_ERROR_DEVICE_REMOVED from Present reached the public device-lost callback exactly once, reentrant poll returned its expected presentation-guard timeout, and the HAL swapchain reacquired after the failed frame was consumed
+ok
+test public_dx11_hwnd_resize_device_loss_reaches_callback_and_releases_reservation ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=synthetic HWND ResizeBuffers device loss
+PASS: injected DXGI_ERROR_DEVICE_REMOVED from ResizeBuffers reached the public device-lost callback exactly once, reentrant poll completed, cached configuration stayed unchanged, and the HAL swapchain reacquired after the failed resize
+ok
+test public_dx11_reconfigure_timeout_preserves_previous_device_association ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=cross-device HWND reconfiguration timeout recovery
+PASS: synthetic unconfigure timeout preserved Core's old presentation association; the replacement device reconfigured after the pending present completed
+ok
+test public_dx11_reentrant_present_releases_consumed_frame_after_device_loss ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=reentrant Present cleanup after synthetic device loss
+PASS: failed configuration preserved the public cache, and an idle HWND surface handed off A→B→A with successful acquire/present
+PASS: wrong-device present, reentrant present after device loss, and dropping an unpresented frame after device loss all released their acquired frames for later reconfiguration and acquisition
+ok
+test public_dx11_unconfigure_device_loss_retires_old_surface_and_notifies_old_device ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=cross-device unconfigure device-loss recovery
+PASS: injected unconfigure loss retired the old swapchain and notified the old device; injected replacement configure loss also notified its device after Core queue locks were released
+ok
+
+test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.24s

@@ -1,0 +1,7 @@
+
+running 1 test
+test public_dx11_invariant_position_equal_depth_prepass_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=invariant-position depth prepass followed by Equal color pass
+PASS: the @invariant position depth prepass matched the Equal color pass for all 64 pixels
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s

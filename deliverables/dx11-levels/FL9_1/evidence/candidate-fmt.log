@@ -1,0 +1,247 @@
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu\tests\dx11_public.rs:27865:
+         .recv_timeout(timeout)
+         .expect("receive overlay readback")
+         .expect("map overlay readback");
+-    let pixels = readback.slice(..).get_mapped_range().expect("overlay pixel");
++    let pixels = readback
++        .slice(..)
++        .get_mapped_range()
++        .expect("overlay pixel");
+     assert_eq!(
+         &pixels[..4],
+         &[0, 255, 0, 255],
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\capabilities.rs:697:
+     }
+
+     pub fn private_fl91_fragment_texture_dimensions_3d_float(&self) -> bool {
+-        self.backend.fl91_fragment_texture_dimensions_3d_float
+-            && self.texture_3d_format_mask() != 0
++        self.backend.fl91_fragment_texture_dimensions_3d_float && self.texture_3d_format_mask() != 0
+     }
+
+     pub fn private_fl91_fragment_texture_dimensions_cube_float(&self) -> bool {
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\capabilities.rs:710:
+     }
+
+     pub fn private_fl91_fragment_texture_num_levels_3d_float(&self) -> bool {
+-        self.backend.fl91_fragment_texture_num_levels_3d_float
+-            && self.texture_3d_format_mask() != 0
++        self.backend.fl91_fragment_texture_num_levels_3d_float && self.texture_3d_format_mask() != 0
+     }
+
+     pub fn private_fl91_fragment_texture_num_levels_cube_float(&self) -> bool {
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\device.rs:164:
+         };
+         if let Err(error) = create_result {
+             if error.code() == E_INVALIDARG
+-                && requested.first() == Some(&D3D_FEATURE_LEVEL(FeatureLevel::L11_1.as_raw() as i32))
++                && requested.first()
++                    == Some(&D3D_FEATURE_LEVEL(FeatureLevel::L11_1.as_raw() as i32))
+                 && requested.len() > 1
+             {
+                 device = None;
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\hal_encoder.rs:5956:
+     }
+
+     #[test]
+-    fn default_dx11_adapter_unlocks_high_resolution_and_fast_indexed_draws() -> windows::core::Result<()> {
++    fn default_dx11_adapter_unlocks_high_resolution_and_fast_indexed_draws(
++    ) -> windows::core::Result<()> {
+         use crate::Instance as _;
+         if std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1") {
+             return Ok(());
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\hal_encoder.rs:5967:
+             return Ok(());
+         };
+         assert!(exposed.info.driver_info.contains("FL9_1"));
+-        assert!(!exposed.info.driver_info.to_ascii_lowercase().contains("software"));
++        assert!(!exposed
++            .info
++            .driver_info
++            .to_ascii_lowercase()
++            .contains("software"));
+         let level = exposed.adapter.feature_level();
+         let expected_max =
+             super::super::capabilities::HardwareGuarantees::for_level(level).texture_2d_dimension;
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\hal_index.rs:1227:
+                     context.IASetIndexBuffer(&self.buffer, DXGI_FORMAT_R32_UINT, self.offset);
+                     for instance in 0..instances {
+                         instance_bindings.bind(context, instance)?;
+-                        super::command::draw_batches(first, complete, 1, max_vertices, |first, count| {
+-                            context.DrawIndexed(count, first, base);
+-                        })?;
++                        super::command::draw_batches(
++                            first,
++                            complete,
++                            1,
++                            max_vertices,
++                            |first, count| {
++                                context.DrawIndexed(count, first, base);
++                            },
++                        )?;
+                     }
+                 }
+                 return Ok(());
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\hal_index.rs:1274:
+                         valid &= (0..=i64::from(self.max_index)).contains(&effective);
+                     }
+                 }
+-                let signed_vertex_indices =
+-                    vertex_index.is_some() && effective_values.iter().any(|&effective| effective < 0);
++                let signed_vertex_indices = vertex_index.is_some()
++                    && effective_values.iter().any(|&effective| effective < 0);
+                 let plan = if valid && !native && !signed_vertex_indices {
+                     let (vertex_offset, vertex_bytes, stride, extent) = vertices
+                         .first()
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\hal_sampler.rs:435:
+         let (higher_level, _) =
+             translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_3, true)
+                 .expect("comparison sampler stays supported across L9_1..=L11_1");
+-        assert_eq!(higher_level.Filter, D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT);
++        assert_eq!(
++            higher_level.Filter,
++            D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT
++        );
+     }
+
+     #[test]
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\hal_transfer.rs:552:
+             .and_then(|offset| offset.checked_add(slice_total))
+             .ok_or_else(invalid)?;
+         offset.checked_add(total).ok_or_else(invalid)?;
+-        let (native_destination, destination_shadow) =
+-            self.texture_copy_buffer_destination_with_shadow(
++        let (native_destination, destination_shadow) = self
++            .texture_copy_buffer_destination_with_shadow(
+                 destination,
+                 u64::from(offset),
+                 total as usize,
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\hal_transfer.rs:686:
+         }
+         let (offset, pitch, row_bytes, total) =
+             copy_layout(layout, size.width, size.height, block)?;
+-        let (native_destination, destination_shadow) =
+-            self.texture_copy_buffer_destination_with_shadow(
++        let (native_destination, destination_shadow) = self
++            .texture_copy_buffer_destination_with_shadow(
+                 destination,
+                 u64::from(offset),
+                 total as usize,
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\hal_transfer.rs:944:
+         };
+         let row_slice = &source[source_left..source_right];
+         unsafe {
+-            context.UpdateSubresource(
+-                destination,
+-                0,
+-                Some(&area),
+-                row_slice.as_ptr().cast(),
+-                0,
+-                0,
+-            );
++            context.UpdateSubresource(destination, 0, Some(&area), row_slice.as_ptr().cast(), 0, 0);
+         }
+         if let Some(shadow) = destination_shadow {
+             shadow.write(destination_left as usize, row_slice);
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\hal_uniform.rs:205:
+                     context.Unmap(staging, 0);
+                     return Err(Error::from_hresult(E_FAIL));
+                 }
+-                scratch[..len].copy_from_slice(core::slice::from_raw_parts(
+-                    mapped.pData.cast::<u8>(),
+-                    len,
+-                ));
++                scratch[..len]
++                    .copy_from_slice(core::slice::from_raw_parts(mapped.pData.cast::<u8>(), len));
+                 context.Unmap(staging, 0);
+                 context.UpdateSubresource(&self.constant, 0, None, scratch.as_ptr().cast(), 0, 0);
+             }
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\shader.rs:2:
+ use alloc::{ffi::CString, format, string::String, vec::Vec};
+ #[cfg(not(target_vendor = "uwp"))]
+ use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
++#[cfg(not(target_vendor = "uwp"))]
++use windows::Win32::Graphics::Direct3D::ID3DInclude;
+ use windows::{
+     core::PCSTR,
+     Win32::{
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\shader.rs:9:
+         Graphics::Direct3D::{Fxc::D3DCOMPILE_ENABLE_STRICTNESS, ID3DBlob},
+     },
+ };
+-#[cfg(not(target_vendor = "uwp"))]
+-use windows::Win32::Graphics::Direct3D::ID3DInclude;
+
+ /// Explicit shader targets supported by this diagnostic compiler seam.
+ #[allow(dead_code)]
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\surface.rs:222:
+         })
+     }
+     #[cfg(target_vendor = "uwp")]
+-    pub(super) unsafe fn from_swap_chain_panel(raw: *mut c_void) -> Result<Self, crate::InstanceError> {
++    pub(super) unsafe fn from_swap_chain_panel(
++        raw: *mut c_void,
++    ) -> Result<Self, crate::InstanceError> {
+         let _unknown = unsafe { IUnknown::from_raw_borrowed(&raw) }
+             .ok_or_else(|| crate::InstanceError::new("null SwapChainPanel".into()))?;
+         Ok(Self {
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx11\swapchain.rs:185:
+                 #[cfg(target_vendor = "uwp")]
+                 {
+                     let created = unsafe {
+-                        factory.CreateSwapChainForComposition(
+-                            device.raw_device(),
+-                            &desc,
+-                            None,
+-                        )
++                        factory.CreateSwapChainForComposition(device.raw_device(), &desc, None)
+                     };
+                     let swapchain = match created {
+                         Ok(sc) => sc,
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx12\instance.rs:1:
+ use alloc::{borrow::ToOwned, string::String, sync::Arc, vec::Vec};
+
+ use parking_lot::RwLock;
+-use windows::Win32::{Foundation, Graphics::Dxgi};
+ use windows::core::{IUnknown, Interface};
++use windows::Win32::{Foundation, Graphics::Dxgi};
+
+ use super::SurfaceTarget;
+ use crate::{
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx12\instance.rs:157:
+                             "UWP game SwapChainPanel is unavailable".into(),
+                         ));
+                     }
+-                    let owned_panel = unsafe {
+-                        super::types::ISwapChainPanelNative::from_raw_borrowed(&panel)
+-                    }
+-                    .map(|panel| panel.to_owned());
++                    let owned_panel =
++                        unsafe { super::types::ISwapChainPanelNative::from_raw_borrowed(&panel) }
++                            .map(|panel| panel.to_owned());
+                     unsafe { horizon_uwp_release_game_swapchain_panel(panel) };
+                     let owned_panel = owned_panel.ok_or_else(|| {
+                         crate::InstanceError::new("UWP game SwapChainPanel is invalid".into())
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx12\mod.rs:1697:
+                             // The XAML panel belongs to the UI apartment. The UWP host
+                             // marshals this attachment back to that apartment before
+                             // querying ISwapChainPanelNative and calling SetSwapChain.
+-                            let result = unsafe {
+-                                horizon_uwp_attach_game_swapchain(swap_chain1.as_raw())
+-                            };
++                            let result =
++                                unsafe { horizon_uwp_attach_game_swapchain(swap_chain1.as_raw()) };
+                             if result < 0 {
+                                 log::error!(
+                                     "Unable to SetSwapChain on the UWP UI thread: HRESULT 0x{result:08X}"
+Diff in \\?\C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal\src\dx12\pipeline_desc.rs:366:
+         // Tag at the beginning
+         assert_eq!(&stream.bytes[16..20], &3u32.to_ne_bytes());
+         // Padding, when needed, aligns the u64 to its native boundary.
+-        assert!(stream.bytes[20..value_offset]
+-            .iter()
+-            .all(|byte| *byte == 0));
++        assert!(stream.bytes[20..value_offset].iter().all(|byte| *byte == 0));
+         // Data tucked in, aligned to the natural alignment of u64
+         assert_eq!(&stream.bytes[value_offset..], &168u64.to_ne_bytes());
+     }

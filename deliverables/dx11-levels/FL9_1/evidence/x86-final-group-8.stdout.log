@@ -1,0 +1,36 @@
+
+running 10 tests
+test public_dx11_vertex_attribute_limit_boundary_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; max_vertex_attributes=16
+PASS: Core accepted vertex attribute location 15 at the 16-slot limit
+PASS: Core rejected vertex attribute location 16 against the advertised 16-slot limit
+ok
+test public_dx11_vertex_buffer_slot_15_draw_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; max_vertex_buffers=16
+PASS: vertex buffer slot 15 rendered all 64 pixels as [32, 191, 64, 255]
+ok
+test public_dx11_vertex_buffer_stride_limit_boundary_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; max_vertex_buffer_array_stride=2048
+PASS: Core rejected a 2049-byte vertex stride against the advertised 2048-byte limit
+PASS: 2048-byte vertex stride rendered all 64 pixels as [0, 255, 64, 255]
+ok
+test public_dx11_vertex_index_line_list_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=direct/u16/u32 LineList vertex_index emulation
+PASS: direct, u16-indexed and u32-indexed LineList draws produced both expected vertex-index-selected rows at forced FL9_1
+ok
+test public_dx11_vertex_index_line_strip_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=direct batched and indexed restart-separated LineStrip vertex_index
+PASS: direct batched LineStrip first_vertex=100000, Uint16/Uint32 restart-separated strips with signed base_vertex, and a wide-index Gather pair produced all seven independent vertex_index-driven readback lines at forced FL9_1
+ok
+test public_dx11_vertex_index_point_list_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=vertex_index point-list emulation
+PASS: PointList vertex_index direct readback matched 3 points; repeated indexed ID readback matched 1 point
+ok
+test public_dx11_vertex_index_triangle_list_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=vertex_index triangle-list emulation
+PASS: public FL9_1 vertex_index emulation verified nonindexed, indexed, negative-base, reindexed-U32, large-firstVertex and post-transition output; red_pixels=32/0/12/32/32/32
+ok
+test public_dx11_vertex_index_triangle_strip_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=TriangleStrip vertex_index direct, restart-separated U16/U32 base-vertex and wide-index Gather
+PASS: TriangleStrip direct first_vertex=100000, U16 positive base_vertex with restart, U32 negative base_vertex with restart, and wide-index Gather rendered; five-index runs exercised odd parity, three-index restart runs verified parity reset, and all six readback regions matched (2942 red pixels)
+ok
+test public_dx11_vertex_uniform_array_indexing_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=vertex uniform-array dynamic indexing
+PASS: direct and helper vertex uniform-array reads plus padded vec2 slots selected expected GPU pixels; padded vec2 vertex index 4 selected the final array element
+ok
+test public_dx11_write_texture_nonzero_offset_padded_rows_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: public FL9_1 queue.write_texture used a 4-byte source offset, 256-byte padded rows, trailing source padding and a nonzero destination origin; all 16 texels and readback sentinels matched
+ok
+
+test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 168 filtered out; finished in 1.86s

@@ -1,0 +1,7 @@
+Window initial physical size=PhysicalSize { width: 400, height: 300 }, scale_factor=1.5
+Adapter: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+Safe winit surface created through Instance::create_surface(window).
+Requesting one window resize to 640x480 physical pixels.
+Resize observed and surface reconfigured to 640x480 physical pixels.
+Presented 90 indexed textured depth-tested frames.
+Safe-surface smoke completed after 90 frames.

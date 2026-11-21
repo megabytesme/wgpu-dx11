@@ -1,0 +1,94 @@
+
+running 24 tests
+test public_dx11_fragment_texture_dimensions_3d_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment 3D textureDimensions host emulation
+PASS: forced FL9_1 3D textureDimensions plus implicit sampling transitioned from 4x2x8 to 2x4x1; dimensions and sampled texels affected all 64 pixels
+ok
+test public_dx11_fragment_texture_dimensions_3d_constant_mip_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; texture_3d_mipmaps=true; operation=fragment 3D textureDimensions constant mip emulation
+PASS: forced FL9_1 textureDimensions(image, LEVEL=1) on an 8x4x8 RGBA8 mip chain returned 4x2x4
+ok
+test public_dx11_fragment_texture_dimensions_3d_helper_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment 3D textureDimensions host emulation
+PASS: forced FL9_1 3D textureDimensions helper plus implicit sampling transitioned from 4x2x8 to 2x4x1; dimensions and sampled texels affected all 64 pixels
+ok
+test public_dx11_fragment_texture_dimensions_3d_helper_nonzero_group_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment 3D textureDimensions host emulation
+PASS: forced FL9_1 3D textureDimensions helper plus implicit sampling transitioned from 4x2x8 to 2x4x1; dimensions and sampled texels affected all 64 pixels
+ok
+test public_dx11_fragment_texture_dimensions_3d_helper_split_sampler_group_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment 3D textureDimensions host emulation
+PASS: forced FL9_1 3D textureDimensions helper plus implicit sampling transitioned from 4x2x8 to 2x4x1; dimensions and sampled texels affected all 64 pixels
+ok
+test public_dx11_fragment_texture_dimensions_3d_nonzero_group_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment 3D textureDimensions host emulation
+PASS: forced FL9_1 3D textureDimensions plus implicit sampling transitioned from 4x2x8 to 2x4x1; dimensions and sampled texels affected all 64 pixels
+ok
+test public_dx11_fragment_texture_dimensions_3d_split_sampler_group_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment 3D textureDimensions host emulation
+PASS: forced FL9_1 3D textureDimensions plus implicit sampling transitioned from 4x2x8 to 2x4x1; dimensions and sampled texels affected all 64 pixels
+ok
+test public_dx11_fragment_texture_dimensions_and_sample_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureDimensions plus implicit textureSample
+PASS: fragment textureDimensions plus implicit textureSample co-use followed a bind-group transition; all 64 pixels matched
+ok
+test public_dx11_fragment_texture_dimensions_and_sample_split_groups_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureDimensions plus implicit textureSample
+PASS: fragment textureDimensions plus implicit textureSample co-use followed a bind-group transition; all 64 pixels matched
+ok
+test public_dx11_fragment_texture_dimensions_constant_mip_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureDimensions constant mip emulation
+PASS: forced FL9_1 textureDimensions(image, 2u) followed a view-base transition; all 64 pixels matched
+ok
+test public_dx11_fragment_texture_dimensions_cube_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false rgba8_cube_mipmaps=true; operation=fragment cube textureDimensions host emulation
+PASS: forced FL9_1 direct cube textureDimensions and one helper call followed a view transition from 8x8 to 4x4; all 64 pixels matched
+PASS: forced FL9_1 constant mip-1 cube textureDimensions used an initialized four-level cube; all 64 pixels matched [128,128,0,255]
+ok
+test public_dx11_fragment_texture_dimensions_cube_nonzero_group_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false rgba8_cube_mipmaps=true; operation=fragment cube textureDimensions host emulation
+PASS: forced FL9_1 direct cube textureDimensions and one helper call followed a view transition from 8x8 to 4x4; all 64 pixels matched
+PASS: forced FL9_1 constant mip-1 cube textureDimensions used an initialized four-level cube; all 64 pixels matched [128,128,0,255]
+ok
+test public_dx11_fragment_texture_dimensions_emulation_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=helper textureDimensions at group 0, binding 0
+PASS: forced FL9_1 helper textureDimensions at group 0, binding 0 followed a view transition from 16x8 to 8x4; all 64 pixels matched
+ok
+test public_dx11_fragment_texture_dimensions_helper_and_sample_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureDimensions helper plus implicit textureSample
+PASS: fragment textureDimensions helper plus implicit textureSample co-use followed a bind-group transition; all 64 pixels matched
+ok
+test public_dx11_fragment_texture_dimensions_helper_and_sample_split_groups_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureDimensions helper plus implicit textureSample
+PASS: fragment textureDimensions helper plus implicit textureSample co-use followed a bind-group transition; all 64 pixels matched
+ok
+test public_dx11_fragment_texture_dimensions_helper_nonzero_group_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=helper textureDimensions at group 7, binding 42
+PASS: forced FL9_1 helper textureDimensions at group 7, binding 42 followed a view transition from 16x8 to 8x4; all 64 pixels matched
+ok
+test public_dx11_fragment_texture_dimensions_nonzero_group_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=direct textureDimensions at group 7, binding 42
+PASS: forced FL9_1 textureDimensions at group 7, binding 42 followed a view transition from 16x8 to 8x4; all 64 pixels matched
+ok
+test public_dx11_fragment_texture_dimensions_sample_with_uniform_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureDimensions plus implicit textureSample plus one fragment vec4 uniform
+PASS: fragment textureDimensions plus implicit textureSample plus one fragment vec4 uniform co-use followed a bind-group transition; all 64 pixels matched
+ok
+test public_dx11_fragment_texture_gather_emulation_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false workload=fragment textureGather emulation
+PASS: physical FL9_1 direct, computed-coordinate, forwarding-helper, computed-coordinate-helper, uniform-backed, and split-group uniform textureGather sampled expected texels; direct/helper output [151, 166, 106, 91], computed output [76, 91, 31, 16], uniform output [76, 83, 53, 91], 64/64 pixels each within one UNORM step
+sRGB textureGather format query: TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE) }
+PASS: sRGB textureGather was decoded to linear values; 64/64 pixels matched [79, 97, 37, 27] within two UNORM steps
+PASS: Core rejects unsupported R8 textureGather views before HAL
+PASS: Core rejects a used textureGather relationship with a multi-mip view before submission
+ok
+test public_dx11_fragment_texture_load_emulation_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureLoad emulation at group 0/binding 7; rgba8_srgb_sample_upload=true
+PASS: direct, nested-helper, dynamic-coordinate, computed-coordinate-helper, two-image and eight-image FL9_1 fragment textureLoad at group 0/binding 7 produced expected pixels; computed helper selected the next column and returned zero out of bounds; eight images rendered [56, 24, 56, 255], two differently sized resources combined to [255, 255, 255, 255], one uniform tint produced [0, 64, 0, 191], two uniforms produced [32, 64, 0, 191], six uniforms produced [64, 96, 32, 223], and sRGB input [128, 128, 128, 128] decoded to [55, 55, 55, 128]
+ok
+test public_dx11_fragment_texture_load_nonzero_group_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureLoad emulation at group 1/binding 42; rgba8_srgb_sample_upload=true
+PASS: direct, nested-helper, dynamic-coordinate, computed-coordinate-helper, two-image and eight-image FL9_1 fragment textureLoad at group 1/binding 42 produced expected pixels; computed helper selected the next column and returned zero out of bounds; eight images rendered [56, 24, 56, 255], two differently sized resources combined to [255, 255, 255, 255], one uniform tint produced [0, 64, 0, 191], two uniforms produced [32, 64, 0, 191], six uniforms produced [64, 96, 32, 223], and sRGB input [128, 128, 128, 128] decoded to [55, 55, 55, 128]
+ok
+test public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; texture_num_levels_3d=true texture_num_levels_cube=true texture_3d_mips=true cube_mips=true
+PASS: FL9_1 3D textureNumLevels selected view mip counts 1 and 4; all 64 pixels matched
+PASS: FL9_1 3D textureNumLevels selected helper selected view mip counts 1 and 4; all 64 pixels matched
+PASS: FL9_1 3D textureNumLevels with split-group sampler selected view mip counts 1 and 4; all 64 pixels matched
+PASS: FL9_1 3D textureNumLevels helper with split-group sampler selected view mip counts 1 and 4; all 64 pixels matched
+PASS: FL9_1 cube textureNumLevels selected view mip counts 1 and 4; all 64 pixels matched
+PASS: FL9_1 cube textureNumLevels selected helper selected view mip counts 1 and 4; all 64 pixels matched
+PASS: FL9_1 cube textureNumLevels with split-group sampler selected view mip counts 1 and 4; all 64 pixels matched
+PASS: FL9_1 cube textureNumLevels helper with split-group sampler selected view mip counts 1 and 4; all 64 pixels matched
+ok
+test public_dx11_fragment_texture_num_levels_emulation_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=fragment textureNumLevels plus implicit sample emulation
+PASS: forced FL9_1 textureNumLevels and same-texture implicit sampling followed 1- and 3-level views; both count and sampled texels affected all 64 pixels
+ok
+test public_dx11_fragment_texture_num_levels_selected_helper_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=selected-entry textureNumLevels helper
+PASS: FL9_1 nonzero-group textureNumLevels selected view mip counts 1 and 3; all 64 pixels matched
+PASS: FL9_1 nonzero-group textureNumLevels plus sample selected view mip counts 1 and 3; all 64 pixels matched
+PASS: FL9_1 selected-helper textureNumLevels selected view mip counts 1 and 3; all 64 pixels matched
+PASS: FL9_1 selected-helper textureNumLevels plus sample selected view mip counts 1 and 3; all 64 pixels matched
+PASS: FL9_1 direct textureNumLevels with split-group sampler selected view mip counts 1 and 3; all 64 pixels matched
+PASS: FL9_1 selected-helper textureNumLevels with split-group sampler selected view mip counts 1 and 3; all 64 pixels matched
+ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 3.46s

@@ -1,0 +1,82 @@
+
+running 24 tests
+test public_dx11_front_face_and_backface_culling_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=front-face selection and back-face culling
+PASS: both winding modes were independently culled and rasterized; readback had 10 red CCW pixels, 10 green CW pixels and 44 blue clear pixels
+ok
+test public_dx11_hwnd_surface_presents_on_its_window_thread ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=public HWND present
+FAILED
+test public_dx11_indexed_line_strip_restart_render_bundle_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: consecutive Uint16 green and Uint32 red LineStrip bundles preserved primitive restart, buffer lifetime and the gap between segments; per-segment pixels=[2, 2, 2, 2]
+ok
+test public_dx11_indexed_primitives_without_vertex_rate_inputs_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: public indexed list and strip draws without vertex-rate inputs matched direct draws for Uint16/Uint32, including restart runs
+ok
+test public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: indexed render bundle sampled the retained texture after source handles were dropped; all 64 pixels matched [51, 128, 204, 255]
+ok
+test public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: consecutive Uint16 green and Uint32 red strip bundles honored restart and pipeline transitions; 256/256 pixels matched, colored pixels=[37, 37]
+ok
+test public_dx11_indexed_zero_stride_negative_base_vertex_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: public FL9_1 negative base vertex with zero stride; 2 index formats, 128 pixels validated
+ok
+test public_dx11_instance_index_nonindexed_and_indexed_draws_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: nonindexed first_instance=2 and indexed first_instance=4 produced distinct full-target colors; 128/128 pixels matched at forced FL9_1
+ok
+test public_dx11_instance_indexed_matrix_uniform_array_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=instance-indexed mat4x4 uniform array
+PASS: instance-indexed mat4x4 uniforms translated two triangles independently; 4 magenta pixels, left/right samples matched, center gap remained clear
+ok
+test public_dx11_instance_rate_vertex_streams_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: public FL9_1 emulated instance-rate streams and host-supplied instance_index for first_instance=1; green=20, yellow=20, blue=472
+ok
+test public_dx11_integer_and_snorm_vertex_formats_render_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; vertex_formats=[Sint16x2, Sint16x4, Uint8x4, Snorm16x2, Snorm16x4]
+PASS: public FL9_1 Sint16x2/Sint16x4/Uint8x4/Snorm16x2/Snorm16x4 input data affected all 64 pixels
+ok
+test public_dx11_inter_stage_varying_limit_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; inter_stage_variables=7
+PASS: seven matched vec4 varyings at locations 0–6 rendered [56, 28, 14, 223] in 64/64 pixels; Core rejected location 7 against max_inter_stage_shader_variables before HAL
+ok
+test public_dx11_line_list_restores_user_vertex_stream_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=LineList then TriangleList with unchanged vertex binding
+PASS: direct and indexed-Gather LineList draws preserved the vertex binding; distinct following triangles verified both transitions
+ok
+test public_dx11_map_nonzero_slice_after_gpu_write_preserves_neighbors_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=GPU buffer copy and nonzero mapped slice
+PASS: GPU copied source bytes 8..16 into destination bytes 8..16; mapping that nonzero slice returned the copy and full readback preserved both neighboring sentinel regions
+ok
+test public_dx11_multiple_queue_writes_preserve_disjoint_ranges_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=two pending queue writes, copy and full readback
+PASS: two disjoint queue.write_buffer calls were visible to the following GPU copy; all 48 bytes matched, including untouched sentinel ranges
+ok
+test public_dx11_multisample_blend_write_mask_resolve_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; blendable=true tested_sample_counts=[2, 4, 8]
+PASS: FL9_1 2x blend plus red/blue write mask resolved 64 pixels to [112, 96, 143, 64]
+PASS: FL9_1 4x blend plus red/blue write mask resolved 64 pixels to [112, 96, 143, 64]
+PASS: FL9_1 8x blend plus red/blue write mask resolved 64 pixels to [112, 96, 143, 64]
+ok
+test public_dx11_new_color_is_initialized_before_load_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: public FL9_1 first LoadOp::Load on a new color attachment observed transparent black at all 64 pixels
+ok
+test public_dx11_nonzero_group_sparse_uniform_renders_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; uniform=group2/binding42 fragment-visible
+PASS: public group-2 binding 42 drove fragment output; all 64 pixels matched [64, 128, 191, 255] at forced FL9_1
+ok
+test public_dx11_odd_sized_uniform_binding_renders_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; workload=4-byte public uniform binding at buffer offset 256
+PASS: public 4-byte uniform range at offset 256 rendered 64 expected pixels
+ok
+test public_dx11_outputless_fragment_depth_only_pass_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=outputless discard fragment in depth-only pass
+PASS: public FL9_1 targetless fragment passes; outputless discard produced 32 red / 32 depth-blocked blue pixels, and an unmatched location-0 color result was ignored while depth still blocked the later draw at all 64 pixels
+ok
+test public_dx11_outputless_fragment_depth_stencil_pass_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=outputless discard fragment with D24S8 depth/stencil writes
+PASS: public FL9_1 outputless fragment discard with D24S8; stencil equality and later depth comparison independently confirmed 32 red/green pixels where discard prevented stencil/depth writes and 32 blue pixels where the surviving fragment wrote both
+ok
+test public_dx11_partial_texture_transfer_roundtrip_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: public FL9_1 buffer→texture→texture→buffer transfer; padded source rows and nonzero origins produced the expected 2×2 patch while all other destination texels remained green
+ok
+test public_dx11_query_gated_fl91_comparison_border_sampling ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; comparison_functions=0x0008 independent_filters=false max_comparison_anisotropy=1 sample_compare_offset=true depth_format=Depth16Unorm features=TextureFormatFeatures { allowed_usages: TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY) }
+PASS: public FL9_1 LessEqual comparison border sampling returned Some(OpaqueBlack) results for all 64 out-of-range pixels; ordinary border and unrequested Zero border were rejected
+ok
+test public_dx11_query_gated_fl91_comparison_border_white_sampling ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; comparison_functions=0x0008 independent_filters=false max_comparison_anisotropy=1 sample_compare_offset=true depth_format=Depth16Unorm features=TextureFormatFeatures { allowed_usages: TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY) }
+PASS: public FL9_1 LessEqual comparison border sampling returned Some(OpaqueWhite) results for all 64 out-of-range pixels; ordinary border and unrequested Zero border were rejected
+ok
+
+failures:
+
+failures:
+    public_dx11_hwnd_surface_presents_on_its_window_thread
+
+test result: FAILED. 23 passed; 1 failed; 0 ignored; 0 measured; 154 filtered out; finished in 2.56s

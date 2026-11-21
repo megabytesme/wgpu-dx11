@@ -1,0 +1,18 @@
+**********************************************************************
+** Visual Studio 2026 Developer Command Prompt vError: Unknown error
+** Copyright (c) 2026 Microsoft Corporation
+**********************************************************************
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal)
+   Compiling wgpu-core v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-core)
+   Compiling wgpu v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu)
+warning: function `adjust_raw_limits` is never used
+   --> wgpu-hal\src\auxil\mod.rs:128:15
+    |
+128 | pub(crate) fn adjust_raw_limits(mut limits: wgt::Limits) -> wgt::Limits {
+    |               ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-core\platform-deps\windows-linux-android)
+warning: `wgpu-hal` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized] target(s) in 37.04s

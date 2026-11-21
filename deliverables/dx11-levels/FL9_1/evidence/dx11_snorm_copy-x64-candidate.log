@@ -1,0 +1,13 @@
+
+running 3 tests
+test public_dx11_rgba8_snorm_multimip_partial_copy_then_sample_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; RGBA8_SNORM=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(FILTERABLE) }; workload=4-mip upload→partial mip-1 GPU copy→raw mip-1 readback and suffix-view sample→RGBA8 readback
+PASS: RGBA8_SNORM mip-1 2x2 region copied at nonzero source/destination origins; 16 sampled pixels and all 16 raw mip-1 texels verified, including untouched texels, nonzero readback offset and row padding
+ok
+test public_dx11_rgba8_snorm_shadow_readback_after_partial_copy_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; workload=RGBA8_SNORM padded upload→partial GPU copy→ordered shadow readback with padded rows
+PASS: ordered RGBA8_SNORM upload, partial GPU copy and raw shadow readback verified all 24 texels and row padding at FL9_1
+ok
+test public_dx11_rgba8_snorm_texture_copy_then_sample_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; workload=RGBA8_SNORM upload→GPU texture copy→sample→RGBA8 readback
+PASS: uploaded, copied, sampled and read back 64 RGBA8 pixels at FL9_1
+ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s

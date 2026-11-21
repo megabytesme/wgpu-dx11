@@ -1,0 +1,8 @@
+
+running 1 test
+test public_dx11_bc_partial_initialization_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=partial BC1/BC2/BC3 initialization, sampling and readback
+CPU PREPARE: three valid one-block BC payloads and block-region expectations prepared
+GPU PASS: BC1/BC2/BC3 sampled after one-block partial uploads; all 96 pixels matched uploaded red/green/blue blocks and format-correct zero-initialized untouched blocks at requested/actual FL9_1
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s

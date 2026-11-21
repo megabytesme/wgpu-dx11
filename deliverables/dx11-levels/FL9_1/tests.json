@@ -1,0 +1,2528 @@
+{
+  "disposition": "INCOMPLETE",
+  "sources": {
+    "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+    "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+    "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+    "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+  },
+  "wgpu_baseline": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+  "execution_environment": {
+    "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+    "scratch": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21",
+    "compiler": "rustc 1.93.1",
+    "env": {
+      "WGPU_DX11_FORCE_FL9_1": "1",
+      "WGPU_DX11_REQUIRE_HARDWARE": "1"
+    },
+    "notes": "The first parallel x64 rebuild exhausted Windows commit memory. The build was retried with four jobs."
+  },
+  "format_queries": {
+    "path": "format-queries.csv",
+    "sha256": "e4365714ab513779b2e3156613e09bde8c6a940706708a43b3cdffc5e30cff8d",
+    "note": "Observed CheckFormatSupport bits; query data alone supplies no operation readback"
+  },
+  "builds": [
+    {
+      "id": "final-public",
+      "host": "BEN-DESKTOP",
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+      "command": "cargo +1.93.1 test --locked -j4 -p wgpu --features dx11-test-fixture --tests --no-run",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/final-public-build.log",
+        "sha256": "0789ea2d39d9ac266e14217820e370f77906342119fd3e7eb61a3b4f07418bc7"
+      }
+    },
+    {
+      "id": "final-hal-core",
+      "host": "BEN-DESKTOP",
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+      "command": "cargo +1.93.1 test --locked -j4 -p wgpu-hal -p wgpu-core -p wgpu-types --features wgpu-core/dx11-test-fixture,wgpu-hal/dx11-test-fixture --lib --no-run",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/final-hal-core-build.log",
+        "sha256": "da004e1da129501d74f4fc59fd92723ffafde3c533a7ee448611f1acf38159fe"
+      }
+    },
+    {
+      "id": "final-examples",
+      "host": "BEN-DESKTOP",
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+      "command": "cargo +1.93.1 build --locked -j4 -p wgpu --features dx11 --example dx11_fl91_winit --example dx11_fl91_offscreen",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/final-examples-build.log",
+        "sha256": "3693a196894655ff98cfc6dd4bcbd8439fbc7404ba0f79f9210ead2e8f701170"
+      }
+    },
+    {
+      "id": "final-cts",
+      "host": "BEN-DESKTOP",
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+      "command": "cargo +1.93.1 build --locked --offline -j4 -p cts_runner --bin cts_runner --features deno_webgpu/dx11",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/final-cts-build.log",
+        "sha256": "db463d733254bad784737696b474d0037fe863c8193254d9d541538f8786f865"
+      }
+    },
+    {
+      "id": "final-clippy",
+      "host": "BEN-DESKTOP",
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+      "command": "cargo +1.93.1 clippy --locked -j4 -p wgpu -p wgpu-hal -p wgpu-core -p wgpu-types --features wgpu/dx11-test-fixture --tests",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/final-clippy-build.log",
+        "sha256": "b653c27da31e4793098e062c4db61917b099ec54808139b06dbb5e872f086139"
+      }
+    },
+    {
+      "id": "final-x86",
+      "host": "BEN-DESKTOP",
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target",
+      "command": "cargo +1.93.1 test --locked --target i686-pc-windows-msvc -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public --test dx11_fl91_texture_limits --no-run",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/final-x86-build.log",
+        "sha256": "e3c44a4cae584f9e27f5376eaba39570bf9f577fe495ee9d0173427b2bbd1375"
+      }
+    },
+    {
+      "id": "final-arm64",
+      "host": "BEN-DESKTOP",
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target",
+      "command": "cargo +1.93.1 build --locked --target aarch64-pc-windows-msvc -p wgpu --no-default-features --features dx11,wgsl,std --example dx11_fl91_offscreen",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/final-arm64-build.log",
+        "sha256": "53e7701c8e26a4a80a7a890e78d72948dfd06076171017f640c79a5e5bea7a73"
+      }
+    },
+    {
+      "id": "repo-format-check",
+      "host": "BEN-DESKTOP",
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "command": "cargo +1.93.1 fmt --all --check",
+      "result": "baseline_differences",
+      "artifact": {
+        "path": "evidence/candidate-fmt.log",
+        "sha256": "5a0e5c84d7cd5c809b558e3a511bc241609473f8b4ee055d5957f2823077101a"
+      },
+      "baseline_artifact": {
+        "path": "evidence/baseline-fmt.log",
+        "sha256": "e4bedcb274e34cf47f16465d382d59381c54290009a00ad187a21c921fec4d85"
+      }
+    }
+  ],
+  "runs": [
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "DEV-LEVEL",
+        "DEV-EVENT-QUERY",
+        "WGPU-MIP-AUTOGEN",
+        "WGPU-RGBX8-FORMATS"
+      ],
+      "test_id": "native-desktop-x64",
+      "result": "pass",
+      "expected": "Exact physical device, seven two-level native mip readbacks, eventual event TRUE",
+      "observed": "Exact 0x9100 device, 35 generated-mip pixels verified across seven formats and EVENT TRUE",
+      "command": "native-probe.exe",
+      "artifacts": [
+        {
+          "path": "evidence/native-desktop-x64.log",
+          "sha256": "7480739367910024ee8557b1cbe4c09b4cde018745c6091be306501a7d33aa32"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "dd9b555cfd830893cea3cef5632beed5a49384150ca8ff1e74d43c01008f0288",
+      "harness_revision": "6876e33894e73f1e436a043d38b6c688fb6d0831"
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "DEV-LEVEL",
+        "DEV-EVENT-QUERY",
+        "WGPU-MIP-AUTOGEN",
+        "WGPU-RGBX8-FORMATS"
+      ],
+      "test_id": "native-desktop-x86",
+      "result": "pass",
+      "expected": "Exact physical device, seven two-level native mip readbacks, eventual event TRUE",
+      "observed": "Exact 0x9100 device, 35 generated-mip pixels verified across seven formats and EVENT TRUE",
+      "command": "native-probe.exe",
+      "artifacts": [
+        {
+          "path": "evidence/native-desktop-x86.log",
+          "sha256": "df3c419b2335148015644cc9f7eebfb253fc0b06d7a162a81c7b8bd9cee14393"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x86",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x86",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "d17a494ebecf3807bf7453093e7d8bdeb41a7bbc64bf99a36ac4dcc71d4d878d",
+      "harness_revision": "6876e33894e73f1e436a043d38b6c688fb6d0831"
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "DEV-LEVEL",
+        "DEV-EVENT-QUERY",
+        "WGPU-MIP-AUTOGEN",
+        "WGPU-RGBX8-FORMATS"
+      ],
+      "test_id": "native-surface-arm64",
+      "result": "pass",
+      "expected": "Exact physical device, seven two-level native mip readbacks, eventual event TRUE",
+      "observed": "Exact 0x9100 device, 35 generated-mip pixels verified across seven formats and EVENT TRUE",
+      "command": "native-probe.exe",
+      "artifacts": [
+        {
+          "path": "evidence/native-surface-arm64.log",
+          "sha256": "a690cd199b8384d88ab565dcb23d529f699df6f5795b019339b16f39f02cb0f8"
+        }
+      ],
+      "hardware": {
+        "id": "surface-arm64",
+        "host": "BEN-TABLET",
+        "platform": "Windows / arm64",
+        "os_build": "10.0.26320.0",
+        "adapter": "Qualcomm(R) Adreno(TM) 680 GPU",
+        "vendor_device": "4d4f4351:41333430",
+        "driver": "27.20.2160.0",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "049dc0da4a1221f44ad5a1421d6d31ff85105f8f941e03fe641d39c7dd4392d8",
+      "harness_revision": "6876e33894e73f1e436a043d38b6c688fb6d0831"
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "SH-INTER-STAGE"
+      ],
+      "test_id": "pinned-x64-public",
+      "result": "fail",
+      "expected": "All public functions pass",
+      "observed": "176 passed; the varying fixture expected eight, while the adapter reports seven",
+      "command": "cargo +1.93.1 test -p wgpu --features dx11-test-fixture --test dx11_public -- --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_public-x64-baseline.log",
+          "sha256": "4fab5a5172741b3a7d977a9caaefbfe5386e8ecdf833c92943b33da966895caf"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "DEV-LEVEL",
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "public-surface-arm64-offscreen",
+      "result": "pass",
+      "expected": "Exact physical Adreno FL9_1 and all pixels match an indexed depth-tested textured cube",
+      "observed": "112 red, 277 green, 635 blue; 1024 total",
+      "command": "dx11_fl91_offscreen.exe",
+      "artifacts": [
+        {
+          "path": "evidence/wgpu-surface-arm64.log",
+          "sha256": "f176d45353634239fd5f6dc8ce6f99502c6078ba7aa314a2e72eb39664080357"
+        }
+      ],
+      "hardware": {
+        "id": "surface-arm64",
+        "host": "BEN-TABLET",
+        "platform": "Windows / arm64",
+        "os_build": "10.0.26320.0",
+        "adapter": "Qualcomm(R) Adreno(TM) 680 GPU",
+        "vendor_device": "4d4f4351:41333430",
+        "driver": "27.20.2160.0",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "3601cfcd0bb65d10c9bf68261e1438ad9380028d741887aa20add1bbabe67cc9",
+      "transfer_source": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target\\aarch64-pc-windows-msvc\\debug\\examples\\dx11_fl91_offscreen.exe",
+      "transfer_destination": "C:/Users/ben/AppData/Local/Temp/wgpu-fl91-cert-Nov21/wgpu-fl91.exe"
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "shader_compiler",
+      "requirement_ids": [
+        "SH-VS-INSTRUCTIONS",
+        "SH-PS-ALU",
+        "SH-VS-STATIC-FLOW",
+        "SH-PS-DEPENDENT",
+        "SH-CLIP-PLANES",
+        "SH-INTER-STAGE",
+        "SH-PS-TEX-INSTRUCTIONS"
+      ],
+      "test_id": "fxc-x64",
+      "result": "pass",
+      "expected": "Expected FXC success and failure at all chosen profile boundaries",
+      "observed": "16 checks passed; compiler and disassembly scope",
+      "command": ".\\Test-FxcProfiles.ps1 -FxcPath 'C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x64/fxc.exe'",
+      "artifacts": [
+        {
+          "path": "evidence/fl91-fxc-sdk-26100-x64.json",
+          "sha256": "939a2038fb07598b5c69992238ff22c74b8fddcd710f612a0ee6c9d5696a0a77"
+        }
+      ],
+      "shader_profiles": [
+        "vs_4_0_level_9_1",
+        "ps_4_0_level_9_1"
+      ],
+      "harness_revision": "6876e33894e73f1e436a043d38b6c688fb6d0831"
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "shader_compiler",
+      "requirement_ids": [
+        "SH-VS-INSTRUCTIONS",
+        "SH-PS-ALU",
+        "SH-VS-STATIC-FLOW",
+        "SH-PS-DEPENDENT",
+        "SH-CLIP-PLANES",
+        "SH-INTER-STAGE",
+        "SH-PS-TEX-INSTRUCTIONS"
+      ],
+      "test_id": "fxc-x86",
+      "result": "pass",
+      "expected": "Expected FXC success and failure at all chosen profile boundaries",
+      "observed": "16 checks passed; compiler and disassembly scope",
+      "command": ".\\Test-FxcProfiles.ps1 -FxcPath 'C:/Program Files (x86)/Windows Kits/10/bin/10.0.26100.0/x86/fxc.exe'",
+      "artifacts": [
+        {
+          "path": "evidence/fl91-fxc-sdk-26100-x86.json",
+          "sha256": "7212f0fadfd5cd490a63ce883fe261bb0ea7eaf4b810482ab72eba823d2fdefe"
+        }
+      ],
+      "shader_profiles": [
+        "vs_4_0_level_9_1",
+        "ps_4_0_level_9_1"
+      ],
+      "harness_revision": "6876e33894e73f1e436a043d38b6c688fb6d0831"
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "cpu",
+      "requirement_ids": [
+        "DEV-LEVEL"
+      ],
+      "test_id": "arm32-offscreen-imports",
+      "result": "pass",
+      "expected": "ARMNT UWP AppContainer link with host API stubs and dynamic DXGI/FXC",
+      "observed": "Linked ARMNT AppContainer; D3D11CreateDevice and undecorated LoadLibraryExW imports. Five panel-host functions are inert.",
+      "command": "cargo +1.93.1 -Z build-std=core,alloc,std,panic_abort build --offline --target thumbv7a-uwp-windows-msvc; dumpbin /headers /imports",
+      "artifacts": [
+        {
+          "path": "evidence/arm32-uwp-link-stubbed.log",
+          "sha256": "7dae6ddacd32deedb2ca72da7dbe0f01b7bcd555d7c89816115c4885695c8d59"
+        }
+      ]
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_bc_mips",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.52s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_bc_mips-1eee887c950d9ecc.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_bc_mips-x64-candidate.log",
+          "sha256": "a26b4b0f419f34ad45fed992377985ea2bd0cab7361edc454d492a17348a6df0"
+        }
+      ],
+      "binary_sha256": "f27055d1c59d5e277d399c92fd3b4093f202d7ec48e9908a7007c00875e68797",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_bc_partial_init",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_bc_partial_init-1e22cdb8a20bffa5.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_bc_partial_init-x64-candidate.log",
+          "sha256": "72bfe9a3ce07fa23251eb2db9271d6bec4c930194c8c289066e7e681410dc7bd"
+        }
+      ],
+      "binary_sha256": "aee037dff01e776e72176d2df4079ae93c167f991f2f8acbe1d83c9ebfeb61da",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_bc_subset",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_bc_subset-a50441a28fa8f937.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_bc_subset-x64-candidate.log",
+          "sha256": "b332b84fe700a64c6e2f9a5ccf5add38c37da31ea01340290bf1076618b7c905"
+        }
+      ],
+      "binary_sha256": "51175acba819e37fff0b82290c150471a3a11e0dcbfc556147946408b8432b30",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_determinant",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_determinant-e37de4c4087919ef.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_determinant-x64-candidate.log",
+          "sha256": "a687d1e7e6b52dfd7888093c70dd5e77b90dcca2112ebef5e0683038353874ea"
+        }
+      ],
+      "binary_sha256": "7234fb060fe3aaa7574a140d3d2bc7eac5035e12499cf72667b73af6398f0696",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_fixture",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_fixture-73bddb66e612d79b.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_fixture-x64-candidate.log",
+          "sha256": "8fc2d39f5147ce116235b310fd0ccd2fe3173fe54a77bf86b778d759a32830d9"
+        }
+      ],
+      "binary_sha256": "36c247b8ab06b19af6dbd2e5f4915bb1531c742a142cfb4501d89d7b91d9eab3",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_fl91_fragment_uniform_array",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_fl91_fragment_uniform_array-1ff76ce979626510.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_fl91_fragment_uniform_array-x64-candidate.log",
+          "sha256": "0aac48b19aec660770e6172539809e3288065eaef1ed3fbc50664d8701a9c0c5"
+        }
+      ],
+      "binary_sha256": "d8a4c198ea12dc2a3f21e93179ae0683c8ba92c9b09194dfa71f279eb40729a6",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_fl91_math",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_fl91_math-01a6b3cf8687ea18.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_fl91_math-x64-candidate.log",
+          "sha256": "2c93017bff64bf31fa43dc95f9bff743b1fb92c91911fd3ad82defd7e362649d"
+        }
+      ],
+      "binary_sha256": "9b490d3507fa070fb20267053c3266edcbeaa08cfef249f93e4372a46d6c14c5",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_fl91_matrix_component_store",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.35s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_fl91_matrix_component_store-c830d39a1288b3e4.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_fl91_matrix_component_store-x64-candidate.log",
+          "sha256": "ac0f5752d93ad063fc9a863cb279d79a85228235bc1518b77ec1f34be8532b1f"
+        }
+      ],
+      "binary_sha256": "15168d5e1f72d1f7a40bf6670ec89af8d4cd2a2de04af53760ae17506fb6e7f9",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_fl91_sample_bias_offset",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_fl91_sample_bias_offset-8575f8dfc1986b91.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_fl91_sample_bias_offset-x64-candidate.log",
+          "sha256": "6935423da18c998e27cae7ae749cde4872c9d2dc56f63f3d158e5fa73adc5487"
+        }
+      ],
+      "binary_sha256": "4b768472f54f44dffe7ffa8da64aaa1ce90a93a6a868510bb71f9854d3ead7ba",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_fl91_scene",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_fl91_scene-b66542bade976b83.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_fl91_scene-x64-candidate.log",
+          "sha256": "a65186d8a2007488d8eb37e1d4d9e61bdb795ba0aec9c743c2f8a548a0d91bdf"
+        }
+      ],
+      "binary_sha256": "3757034cf8a52b2920864c61e873e25be1ecab729c667b97b3931aba33b54017",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "DEV-CUBE-MAX",
+        "DEV-TEX3D-MAX"
+      ],
+      "test_id": "x64-dx11_fl91_texture_limits",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.44s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_fl91_texture_limits-a13ffaaa54f0d4a6.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_fl91_texture_limits-x64-candidate.log",
+          "sha256": "81c03fb51cd0b6743837d9804f8f18d945e8f1a1a23cb454697fab92c410a2bc"
+        }
+      ],
+      "binary_sha256": "7efc5aa2fa4afda71ff849952bb195e624685ea3d0d01d185708a9382c0c5a3c",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_fl91_texture_load_dynamic",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_fl91_texture_load_dynamic-0f1bb22589c94930.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_fl91_texture_load_dynamic-x64-candidate.log",
+          "sha256": "d5f979ae2869999fb2dfeb63bcc35a6de7a34c7c015ef331bd7f46d891c47b03"
+        }
+      ],
+      "binary_sha256": "1baf2275463f92928436b6d696be8f9de177040e6ebbbd450bea9c24815d9764",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_index_ranges",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.33s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_index_ranges-5e2a25007828e641.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_index_ranges-x64-candidate.log",
+          "sha256": "323ef051df04c024f304e676474553ed6263afbfb9ed60641d2649bc48e3b264"
+        }
+      ],
+      "binary_sha256": "27e19f6a10b0f0aaa34596569a6f1e775eee0d2348cac1a84126e28e44b01ba1",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_invariant_position",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.36s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_invariant_position-40f8f5e61dc1b861.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_invariant_position-x64-candidate.log",
+          "sha256": "7c086f9d3834772599b63f2d0f5452ef3887df2ed2a09517431036532eeb6553"
+        }
+      ],
+      "binary_sha256": "d3bbed28cc2627117788d1801c1673e85324cda41322e27bc49a42e200adc592",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "DEV-LEVEL",
+        "SH-INTER-STAGE",
+        "WGPU-TEXTURE-3D-RGBA8-SRGB",
+        "WGPU-RENDER-PASS-LIFECYCLE"
+      ],
+      "test_id": "x64-dx11_public",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 178 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 31.45s; 4 logged subcase skips",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_public-0b8a24bd95fa9fc2.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_public-x64-candidate.log",
+          "sha256": "cb2a48359281a4d45709b2f46e6891999f2cfa1f043d66b3d6a75b625615a2e8"
+        }
+      ],
+      "binary_sha256": "70c5004985aa49d332e9db56c05a94b9fd3f7b9a85c63ac1715cc4e6e2a53b77",
+      "logged_subcase_skips": 4,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_sample_bias_validation",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_sample_bias_validation-219c0a4bd08d1dd9.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_sample_bias_validation-x64-candidate.log",
+          "sha256": "6294f0c2daeded7719b2a8d399f6a7fa7055271237529d0eae1062f597c2ec5c"
+        }
+      ],
+      "binary_sha256": "8252b01825937b054c6e76700f2b9ec08f53a5148c5b7a9649f77669b52330b5",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-dx11_snorm_copy",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.48s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_snorm_copy-ce1147fd0d7a4c44.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_snorm_copy-x64-candidate.log",
+          "sha256": "3f622f999960871ee9f9680d5be43f039e6e14de3ed187100f25e7d64853b1ad"
+        }
+      ],
+      "binary_sha256": "0fed1960a33c6bb439fe4fc740e6b4490832ff99a85b3a0d3c38a0fcc36a2017",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "PRESENT-CREATE"
+      ],
+      "test_id": "x64-dx11_surface_copy",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_surface_copy-3d1273d660249df7.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_surface_copy-x64-candidate.log",
+          "sha256": "19bd56777160e7bb15c1948ba47a76aecec8520cd7ea1ef42ac58e4812fd5f83"
+        }
+      ],
+      "binary_sha256": "925bae49e0e5444587fe8473d8100da3672dfa364cb816f6fb6aa18a3d6f4538",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "PRESENT-LOSS"
+      ],
+      "test_id": "x64-dx11_surface_error_fixture",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 5 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.24s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\dx11_surface_error_fixture-a52037d8196158f4.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_surface_error_fixture-x64-candidate.log",
+          "sha256": "3955c6abe9b6f2e645e7f15b60358d6965327240f15226b6b7d3279084782058"
+        }
+      ],
+      "binary_sha256": "dd1444f07f0424c7cc3ad4de7c820d5784551e4de182b649b2a4f81d80924bc2",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-hal-dx11",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 556 passed; 0 failed; 0 ignored; 0 measured; 2 filtered out; finished in 94.27s; 7 logged subcase skips",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\wgpu_hal-02b2410fee4f9e71.exe dx11:: --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/hal-dx11-x64-candidate.log",
+          "sha256": "c438d9559c7f4937802d6f862e770f856ddd496d1eeeac2d8cccce22709c41ee"
+        }
+      ],
+      "binary_sha256": "a012f52c9062aa169a674a266a6e28f986a6595c40f9d4462d476d465b2b23d9",
+      "logged_subcase_skips": 7,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-core",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 156 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 8.10s; 1 logged subcase skips",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\wgpu_core-b38ea6fdedae6be1.exe  --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/core-x64-candidate.log",
+          "sha256": "8c39553235c9ef768229a3c2723a74dbb32c1650756ceff012b6c08384381020"
+        }
+      ],
+      "binary_sha256": "ee89e7c973d9f930412e5edb4752133399fb70b62aade4a2216aa8cb3ae48b6e",
+      "logged_subcase_skips": 1,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "cpu",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-types",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "test result: ok. 120 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\deps\\wgpu_types-1ade8593ccf9cbb2.exe  --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/types-x64-candidate.log",
+          "sha256": "a6c5afb498a2af19beba3b6a3d003fa3b7d82411c8f162cf06def20c4ac96c97"
+        }
+      ],
+      "binary_sha256": "36d080f02129baf0f87ce302d5cc1caacec57638183426f3d7db7f6f006a1eea",
+      "logged_subcase_skips": 0
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x64-offscreen",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "PASS: public D3D11 FL9_1 textured indexed cube; pixels red=112, green=277, blue_background=635; 1024 total",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\examples\\dx11_fl91_offscreen.exe",
+      "artifacts": [
+        {
+          "path": "evidence/offscreen-x64-candidate.log",
+          "sha256": "bc9c62b2fd479cd04114643035ced011a293fffe7131040f6f07453885df04ec"
+        }
+      ],
+      "binary_sha256": "4c40be8d6d20193c829236244d4f0f0bc6a4469d72467124af84b02a04873d8d",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "PRESENT-CREATE",
+        "PRESENT-RECREATE"
+      ],
+      "test_id": "x64-hwnd-resize",
+      "result": "pass",
+      "expected": "Suite completes with no failed functions",
+      "observed": "Safe-surface smoke completed after 90 frames.",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target\\debug\\examples\\dx11_fl91_winit.exe --resize-once --frames=90",
+      "artifacts": [
+        {
+          "path": "evidence/hwnd-resize-x64-candidate.log",
+          "sha256": "1777d5e0c05ff113bdb0dc64bb23b1f015565e431d9c47d2dd5b6dea8ad73196"
+        }
+      ],
+      "binary_sha256": "e79d907ecf8b506f12edbbf6a310b1d20798cd96ade93960358a10fe0f3378e8",
+      "logged_subcase_skips": 0,
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      }
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x86-single-process-pre-volume-copy-fix",
+      "result": "fail",
+      "expected": "A single x86 process completes the public suite",
+      "observed": "Stopped after five minutes with no log progress after the RGB565 copy/readback case. Targeted retries succeeded.",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target\\i686-pc-windows-msvc\\debug\\deps\\dx11_public-eb5e2333a8413fbc.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_public-x86-candidate.log",
+          "sha256": "b1e53cad4365e341ad65ff017f50e97fb3b9895f0a185bf0506b0991995faea9"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x86",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x86",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "8645ed139ae07ad69cfade31bc4095dc2339def6a137c47c6a97b5f8c47c1f69",
+      "source_note": "Execution preceded the scoped linear/sRGB volume-copy fix"
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x86-public-segment-1",
+      "result": "pass",
+      "expected": "Run 24 named x86 public tests",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 4.30s",
+      "command": "dx11_public-eb5e2333a8413fbc.exe --exact --test-threads=1 --nocapture experimental_dx11_is_not_enabled_by_default public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91 public_dx11_api_renders_offscreen_at_fl91 public_dx11_async_write_map_updates_nonzero_slice_at_fl91 public_dx11_bc1_bc2_bc3_linear_filtering_at_fl91 public_dx11_bgra8_3d_upload_copy_sampling_at_fl91 public_dx11_bgra8_unorm_blending_matches_reported_support_at_fl91 public_dx11_bgra_texture_load_emulation_at_fl91 public_dx11_blending_and_downlevel_rejections_at_fl91 public_dx11_blends_query_supported_rgb565_multisample_targets_at_fl91 public_dx11_buffer_destroy_preserves_live_mapped_views public_dx11_buffer_handles_survive_until_submission_at_fl91 public_dx11_byte_aligned_vertex_attribute_offset_at_fl91 public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91 public_dx11_color_write_masks_preserve_disabled_channels_at_fl91 public_dx11_cube_texture_sampling_at_fl91 public_dx11_d16_depth_attachment_at_fl91 public_dx11_d24s8_load_clear_discard_transitions_at_fl91 public_dx11_d24s8_stencil_operations_all_branches_at_fl91 public_dx11_depth24plus_constant_depth_bias_at_fl91 public_dx11_depth_never_remaps_stencil_depth_fail_replace_at_fl91 public_dx11_depth_only_render_bundle_executes_at_fl91 public_dx11_depthless_pass_ignores_prior_depth_attachment public_dx11_direct_vertex_uniform_array_indexing_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/x86-final-group-1.stdout.log",
+          "sha256": "eacd96941df277726ae7ffffb34f3f21b79ba0aae4e2cc1f4176d2fb558edc86"
+        },
+        {
+          "path": "evidence/x86-final-group-1.stderr.log",
+          "sha256": "640ebc0f2dde8cc9671c9f18fab3a9e241ab28268bbcca580903fffe1f1f9520"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x86",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x86",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "92ff263d80c03634673f094efc0605e414afae9b6369ce4b8f7aca408dfdc633",
+      "logged_subcase_skips": 1
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x86-public-segment-2",
+      "result": "pass",
+      "expected": "Run 24 named x86 public tests",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 4.12s",
+      "command": "dx11_public-eb5e2333a8413fbc.exe --exact --test-threads=1 --nocapture public_dx11_discarded_color_is_initialized_before_load_at_fl91 public_dx11_discarded_color_is_initialized_before_read_at_fl91 public_dx11_discarded_color_is_initialized_before_sampling_at_fl91 public_dx11_discarded_texture_is_zero_before_readback_at_fl91 public_dx11_dont_care_load_overwrite_at_fl91 public_dx11_eight_sampled_textures_at_fl91 public_dx11_empty_immediate_write_requires_feature_at_fl91 public_dx11_empty_render_bundle_resets_pass_state_at_fl91 public_dx11_enforces_fl91_aggregate_uniform_constants public_dx11_enforces_fl91_sampled_relationship_limit_per_entry_point public_dx11_enforces_query_type_feature_gates_at_fl91 public_dx11_executes_combined_texture_format_usages_at_fl91 public_dx11_fl91_combined_default_depth_views_support_their_roles public_dx11_fl91_combined_rgba8_view_transitions_from_attachment_to_sampling public_dx11_fl91_optional_float16_vertex_input public_dx11_format_usage_projection_matches_core_creation_at_fl91 public_dx11_fractional_viewport_render_bundle_remaps_at_fl91 public_dx11_fragment_3d_texture_load_at_fl91 public_dx11_fragment_8bit_snorm_texture_load_emulation_at_fl91 public_dx11_fragment_depth_controls_depth_test_at_fl91 public_dx11_fragment_discard_preserves_color_and_depth_at_fl91 public_dx11_fragment_float_select_executes_at_fl91 public_dx11_fragment_interpolation_profile_boundaries_at_fl91 public_dx11_fragment_rg16_snorm_texture_load_emulation_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/x86-final-group-2.stdout.log",
+          "sha256": "cd6620d06f28728b2458bae969a03530ca7800a11412f3e40aa7b163b770e3e4"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x86",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x86",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "92ff263d80c03634673f094efc0605e414afae9b6369ce4b8f7aca408dfdc633",
+      "logged_subcase_skips": 1
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x86-public-segment-3",
+      "result": "pass",
+      "expected": "Run 24 named x86 public tests",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 3.46s",
+      "command": "dx11_public-eb5e2333a8413fbc.exe --exact --test-threads=1 --nocapture public_dx11_fragment_texture_dimensions_3d_at_fl91 public_dx11_fragment_texture_dimensions_3d_constant_mip_at_fl91 public_dx11_fragment_texture_dimensions_3d_helper_at_fl91 public_dx11_fragment_texture_dimensions_3d_helper_nonzero_group_at_fl91 public_dx11_fragment_texture_dimensions_3d_helper_split_sampler_group_at_fl91 public_dx11_fragment_texture_dimensions_3d_nonzero_group_at_fl91 public_dx11_fragment_texture_dimensions_3d_split_sampler_group_at_fl91 public_dx11_fragment_texture_dimensions_and_sample_at_fl91 public_dx11_fragment_texture_dimensions_and_sample_split_groups_at_fl91 public_dx11_fragment_texture_dimensions_constant_mip_at_fl91 public_dx11_fragment_texture_dimensions_cube_at_fl91 public_dx11_fragment_texture_dimensions_cube_nonzero_group_at_fl91 public_dx11_fragment_texture_dimensions_emulation_at_fl91 public_dx11_fragment_texture_dimensions_helper_and_sample_at_fl91 public_dx11_fragment_texture_dimensions_helper_and_sample_split_groups_at_fl91 public_dx11_fragment_texture_dimensions_helper_nonzero_group_at_fl91 public_dx11_fragment_texture_dimensions_nonzero_group_at_fl91 public_dx11_fragment_texture_dimensions_sample_with_uniform_at_fl91 public_dx11_fragment_texture_gather_emulation_at_fl91 public_dx11_fragment_texture_load_emulation_at_fl91 public_dx11_fragment_texture_load_nonzero_group_at_fl91 public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91 public_dx11_fragment_texture_num_levels_emulation_at_fl91 public_dx11_fragment_texture_num_levels_selected_helper_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/x86-final-group-3.stdout.log",
+          "sha256": "82ed0457b86a6fc0c4666b82a76d447db7ff6dc6225da8d7eb3f39c8aabfd134"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x86",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x86",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "92ff263d80c03634673f094efc0605e414afae9b6369ce4b8f7aca408dfdc633",
+      "logged_subcase_skips": 0
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x86-public-segment-4",
+      "result": "pass",
+      "expected": "Run 24 named x86 public tests",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 2.99s",
+      "command": "dx11_public-eb5e2333a8413fbc.exe --exact --test-threads=1 --nocapture public_dx11_front_face_and_backface_culling_at_fl91 public_dx11_hwnd_surface_presents_on_its_window_thread public_dx11_indexed_line_strip_restart_render_bundle_at_fl91 public_dx11_indexed_primitives_without_vertex_rate_inputs_at_fl91 public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91 public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91 public_dx11_indexed_zero_stride_negative_base_vertex_at_fl91 public_dx11_instance_index_nonindexed_and_indexed_draws_at_fl91 public_dx11_instance_indexed_matrix_uniform_array_at_fl91 public_dx11_instance_rate_vertex_streams_at_fl91 public_dx11_integer_and_snorm_vertex_formats_render_at_fl91 public_dx11_inter_stage_varying_limit_at_fl91 public_dx11_line_list_restores_user_vertex_stream_at_fl91 public_dx11_map_nonzero_slice_after_gpu_write_preserves_neighbors_at_fl91 public_dx11_multiple_queue_writes_preserve_disjoint_ranges_at_fl91 public_dx11_multisample_blend_write_mask_resolve_at_fl91 public_dx11_new_color_is_initialized_before_load_at_fl91 public_dx11_nonzero_group_sparse_uniform_renders_at_fl91 public_dx11_odd_sized_uniform_binding_renders_at_fl91 public_dx11_outputless_fragment_depth_only_pass_at_fl91 public_dx11_outputless_fragment_depth_stencil_pass_at_fl91 public_dx11_partial_texture_transfer_roundtrip_at_fl91 public_dx11_query_gated_fl91_comparison_border_sampling public_dx11_query_gated_fl91_comparison_border_white_sampling",
+      "artifacts": [
+        {
+          "path": "evidence/x86-final-group-4.stdout.log",
+          "sha256": "1a5d9b54140a9ac3da417ae8f13fcca401fe22645b56a1bacc8ff77451bd1b51"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x86",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x86",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "92ff263d80c03634673f094efc0605e414afae9b6369ce4b8f7aca408dfdc633",
+      "logged_subcase_skips": 0
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x86-public-segment-5",
+      "result": "pass",
+      "expected": "Run 24 named x86 public tests",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 4.63s",
+      "command": "dx11_public-eb5e2333a8413fbc.exe --exact --test-threads=1 --nocapture public_dx11_query_gated_fl91_comparison_level_sample_offset public_dx11_query_gated_fl91_comparison_sample_offset public_dx11_query_gated_fl91_comparison_sample_offset_split_groups public_dx11_query_gated_fl91_d16_depth_comparison_sampling public_dx11_query_gated_fl91_d24s8_depth_comparison_sampling public_dx11_query_gated_fl91_depth24plus_comparison_sampling public_dx11_query_gated_fl91_depth_comparison_level_zero public_dx11_query_gated_npot_mip_chain_at_fl91 public_dx11_query_gated_rg8_3d_upload_copy_and_readback_at_fl91 public_dx11_query_gated_wireframe_at_fl91 public_dx11_r8_3d_upload_copy_and_readback_at_fl91 public_dx11_r8_multimip_texture_copy_at_fl91 public_dx11_r8_rg8_rgb565_copy_and_readback_at_fl91 public_dx11_r8_rg8_rgb565_render_attachments_at_fl91 public_dx11_r8_sampled_mip_chain_at_fl91 public_dx11_r8_sampled_upload_renders_at_fl91 public_dx11_read_only_depth_render_bundle_at_fl91 public_dx11_read_only_stencil_render_bundle_at_fl91 public_dx11_rejects_compute_pipelines_at_fl91 public_dx11_rejects_fragment_depth_without_color_target_0_at_fl91 public_dx11_rejects_fragment_sample_mask_io_at_fl91 public_dx11_rejects_indirect_buffers_at_fl91 public_dx11_rejects_mutable_format_views_at_fl91 public_dx11_rejects_sample_index_without_multisampled_shading",
+      "artifacts": [
+        {
+          "path": "evidence/x86-final-group-5.stdout.log",
+          "sha256": "278cdc6f52dd3185fef47a1700f641b5d0bf8f74d582f793c18ee5cf5f93df61"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x86",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x86",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "92ff263d80c03634673f094efc0605e414afae9b6369ce4b8f7aca408dfdc633",
+      "logged_subcase_skips": 1
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x86-public-segment-6",
+      "result": "pass",
+      "expected": "Run 24 named x86 public tests",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 3.84s",
+      "command": "dx11_public-eb5e2333a8413fbc.exe --exact --test-threads=1 --nocapture public_dx11_rejects_unavailable_primitive_index_feature public_dx11_rejects_unimplemented_hal_features_at_fl91 public_dx11_render_bundle_depth_attachment_at_fl91 public_dx11_render_bundle_dynamic_uniform_offsets_at_fl91 public_dx11_render_bundle_executes_at_fl91 public_dx11_render_bundle_pipeline_layout_transition_at_fl91 public_dx11_render_bundle_preserves_pass_blend_and_scissor_state_at_fl91 public_dx11_render_bundle_preserves_pass_stencil_reference_at_fl91 public_dx11_render_bundle_transitions_multiple_bind_groups_at_fl91 public_dx11_repeat_sampler_limit_at_fl91 public_dx11_resolves_four_sample_rgba8_at_fl91 public_dx11_resolves_optional_fl91_sample_counts public_dx11_resolves_query_supported_rgb565_samples_at_fl91 public_dx11_resolves_supported_bgra8_sample_counts_at_fl91 public_dx11_rg16_snorm_mip_chain_at_fl91 public_dx11_rg16_snorm_mip_copy_and_readback_at_fl91 public_dx11_rg8_snorm_mip_chain_at_fl91 public_dx11_rg8_snorm_shadow_copy_and_readback_at_fl91 public_dx11_rg8_unorm_mip_chain_at_fl91 public_dx11_rgb565_sampled_upload_at_fl91 public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91 public_dx11_rgba8_snorm_mip_chain_at_fl91 public_dx11_rgba8_srgb_3d_upload_copy_sampling_at_fl91 public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/x86-final-group-6.stdout.log",
+          "sha256": "4f5bfab38f24d36420067fd54d5af93b301b992deb6eaece0af8af7426680048"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x86",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x86",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "92ff263d80c03634673f094efc0605e414afae9b6369ce4b8f7aca408dfdc633",
+      "logged_subcase_skips": 1
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x86-public-segment-7",
+      "result": "pass",
+      "expected": "Run 24 named x86 public tests",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 2.84s",
+      "command": "dx11_public-eb5e2333a8413fbc.exe --exact --test-threads=1 --nocapture public_dx11_sampled_mip_chain_at_fl91 public_dx11_scissor_and_viewport_validation_at_fl91 public_dx11_snorm_sampled_uploads_at_fl91 public_dx11_sparse_multi_texture_sampling_at_fl91 public_dx11_splits_nonindexed_line_list_at_fl91_vertex_limit public_dx11_splits_point_and_triangle_draws_at_fl91_limits public_dx11_srgb_mip_chain_sampling_at_fl91 public_dx11_srgb_texture_copies_preserve_bits_at_fl91 public_dx11_srgb_texture_sampling_and_rendering public_dx11_stencil_replace_and_compare_at_fl91 public_dx11_texture_3d_cpu_shadow_readback_at_fl91 public_dx11_texture_3d_upload_and_sampling_at_fl91 public_dx11_texture_dimension_2d_boundary_at_fl91 public_dx11_texture_load_and_dimensions_share_one_fl91_texture public_dx11_texture_load_dimensions_with_uniform_at_fl91 public_dx11_texture_references_survive_until_submission_at_fl91 public_dx11_texture_sample_base_clamp_to_edge_at_fl91 public_dx11_textured_depth_test_at_fl91 public_dx11_timestamp_queries_are_not_advertised_at_fl91 public_dx11_transient_attachments_at_fl91 public_dx11_uniform_gpu_updates_are_ordered_between_draws_at_fl91 public_dx11_uses_255_vertex_uniform_vectors_with_post_encoding_queue_write_at_fl91 public_dx11_uses_thirteen_uniform_registers_per_stage_at_fl91 public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/x86-final-group-7.stdout.log",
+          "sha256": "51980e93b556117caa6022394f85e776a521dae4a24b6ebf0cd88005cc119c12"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x86",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x86",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "92ff263d80c03634673f094efc0605e414afae9b6369ce4b8f7aca408dfdc633",
+      "logged_subcase_skips": 0
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "x86-public-segment-8",
+      "result": "pass",
+      "expected": "Run 10 named x86 public tests",
+      "observed": "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 168 filtered out; finished in 1.86s",
+      "command": "dx11_public-eb5e2333a8413fbc.exe --exact --test-threads=1 --nocapture public_dx11_vertex_attribute_limit_boundary_at_fl91 public_dx11_vertex_buffer_slot_15_draw_at_fl91 public_dx11_vertex_buffer_stride_limit_boundary_at_fl91 public_dx11_vertex_index_line_list_at_fl91 public_dx11_vertex_index_line_strip_at_fl91 public_dx11_vertex_index_point_list_at_fl91 public_dx11_vertex_index_triangle_list_at_fl91 public_dx11_vertex_index_triangle_strip_at_fl91 public_dx11_vertex_uniform_array_indexing_at_fl91 public_dx11_write_texture_nonzero_offset_padded_rows_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/x86-final-group-8.stdout.log",
+          "sha256": "41468c471d1e93281a69bf6aca76840a787d3f52bb67624a54e4b6ad5dec2296"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x86",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x86",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "92ff263d80c03634673f094efc0605e414afae9b6369ce4b8f7aca408dfdc633",
+      "logged_subcase_skips": 0
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "DEV-CAP-DRIVER",
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "cts-x64-curated-prefix-pre-volume-copy-fix",
+      "result": "fail",
+      "expected": "Curated selectors run with verified FL9_1",
+      "observed": "131 selectors completed, including CTS self-tests; 82 list exclusions; first failure returned NotFound before texture creation",
+      "command": "cts_runner.exe ./tools/run_deno --verbose <selector>, in list order",
+      "artifacts": [
+        {
+          "path": "evidence/cts-x64-prefix.json",
+          "sha256": "415ea61a74ec495d4f12a187163b70bec9eb130b343d7f8dbecde3f624efc538"
+        },
+        {
+          "path": "evidence/cts-x64-prefix-first-failure.log",
+          "sha256": "d33e143d7f17cb2b5fec2d04cf6f4f7df7b756110c99331dd8e714315081beb4"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "source_note": "Runner was built immediately before the scoped volume-copy fix"
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "DEV-CAP-DRIVER",
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "cts-x64-exact-retry",
+      "result": "pass",
+      "expected": "The previously interrupted selector initializes a physical exact FL9_1 device and exercises the texture-size validation",
+      "observed": "See exact retry and hardware selection in the log",
+      "command": "cts_runner.exe ./tools/run_deno --verbose webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"2d\";format=\"bgra8unorm-srgb\";sizeVariant=[{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "artifacts": [
+        {
+          "path": "evidence/cts-x64-retry.log",
+          "sha256": "f781fc5e59a48c05d9f76faea3df783a2f0279226a7b8c0254814aa98ac75f38"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "c3ff4b9f3c61b98709522c26d1bfd0d7b538e4723f58685f8e3d9be3f5224edd"
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "DEV-CUBE-MAX",
+        "DEV-TEX3D-MAX"
+      ],
+      "test_id": "x86-texture-limits",
+      "result": "pass",
+      "expected": "Six 512-square faces and each volume axis at 256 texels with above-limit rejection",
+      "observed": "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.41s",
+      "command": "dx11_fl91_texture_limits-579c6b2d9e8f0cc5.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/dx11_fl91_texture_limits-x86-candidate.log",
+          "sha256": "8efa654a5703d7c4f42b36eda43563e597b6d11492c6934cf6ab540da6a12a6b"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x86",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x86",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "5a99d117737d4a1dd8ccc761256fa4238f55786cb9f757b947e9d2a41d3232ab"
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "surface-arm64-public-segment-1",
+      "result": "pass",
+      "expected": "Run 24 named tests under exact ARM64 FL9_1",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 4.40s",
+      "command": "public-fl91.exe --exact --test-threads=1 --nocapture experimental_dx11_is_not_enabled_by_default public_dx11_accepts_emulated_vertex_and_instance_index_at_fl91 public_dx11_api_renders_offscreen_at_fl91 public_dx11_async_write_map_updates_nonzero_slice_at_fl91 public_dx11_bc1_bc2_bc3_linear_filtering_at_fl91 public_dx11_bgra8_3d_upload_copy_sampling_at_fl91 public_dx11_bgra8_unorm_blending_matches_reported_support_at_fl91 public_dx11_bgra_texture_load_emulation_at_fl91 public_dx11_blending_and_downlevel_rejections_at_fl91 public_dx11_blends_query_supported_rgb565_multisample_targets_at_fl91 public_dx11_buffer_destroy_preserves_live_mapped_views public_dx11_buffer_handles_survive_until_submission_at_fl91 public_dx11_byte_aligned_vertex_attribute_offset_at_fl91 public_dx11_clear_buffer_zeros_only_the_requested_range_at_fl91 public_dx11_color_write_masks_preserve_disabled_channels_at_fl91 public_dx11_cube_texture_sampling_at_fl91 public_dx11_d16_depth_attachment_at_fl91 public_dx11_d24s8_load_clear_discard_transitions_at_fl91 public_dx11_d24s8_stencil_operations_all_branches_at_fl91 public_dx11_depth24plus_constant_depth_bias_at_fl91 public_dx11_depth_never_remaps_stencil_depth_fail_replace_at_fl91 public_dx11_depth_only_render_bundle_executes_at_fl91 public_dx11_depthless_pass_ignores_prior_depth_attachment public_dx11_direct_vertex_uniform_array_indexing_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/surface-public-1.stdout.log",
+          "sha256": "f63c4c119295518f516abcf7967e0018c90245dc0920b2da71fafa0a770ce531"
+        },
+        {
+          "path": "evidence/surface-public-1.stderr.log",
+          "sha256": "22aaa42f8c3fc9a285edf021d6df8ad65af1a2ae8dea84ba459258a918974125"
+        }
+      ],
+      "hardware": {
+        "id": "surface-arm64",
+        "host": "BEN-TABLET",
+        "platform": "Windows / arm64",
+        "os_build": "10.0.26320.0",
+        "adapter": "Qualcomm(R) Adreno(TM) 680 GPU",
+        "vendor_device": "4d4f4351:41333430",
+        "driver": "27.20.2160.0",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "df81a3884c3e0838038153af7f277affea42beeeb02bad6b423c76a861aae239",
+      "logged_subcase_skips": 1
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "surface-arm64-public-segment-2",
+      "result": "pass",
+      "expected": "Run 24 named tests under exact ARM64 FL9_1",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 5.60s",
+      "command": "public-fl91.exe --exact --test-threads=1 --nocapture public_dx11_discarded_color_is_initialized_before_load_at_fl91 public_dx11_discarded_color_is_initialized_before_read_at_fl91 public_dx11_discarded_color_is_initialized_before_sampling_at_fl91 public_dx11_discarded_texture_is_zero_before_readback_at_fl91 public_dx11_dont_care_load_overwrite_at_fl91 public_dx11_eight_sampled_textures_at_fl91 public_dx11_empty_immediate_write_requires_feature_at_fl91 public_dx11_empty_render_bundle_resets_pass_state_at_fl91 public_dx11_enforces_fl91_aggregate_uniform_constants public_dx11_enforces_fl91_sampled_relationship_limit_per_entry_point public_dx11_enforces_query_type_feature_gates_at_fl91 public_dx11_executes_combined_texture_format_usages_at_fl91 public_dx11_fl91_combined_default_depth_views_support_their_roles public_dx11_fl91_combined_rgba8_view_transitions_from_attachment_to_sampling public_dx11_fl91_optional_float16_vertex_input public_dx11_format_usage_projection_matches_core_creation_at_fl91 public_dx11_fractional_viewport_render_bundle_remaps_at_fl91 public_dx11_fragment_3d_texture_load_at_fl91 public_dx11_fragment_8bit_snorm_texture_load_emulation_at_fl91 public_dx11_fragment_depth_controls_depth_test_at_fl91 public_dx11_fragment_discard_preserves_color_and_depth_at_fl91 public_dx11_fragment_float_select_executes_at_fl91 public_dx11_fragment_interpolation_profile_boundaries_at_fl91 public_dx11_fragment_rg16_snorm_texture_load_emulation_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/surface-public-2.stdout.log",
+          "sha256": "8be8151e5fb570b0a0d55d191bf266bc82520372a6e16be133480202dff18bdc"
+        }
+      ],
+      "hardware": {
+        "id": "surface-arm64",
+        "host": "BEN-TABLET",
+        "platform": "Windows / arm64",
+        "os_build": "10.0.26320.0",
+        "adapter": "Qualcomm(R) Adreno(TM) 680 GPU",
+        "vendor_device": "4d4f4351:41333430",
+        "driver": "27.20.2160.0",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "df81a3884c3e0838038153af7f277affea42beeeb02bad6b423c76a861aae239",
+      "logged_subcase_skips": 1
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "surface-arm64-public-segment-3",
+      "result": "pass",
+      "expected": "Run 24 named tests under exact ARM64 FL9_1",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 4.33s",
+      "command": "public-fl91.exe --exact --test-threads=1 --nocapture public_dx11_fragment_texture_dimensions_3d_at_fl91 public_dx11_fragment_texture_dimensions_3d_constant_mip_at_fl91 public_dx11_fragment_texture_dimensions_3d_helper_at_fl91 public_dx11_fragment_texture_dimensions_3d_helper_nonzero_group_at_fl91 public_dx11_fragment_texture_dimensions_3d_helper_split_sampler_group_at_fl91 public_dx11_fragment_texture_dimensions_3d_nonzero_group_at_fl91 public_dx11_fragment_texture_dimensions_3d_split_sampler_group_at_fl91 public_dx11_fragment_texture_dimensions_and_sample_at_fl91 public_dx11_fragment_texture_dimensions_and_sample_split_groups_at_fl91 public_dx11_fragment_texture_dimensions_constant_mip_at_fl91 public_dx11_fragment_texture_dimensions_cube_at_fl91 public_dx11_fragment_texture_dimensions_cube_nonzero_group_at_fl91 public_dx11_fragment_texture_dimensions_emulation_at_fl91 public_dx11_fragment_texture_dimensions_helper_and_sample_at_fl91 public_dx11_fragment_texture_dimensions_helper_and_sample_split_groups_at_fl91 public_dx11_fragment_texture_dimensions_helper_nonzero_group_at_fl91 public_dx11_fragment_texture_dimensions_nonzero_group_at_fl91 public_dx11_fragment_texture_dimensions_sample_with_uniform_at_fl91 public_dx11_fragment_texture_gather_emulation_at_fl91 public_dx11_fragment_texture_load_emulation_at_fl91 public_dx11_fragment_texture_load_nonzero_group_at_fl91 public_dx11_fragment_texture_num_levels_3d_and_cube_at_fl91 public_dx11_fragment_texture_num_levels_emulation_at_fl91 public_dx11_fragment_texture_num_levels_selected_helper_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/surface-public-3.stdout.log",
+          "sha256": "2512fd1cb49bedf726f0cbfcdc0a220cd3b0ab1c1786f6e5fb51460086b088fe"
+        }
+      ],
+      "hardware": {
+        "id": "surface-arm64",
+        "host": "BEN-TABLET",
+        "platform": "Windows / arm64",
+        "os_build": "10.0.26320.0",
+        "adapter": "Qualcomm(R) Adreno(TM) 680 GPU",
+        "vendor_device": "4d4f4351:41333430",
+        "driver": "27.20.2160.0",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "df81a3884c3e0838038153af7f277affea42beeeb02bad6b423c76a861aae239",
+      "logged_subcase_skips": 0
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "surface-arm64-public-segment-4",
+      "result": "fail",
+      "expected": "Run 24 named tests under exact ARM64 FL9_1",
+      "observed": "test result: FAILED. 23 passed; 1 failed; 0 ignored; 0 measured; 154 filtered out; finished in 2.56s",
+      "command": "public-fl91.exe --exact --test-threads=1 --nocapture public_dx11_front_face_and_backface_culling_at_fl91 public_dx11_hwnd_surface_presents_on_its_window_thread public_dx11_indexed_line_strip_restart_render_bundle_at_fl91 public_dx11_indexed_primitives_without_vertex_rate_inputs_at_fl91 public_dx11_indexed_textured_render_bundle_retains_resources_at_fl91 public_dx11_indexed_triangle_strip_restart_render_bundle_at_fl91 public_dx11_indexed_zero_stride_negative_base_vertex_at_fl91 public_dx11_instance_index_nonindexed_and_indexed_draws_at_fl91 public_dx11_instance_indexed_matrix_uniform_array_at_fl91 public_dx11_instance_rate_vertex_streams_at_fl91 public_dx11_integer_and_snorm_vertex_formats_render_at_fl91 public_dx11_inter_stage_varying_limit_at_fl91 public_dx11_line_list_restores_user_vertex_stream_at_fl91 public_dx11_map_nonzero_slice_after_gpu_write_preserves_neighbors_at_fl91 public_dx11_multiple_queue_writes_preserve_disjoint_ranges_at_fl91 public_dx11_multisample_blend_write_mask_resolve_at_fl91 public_dx11_new_color_is_initialized_before_load_at_fl91 public_dx11_nonzero_group_sparse_uniform_renders_at_fl91 public_dx11_odd_sized_uniform_binding_renders_at_fl91 public_dx11_outputless_fragment_depth_only_pass_at_fl91 public_dx11_outputless_fragment_depth_stencil_pass_at_fl91 public_dx11_partial_texture_transfer_roundtrip_at_fl91 public_dx11_query_gated_fl91_comparison_border_sampling public_dx11_query_gated_fl91_comparison_border_white_sampling",
+      "artifacts": [
+        {
+          "path": "evidence/surface-public-4.stdout.log",
+          "sha256": "0e8da5ebe7ce7fb1491e1065c579686d074407eb56c63cdc4538e834ace5f3a1"
+        },
+        {
+          "path": "evidence/surface-public-4.stderr.log",
+          "sha256": "ac4680883c1685e5a4e36984bb02def0b44003ee2eefbade28e5c148191812f6"
+        }
+      ],
+      "hardware": {
+        "id": "surface-arm64",
+        "host": "BEN-TABLET",
+        "platform": "Windows / arm64",
+        "os_build": "10.0.26320.0",
+        "adapter": "Qualcomm(R) Adreno(TM) 680 GPU",
+        "vendor_device": "4d4f4351:41333430",
+        "driver": "27.20.2160.0",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "df81a3884c3e0838038153af7f277affea42beeeb02bad6b423c76a861aae239",
+      "logged_subcase_skips": 0
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "surface-arm64-public-segment-5",
+      "result": "pass",
+      "expected": "Run 24 named tests under exact ARM64 FL9_1",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 2.22s",
+      "command": "public-fl91.exe --exact --test-threads=1 --nocapture public_dx11_query_gated_fl91_comparison_level_sample_offset public_dx11_query_gated_fl91_comparison_sample_offset public_dx11_query_gated_fl91_comparison_sample_offset_split_groups public_dx11_query_gated_fl91_d16_depth_comparison_sampling public_dx11_query_gated_fl91_d24s8_depth_comparison_sampling public_dx11_query_gated_fl91_depth24plus_comparison_sampling public_dx11_query_gated_fl91_depth_comparison_level_zero public_dx11_query_gated_npot_mip_chain_at_fl91 public_dx11_query_gated_rg8_3d_upload_copy_and_readback_at_fl91 public_dx11_query_gated_wireframe_at_fl91 public_dx11_r8_3d_upload_copy_and_readback_at_fl91 public_dx11_r8_multimip_texture_copy_at_fl91 public_dx11_r8_rg8_rgb565_copy_and_readback_at_fl91 public_dx11_r8_rg8_rgb565_render_attachments_at_fl91 public_dx11_r8_sampled_mip_chain_at_fl91 public_dx11_r8_sampled_upload_renders_at_fl91 public_dx11_read_only_depth_render_bundle_at_fl91 public_dx11_read_only_stencil_render_bundle_at_fl91 public_dx11_rejects_compute_pipelines_at_fl91 public_dx11_rejects_fragment_depth_without_color_target_0_at_fl91 public_dx11_rejects_fragment_sample_mask_io_at_fl91 public_dx11_rejects_indirect_buffers_at_fl91 public_dx11_rejects_mutable_format_views_at_fl91 public_dx11_rejects_sample_index_without_multisampled_shading",
+      "artifacts": [
+        {
+          "path": "evidence/surface-public-5.stdout.log",
+          "sha256": "d34b20b4a4a15afeb0a6a9688a72bc6c619148d603e7ad262a77bc8a9e1a0354"
+        }
+      ],
+      "hardware": {
+        "id": "surface-arm64",
+        "host": "BEN-TABLET",
+        "platform": "Windows / arm64",
+        "os_build": "10.0.26320.0",
+        "adapter": "Qualcomm(R) Adreno(TM) 680 GPU",
+        "vendor_device": "4d4f4351:41333430",
+        "driver": "27.20.2160.0",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "df81a3884c3e0838038153af7f277affea42beeeb02bad6b423c76a861aae239",
+      "logged_subcase_skips": 1
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "surface-arm64-public-segment-6",
+      "result": "pass",
+      "expected": "Run 24 named tests under exact ARM64 FL9_1",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 3.35s",
+      "command": "public-fl91.exe --exact --test-threads=1 --nocapture public_dx11_rejects_unavailable_primitive_index_feature public_dx11_rejects_unimplemented_hal_features_at_fl91 public_dx11_render_bundle_depth_attachment_at_fl91 public_dx11_render_bundle_dynamic_uniform_offsets_at_fl91 public_dx11_render_bundle_executes_at_fl91 public_dx11_render_bundle_pipeline_layout_transition_at_fl91 public_dx11_render_bundle_preserves_pass_blend_and_scissor_state_at_fl91 public_dx11_render_bundle_preserves_pass_stencil_reference_at_fl91 public_dx11_render_bundle_transitions_multiple_bind_groups_at_fl91 public_dx11_repeat_sampler_limit_at_fl91 public_dx11_resolves_four_sample_rgba8_at_fl91 public_dx11_resolves_optional_fl91_sample_counts public_dx11_resolves_query_supported_rgb565_samples_at_fl91 public_dx11_resolves_supported_bgra8_sample_counts_at_fl91 public_dx11_rg16_snorm_mip_chain_at_fl91 public_dx11_rg16_snorm_mip_copy_and_readback_at_fl91 public_dx11_rg8_snorm_mip_chain_at_fl91 public_dx11_rg8_snorm_shadow_copy_and_readback_at_fl91 public_dx11_rg8_unorm_mip_chain_at_fl91 public_dx11_rgb565_sampled_upload_at_fl91 public_dx11_rgb5a1_rgba4_gpu_texture_copies_at_fl91 public_dx11_rgba8_snorm_mip_chain_at_fl91 public_dx11_rgba8_srgb_3d_upload_copy_sampling_at_fl91 public_dx11_runs_static_but_rejects_dynamic_shader_loops_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/surface-public-6.stdout.log",
+          "sha256": "5611d722430864a7b4f05d594f7c68e6390736cba29265ddb176f39ea590c979"
+        }
+      ],
+      "hardware": {
+        "id": "surface-arm64",
+        "host": "BEN-TABLET",
+        "platform": "Windows / arm64",
+        "os_build": "10.0.26320.0",
+        "adapter": "Qualcomm(R) Adreno(TM) 680 GPU",
+        "vendor_device": "4d4f4351:41333430",
+        "driver": "27.20.2160.0",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "df81a3884c3e0838038153af7f277affea42beeeb02bad6b423c76a861aae239",
+      "logged_subcase_skips": 1
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "surface-arm64-public-segment-7",
+      "result": "pass",
+      "expected": "Run 24 named tests under exact ARM64 FL9_1",
+      "observed": "test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 4.06s",
+      "command": "public-fl91.exe --exact --test-threads=1 --nocapture public_dx11_sampled_mip_chain_at_fl91 public_dx11_scissor_and_viewport_validation_at_fl91 public_dx11_snorm_sampled_uploads_at_fl91 public_dx11_sparse_multi_texture_sampling_at_fl91 public_dx11_splits_nonindexed_line_list_at_fl91_vertex_limit public_dx11_splits_point_and_triangle_draws_at_fl91_limits public_dx11_srgb_mip_chain_sampling_at_fl91 public_dx11_srgb_texture_copies_preserve_bits_at_fl91 public_dx11_srgb_texture_sampling_and_rendering public_dx11_stencil_replace_and_compare_at_fl91 public_dx11_texture_3d_cpu_shadow_readback_at_fl91 public_dx11_texture_3d_upload_and_sampling_at_fl91 public_dx11_texture_dimension_2d_boundary_at_fl91 public_dx11_texture_load_and_dimensions_share_one_fl91_texture public_dx11_texture_load_dimensions_with_uniform_at_fl91 public_dx11_texture_references_survive_until_submission_at_fl91 public_dx11_texture_sample_base_clamp_to_edge_at_fl91 public_dx11_textured_depth_test_at_fl91 public_dx11_timestamp_queries_are_not_advertised_at_fl91 public_dx11_transient_attachments_at_fl91 public_dx11_uniform_gpu_updates_are_ordered_between_draws_at_fl91 public_dx11_uses_255_vertex_uniform_vectors_with_post_encoding_queue_write_at_fl91 public_dx11_uses_thirteen_uniform_registers_per_stage_at_fl91 public_dx11_uses_twelve_stage_disjoint_dynamic_uniforms_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/surface-public-7.stdout.log",
+          "sha256": "260460919c28c74dcae6e595ca35399bf8003616f526c66fa3de320a9bdd59c8"
+        }
+      ],
+      "hardware": {
+        "id": "surface-arm64",
+        "host": "BEN-TABLET",
+        "platform": "Windows / arm64",
+        "os_build": "10.0.26320.0",
+        "adapter": "Qualcomm(R) Adreno(TM) 680 GPU",
+        "vendor_device": "4d4f4351:41333430",
+        "driver": "27.20.2160.0",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "df81a3884c3e0838038153af7f277affea42beeeb02bad6b423c76a861aae239",
+      "logged_subcase_skips": 0
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "WGPU-PUBLIC-ADAPTER"
+      ],
+      "test_id": "surface-arm64-public-segment-8",
+      "result": "pass",
+      "expected": "Run 10 named tests under exact ARM64 FL9_1",
+      "observed": "test result: ok. 10 passed; 0 failed; 0 ignored; 0 measured; 168 filtered out; finished in 2.01s",
+      "command": "public-fl91.exe --exact --test-threads=1 --nocapture public_dx11_vertex_attribute_limit_boundary_at_fl91 public_dx11_vertex_buffer_slot_15_draw_at_fl91 public_dx11_vertex_buffer_stride_limit_boundary_at_fl91 public_dx11_vertex_index_line_list_at_fl91 public_dx11_vertex_index_line_strip_at_fl91 public_dx11_vertex_index_point_list_at_fl91 public_dx11_vertex_index_triangle_list_at_fl91 public_dx11_vertex_index_triangle_strip_at_fl91 public_dx11_vertex_uniform_array_indexing_at_fl91 public_dx11_write_texture_nonzero_offset_padded_rows_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/surface-public-8.stdout.log",
+          "sha256": "cb62ab4dcbbe425b8e488308bc4a482b896e58901d71eaa5d23d3ce5097f17e5"
+        }
+      ],
+      "hardware": {
+        "id": "surface-arm64",
+        "host": "BEN-TABLET",
+        "platform": "Windows / arm64",
+        "os_build": "10.0.26320.0",
+        "adapter": "Qualcomm(R) Adreno(TM) 680 GPU",
+        "vendor_device": "4d4f4351:41333430",
+        "driver": "27.20.2160.0",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "df81a3884c3e0838038153af7f277affea42beeeb02bad6b423c76a861aae239",
+      "logged_subcase_skips": 0
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "DEV-CUBE-MAX",
+        "DEV-TEX3D-MAX"
+      ],
+      "test_id": "surface-arm64-texture-limits",
+      "result": "pass",
+      "expected": "Six cube-face samples and three volume-axis samples with above-limit rejection",
+      "observed": "test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s",
+      "command": "texture-limits-fl91.exe --test-threads=1 --nocapture",
+      "artifacts": [
+        {
+          "path": "evidence/surface-public-limits.stdout.log",
+          "sha256": "33fc087c4b28e7d24cbeb5952467dec23b153a1c6bc9960e63b0e17e2f19d32a"
+        }
+      ],
+      "hardware": {
+        "id": "surface-arm64",
+        "host": "BEN-TABLET",
+        "platform": "Windows / arm64",
+        "os_build": "10.0.26320.0",
+        "adapter": "Qualcomm(R) Adreno(TM) 680 GPU",
+        "vendor_device": "4d4f4351:41333430",
+        "driver": "27.20.2160.0",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "651551a1e04cdea6babdaca4828b722d5983f1273e0d35ca5c1461bf9cf7fa25"
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "SH-FRAGMENT-LOAD",
+        "WGPU-RENDER-TARGET-BLEND"
+      ],
+      "test_id": "x64-readback-fixture-recheck",
+      "result": "pass",
+      "expected": "Exact 3D tint and R8/RG8/RGB565 color attachment verification away from conversion ties",
+      "observed": "Both corrected tests passed",
+      "command": "dx11_public.exe --exact --test-threads=1 --nocapture public_dx11_r8_rg8_rgb565_render_attachments_at_fl91 public_dx11_fragment_3d_texture_load_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/numeric-fixtures-x64.log",
+          "sha256": "9fe1f1c4dbd92d1cddca3adb10a11a8d06065855b7de5f374856f13197624d39"
+        },
+        {
+          "path": "evidence/numeric-fixtures-x64-build.log",
+          "sha256": "d251c6fe0835f92bf03cdbc4b52c46306cc55ed860016055e6c23196c2c2d9bf"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x64",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x64",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "6b59ec06d6995d47347f65af2f01f7381a9c9a4e13c4a44279eface695c4483a"
+    },
+    {
+      "record_type": "evidence",
+      "tier": "FL9_1",
+      "utc": "2026-11-21T08:13:38.252377Z",
+      "sources": {
+        "wgpu": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+        "horizon_product": "5c26a8060c1cf2dce20ee5707e84699ed0879e5c",
+        "horizon_upstream": "0a875da91dbb0fdcb7ba8c42c11341aa229af51a",
+        "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6"
+      },
+      "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+      "scope": "physical_forced",
+      "requirement_ids": [
+        "SH-FRAGMENT-LOAD",
+        "WGPU-RENDER-TARGET-BLEND"
+      ],
+      "test_id": "x86-readback-fixture-recheck",
+      "result": "pass",
+      "expected": "Exact 3D tint and R8/RG8/RGB565 color attachment verification away from conversion ties",
+      "observed": "Both corrected tests passed",
+      "command": "dx11_public.exe --exact --test-threads=1 --nocapture public_dx11_r8_rg8_rgb565_render_attachments_at_fl91 public_dx11_fragment_3d_texture_load_at_fl91",
+      "artifacts": [
+        {
+          "path": "evidence/numeric-fixtures-x86.log",
+          "sha256": "32de91cc9d1cb8f177af626c30ecba96bb35efd34aba92a1067c284b3aa31ec5"
+        },
+        {
+          "path": "evidence/numeric-fixtures-x86-build.log",
+          "sha256": "75994ddbea790d092bfa977dc8d47e3e49bda1ecc68f706c1df33eeff73416c3"
+        }
+      ],
+      "hardware": {
+        "id": "desktop-x86",
+        "host": "BEN-DESKTOP",
+        "platform": "Windows / x86",
+        "os_build": "10.0.26300.0",
+        "adapter": "NVIDIA GeForce RTX 3090 Ti",
+        "vendor_device": "10de:2203",
+        "driver": "32.0.16.2101",
+        "software": false,
+        "requested_level": "FL9_1",
+        "actual_level": "FL9_1",
+        "max_level": "FL11_1"
+      },
+      "binary_sha256": "958d535a9fadf7e9e839731a37de873cefddb2f0db8142f93cec945074a7f2b6"
+    }
+  ],
+  "native_harness_revision": "6876e33894e73f1e436a043d38b6c688fb6d0831",
+  "cts_continuation": {
+    "completed_selectors": 1554,
+    "last_selector": "webgpu:util,texture,texture_ok:norm:mode=\"colors\";format=\"r8unorm\";*",
+    "last_exit": 0,
+    "artifacts": [
+      {
+        "path": "evidence/cts-x64-continuation.json",
+        "sha256": "d04290490e4c4763162abcc48f296b037e6f9dde407c1a3376df05969baaf99c"
+      }
+    ],
+    "scope": "Exact FL9_1 continuation using the rebuilt candidate and existing CTS curation"
+  },
+  "cts_curated_candidate": {
+    "suite_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+    "list_sha256": "4c0b42ac45af18f805713b79cba55456d29c304a4ef02094c2cb90aa43cdc103",
+    "runnable_selectors": 1686,
+    "completed_selectors": 1686,
+    "failed_selector_attempts": 0,
+    "unrun_selectors": 0,
+    "dx11_list_exclusions": 1197,
+    "case_occurrence_counts_in_transcripts": {
+      "Passed  w/o warnings": 17962,
+      "Passed with warnings": 0,
+      "Skipped": 4720,
+      "Failed": 0
+    },
+    "artifacts": [
+      {
+        "path": "evidence/cts-x64-candidate-prefix.json",
+        "sha256": "7ad16e0a851fbde6d476c4cdb8e399bc8dc22944f8a40276f60f4d01aecdc5d0"
+      },
+      {
+        "path": "evidence/cts-x64-continuation.json",
+        "sha256": "d04290490e4c4763162abcc48f296b037e6f9dde407c1a3376df05969baaf99c"
+      }
+    ]
+  },
+  "legacy_d3d9_capability_capture": {
+    "host": "BEN-DESKTOP",
+    "adapter": "NVIDIA GeForce RTX 3090 Ti",
+    "scope": "Direct3D9Ex GetDeviceCaps(D3DDEVTYPE_HAL) on the modern driver",
+    "command": "cl /nologo /W4 /WX /O2 /MT /std:c++17 /EHsc legacy-d3d9-caps.cpp /Fe:legacy-d3d9-caps.exe /link d3d9.lib; legacy-d3d9-caps.exe",
+    "binary_sha256": "f21e2c8aa5f8313f0c0ef1d5b4c998a21e7ee01c9abaa4f61fcf391fee89ba62",
+    "artifact": {
+      "path": "evidence/legacy-d3d9-caps-x64.log",
+      "sha256": "b5917a7fc220cb543726dae7428889ba04c0d8919f72f8c20bf38b072cf612f4"
+    }
+  },
+  "coverage_matrix": {
+    "path": "contract.csv",
+    "sha256": "64de7d3397d11ecea84e892bae3701ebbdaca4776798ae5a3b4ae44e644c258b"
+  },
+  "surface_public_run": {
+    "receipt": {
+      "path": "evidence/surface-public.json",
+      "sha256": "3cbaeadbc14f0b1499b65104b5d88817ff9c9f47c65acf487b9c4e04fcb9dd8b"
+    },
+    "build": {
+      "path": "evidence/arm64-public-build.log",
+      "sha256": "5679250258af677f4c85667f4922f808758b309eed6faa69093ed6302415ac3c"
+    },
+    "build_command": "cargo +1.93.1 test --locked -j4 --target aarch64-pc-windows-msvc -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public --test dx11_fl91_texture_limits --no-run",
+    "transfer_destinations": [
+      "C:/Users/ben/AppData/Local/Temp/wgpu-fl91-cert-Nov21/public-fl91.exe",
+      "C:/Users/ben/AppData/Local/Temp/wgpu-fl91-cert-Nov21/texture-limits-fl91.exe"
+    ],
+    "fixture_build": {
+      "path": "evidence/numeric-fixtures-arm64-build.log",
+      "sha256": "c1ecef1c45c3965e266f165746aba30a6abde612ea3e6ae7bfbb54f2343c7413"
+    },
+    "fixture_revision": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34",
+    "original_fixture_failures": [
+      {
+        "path": "evidence/surface-public-original-2.stderr.log",
+        "sha256": "318fb4b053c1b922366d01442d48746477d418343f539949279136a752b825af"
+      },
+      {
+        "path": "evidence/surface-public-original-4.stderr.log",
+        "sha256": "ac9c7085e1ef1c0000c1ca82a9104d67143a258e56dff25ce89e0df1f752b47e"
+      },
+      {
+        "path": "evidence/surface-public-original-5.stderr.log",
+        "sha256": "0f1223745e5238b56bb67385c7b6c400e219c6c2886a47e2293eccfd8ccaf684"
+      }
+    ]
+  },
+  "readback_fixture_revision": "9bf6b497bef0c03dcfdc71e5e2bf942752714f34"
+}

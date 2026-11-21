@@ -1,0 +1,662 @@
+{
+  "runner_sha256": "c3ff4b9f3c61b98709522c26d1bfd0d7b538e4723f58685f8e3d9be3f5224edd",
+  "end_before": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"2d\";format=\"bgra8unorm-srgb\";sizeVariant=[{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+  "selector_results": [
+    {
+      "selector": "unittests:*",
+      "exit": 0,
+      "strict_physical": false
+    },
+    {
+      "selector": "webgpu:api,operation,adapter,requestAdapter:requestAdapter_invalid_featureLevel:featureLevel=\" \"",
+      "exit": 0,
+      "strict_physical": false
+    },
+    {
+      "selector": "webgpu:api,operation,adapter,requestAdapter:requestAdapter_invalid_featureLevel:featureLevel=\"\"",
+      "exit": 0,
+      "strict_physical": false
+    },
+    {
+      "selector": "webgpu:api,operation,adapter,requestAdapter:requestAdapter_invalid_featureLevel:featureLevel=\"compatability\"",
+      "exit": 0,
+      "strict_physical": false
+    },
+    {
+      "selector": "webgpu:api,operation,adapter,requestAdapter:requestAdapter_invalid_featureLevel:featureLevel=\"cor\"",
+      "exit": 0,
+      "strict_physical": false
+    },
+    {
+      "selector": "webgpu:api,operation,adapter,requestAdapter:requestAdapter_invalid_featureLevel:featureLevel=\"Core\"",
+      "exit": 0,
+      "strict_physical": false
+    },
+    {
+      "selector": "webgpu:api,operation,buffers,map:mapAsync,read,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,buffers,map:mapAsync,write,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,basic:empty:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,copyBufferToBuffer:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"bgra8unorm\";dstFormat=\"bgra8unorm\";dimension=\"2d\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"bgra8unorm\";dstFormat=\"bgra8unorm-srgb\";dimension=\"2d\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"bgra8unorm-srgb\";dstFormat=\"bgra8unorm\";dimension=\"2d\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"bgra8unorm-srgb\";dstFormat=\"bgra8unorm-srgb\";dimension=\"2d\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"r8unorm\";dstFormat=\"r8unorm\";dimension=\"2d\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"rgba8unorm\";dstFormat=\"rgba8unorm\";dimension=\"2d\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"rgba8unorm\";dstFormat=\"rgba8unorm-srgb\";dimension=\"2d\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"rgba8unorm-srgb\";dstFormat=\"rgba8unorm\";dimension=\"2d\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"rgba8unorm-srgb\";dstFormat=\"rgba8unorm-srgb\";dimension=\"2d\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,render,state_tracking:change_pipeline_before_and_after_vertex_buffer:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_before_non_indexed_draw:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_without_changing_buffer:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,command_buffer,render,state_tracking:set_vertex_buffer_without_changing_buffer:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,device,lost:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,render_pass,transient_attachment:increasing_attachments_count:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,render_pipeline,overrides:basic:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,render_pipeline,overrides:multi_entry_points:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,render_pipeline,overrides:shared_shader_module:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,rendering,basic:clear:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,rendering,basic:fullscreen_quad:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,rendering,color_target_state:blend_constant,setting:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,rendering,color_target_state:blending,formats:format=\"bgra8unorm\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,rendering,color_target_state:blending,formats:format=\"r8unorm\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,rendering,color_target_state:blending,formats:format=\"rg8unorm\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,rendering,color_target_state:blending,formats:format=\"rgba8unorm\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,rendering,depth:depth_compare_func:format=\"depth16unorm\";*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,rendering,depth:depth_compare_func:format=\"depth24plus\";*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,resource_init,buffer:copy_buffer_to_texture:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,shader_module,compilation_info:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,uncapturederror:iff_uncaptured:useOnuncapturederror=false;errorType=\"validation\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,operation,uncapturederror:iff_uncaptured:useOnuncapturederror=true;errorType=\"validation\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,buffer,create:createBuffer_invalid_and_oom,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,buffer,create:limit,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,buffer,create:size,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,buffer,destroy:error_buffer,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,buffer,destroy:twice,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,buffer,destroy:while_mapped,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,features,clip_distances:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,limits,maxBindingsPerBindGroup:validate,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,limits,maxComputeWorkgroupSizeX:validate,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,limits,maxComputeWorkgroupSizeY:validate,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,limits,maxComputeWorkgroupSizeZ:validate,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,limits,maxComputeWorkgroupsPerDimension:validate,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,limits,maxInterStageShaderVariables:createRenderPipeline,at_over:limitTest=\"atDefault\";*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,limits,maxInterStageShaderVariables:createRenderPipeline,at_over:limitTest=\"betweenDefaultAndMaximum\";*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,limits,maxStorageBufferBindingSize:validate,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,limits,maxUniformBufferBindingSize:validate,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,limits,maxVertexBufferArrayStride:validate,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,limits,minStorageBufferOffsetAlignment:validate,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,capability_checks,limits,minUniformBufferOffsetAlignment:validate,*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createBindGroup:texture_must_have_correct_component_type:sampleType=\"float\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createPipelineLayout:bind_group_layouts,device_mismatch:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createPipelineLayout:number_of_bind_group_layouts_exceeds_the_maximum_value:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createSampler:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:depthOrArrayLayers_and_mipLevelCount_for_transient_attachments:*",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:dimension_type_and_format_compatibility:dimension=\"_undef_\";format=\"rgba8unorm\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:dimension_type_and_format_compatibility:dimension=\"2d\";format=\"bgra8unorm\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:dimension_type_and_format_compatibility:dimension=\"2d\";format=\"rgba8unorm\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:dimension_type_and_format_compatibility:dimension=\"3d\";format=\"rgba8unorm\"",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:sample_count,1d_2d_array_3d:dimension=\"1d\";size=[4,1,1];shouldError=true",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:sample_count,1d_2d_array_3d:dimension=\"2d\";size=[4,4,4];shouldError=true",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:sample_count,1d_2d_array_3d:dimension=\"2d\";size=[4,4,6];shouldError=true",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:sample_count,1d_2d_array_3d:dimension=\"3d\";size=[4,4,4];shouldError=true",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"bgra8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"bgra8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"bgra8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"bgra8unorm\";sizeVariant=[{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"bgra8unorm\";sizeVariant=[{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"bgra8unorm\";sizeVariant=[{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"bgra8unorm-srgb\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"bgra8unorm-srgb\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"bgra8unorm-srgb\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"bgra8unorm-srgb\";sizeVariant=[{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"bgra8unorm-srgb\";sizeVariant=[{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"bgra8unorm-srgb\";sizeVariant=[{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"r8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"r8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"r8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"r8unorm\";sizeVariant=[{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"r8unorm\";sizeVariant=[{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"r8unorm\";sizeVariant=[{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rg8snorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rg8snorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rg8snorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rg8snorm\";sizeVariant=[{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rg8snorm\";sizeVariant=[{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rg8snorm\";sizeVariant=[{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rg8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rg8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rg8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rg8unorm\";sizeVariant=[{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rg8unorm\";sizeVariant=[{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rg8unorm\";sizeVariant=[{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8snorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8snorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8snorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8snorm\";sizeVariant=[{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8snorm\";sizeVariant=[{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8snorm\";sizeVariant=[{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8unorm\";sizeVariant=[{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8unorm\";sizeVariant=[{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8unorm\";sizeVariant=[{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8unorm-srgb\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8unorm-srgb\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8unorm-srgb\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8unorm-srgb\";sizeVariant=[{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8unorm-srgb\";sizeVariant=[{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"_undef_\";format=\"rgba8unorm-srgb\";sizeVariant=[{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"2d\";format=\"bgra8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"2d\";format=\"bgra8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"2d\";format=\"bgra8unorm\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"2d\";format=\"bgra8unorm\";sizeVariant=[{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"2d\";format=\"bgra8unorm\";sizeVariant=[{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"2d\";format=\"bgra8unorm\";sizeVariant=[{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"2d\";format=\"bgra8unorm-srgb\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"2d\";format=\"bgra8unorm-srgb\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":0},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"2d\";format=\"bgra8unorm-srgb\";sizeVariant=[{\"mult\":0,\"add\":1},{\"mult\":1,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    },
+    {
+      "selector": "webgpu:api,validation,createTexture:texture_size,2d_texture,uncompressed_format:dimension=\"2d\";format=\"bgra8unorm-srgb\";sizeVariant=[{\"mult\":1,\"add\":-1},{\"mult\":0,\"add\":1},{\"mult\":0,\"add\":1}]",
+      "exit": 0,
+      "strict_physical": true
+    }
+  ],
+  "full_transcript_sha256": "f185360a60dbb80b8759e1d7b9cc2cd15b83e45b3c9347bb47bcf7ab56ba4ce1"
+}

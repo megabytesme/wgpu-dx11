@@ -1,0 +1,198 @@
+{
+  "evidence_type": "FXC compilation and legacy instruction disassembly",
+  "gpu_executed": false,
+  "compiler_path": "C:\\Program Files (x86)\\Windows Kits\\10\\bin\\10.0.26100.0\\x64\\fxc.exe",
+  "compiler_version": "10.0.26100.9457 (WinBuild.160101.0800)",
+  "checks": [
+    {
+      "id": "vertex-instructions-256",
+      "profile": "vs_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 0,
+      "expected_pattern": "// approximately 256 instruction slots used",
+      "observed_assembly": [
+        "// TEXCOORD                 0   xyzw        0     NONE   float   xyzw",
+        "// TEXCOORD                 1   xyzw        1     NONE   float   xyzw",
+        "// approximately 256 instruction slots used"
+      ],
+      "diagnostic": "compilation code save succeeded; see <temp>\\vertex-instructions-256.asm\r\ncompilation object save succeeded; see <temp>\\vertex-instructions-256.cso"
+    },
+    {
+      "id": "vertex-instructions-257",
+      "profile": "vs_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 1,
+      "expected_pattern": "X5615:.*\\(257\\).*256",
+      "observed_assembly": [],
+      "diagnostic": "<temp>\\vertex-instructions-257.hlsl(1,11): error X5615: Compiled shader code uses too many instruction slots (257). Max. allowed by the target (vs_2_0) is 256.\r\n\r\ncompilation failed; no code produced"
+    },
+    {
+      "id": "pixel-arithmetic-64",
+      "profile": "ps_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 0,
+      "expected_pattern": "// approximately 64 instruction slots used",
+      "observed_assembly": [
+        "// TEXCOORD                 0   xyzw        0     NONE   float   xyzw",
+        "// TEXCOORD                 1   xyzw        1     NONE   float   xyzw",
+        "// approximately 64 instruction slots used"
+      ],
+      "diagnostic": "compilation code save succeeded; see <temp>\\pixel-arithmetic-64.asm\r\ncompilation object save succeeded; see <temp>\\pixel-arithmetic-64.cso"
+    },
+    {
+      "id": "pixel-arithmetic-65",
+      "profile": "ps_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 1,
+      "expected_pattern": "X5608:.*\\(65\\).*64",
+      "observed_assembly": [],
+      "diagnostic": "<temp>\\pixel-arithmetic-65.hlsl(33,8): error X5608: Compiled shader code uses too many arithmetic instruction slots (65). Max. allowed by the target (ps_2_0) is 64. Consider increasing optimization level to reduce instruction count.\r\n\r\ncompilation failed; no code produced"
+    },
+    {
+      "id": "pixel-texture-instructions-32",
+      "profile": "ps_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 0,
+      "expected_pattern": "\\(32 texture,",
+      "observed_assembly": [
+        "// TEXCOORD                 0   xy          0     NONE   float   xy",
+        "// TEXCOORD                 1     zw        0     NONE   float     zw",
+        "// TEXCOORD                 2   xy          1     NONE   float   xy",
+        "// TEXCOORD                 3     zw        1     NONE   float     zw",
+        "// approximately 66 instruction slots used (32 texture, 34 arithmetic)"
+      ],
+      "diagnostic": "compilation code save succeeded; see <temp>\\pixel-texture-instructions-32.asm\r\ncompilation object save succeeded; see <temp>\\pixel-texture-instructions-32.cso"
+    },
+    {
+      "id": "pixel-texture-instructions-33",
+      "profile": "ps_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 1,
+      "expected_pattern": "X5233:.*\\(33\\).*32",
+      "observed_assembly": [],
+      "diagnostic": "<temp>\\pixel-texture-instructions-33.hlsl(9,154): error X5233: Compiled shader code has has many operations that use the texture unit (33). Max. allowed by the target (ps_2_0) is 32.\r\n\r\ncompilation failed; no code produced"
+    },
+    {
+      "id": "pixel-dependency-order-three",
+      "profile": "ps_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 0,
+      "expected_pattern": "// approximately 5 instruction slots used \\(4 texture, 1 arithmetic\\)",
+      "observed_assembly": [
+        "// TEXCOORD                 0   xy          0     NONE   float   xy",
+        "// approximately 5 instruction slots used (4 texture, 1 arithmetic)"
+      ],
+      "diagnostic": "compilation code save succeeded; see <temp>\\pixel-dependency-order-three.asm\r\ncompilation object save succeeded; see <temp>\\pixel-dependency-order-three.cso"
+    },
+    {
+      "id": "pixel-dependency-order-four",
+      "profile": "ps_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 1,
+      "expected_pattern": "X5426:",
+      "observed_assembly": [],
+      "diagnostic": "<temp>\\pixel-dependency-order-four.hlsl(8,9): error X5426: Shader uses texture addressing operations in a dependency chain that is too complex for the target shader model (ps_2_0) to handle.  \r\n\r\ncompilation failed; no code produced"
+    },
+    {
+      "id": "vertex-static-loop-one",
+      "profile": "vs_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 0,
+      "expected_pattern": "(?m)^\\s+rep i\\d+\\b",
+      "observed_assembly": [
+        "// TEXCOORD                 0   xyzw        0     NONE   float   xyzw",
+        "// TEXCOORD                 1   xyzw        1     NONE   float   xyzw",
+        "rep i0",
+        "endrep",
+        "// approximately 11 instruction slots used"
+      ],
+      "diagnostic": "compilation code save succeeded; see <temp>\\vertex-static-loop-one.asm\r\ncompilation object save succeeded; see <temp>\\vertex-static-loop-one.cso"
+    },
+    {
+      "id": "vertex-static-loop-two",
+      "profile": "vs_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 1,
+      "expected_pattern": "X3531:",
+      "observed_assembly": [],
+      "diagnostic": "<temp>\\vertex-static-loop-two.hlsl(2,39-60): error X3531: can't unroll loops marked with loop attribute\r\n\r\ncompilation failed; no code produced"
+    },
+    {
+      "id": "vertex-user-clip-planes-six",
+      "profile": "vs_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 0,
+      "expected_pattern": "(?m)^// clip0\\s+cb0\\s+0\\s+6\\s+",
+      "observed_assembly": [
+        "// clip0      cb0             0         6  ( FLT, FLT, FLT, FLT)",
+        "// approximately 2 instruction slots used"
+      ],
+      "diagnostic": "compilation code save succeeded; see <temp>\\vertex-user-clip-planes-six.asm\r\ncompilation object save succeeded; see <temp>\\vertex-user-clip-planes-six.cso"
+    },
+    {
+      "id": "vertex-user-clip-planes-seven",
+      "profile": "vs_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 1,
+      "expected_pattern": "X3554:.*6 parameter\\(s\\) expected, found 7",
+      "observed_assembly": [],
+      "diagnostic": "<temp>\\vertex-user-clip-planes-seven.hlsl(2,1-89): error X3129: warning treated as error\r\n<temp>\\vertex-user-clip-planes-seven.hlsl(2,1-89): error X3554: can't match attribute clipplanes, 6 parameter(s) expected, found 7\r\n<temp>\\vertex-user-clip-planes-seven.hlsl(2,1-89): error X3554: can't match attribute clipplanes, 6 parameter(s) expected, found 7\r\n\r\ncompilation failed; no code produced"
+    },
+    {
+      "id": "pixel-eight-varyings-no-position",
+      "profile": "ps_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 0,
+      "expected_pattern": "(?m)^// TEXCOORD\\s+7\\s+xyzw\\s+7\\s+",
+      "observed_assembly": [
+        "// TEXCOORD                 0   xyzw        0     NONE   float   xyzw",
+        "// TEXCOORD                 1   xyzw        1     NONE   float   xyzw",
+        "// TEXCOORD                 2   xyzw        2     NONE   float   xyzw",
+        "// TEXCOORD                 3   xyzw        3     NONE   float   xyzw",
+        "// TEXCOORD                 4   xyzw        4     NONE   float   xyzw",
+        "// TEXCOORD                 5   xyzw        5     NONE   float   xyzw",
+        "// TEXCOORD                 6   xyzw        6     NONE   float   xyzw",
+        "// TEXCOORD                 7   xyzw        7     NONE   float   xyzw",
+        "// approximately 9 instruction slots used"
+      ],
+      "diagnostic": "compilation code save succeeded; see <temp>\\pixel-eight-varyings-no-position.asm\r\ncompilation object save succeeded; see <temp>\\pixel-eight-varyings-no-position.cso"
+    },
+    {
+      "id": "pixel-seven-varyings-unused-position",
+      "profile": "ps_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 0,
+      "expected_pattern": "(?m)^// SV_Position\\s+0\\s+xyzw\\s+7\\s+",
+      "observed_assembly": [
+        "// TEXCOORD                 0   xyzw        0     NONE   float   xyzw",
+        "// TEXCOORD                 1   xyzw        1     NONE   float   xyzw",
+        "// TEXCOORD                 2   xyzw        2     NONE   float   xyzw",
+        "// TEXCOORD                 3   xyzw        3     NONE   float   xyzw",
+        "// TEXCOORD                 4   xyzw        4     NONE   float   xyzw",
+        "// TEXCOORD                 5   xyzw        5     NONE   float   xyzw",
+        "// TEXCOORD                 6   xyzw        6     NONE   float   xyzw",
+        "// SV_Position              0   xyzw        7      POS   float",
+        "// approximately 8 instruction slots used"
+      ],
+      "diagnostic": "compilation code save succeeded; see <temp>\\pixel-seven-varyings-unused-position.asm\r\ncompilation object save succeeded; see <temp>\\pixel-seven-varyings-unused-position.cso"
+    },
+    {
+      "id": "pixel-eight-varyings-unused-position",
+      "profile": "ps_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 1,
+      "expected_pattern": "X4506:",
+      "observed_assembly": [],
+      "diagnostic": "error X4506: ps_4_0_level_9_1 input limit (8) exceeded, shader uses 9 inputs.\r\n\r\ncompilation failed; no code produced"
+    },
+    {
+      "id": "pixel-seven-varyings-read-position",
+      "profile": "ps_4_0_level_9_1",
+      "outcome": "PASS",
+      "compiler_exit_code": 1,
+      "expected_pattern": "X4502:",
+      "observed_assembly": [],
+      "diagnostic": "<temp>\\pixel-seven-varyings-read-position.hlsl(1,181-188): error X4502: Shader model ps_4_0_level_9_1 doesn't allow reading from position semantics.\r\n\r\ncompilation failed; no code produced"
+    }
+  ]
+}

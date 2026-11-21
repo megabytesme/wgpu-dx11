@@ -1,0 +1,59 @@
+**********************************************************************
+** Visual Studio 2026 Developer Command Prompt vError: Unknown error
+** Copyright (c) 2026 Microsoft Corporation
+**********************************************************************
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\buffer.rs:605:17
+    |
+605 |                 windows::Win32::Foundation::E_OUTOFMEMORY,
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: the lint level is defined here
+   --> wgpu-hal\src\lib.rs:238:5
+    |
+238 |     unused_qualifications
+    |     ^^^^^^^^^^^^^^^^^^^^^
+help: remove the unnecessary path segments
+    |
+605 -                 windows::Win32::Foundation::E_OUTOFMEMORY,
+605 +                 E_OUTOFMEMORY,
+    |
+
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\buffer.rs:615:17
+    |
+615 |                 windows::Win32::Foundation::E_OUTOFMEMORY,
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+615 -                 windows::Win32::Foundation::E_OUTOFMEMORY,
+615 +                 E_OUTOFMEMORY,
+    |
+
+warning: `wgpu-hal` (lib) generated 2 warnings (run `cargo fix --lib -p wgpu-hal` to apply 2 suggestions)
+warning: could not load dep-graph from `\\?\C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\incremental\dx11_public-0nbp934shtifv\s-hod0niuwe7-1dx75sa-working\dep-graph.bin`: The paging file is too small for this operation to complete. (os error 1455)
+
+warning: `wgpu` (test "dx11_public") generated 1 warning
+   Compiling wgpu v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 12.14s
+  Executable unittests src\lib.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\wgpu-3e77b9f3a3f7fab3.exe)
+  Executable tests\dx11_bc_mips.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_bc_mips-1eee887c950d9ecc.exe)
+  Executable tests\dx11_bc_partial_init.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_bc_partial_init-1e22cdb8a20bffa5.exe)
+  Executable tests\dx11_bc_subset.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_bc_subset-a50441a28fa8f937.exe)
+  Executable tests\dx11_determinant.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_determinant-e37de4c4087919ef.exe)
+  Executable tests\dx11_fixture.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_fixture-73bddb66e612d79b.exe)
+  Executable tests\dx11_fl91_fragment_uniform_array.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_fl91_fragment_uniform_array-1ff76ce979626510.exe)
+  Executable tests\dx11_fl91_math.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_fl91_math-01a6b3cf8687ea18.exe)
+  Executable tests\dx11_fl91_matrix_component_store.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_fl91_matrix_component_store-c830d39a1288b3e4.exe)
+  Executable tests\dx11_fl91_sample_bias_offset.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_fl91_sample_bias_offset-8575f8dfc1986b91.exe)
+  Executable tests\dx11_fl91_scene.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_fl91_scene-b66542bade976b83.exe)
+  Executable tests\dx11_fl91_texture_limits.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_fl91_texture_limits-a13ffaaa54f0d4a6.exe)
+  Executable tests\dx11_fl91_texture_load_dynamic.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_fl91_texture_load_dynamic-0f1bb22589c94930.exe)
+  Executable tests\dx11_index_ranges.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_index_ranges-5e2a25007828e641.exe)
+  Executable tests\dx11_invariant_position.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_invariant_position-40f8f5e61dc1b861.exe)
+  Executable tests\dx11_public.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_public-0b8a24bd95fa9fc2.exe)
+  Executable tests\dx11_sample_bias_validation.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_sample_bias_validation-219c0a4bd08d1dd9.exe)
+  Executable tests\dx11_snorm_copy.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_snorm_copy-ce1147fd0d7a4c44.exe)
+  Executable tests\dx11_surface_copy.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_surface_copy-3d1273d660249df7.exe)
+  Executable tests\dx11_surface_error_fixture.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_surface_error_fixture-a52037d8196158f4.exe)

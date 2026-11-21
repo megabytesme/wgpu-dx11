@@ -1,0 +1,4 @@
+
+thread 'public_dx11_buffer_destroy_preserves_live_mapped_views' (67704) panicked at wgpu\src\api\buffer.rs:806:9:
+You cannot unmap a buffer that still has accessible mapped views
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

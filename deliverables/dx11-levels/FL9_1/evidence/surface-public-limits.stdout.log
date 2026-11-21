@@ -1,0 +1,10 @@
+
+running 2 tests
+test public_dx11_cube_dimension_boundary_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: 6/6 Cube dimension-boundary GPU pixels matched
+ok
+test public_dx11_volume_dimension_boundaries_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: 3/3 D3 dimension-boundary GPU pixels matched
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s

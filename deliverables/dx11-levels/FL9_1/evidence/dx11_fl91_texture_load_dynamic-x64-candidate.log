@@ -1,0 +1,12 @@
+
+running 1 test
+test public_dx11_2d_texture_load_uses_varying_coordinates_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; workload=fragment 2D textureLoad with interpolated coordinates and OOB zero
+R8Unorm sampled-upload projection for point-sampled textureLoad: TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | BLENDABLE) }
+Rg8Unorm sampled-upload projection for point-sampled textureLoad: TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(FILTERABLE | BLENDABLE | SINGLE_MIP_ONLY) }
+PASS: dynamic 2D textureLoad mapped 16 coordinates to distinct texels and returned zero for 48 out-of-bounds pixels
+PASS: R8Unorm textureLoad returned normalized red, zero green/blue, opaque alpha and zero for out-of-bounds coordinates across 64 readback pixels
+PASS: Rg8Unorm textureLoad returned normalized red/green, zero blue, opaque alpha and zero for out-of-bounds coordinates across 64 readback pixels
+PASS: Core rejects multi-mip resources, including single-mip subviews, before HAL textureLoad execution
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.34s

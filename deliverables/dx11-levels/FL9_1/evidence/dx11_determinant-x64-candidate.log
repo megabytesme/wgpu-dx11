@@ -1,0 +1,22 @@
+
+running 6 tests
+test public_dx11_mat2_determinant_executes_at_fl91 ... Hardware: case=mat2x2 name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: mat2x2 changed the verified output for both uniform inputs
+ok
+test public_dx11_mat2_determinant_executes_in_vertex_stage_at_fl91 ... Hardware: case=mat2x2 vertex determinant name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: mat2x2 vertex determinant changed the verified output for both uniform inputs
+ok
+test public_dx11_mat3_determinant_executes_at_fl91 ... Hardware: case=mat3x3 name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: mat3x3 changed the verified output for both uniform inputs
+ok
+test public_dx11_mat3_determinant_executes_in_vertex_stage_at_fl91 ... Hardware: case=mat3x3 vertex determinant name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: mat3x3 vertex determinant changed the verified output for both uniform inputs
+ok
+test public_dx11_mat4_determinant_executes_at_fl91 ... Hardware: case=mat4x4 name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: mat4x4 changed the verified output for both uniform inputs
+ok
+test public_dx11_mat4_determinant_executes_in_vertex_stage_at_fl91 ... Hardware: case=mat4x4 vertex determinant name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: mat4x4 vertex determinant changed the verified output for both uniform inputs
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.78s

@@ -1,0 +1,205 @@
+
+running 120 tests
+test backend::dx11_tests::dx11_is_not_enabled_by_default ... ok
+test backend::dx11_tests::dx11_selection_is_distinct_and_parses_both_names ... ok
+test features::tests::check_features_bits ... ok
+test features::tests::check_features_display ... ok
+test features::tests::create_features_from_parts ... ok
+test features::tests::experimental_features_part_of_experimental_mask ... ok
+test features::tests::features_names ... ok
+test limits::tests::alpha_to_coverage_is_a_downlevel_capability ... ok
+test limits::tests::bounded_literal_select_bias_is_a_separate_downlevel_capability ... ok
+test limits::tests::comparison_only_border_addressing_is_a_downlevel_restriction ... ok
+test limits::tests::comparison_sampler_limits_model_partial_support ... ok
+test limits::tests::compliant_flags_include_two_sided_stencil_and_separate_alpha_blend ... ok
+test limits::tests::cube_texture_limits_are_checked_separately_from_2d_limits ... ok
+test limits::tests::depth_bias_with_fragment_depth_is_a_downlevel_capability ... ok
+test limits::tests::downlevel_limits_check_minimum_capabilities ... ok
+test limits::tests::empty_binding_visibility_is_a_downlevel_capability ... ok
+test limits::tests::explicit_texture_sample_level_is_a_downlevel_capability ... ok
+test limits::tests::extra_vertex_texture_capacity_does_not_break_downlevel_compliance ... ok
+test limits::tests::fragment_depth_without_color_target_0_is_a_downlevel_capability ... ok
+test limits::tests::fragment_front_facing_is_a_downlevel_capability ... ok
+test limits::tests::fragment_non_perspective_interpolation_is_a_downlevel_capability ... ok
+test limits::tests::fragment_position_is_a_downlevel_capability ... ok
+test limits::tests::fragment_sample_mask_input_is_a_downlevel_capability ... ok
+test limits::tests::fragment_sample_mask_output_is_a_downlevel_capability ... ok
+test limits::tests::fragment_uniform_array_indexing_is_a_subset_capability ... ok
+test limits::tests::frexp_fraction_only_fragment_is_a_subset_capability ... ok
+test limits::tests::hidden_vertex_index_slot_is_a_subset_capability ... ok
+test limits::tests::legacy_shader_builtins_are_downlevel_capabilities ... ok
+test limits::tests::matrix_inverse_2x2_is_a_narrow_downlevel_capability ... ok
+test limits::tests::matrix_inverse_3x3_is_an_independent_narrow_downlevel_capability ... ok
+test limits::tests::matrix_inverse_is_a_downlevel_shader_capability ... ok
+test limits::tests::matrix_outer_product_is_a_downlevel_shader_capability ... ok
+test limits::tests::multisampled_texture_bindings_are_a_downlevel_capability ... ok
+test limits::tests::multisampled_texture_usage_mask_is_a_downlevel_limit ... ok
+test limits::tests::occlusion_queries_are_required_for_webgpu_compliance ... ok
+test limits::tests::restricted_2d_and_3d_texture_load_limits_are_independent ... ok
+test limits::tests::restricted_3d_and_cube_texture_num_levels_are_independent ... ok
+test limits::tests::restricted_3d_texture_dimensions_is_independent_of_2d_and_general_queries ... ok
+test limits::tests::restricted_cube_texture_dimensions_is_independent_of_other_texture_queries ... ok
+test limits::tests::restricted_level_zero_sampling_is_a_separate_downlevel_capability ... ok
+test limits::tests::restricted_single_mip_sample_grad_is_a_downlevel_limit ... ok
+test limits::tests::restricted_texture_dimensions_do_not_imply_general_texture_queries ... ok
+test limits::tests::restricted_texture_gather_does_not_imply_general_gather ... ok
+test limits::tests::restricted_texture_load_does_not_imply_general_texture_load ... ok
+test limits::tests::restricted_texture_num_levels_is_independent_of_other_texture_queries ... ok
+test limits::tests::sampled_texture_sampler_pairs_are_a_numeric_downlevel_limit ... ok
+test limits::tests::sampled_texture_types_are_downlevel_capabilities ... ok
+test limits::tests::sampler_anisotropy_is_a_numeric_downlevel_limit ... ok
+test limits::tests::sampler_lod_clamp_limit_is_checked_and_affects_compliance ... ok
+test limits::tests::shader_loops_are_a_downlevel_capability ... ok
+test limits::tests::shader_uniform_vector_limits_are_numeric_downlevel_limits ... ok
+test limits::tests::source_alpha_saturated_blend_is_a_downlevel_capability ... ok
+test limits::tests::texture_dimensions_are_downlevel_capabilities ... ok
+test limits::tests::texture_gather_is_a_downlevel_capability ... ok
+test limits::tests::texture_load_is_a_downlevel_capability ... ok
+test limits::tests::texture_query_is_a_downlevel_capability ... ok
+test limits::tests::texture_sample_base_clamp_to_edge_is_a_downlevel_capability ... ok
+test limits::tests::texture_sample_bias_restrictions_are_downlevel_limits ... ok
+test limits::tests::texture_to_buffer_copy_format_mask_is_a_downlevel_limit ... ok
+test limits::tests::texture_to_buffer_copy_layer_limit_is_a_downlevel_limit ... ok
+test limits::tests::three_dimensional_texture_limits_are_checked_as_a_shape_contract ... ok
+test limits::tests::unsupported_fl9_shader_semantics_are_downlevel_capabilities ... ok
+test limits::tests::vertex_builtins_are_downlevel_capabilities ... ok
+test limits::tests::vertex_format_masks_are_subset_capabilities ... ok
+test limits::tests::vertex_index_local_array_indexing_is_a_subset_capability ... ok
+test limits::tests::vertex_index_topology_masks_are_subset_capabilities ... ok
+test limits::tests::vertex_index_vector_indexing_is_a_subset_capability ... ok
+test limits::tests::vertex_matrix_inverse_4x4_is_an_independent_narrow_downlevel_capability ... ok
+test limits::tests::vertex_uniform_array_indexing_is_a_subset_capability ... ok
+test limits::tests::viewport_rectangles_outside_target_is_a_downlevel_capability ... ok
+test limits::tests::with_limits_exhaustive ... ok
+test render::blend_component_tests::alpha_equivalence_projects_color_factors_and_preserves_equations ... ok
+test surface::display_hdr_info_tests::apple_headroom_is_used_directly ... ok
+test surface::display_hdr_info_tests::apple_uses_current_not_potential ... ok
+test surface::display_hdr_info_tests::coarse_hdr_capable_alone_derives_nothing ... ok
+test surface::display_hdr_info_tests::default_is_unknown ... ok
+test surface::display_hdr_info_tests::non_finite_current_falls_through_to_nits ... ok
+test surface::display_hdr_info_tests::sdr_display_collapses_to_unity ... ok
+test surface::display_hdr_info_tests::sdr_display_overrides_panel_nits ... ok
+test surface::display_hdr_info_tests::windows_nits_derive_headroom_only_with_sdr_white ... ok
+test texture::format::tests::has_color_aspect ... ok
+test texture::format::tests::has_depth_aspect ... ok
+test texture::format::tests::has_stencil_aspect ... ok
+test texture::format::tests::is_combined_depth_stencil_format ... ok
+test texture::format::tests::is_depth_stencil_format ... ok
+test texture::format::tests::packed_rgb565_format_metadata_is_consistent ... ok
+test texture::format::tests::packed_rgba_16bit_format_metadata_is_consistent ... ok
+test texture::format::tests::texture_format_deserialize ... ok
+test texture::format::tests::texture_format_serialize ... ok
+test texture::tests::test_max_mips ... ok
+test texture::tests::test_physical_size ... ok
+test transfers::tests::linear_texture_data_1d_copy ... ok
+test transfers::tests::linear_texture_data_2d_3d_compressed_copy ... ok
+test transfers::tests::linear_texture_data_2d_3d_copy ... ok
+test write_only::tests::array_to_slice ... ok
+
+thread 'write_only::tests::cast_elements_alignment_mismatch' (97344) panicked at wgpu-types\src\write_only.rs:1156:21:
+alignment of the new element type must be less than or equal to the alignment of the old element type
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+test write_only::tests::cast_elements_alignment_mismatch - should panic ... ok
+
+thread 'write_only::tests::cast_elements_size_mismatch' (70604) panicked at wgpu-types\src\write_only.rs:1140:21:
+assertion `left == right` failed: sizes of the two element types must be equal
+  left: 1
+ right: 2
+test write_only::tests::cast_elements_size_mismatch - should panic ... ok
+test write_only::tests::const_write ... ok
+test write_only::tests::debug ... ok
+test write_only::tests::default ... ok
+test write_only::tests::double_ended_iterator ... ok
+test write_only::tests::fill_byte_bool ... ok
+test write_only::tests::fill_byte_i8 ... ok
+test write_only::tests::fill_byte_u8 ... ok
+test write_only::tests::fill_nonbyte_u16 ... ok
+test write_only::tests::fill_nonbyte_uninit ... ok
+test write_only::tests::from_mut_for_non_slice ... ok
+test write_only::tests::into_chunks_has_correct_length_and_iterator_iterates ... ok
+test write_only::tests::into_chunks_with_remainder ... ok
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+provided range was outside slice
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+provided range was outside slice
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+provided range was outside slice
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+provided range was outside slice
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+provided range was outside slice
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+provided range was outside slice
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+range bounds must be in numeric range
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+range bounds must be in numeric range
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+provided range was outside slice
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+provided range was outside slice
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+provided range was outside slice
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+provided range was outside slice
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+provided range was outside slice
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+provided range was outside slice
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+range bounds must be in numeric range
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+range bounds must be in numeric range
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+range must not have end > start
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+range must not have end > start
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+range must not have end > start
+
+thread 'write_only::tests::slice_bounds_check_failures' (6004) panicked at wgpu-types\src\write_only.rs:240:13:
+range must not have end > start
+test write_only::tests::slice_bounds_check_failures ... ok
+test write_only::tests::slice_full_range ... ok
+test write_only::tests::split_off_first_and_last_empty ... ok
+test write_only::tests::split_off_first_and_last_success ... ok
+
+thread 'write_only::tests::split_off_interior_range' (113232) panicked at wgpu-types\src\write_only.rs:576:17:
+split_off() requires a one-sided range
+test write_only::tests::split_off_interior_range - should panic ... ok
+test write_only::tests::split_off_out_of_bounds ... ok
+test write_only::tests::split_off_success ... ok
+test write_only::tests::write_iter_to_empty_slice_success ... ok
+
+thread 'write_only::tests::write_iter_to_empty_slice_too_long' (104284) panicked at wgpu-types\src\write_only.rs:294:17:
+iterator given to write_iter() produced more than 0 elements
+test write_only::tests::write_iter_to_empty_slice_too_long - should panic ... ok
+
+thread 'write_only::tests::write_iter_too_long' (111720) panicked at wgpu-types\src\write_only.rs:294:17:
+iterator given to write_iter() produced more than 4 elements
+test write_only::tests::write_iter_too_long - should panic ... ok
+
+thread 'write_only::tests::write_iter_too_short' (116788) panicked at wgpu-types\src\write_only.rs:933:12:
+iterator given to write_iter() produced 3 elements but must produce 4 elements
+test write_only::tests::write_iter_too_short - should panic ... ok
+
+test result: ok. 120 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.02s

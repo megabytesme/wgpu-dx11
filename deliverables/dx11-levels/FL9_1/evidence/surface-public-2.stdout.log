@@ -1,0 +1,114 @@
+
+running 24 tests
+test public_dx11_discarded_color_is_initialized_before_load_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: public FL9_1 render-pass LoadOp::Load after StoreOp::Discard loaded initialized transparent black at all 64 pixels
+ok
+test public_dx11_discarded_color_is_initialized_before_read_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: public FL9_1 StoreOp::Discard followed by copy reinitialized all 64 pixels to transparent black before readback
+ok
+test public_dx11_discarded_color_is_initialized_before_sampling_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: public FL9_1 StoreOp::Discard followed by sampled-view use reinitialized all 64 pixels to transparent black
+ok
+test public_dx11_discarded_texture_is_zero_before_readback_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=discarded texture zero initialization and readback
+PASS: a nonzero discarded RGBA8 render target read back as zero; both padded rows preserved their 0xA5 sentinels
+ok
+test public_dx11_dont_care_load_overwrite_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: public FL9_1 color and depth LoadOp::DontCare; full overwrite produced [255, 0, 0, 255] at all 64 pixels
+ok
+test public_dx11_eight_sampled_textures_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; max sampled textures/stage=8
+PASS: public FL9_1 shader used all eight sampled textures; core rejected texture 9 and all 64 pixels matched [180, 72, 36, 255]
+ok
+test public_dx11_empty_immediate_write_requires_feature_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; workload=reject empty immediate write without IMMEDIATES
+ok
+test public_dx11_empty_render_bundle_resets_pass_state_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: empty-bundle execution reset pipeline, bind-group and vertex-buffer state; explicitly rebinding state rendered all 64 expected pixels
+ok
+test public_dx11_enforces_fl91_aggregate_uniform_constants ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; uniform vectors VS=255 PS=32
+PASS: two sparse fragment uniforms used 32 vectors; 33 were rejected; 64/64 pixels matched [191, 0, 0, 255]
+ok
+test public_dx11_enforces_fl91_sampled_relationship_limit_per_entry_point ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; sampled_pairs_per_stage=16
+PASS: 16 selected fragment sampling relationships compiled; a one-pair sibling entry point remained valid; 17 relationships were rejected by core before HAL
+ok
+test public_dx11_enforces_query_type_feature_gates_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false occlusion_queries=false
+PASS: public core requires explicit timestamp features and rejects occlusion and pipeline-statistics query sets; the separate strict timestamp test verifies execution
+ok
+test public_dx11_executes_combined_texture_format_usages_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operations=upload→texture-copy→buffer-readback→sampled-render→attachment-readback
+FORMAT: R8Unorm combined allowed usage=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT); feature flags=TextureFormatFeatureFlags(FILTERABLE | BLENDABLE)
+FORMAT: Rg8Unorm combined allowed usage=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT); feature flags=TextureFormatFeatureFlags(FILTERABLE | BLENDABLE | SINGLE_MIP_ONLY)
+FORMAT: Rgb5g6b5Unorm combined allowed usage=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT); feature flags=TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE)
+FORMAT: Rgba8Unorm combined allowed usage=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT); feature flags=TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE)
+FORMAT: Bgra8Unorm combined allowed usage=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT); feature flags=TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE)
+FORMAT: Rgba8UnormSrgb combined allowed usage=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT); feature flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: Bgra8UnormSrgb combined allowed usage=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT); feature flags=TextureFormatFeatureFlags(FILTERABLE)
+PASS: R8Unorm combined COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT executed upload, GPU copy, copied-image readback, sampled render and attachment readback; 64 copied pixels matched exactly and 64 sampled output pixels matched within 1 byte
+PASS: Rg8Unorm combined COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT executed upload, GPU copy, copied-image readback, sampled render and attachment readback; 64 copied pixels matched exactly and 64 sampled output pixels matched within 1 byte
+PASS: Rgb5g6b5Unorm combined COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT executed upload, GPU copy, copied-image readback, sampled render and attachment readback; 64 copied pixels matched exactly and 64 sampled output pixels matched within 1 byte
+PASS: Rgba8Unorm combined COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT executed upload, GPU copy, copied-image readback, sampled render and attachment readback; 64 copied pixels matched exactly and 64 sampled output pixels matched within 1 byte
+PASS: Bgra8Unorm combined COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT executed upload, GPU copy, copied-image readback, sampled render and attachment readback; 64 copied pixels matched exactly and 64 sampled output pixels matched within 1 byte
+PASS: Rgba8UnormSrgb combined COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT executed upload, GPU copy, copied-image readback, sampled render and attachment readback; 64 copied pixels matched exactly and 64 sampled output pixels matched within 1 byte
+PASS: Bgra8UnormSrgb combined COPY_SRC|COPY_DST|TEXTURE_BINDING|RENDER_ATTACHMENT executed upload, GPU copy, copied-image readback, sampled render and attachment readback; 64 copied pixels matched exactly and 64 sampled output pixels matched within 1 byte
+ok
+test public_dx11_fl91_combined_default_depth_views_support_their_roles ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; comparison_functions=0x0008 independent_filters=false max_comparison_anisotropy=1 sample_compare_offset=true depth_format=Depth16Unorm features=TextureFormatFeatures { allowed_usages: TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY) }
+PASS: public FL9_1 Depth16Unorm LessEqual depth comparison matched 64 pixels; invalid function, mismatched filters and anisotropy were rejected before HAL
+Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; comparison_functions=0x0008 independent_filters=false max_comparison_anisotropy=1 sample_compare_offset=true depth_format=Depth24Plus features=TextureFormatFeatures { allowed_usages: TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY) }
+PASS: public FL9_1 Depth24Plus LessEqual depth comparison matched 64 pixels; invalid function, mismatched filters and anisotropy were rejected before HAL
+Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; comparison_functions=0x0008 independent_filters=false max_comparison_anisotropy=1 sample_compare_offset=true depth_format=Depth24PlusStencil8 features=TextureFormatFeatures { allowed_usages: TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT), flags: TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY) }
+PASS: public FL9_1 Depth24PlusStencil8 LessEqual depth comparison matched 64 pixels; invalid function, mismatched filters and anisotropy were rejected before HAL
+ok
+test public_dx11_fl91_combined_rgba8_view_transitions_from_attachment_to_sampling ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=one combined RGBA8 view used as render attachment then sampled input
+PASS: one RGBA8 view transitioned from render attachment to sampled input; all 64 pixels matched [64, 128, 191, 255]
+ok
+test public_dx11_fl91_optional_float16_vertex_input ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; Float16x2=false
+SKIP: selected FL9_1 device does not report IA support for R16G16_FLOAT
+ok
+test public_dx11_format_usage_projection_matches_core_creation_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+FORMAT: Rgba8Unorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT) flags=TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE)
+FORMAT: Bgra8Unorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT) flags=TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE)
+FORMAT: Rgba8UnormSrgb allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT) flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: Bgra8UnormSrgb allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT) flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: R8Unorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT) flags=TextureFormatFeatureFlags(FILTERABLE | BLENDABLE)
+FORMAT: Rg8Unorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT) flags=TextureFormatFeatureFlags(FILTERABLE | BLENDABLE | SINGLE_MIP_ONLY)
+FORMAT: Rg8Snorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING) flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: Rg16Snorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING) flags=TextureFormatFeatureFlags(0x0)
+FORMAT: Rgba8Snorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING) flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: Bc1RgbaUnorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING) flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: Bc2RgbaUnorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING) flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: Bc3RgbaUnorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING) flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: Bc1RgbaUnormSrgb allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING) flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: Bc2RgbaUnormSrgb allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING) flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: Bc3RgbaUnormSrgb allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING) flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: Rgb5g6b5Unorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT) flags=TextureFormatFeatureFlags(FILTERABLE | MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | MULTISAMPLE_RESOLVE | BLENDABLE)
+FORMAT: Rgb5a1Unorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING) flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: Rgba4Unorm allowed_usages=TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING) flags=TextureFormatFeatureFlags(FILTERABLE)
+FORMAT: Depth16Unorm allowed_usages=TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT) flags=TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY)
+FORMAT: Depth24Plus allowed_usages=TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT) flags=TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY)
+FORMAT: Depth24PlusStencil8 allowed_usages=TextureUsages(TEXTURE_BINDING | RENDER_ATTACHMENT | TRANSIENT_ATTACHMENT) flags=TextureFormatFeatureFlags(MULTISAMPLE_X2 | MULTISAMPLE_X4 | MULTISAMPLE_X8 | SINGLE_MIP_ONLY)
+PASS: checked 21 projected formats, 201 advertised usage combinations, 124 unreported usage rejections, 234 canonical D2 view usages, 21 mip contracts and 40 sample-count contracts through Core on the selected physical FL9_1 device
+ok
+test public_dx11_fractional_viewport_render_bundle_remaps_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; workload=fractional viewport remap in render bundle
+PASS: a retained fullscreen triangle in a render bundle used the fractional viewport remap; exactly 9 pixels in the logical 3x3 viewport matched green and the other 55 matched clear black
+ok
+test public_dx11_fragment_3d_texture_load_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=single-mip fragment 3D textureLoad emulation with reachable helpers
+PASS: Core rejected a multi-mip 3D textureLoad view before HAL execution
+PASS: FL9_1 3D textureLoad read 2 distinct volume texels, returned zero for out-of-bounds/nonzero-mip cases, nested straight-line helpers matched direct loads, and a sparse group-1/binding-42 uniform tinted the selected load across 384 pixels; Core rejected control flow before HAL
+ok
+test public_dx11_fragment_8bit_snorm_texture_load_emulation_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; Rg8Snorm=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(FILTERABLE) } Rgba8Snorm=TextureFormatFeatures { allowed_usages: TextureUsages(COPY_SRC | COPY_DST | TEXTURE_BINDING), flags: TextureFormatFeatureFlags(FILTERABLE) }
+PASS: Rg8Snorm and Rgba8Snorm forced-FL9_1 fragment textureLoad matched all four in-bounds texels and out-of-bounds zero; 256 pixels verified across both formats
+ok
+test public_dx11_fragment_depth_controls_depth_test_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: 64/64 pixels show red; shader depth 0.2 beat vertex depth 0.8 and rejected the later fragment depth 0.8 despite its vertex depth 0.2
+ok
+test public_dx11_fragment_discard_preserves_color_and_depth_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; workload=fragment discard color/depth preservation
+PASS: interpolated discard preserved the clear color for 32 pixels, wrote red for 32 pixels, and only the discarded half passed a later depth-tested green draw; all 128 readback pixels matched
+ok
+test public_dx11_fragment_float_select_executes_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=fragment float select
+PASS: float select selected red/green across the fragment shader; 64/64 pixels matched at forced FL9_1
+ok
+test public_dx11_fragment_interpolation_profile_boundaries_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: core rejected fragment flat/linear before HAL; FL9_1 centroid and perspective pipelines produced matching 64/64 pixel images
+ok
+test public_dx11_fragment_rg16_snorm_texture_load_emulation_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; operation=optional Rg16Snorm format-query fragment textureLoad; TEXTURE_FORMAT_16BIT_NORM=true sampled_upload=true
+PASS: optional Rg16Snorm format-query coverage executed at forced FL9_1; 64 in-bounds pixels matched all four SNORM quadrants within one byte and 64 out-of-bounds pixels were transparent zero
+ok
+
+test result: ok. 24 passed; 0 failed; 0 ignored; 0 measured; 154 filtered out; finished in 5.60s

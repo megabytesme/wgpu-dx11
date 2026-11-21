@@ -1,0 +1,10 @@
+
+running 2 tests
+test public_dx11_bounded_literal_select_sample_bias_renders_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; workload=selected fragment entry uses select(-1.0, 1.0, uv.x >= 0.5) as textureSampleBias
+PASS: biased-mip output matched both expected colors across 64 pixels
+ok
+test public_dx11_sample_bias_rejects_incompatible_samplers_at_draw_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; operation=Core sample-bias sampler validation before HAL draw
+PASS: Core rejected incompatible sample-bias samplers before backend draw execution
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.85s

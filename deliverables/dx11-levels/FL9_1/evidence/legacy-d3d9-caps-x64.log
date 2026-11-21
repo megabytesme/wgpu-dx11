@@ -1,0 +1,30 @@
+BINARY_SHA256=f21e2c8aa5f8313f0c0ef1d5b4c998a21e7ee01c9abaa4f61fcf391fee89ba62
+LEGACY Direct3D9 HAL caps; D3D11 feature level is independent
+D3D9_ADAPTER index=0 name=NVIDIA GeForce RTX 3090 Ti vendor=10de device=2203
+CAP Caps2=0xe0020000
+CAP PresentationIntervals=0x8000000f
+CAP PrimitiveMiscCaps=0x002fcef2
+CAP ShadeCaps=0x00084208
+CAP TextureFilterCaps=0x03030700
+CAP TextureCaps=0x0001ecc5
+CAP TextureAddressCaps=0x0000003f
+CAP TextureOpCaps=0x03feffff
+CAP SrcBlendCaps=0x00003fff
+CAP DestBlendCaps=0x00003fff
+CAP StretchRectFilterCaps=0x03000300
+CAP ZCmpCaps=0x000000ff
+CAP RasterCaps=0x07732191
+CAP StencilCaps=0x000001ff
+CAP PixelShaderVersion=0xffff0300
+CAP MaxTextureWidth=16384
+CAP MaxTextureHeight=16384
+CAP NumSimultaneousRTs=4
+CAP MaxSimultaneousTextures=8
+CAP MaxTextureBlendStages=8
+CAP MaxPrimitiveCount=16777215
+CAP MaxVertexIndex=16777215
+CAP MaxVolumeExtent=2048
+CAP MaxTextureRepeat=8192
+CAP MaxAnisotropy=16
+CAP MaxVertexW=1e+10
+D3D9_RESULT adapters=1 PASS

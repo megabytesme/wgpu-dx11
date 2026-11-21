@@ -1,0 +1,6 @@
+
+thread 'public_dx11_fragment_3d_texture_load_at_fl91' (11428) panicked at wgpu\tests\dx11_public.rs:21791:21:
+assertion `left == right` failed: 3D textureLoad entry 5 pixel (0, 0)
+  left: [128, 0, 64, 255]
+ right: [127, 0, 64, 255]
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace

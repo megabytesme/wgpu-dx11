@@ -1,0 +1,13 @@
+
+running 1 test
+test public_dx11_fragment_uniform_array_indexing_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; workload=group-1/binding-17 fragment uniform array indices 0, 1 and 23
+PASS: fragment uniform array index=0, all 64 pixels=[255, 0, 0, 255]
+PASS: fragment uniform array index=1, all 64 pixels=[0, 0, 255, 255]
+PASS: fragment uniform array index=23, all 64 pixels=[0, 255, 0, 255]
+PASS: helper-mediated fragment uniform array index=23, all 64 pixels green
+PASS: two independent fragment uniform array indices=(0, 0), all 64 pixels=[64, 96, 0, 64]
+PASS: two independent fragment uniform array indices=(1, 1), all 64 pixels=[32, 64, 191, 96]
+PASS: two independent fragment uniform array indices=(0, 1), all 64 pixels=[96, 64, 0, 96]
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s

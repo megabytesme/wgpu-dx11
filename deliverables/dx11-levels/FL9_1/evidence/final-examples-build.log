@@ -1,0 +1,9 @@
+**********************************************************************
+** Visual Studio 2026 Developer Command Prompt vError: Unknown error
+** Copyright (c) 2026 Microsoft Corporation
+**********************************************************************
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal)
+   Compiling wgpu v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu)
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-core\platform-deps\windows-linux-android)
+   Compiling wgpu-core v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-core)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 31.17s

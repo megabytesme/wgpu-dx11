@@ -1,0 +1,39 @@
+**********************************************************************
+** Visual Studio 2026 Developer Command Prompt vError: Unknown error
+** Copyright (c) 2026 Microsoft Corporation
+**********************************************************************
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\buffer.rs:605:17
+    |
+605 |                 windows::Win32::Foundation::E_OUTOFMEMORY,
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: the lint level is defined here
+   --> wgpu-hal\src\lib.rs:238:5
+    |
+238 |     unused_qualifications
+    |     ^^^^^^^^^^^^^^^^^^^^^
+help: remove the unnecessary path segments
+    |
+605 -                 windows::Win32::Foundation::E_OUTOFMEMORY,
+605 +                 E_OUTOFMEMORY,
+    |
+
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\buffer.rs:615:17
+    |
+615 |                 windows::Win32::Foundation::E_OUTOFMEMORY,
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+615 -                 windows::Win32::Foundation::E_OUTOFMEMORY,
+615 +                 E_OUTOFMEMORY,
+    |
+
+warning: `wgpu-hal` (lib) generated 2 warnings (run `cargo fix --lib -p wgpu-hal` to apply 2 suggestions)
+   Compiling wgpu v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 39.04s
+  Executable tests\dx11_public.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl91-cert-Nov21\candidate-target\debug\deps\dx11_public-0b8a24bd95fa9fc2.exe)
