@@ -325,6 +325,17 @@ fn sampler_state_mirror_addressing() -> windows::core::Result<()> {
 }
 
 #[test]
+fn fl92_mirror_once_sampler_samples_both_boundaries() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 54)?;
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 55)
+}
+
+#[test]
+fn fl92_bounded_texture_repeat_draws_at_2048_span() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 56)
+}
+
+#[test]
 fn sampler_state_sampler_transition() -> windows::core::Result<()> {
     sampled_triangle_variant(true, true, false, true, false, 0, None, 38)
 }
@@ -411,8 +422,12 @@ fn sampled_triangle_variant(
     overlay_shader: Option<&str>,
     variant: u8,
 ) -> windows::core::Result<()> {
+    let mirror_once = matches!(variant, 54 | 55);
+    let bounded_repeat = variant == 56;
     let sampler_case = (30..=39).contains(&variant)
-        || matches!(variant, 42 | 44 | 45 | 46 | 47 | 48 | 50 | 51 | 52 | 53);
+        || matches!(variant, 42 | 44 | 45 | 46 | 47 | 48 | 50 | 51 | 52 | 53)
+        || mirror_once
+        || bounded_repeat;
     let conditional_npot = (20..=24).contains(&variant);
     let sparse = (1..=4).contains(&variant);
     let multi_resource = variant >= 10;
@@ -439,14 +454,22 @@ fn sampled_triangle_variant(
         std::println!("SKIP: no hardware adapter");
         return Ok(());
     };
-    std::println!("Hardware: {:?}; requested FL9_1", adapter.identity());
-    let mut native = adapter.open_device(&[FeatureLevel::L9_1])?;
+    let level = if mirror_once || bounded_repeat {
+        FeatureLevel::L9_2
+    } else {
+        FeatureLevel::L9_1
+    };
+    std::println!("Hardware: {:?}; requested {level:?}", adapter.identity());
+    let mut native = adapter.open_device(&[level])?;
+    assert_eq!(native.feature_level(), level);
+    if mirror_once || bounded_repeat {
+        native.enable_experimental_fl92(adapter.identity());
+    }
     if alpha || invert || effect == 2 {
         native.enable_diagnostic_separate_alpha();
         std::println!("Diagnostic only: separate alpha is not guaranteed at FL9_1");
     }
     let native = Arc::new(native);
-    assert_eq!(native.feature_level(), FeatureLevel::L9_1);
     std::println!("Actual feature level: {:?}", native.feature_level());
     let device = Device::new(native.clone());
     let source = if let Some(source) = overlay_shader {
@@ -487,7 +510,9 @@ fn sampled_triangle_variant(
             ));
         }
         if sampler_case {
-            let (scale, bias) = if variant == 51 {
+            let (scale, bias) = if bounded_repeat {
+                ("vec2f(256.0, 0.0)", "vec2f(-1022.625, 0.375)")
+            } else if variant == 51 {
                 ("0.125", "0.0")
             } else if variant == 53 {
                 ("vec2f(0.03125, 0.0078125)", "vec2f(0.3671875, 0.375)")
@@ -496,12 +521,12 @@ fn sampled_triangle_variant(
             } else {
                 ("0.03125", "0.359375")
             };
-            let scale = if variant == 53 {
+            let scale = if variant == 53 || bounded_repeat {
                 alloc::string::String::from(scale)
             } else {
                 alloc::format!("vec2f({scale})")
             };
-            let bias = if variant == 53 {
+            let bias = if variant == 53 || bounded_repeat {
                 alloc::string::String::from(bias)
             } else {
                 alloc::format!("vec2f({bias})")
@@ -512,10 +537,12 @@ fn sampled_triangle_variant(
         }
         if sampler_case {
             let uv = match variant {
-                30 | 31 | 32 | 33 | 34 | 35 | 42 | 44 | 45 | 46 | 47 | 51 | 53 => "in.uv",
+                30 | 31 | 32 | 33 | 34 | 35 | 42 | 44 | 45 | 46 | 47 | 51 | 53 | 56 => "in.uv",
                 36 | 37 => "vec2f(1.625, 0.125)",
                 48 => "vec2f(1.125, 0.125)",
                 39 => "vec2f(1.625, 1.625)",
+                54 => "vec2f(-0.625, 1.625)",
+                55 => "vec2f(-1.625, -0.625)",
                 _ => "vec2f(0.5)",
             };
             let tint = if variant == 52 { " * tint" } else { "" };
@@ -1032,6 +1059,8 @@ fn sampled_triangle_variant(
                     } else {
                         [255, 255, 255, 255]
                     }
+                } else if mirror_once || bounded_repeat {
+                    [x as u8 * 64, y as u8 * 64, 32, 255]
                 } else {
                     match (x >= 2, y >= 2) {
                         (false, false) => [255, 0, 0, 255],
@@ -1322,7 +1351,7 @@ fn sampled_triangle_variant(
         }
         32 | 33 | 44 | 45 => sampler_desc.mag_filter = wgt::FilterMode::Linear,
         34 | 35 => sampler_desc.min_filter = wgt::FilterMode::Linear,
-        36 => sampler_desc.address_modes[0] = wgt::AddressMode::Repeat,
+        36 | 56 => sampler_desc.address_modes[0] = wgt::AddressMode::Repeat,
         37 => sampler_desc.address_modes[0] = wgt::AddressMode::MirrorRepeat,
         39 => {
             sampler_desc.address_modes[0] = wgt::AddressMode::MirrorRepeat;
@@ -1337,7 +1366,13 @@ fn sampled_triangle_variant(
         sampler_desc.anisotropy_clamp = 2;
         sampler_desc.mipmap_filter = wgt::MipmapFilterMode::Linear;
     }
-    let sampler = unsafe { device.create_sampler(&sampler_desc).unwrap() };
+    let sampler = if mirror_once {
+        device
+            .create_mirror_once_sampler(&sampler_desc, [true, true, false])
+            .unwrap()
+    } else {
+        unsafe { device.create_sampler(&sampler_desc).unwrap() }
+    };
     if variant == 42 {
         let mut unsupported = sampler_desc.clone();
         unsupported.anisotropy_clamp = 3;
@@ -1689,6 +1724,8 @@ fn sampled_triangle_variant(
         [0., -1., 4., -1., 0., 7.]
     } else if overlay_shader.is_some() {
         [0., 8., 16., 8., 0., -8.]
+    } else if bounded_repeat {
+        [-1., -1., 1., -1., -1., 3.]
     } else {
         [-1., -1., 3., -1., -1., 3.]
     };
@@ -2410,12 +2447,27 @@ fn sampled_triangle_variant(
                 39 => [0, 0, 255, 255],
                 51 => [90, 140, 110, 255],
                 50 | 52 => [64, 128, 191, 255],
+                54 => [128, 192, 32, 255],
+                55 => [192, 128, 32, 255],
+                56 => [64, 64, 32, 255],
                 _ => unreachable!(),
             };
             for (&observed, &want) in actual.iter().zip(&expected) {
                 assert!(
                     (i16::from(observed) - i16::from(want)).abs() <= 1,
                     "variant {variant}: {actual:?} expected {expected:?}"
+                );
+            }
+            if bounded_repeat {
+                // Vertex U spans exactly 2048. The bottom row samples odd tiles from
+                // -894.625 to 897.375, each at 0.375 within the tile. Larger spans are
+                // outside the FL9_2 draw contract.
+                for x in 0..8usize {
+                    let offset = (7 * 8 + x) * 4;
+                    assert_eq!(&pixels[offset..offset + 4], &expected, "pixel {x},7");
+                }
+                std::println!(
+                    "FL9_2 bounded repeat: 2048 cycles per primitive, 8/8 row pixels matched"
                 );
             }
             if variant == 51 {

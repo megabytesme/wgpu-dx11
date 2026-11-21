@@ -55,6 +55,8 @@ Bottom level categories:
 #### Hal
 
 - Add developer opt-in for exact D3D11 FL9_2 devices with an experimental capability projection.
+- Add owned DX11 HAL Mirror Once samplers and numeric occlusion queries for experimental FL9_2 devices.
+- Expose query-gated 2D RG16 and RGBA16 UNORM sampling and uploads on experimental DX11 FL9_2 devices.
 
 - Accept alpha-equivalent color and alpha blend equations in the opt-in FL9_1 D3D11 backend without enabling separate-alpha blending.
 - Emulate the direct single-mip fragment `textureSampleGrad` subset in the opt-in FL9_1 D3D11 backend.

@@ -35,11 +35,12 @@ use windows::{
                 DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_BC1_UNORM_SRGB,
                 DXGI_FORMAT_BC2_UNORM, DXGI_FORMAT_BC2_UNORM_SRGB, DXGI_FORMAT_BC3_UNORM,
                 DXGI_FORMAT_BC3_UNORM_SRGB, DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
-                DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16_TYPELESS, DXGI_FORMAT_R16_UNORM,
-                DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
-                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
-                DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
+                DXGI_FORMAT_R16G16B16A16_UNORM, DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16G16_UNORM,
+                DXGI_FORMAT_R16_TYPELESS, DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R24G8_TYPELESS,
+                DXGI_FORMAT_R24_UNORM_X8_TYPELESS, DXGI_FORMAT_R8G8B8A8_SNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_SAMPLE_DESC,
             },
         },
     },
@@ -823,7 +824,8 @@ pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLay
             height: 1,
             bytes: 2,
         }),
-        DXGI_FORMAT_R16G16_SNORM
+        DXGI_FORMAT_R16G16_UNORM
+        | DXGI_FORMAT_R16G16_SNORM
         | DXGI_FORMAT_R8G8B8A8_SNORM
         | DXGI_FORMAT_R8G8B8A8_UNORM
         | DXGI_FORMAT_B8G8R8A8_UNORM
@@ -832,6 +834,11 @@ pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLay
             width: 1,
             height: 1,
             bytes: 4,
+        }),
+        DXGI_FORMAT_R16G16B16A16_UNORM => Ok(TextureBlockLayout {
+            width: 1,
+            height: 1,
+            bytes: 8,
         }),
         DXGI_FORMAT_BC1_UNORM | DXGI_FORMAT_BC1_UNORM_SRGB => Ok(TextureBlockLayout {
             width: 4,
@@ -1192,6 +1199,8 @@ impl NativeDevice {
             || !matches!(
                 desc.Format,
                 DXGI_FORMAT_R16_UNORM
+                    | DXGI_FORMAT_R16G16_UNORM
+                    | DXGI_FORMAT_R16G16B16A16_UNORM
                     | DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
@@ -1302,6 +1311,8 @@ impl NativeDevice {
             || !matches!(
                 desc.Format,
                 DXGI_FORMAT_R16_UNORM
+                    | DXGI_FORMAT_R16G16_UNORM
+                    | DXGI_FORMAT_R16G16B16A16_UNORM
                     | DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
@@ -1358,6 +1369,8 @@ impl NativeDevice {
         } else if matches!(
             desc.Format,
             DXGI_FORMAT_R16_UNORM
+                | DXGI_FORMAT_R16G16_UNORM
+                | DXGI_FORMAT_R16G16B16A16_UNORM
                 | DXGI_FORMAT_R8_UNORM
                 | DXGI_FORMAT_R8G8_UNORM
                 | DXGI_FORMAT_R8G8_SNORM
@@ -1619,8 +1632,10 @@ impl NativeDevice {
                 | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                 | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
         );
-        let fl92_r16_unorm = format == DXGI_FORMAT_R16_UNORM
-            && self.experimental_fl92_enabled()
+        let fl92_unorm16 = matches!(
+            format,
+            DXGI_FORMAT_R16_UNORM | DXGI_FORMAT_R16G16_UNORM | DXGI_FORMAT_R16G16B16A16_UNORM
+        ) && self.experimental_fl92_enabled()
             && !cube
             && !render_target
             && layers == 1
@@ -1714,7 +1729,7 @@ impl NativeDevice {
             || layers > 2048
             || mip_levels == 0
             || mip_levels > width.max(height).ilog2() + 1
-            || !(rgba_bgra || uncompressed_sampled || bc_sampled || fl92_r16_unorm)
+            || !(rgba_bgra || uncompressed_sampled || bc_sampled || fl92_unorm16)
             || (cube
                 && (layers != 6
                     || width != height
@@ -1780,6 +1795,8 @@ impl NativeDevice {
                 && matches!(
                     format,
                     DXGI_FORMAT_R16_UNORM
+                        | DXGI_FORMAT_R16G16_UNORM
+                        | DXGI_FORMAT_R16G16B16A16_UNORM
                         | DXGI_FORMAT_R8_UNORM
                         | DXGI_FORMAT_R8G8_UNORM
                         | DXGI_FORMAT_R8G8_SNORM

@@ -6,7 +6,7 @@ use windows::Win32::Graphics::Direct3D11::*;
 pub(super) const MAX_ANISOTROPY: u16 = 2;
 const FL9_1_MAX_MIP_LOD: f32 = 11.0;
 
-#[doc(hidden)]
+/// A sampler owned by a D3D11 HAL device.
 #[derive(Debug)]
 pub struct Sampler {
     owner: Arc<NativeDevice>,
@@ -40,7 +40,7 @@ fn translate_sampler_with_shadow_support(
     level: super::device::FeatureLevel,
     shadow_supported: bool,
 ) -> Result<(D3D11_SAMPLER_DESC, bool), crate::DeviceError> {
-    translate_sampler_with_capabilities(desc, level, shadow_supported, MAX_ANISOTROPY)
+    translate_sampler_with_capabilities(desc, level, shadow_supported, MAX_ANISOTROPY, [false; 3])
 }
 
 fn translate_sampler_with_capabilities(
@@ -48,19 +48,25 @@ fn translate_sampler_with_capabilities(
     level: super::device::FeatureLevel,
     shadow_supported: bool,
     max_anisotropy: u16,
+    mirror_once: [bool; 3],
 ) -> Result<(D3D11_SAMPLER_DESC, bool), crate::DeviceError> {
     use wgt::FilterMode::{Linear, Nearest};
     use wgt::MipmapFilterMode::{Linear as MipLinear, Nearest as MipNearest};
     let comparison = desc.compare.is_some();
     let border_addressing_supported = comparison && shadow_supported;
-    let address = |mode| match mode {
-        wgt::AddressMode::ClampToEdge => Ok(D3D11_TEXTURE_ADDRESS_CLAMP),
-        wgt::AddressMode::Repeat => Ok(D3D11_TEXTURE_ADDRESS_WRAP),
-        wgt::AddressMode::MirrorRepeat => Ok(D3D11_TEXTURE_ADDRESS_MIRROR),
-        wgt::AddressMode::ClampToBorder if border_addressing_supported => {
-            Ok(D3D11_TEXTURE_ADDRESS_BORDER)
+    let address = |axis: usize| {
+        if mirror_once[axis] {
+            return Ok(D3D11_TEXTURE_ADDRESS_MIRROR_ONCE);
         }
-        wgt::AddressMode::ClampToBorder => Err(crate::DeviceError::Unexpected),
+        match desc.address_modes[axis] {
+            wgt::AddressMode::ClampToEdge => Ok(D3D11_TEXTURE_ADDRESS_CLAMP),
+            wgt::AddressMode::Repeat => Ok(D3D11_TEXTURE_ADDRESS_WRAP),
+            wgt::AddressMode::MirrorRepeat => Ok(D3D11_TEXTURE_ADDRESS_MIRROR),
+            wgt::AddressMode::ClampToBorder if border_addressing_supported => {
+                Ok(D3D11_TEXTURE_ADDRESS_BORDER)
+            }
+            wgt::AddressMode::ClampToBorder => Err(crate::DeviceError::Unexpected),
+        }
     };
     if (comparison
         && (!shadow_supported
@@ -133,9 +139,9 @@ fn translate_sampler_with_capabilities(
     Ok((
         D3D11_SAMPLER_DESC {
             Filter: filter,
-            AddressU: address(desc.address_modes[0])?,
-            AddressV: address(desc.address_modes[1])?,
-            AddressW: address(desc.address_modes[2])?,
+            AddressU: address(0)?,
+            AddressV: address(1)?,
+            AddressW: address(2)?,
             MaxAnisotropy: if comparison {
                 0
             } else {
@@ -165,8 +171,8 @@ fn translate_sampler_with_capabilities(
     ))
 }
 
-fn requires_power_of_two(address_modes: &[wgt::AddressMode; 3]) -> bool {
-    address_modes.contains(&wgt::AddressMode::Repeat)
+fn requires_power_of_two(address_modes: &[D3D11_TEXTURE_ADDRESS_MODE; 3]) -> bool {
+    address_modes.contains(&D3D11_TEXTURE_ADDRESS_WRAP)
 }
 
 fn bias_compatible(desc: &crate::SamplerDescriptor) -> bool {
@@ -195,10 +201,40 @@ fn sampler_lod(
     }
 }
 
+impl super::Device {
+    /// Creates a sampler with native D3D11 Mirror Once addressing on the selected U, V and W axes.
+    ///
+    /// Requires the experimental exact FL9_2 device and at least one selected axis. Selected
+    /// axes override the corresponding descriptor address modes. The sampler belongs to this
+    /// device and can be used in its HAL bind groups.
+    pub fn create_mirror_once_sampler(
+        &self,
+        desc: &crate::SamplerDescriptor,
+        mirror_once: [bool; 3],
+    ) -> Result<Sampler, crate::DeviceError> {
+        let owner = self.native();
+        if owner.feature_level() != super::FeatureLevel::L9_2
+            || !owner.experimental_fl92_enabled()
+            || !mirror_once.contains(&true)
+        {
+            return Err(crate::DeviceError::Unexpected);
+        }
+        Sampler::new_with_address_overrides(owner.clone(), desc, mirror_once)
+    }
+}
+
 impl Sampler {
     pub(super) fn new(
         owner: Arc<NativeDevice>,
         desc: &crate::SamplerDescriptor,
+    ) -> Result<Self, crate::DeviceError> {
+        Self::new_with_address_overrides(owner, desc, [false; 3])
+    }
+
+    fn new_with_address_overrides(
+        owner: Arc<NativeDevice>,
+        desc: &crate::SamplerDescriptor,
+        mirror_once: [bool; 3],
     ) -> Result<Self, crate::DeviceError> {
         let comparison = desc.compare.is_some();
         let capabilities = super::capabilities::Capabilities::query(&owner);
@@ -207,6 +243,7 @@ impl Sampler {
             owner.feature_level(),
             capabilities.private_fl91_depth_comparison_sampling(),
             capabilities.max_sampler_anisotropy(),
+            mirror_once,
         )?;
         let lod = sampler_lod(desc, &native);
         let mut raw = None;
@@ -222,9 +259,9 @@ impl Sampler {
             filtering: sampler_filtering(desc),
             comparison,
             lod,
-            wraps: requires_power_of_two(&desc.address_modes),
-            clamps_to_edge_u_v: desc.address_modes[0] == wgt::AddressMode::ClampToEdge
-                && desc.address_modes[1] == wgt::AddressMode::ClampToEdge,
+            wraps: requires_power_of_two(&[native.AddressU, native.AddressV, native.AddressW]),
+            clamps_to_edge_u_v: native.AddressU == D3D11_TEXTURE_ADDRESS_CLAMP
+                && native.AddressV == D3D11_TEXTURE_ADDRESS_CLAMP,
             bias_compatible: bias_compatible(desc),
             lod_min_clamp_zero: desc.lod_clamp.start == 0.0,
         })
@@ -291,6 +328,89 @@ mod tests {
     }
 
     #[test]
+    fn mirror_once_overrides_each_axis_and_preserves_unselected_modes() {
+        let mut desc = descriptor();
+        desc.address_modes = [
+            wgt::AddressMode::Repeat,
+            wgt::AddressMode::MirrorRepeat,
+            wgt::AddressMode::ClampToEdge,
+        ];
+        let original = [
+            D3D11_TEXTURE_ADDRESS_WRAP,
+            D3D11_TEXTURE_ADDRESS_MIRROR,
+            D3D11_TEXTURE_ADDRESS_CLAMP,
+        ];
+        for axis in 0..3 {
+            let mut override_axes = [false; 3];
+            override_axes[axis] = true;
+            let (native, _) = translate_sampler_with_capabilities(
+                &desc,
+                FeatureLevel::L9_2,
+                false,
+                MAX_ANISOTROPY,
+                override_axes,
+            )
+            .unwrap();
+            let mut expected = original;
+            expected[axis] = D3D11_TEXTURE_ADDRESS_MIRROR_ONCE;
+            let translated = [native.AddressU, native.AddressV, native.AddressW];
+            assert_eq!(translated, expected);
+            assert_eq!(requires_power_of_two(&translated), axis != 0);
+        }
+    }
+
+    #[test]
+    fn fl92_mirror_once_sampler_requires_opt_in_and_owns_native_state() -> windows::core::Result<()>
+    {
+        let adapters = enumerate_native_adapters()?;
+        let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|message| panic!("{message}"))
+        else {
+            std::println!("SKIP: no hardware adapter");
+            return Ok(());
+        };
+        let desc = descriptor();
+        let mirror_once = [true, false, true];
+        let fl91 = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        assert!(Device::new(fl91.clone())
+            .create_mirror_once_sampler(&desc, mirror_once)
+            .is_err());
+        let default_fl92 = Device::new(Arc::new(adapter.open_device(&[FeatureLevel::L9_2])?));
+        assert!(default_fl92
+            .create_mirror_once_sampler(&desc, mirror_once)
+            .is_err());
+        let mut fl92 = adapter.open_device(&[FeatureLevel::L9_2])?;
+        assert_eq!(fl92.feature_level(), FeatureLevel::L9_2);
+        fl92.enable_experimental_fl92(adapter.identity());
+        let fl92 = Arc::new(fl92);
+        let device = Device::new(fl92.clone());
+        assert!(device
+            .create_mirror_once_sampler(&desc, [false; 3])
+            .is_err());
+        let sampler = device
+            .create_mirror_once_sampler(&desc, mirror_once)
+            .unwrap();
+        assert!(sampler.raw_for(&fl91).is_err());
+        assert!(sampler.raw_for(default_fl92.native()).is_err());
+        assert!(!sampler.wraps());
+        assert!(!sampler.clamps_to_edge_u_v());
+        let raw = sampler.raw_for(&fl92).unwrap();
+        let mut actual = D3D11_SAMPLER_DESC::default();
+        unsafe { raw.GetDesc(&mut actual) };
+        assert_eq!(
+            [actual.AddressU, actual.AddressV, actual.AddressW],
+            [
+                D3D11_TEXTURE_ADDRESS_MIRROR_ONCE,
+                D3D11_TEXTURE_ADDRESS_CLAMP,
+                D3D11_TEXTURE_ADDRESS_MIRROR_ONCE,
+            ]
+        );
+        unsafe { device.destroy_sampler(sampler) };
+        Ok(())
+    }
+
+    #[test]
     fn filtering_class_uses_all_original_descriptor_filters() {
         let mut desc = descriptor();
         assert!(!sampler_filtering(&desc));
@@ -334,12 +454,20 @@ mod tests {
         use wgt::FilterMode::{Linear, Nearest};
         use wgt::MipmapFilterMode::{Linear as ML, Nearest as MN};
         let mut desc = descriptor();
-        assert!(!requires_power_of_two(&[ClampToEdge; 3]));
-        for mode in [Repeat, MirrorRepeat, ClampToBorder] {
+        assert!(!requires_power_of_two(&[D3D11_TEXTURE_ADDRESS_CLAMP; 3]));
+        for mode in [
+            D3D11_TEXTURE_ADDRESS_WRAP,
+            D3D11_TEXTURE_ADDRESS_MIRROR,
+            D3D11_TEXTURE_ADDRESS_MIRROR_ONCE,
+            D3D11_TEXTURE_ADDRESS_BORDER,
+        ] {
             for axis in 0..3 {
-                let mut modes = [ClampToEdge; 3];
+                let mut modes = [D3D11_TEXTURE_ADDRESS_CLAMP; 3];
                 modes[axis] = mode;
-                assert_eq!(requires_power_of_two(&modes), mode == Repeat);
+                assert_eq!(
+                    requires_power_of_two(&modes),
+                    mode == D3D11_TEXTURE_ADDRESS_WRAP
+                );
             }
         }
         for (u, expected_u) in [
@@ -641,13 +769,20 @@ mod tests {
                     let mut modes = [wgt::AddressMode::ClampToEdge; 3];
                     modes[axis] = mode;
                     let requires_pot = mode == wgt::AddressMode::Repeat;
+                    let mut desc = descriptor();
+                    desc.address_modes = modes;
+                    let (native, _) = translate_sampler(&desc, FeatureLevel::L9_1).unwrap();
                     let resources = SamplingResources {
                         textures: alloc::vec![TextureInfo {
                             size,
                             mip_levels: 1,
                             sample_level_mip_views_available: false,
                         }],
-                        samplers_wrap: alloc::vec![requires_power_of_two(&modes)],
+                        samplers_wrap: alloc::vec![requires_power_of_two(&[
+                            native.AddressU,
+                            native.AddressV,
+                            native.AddressW,
+                        ])],
                         samplers_clamp_to_edge_u_v: alloc::vec![
                             modes[0] == wgt::AddressMode::ClampToEdge
                                 && modes[1] == wgt::AddressMode::ClampToEdge

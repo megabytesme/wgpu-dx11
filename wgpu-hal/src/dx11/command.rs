@@ -203,6 +203,8 @@ pub(super) enum NativeCommand {
     WriteTimestamp(ID3D11Asynchronous),
     BeginOcclusionQuery(ID3D11Asynchronous),
     EndOcclusionQuery,
+    BeginNativeOcclusion(Arc<super::query::NativeOcclusionGeneration>),
+    EndNativeOcclusion(Arc<super::query::NativeOcclusionGeneration>),
     CopyQueryResults {
         queries: Vec<ID3D11Asynchronous>,
         occlusion: bool,
@@ -581,12 +583,16 @@ fn direct_strip_vertex_indices(first: u32, count: u32) -> Result<Vec<u64>> {
 struct ActiveOcclusionQuery<'a> {
     context: &'a ID3D11DeviceContext,
     query: Option<&'a ID3D11Asynchronous>,
+    native: Option<&'a super::query::NativeOcclusionGeneration>,
 }
 
 impl Drop for ActiveOcclusionQuery<'_> {
     fn drop(&mut self) {
         if let Some(query) = self.query.take() {
             unsafe { self.context.End(query) };
+            if let Some(native) = self.native.take() {
+                native.abort();
+            }
         }
     }
 }
@@ -648,6 +654,7 @@ impl CommandBuffer {
         let mut occlusion_query = ActiveOcclusionQuery {
             context,
             query: None,
+            native: None,
         };
         for command in &self.commands {
             unsafe {
@@ -690,11 +697,39 @@ impl CommandBuffer {
                         occlusion_query.query = Some(query);
                     }
                     NativeCommand::EndOcclusionQuery => {
+                        if occlusion_query.native.is_some() {
+                            return Err(Error::from_hresult(E_INVALIDARG));
+                        }
                         let query = occlusion_query
                             .query
                             .take()
                             .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
                         context.End(query);
+                    }
+                    NativeCommand::BeginNativeOcclusion(native) => {
+                        if occlusion_query.query.is_some() {
+                            return Err(Error::from_hresult(E_INVALIDARG));
+                        }
+                        native.begin()?;
+                        context.Begin(&native.query);
+                        occlusion_query.query = Some(&native.query);
+                        occlusion_query.native = Some(native);
+                    }
+                    NativeCommand::EndNativeOcclusion(native) => {
+                        if !occlusion_query
+                            .native
+                            .is_some_and(|active| core::ptr::eq(active, native.as_ref()))
+                        {
+                            return Err(Error::from_hresult(E_INVALIDARG));
+                        }
+                        context.End(
+                            occlusion_query
+                                .query
+                                .take()
+                                .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?,
+                        );
+                        occlusion_query.native = None;
+                        native.finish();
                     }
                     NativeCommand::CopyQueryResults {
                         queries,

@@ -1,6 +1,9 @@
 use super::device::NativeDevice;
 use alloc::{sync::Arc, vec::Vec};
-use core::mem::size_of;
+use core::{
+    mem::size_of,
+    sync::atomic::{AtomicU8, Ordering},
+};
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
@@ -13,6 +16,105 @@ use windows::{
         System::{SystemInformation::GetTickCount64, Threading::Sleep},
     },
 };
+
+/// One owned, single-submission numerical occlusion measurement.
+///
+/// Reset creates a fresh D3D query, so recorded or in-flight commands retain
+/// their original generation. A generation may be submitted only once.
+#[derive(Clone, Debug)]
+pub struct NativeOcclusionQuery {
+    pub(super) inner: Arc<NativeOcclusionGeneration>,
+}
+
+#[derive(Debug)]
+pub(super) struct NativeOcclusionGeneration {
+    owner: ID3D11Device,
+    pub(super) query: ID3D11Asynchronous,
+    // 0 = unused, 1 = active, 2 = ended, 3 = aborted.
+    state: AtomicU8,
+}
+
+impl NativeOcclusionQuery {
+    /// Create a measurement on the given device. FL9_2 is the minimum level.
+    pub fn new(device: &NativeDevice) -> Result<Self> {
+        if device.feature_level().as_raw() < super::FeatureLevel::L9_2.as_raw() {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        Ok(Self {
+            inner: Arc::new(NativeOcclusionGeneration {
+                owner: device.raw_device().clone(),
+                query: create_query(device.raw_device(), D3D11_QUERY_OCCLUSION)?,
+                state: AtomicU8::new(0),
+            }),
+        })
+    }
+
+    /// Allocate a fresh generation without disturbing recorded or in-flight work.
+    pub fn reset(&self, device: &NativeDevice) -> Result<Self> {
+        if !self.belongs_to(device) {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        Self::new(device)
+    }
+
+    pub(super) fn belongs_to(&self, device: &NativeDevice) -> bool {
+        self.inner.owner.as_raw() == device.raw_device().as_raw()
+    }
+
+    /// Wait up to five seconds for a completed submission and return its raw sample count.
+    /// The result remains available until all copies of this generation are dropped.
+    pub fn result(&self, device: &NativeDevice) -> Result<u64> {
+        if !self.belongs_to(device) {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let context = device.immediate_context();
+        if self.inner.state.load(Ordering::Acquire) != 2 {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        unsafe { context.Flush() };
+        let mut value = 0;
+        wait_for_query_data(&context, &self.inner.query, &mut value)?;
+        Ok(value)
+    }
+}
+
+impl super::Device {
+    /// Create a native numerical occlusion query on this DX11 device.
+    pub fn create_native_occlusion_query(&self) -> Result<NativeOcclusionQuery> {
+        NativeOcclusionQuery::new(self.native())
+    }
+
+    /// Create an independent generation while retaining the old result.
+    pub fn reset_native_occlusion_query(
+        &self,
+        query: &NativeOcclusionQuery,
+    ) -> Result<NativeOcclusionQuery> {
+        query.reset(self.native())
+    }
+
+    /// Wait for a submitted generation and return its numerical sample count.
+    pub fn native_occlusion_result(&self, query: &NativeOcclusionQuery) -> Result<u64> {
+        query.result(self.native())
+    }
+}
+
+impl NativeOcclusionGeneration {
+    pub(super) fn unused(&self) -> bool {
+        self.state.load(Ordering::Acquire) == 0
+    }
+    pub(super) fn begin(&self) -> Result<()> {
+        self.state
+            .compare_exchange(0, 1, Ordering::AcqRel, Ordering::Acquire)
+            .map(|_| ())
+            .map_err(|_| Error::from_hresult(E_INVALIDARG))
+    }
+    pub(super) fn finish(&self) {
+        self.state.store(2, Ordering::Release);
+    }
+    pub(super) fn abort(&self) {
+        self.state.store(3, Ordering::Release);
+    }
+}
 
 #[derive(Clone, Debug)]
 pub struct QuerySet {

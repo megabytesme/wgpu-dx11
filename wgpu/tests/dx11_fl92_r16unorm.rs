@@ -41,7 +41,7 @@ fn wait<T>(future: impl Future<Output = T>) -> T {
 
 #[test]
 #[ignore = "requires an explicitly forced D3D11 feature level and a physical GPU"]
-fn forced_dx11_r16_unorm_upload_and_sample() {
+fn forced_dx11_unorm16_upload_and_sample() {
     let requested = std::env::var("WGPU_DX11_FEATURE_LEVEL")
         .expect("set WGPU_DX11_FEATURE_LEVEL to 9_1 or 9_2");
     let level = match requested.as_str() {
@@ -67,30 +67,68 @@ fn forced_dx11_r16_unorm_upload_and_sample() {
         std::env::consts::ARCH
     );
 
-    let source_usage = TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST;
-    let caps = adapter.get_texture_format_features(TextureFormat::R16Unorm);
+    let formats = [
+        (TextureFormat::R16Unorm, 1),
+        (TextureFormat::Rg16Unorm, 2),
+        (TextureFormat::Rgba16Unorm, 4),
+    ];
     if level == FeatureLevel::L9_1 {
-        assert!(caps.allowed_usages.is_empty());
+        for (format, _) in formats {
+            assert!(adapter
+                .get_texture_format_features(format)
+                .allowed_usages
+                .is_empty());
+        }
         return;
     }
-    assert_eq!(caps.allowed_usages, source_usage, "{caps:?}");
-    assert!(caps.flags.contains(
-        TextureFormatFeatureFlags::FILTERABLE | TextureFormatFeatureFlags::SINGLE_MIP_ONLY,
-    ));
     let (device, queue) = wait(adapter.request_device(&DeviceDescriptor {
         required_features: Features::TEXTURE_FORMAT_16BIT_NORM,
         required_limits: adapter.limits(),
         ..Default::default()
     }))
     .unwrap();
+    for (format, components) in formats {
+        let caps = adapter.get_texture_format_features(format);
+        assert_eq!(
+            caps.allowed_usages,
+            TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+            "{format:?}: {caps:?}"
+        );
+        assert!(caps.flags.contains(
+            TextureFormatFeatureFlags::FILTERABLE | TextureFormatFeatureFlags::SINGLE_MIP_ONLY,
+        ));
+        check_upload_and_sample(&device, &queue, format, components);
+    }
+}
+
+fn check_upload_and_sample(
+    device: &Device,
+    queue: &Queue,
+    format: TextureFormat,
+    components: usize,
+) {
+    let write_texel = |bytes: &mut [u8], value: u16| {
+        for component in bytes.chunks_exact_mut(2) {
+            component.copy_from_slice(&value.to_le_bytes());
+        }
+    };
+    let bytes_per_texel = 2 * components;
+    let queue_pitch = 3 * bytes_per_texel;
+    let mut queue_bytes = vec![0xff; 2 * queue_pitch];
+    for (row, values) in [[0x4000, 0x8000], [0x8000, 0xc000]].into_iter().enumerate() {
+        for (column, value) in values.into_iter().enumerate() {
+            let offset = row * queue_pitch + column * bytes_per_texel;
+            write_texel(&mut queue_bytes[offset..offset + bytes_per_texel], value);
+        }
+    }
     let source_desc = TextureDescriptor {
-        label: Some("R16_UNORM sampled upload"),
+        label: Some("UNORM16 sampled upload"),
         size: SIZE,
         mip_level_count: 1,
         sample_count: 1,
         dimension: TextureDimension::D2,
-        format: TextureFormat::R16Unorm,
-        usage: source_usage,
+        format,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
         view_formats: &[],
     };
     let validation = device.push_error_scope(ErrorFilter::Validation);
@@ -108,22 +146,23 @@ fn forced_dx11_r16_unorm_upload_and_sample() {
             origin: Origin3d { x: 1, y: 0, z: 0 },
             ..source.as_image_copy()
         },
-        &[
-            0x00, 0x40, 0x00, 0x80, 0xff, 0xff, 0xff, 0xff, 0x00, 0x80, 0x00, 0xc0,
-        ],
+        &queue_bytes,
         TexelCopyBufferLayout {
             offset: 0,
-            bytes_per_row: Some(8),
+            bytes_per_row: Some(queue_pitch as u32),
             rows_per_image: Some(2),
         },
         Extent3d { width: 2, ..SIZE },
     );
 
     let mut copy_bytes = [0; 2 * PITCH as usize];
-    copy_bytes[..2].copy_from_slice(&u16::MAX.to_le_bytes());
-    copy_bytes[PITCH as usize..PITCH as usize + 2].copy_from_slice(&0x2000u16.to_le_bytes());
+    write_texel(&mut copy_bytes[..bytes_per_texel], u16::MAX);
+    write_texel(
+        &mut copy_bytes[PITCH as usize..PITCH as usize + bytes_per_texel],
+        0x2000,
+    );
     let upload = device.create_buffer_init(&util::BufferInitDescriptor {
-        label: Some("padded R16_UNORM copy"),
+        label: Some("padded UNORM16 copy"),
         contents: &copy_bytes,
         usage: BufferUsages::COPY_SRC,
     });
@@ -134,7 +173,7 @@ fn forced_dx11_r16_unorm_upload_and_sample() {
     };
 
     let target = device.create_texture(&TextureDescriptor {
-        label: Some("R16_UNORM sample readback target"),
+        label: Some("UNORM16 sample readback target"),
         format: TextureFormat::Rgba8Unorm,
         usage: TextureUsages::COPY_SRC | TextureUsages::RENDER_ATTACHMENT,
         ..source_desc
@@ -295,16 +334,23 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         for (row, expected_row) in expected_image.iter().enumerate() {
             for (column, red) in expected_row.iter().enumerate() {
                 let offset = index * image_size as usize + row * PITCH as usize + column * 4;
-                assert!(
-                    pixels[offset].abs_diff(*red) <= 1,
-                    "image {index}, red at ({column}, {row}): expected {red}, got {}",
-                    pixels[offset]
-                );
-                assert_eq!(&pixels[offset + 1..offset + 4], &[0, 0, 255]);
+                let expected = match components {
+                    1 => [*red, 0, 0, 255],
+                    2 => [*red, *red, 0, 255],
+                    4 => [*red; 4],
+                    _ => unreachable!(),
+                };
+                for (channel, value) in expected.into_iter().enumerate() {
+                    assert!(
+                        pixels[offset + channel].abs_diff(value) <= 1,
+                        "{format:?} image {index} at ({column}, {row}) channel {channel}: expected {value}, got {}",
+                        pixels[offset + channel]
+                    );
+                }
             }
         }
     }
     println!(
-        "Verified R16_UNORM sampled centers and linear interpolation from zero-init, queue upload and encoder copy"
+        "Verified {format:?} sampled centers and linear interpolation from zero-init, queue upload and encoder copy"
     );
 }

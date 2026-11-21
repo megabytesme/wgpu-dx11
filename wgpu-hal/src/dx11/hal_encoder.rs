@@ -30,6 +30,7 @@ pub struct CommandEncoder {
     render: Option<RenderState>,
     compute: bool,
     end_compute_timestamp: Option<windows::Win32::Graphics::Direct3D11::ID3D11Asynchronous>,
+    active_native_occlusion: Option<Arc<super::query::NativeOcclusionGeneration>>,
     failure: Option<DeviceError>,
     viewport_buffer: Option<windows::Win32::Graphics::Direct3D11::ID3D11Buffer>,
 }
@@ -593,6 +594,61 @@ mod texture_dimension_mip_tests {
 }
 
 impl CommandEncoder {
+    /// Record the start of a single-use native numerical occlusion generation.
+    ///
+    /// Pair this with `end_native_occlusion_query` in the same command buffer.
+    /// Native and public occlusion queries must not overlap. This is raw HAL
+    /// encoding: wgpu does not permit mixing it with its command encoder API.
+    /// A generation can be submitted only once across all encoders. If the
+    /// same generation is recorded in multiple command buffers, only the
+    /// first submitted buffer can succeed; later submissions return an error.
+    pub fn begin_native_occlusion_query(
+        &mut self,
+        query: &super::query::NativeOcclusionQuery,
+    ) -> Result<(), DeviceError> {
+        if !query.belongs_to(&self.device)
+            || self.recording.is_none()
+            || self.compute
+            || self.failure.is_some()
+            || self.active_native_occlusion.is_some()
+            || self.render.as_ref().is_some_and(|render| render.active_occlusion_query.is_some())
+            || !query.inner.unused()
+            || self.recording.as_ref().is_some_and(|commands| commands.iter().any(|command| matches!(command, NativeCommand::BeginNativeOcclusion(previous) if Arc::ptr_eq(previous, &query.inner))))
+        {
+            return Err(DeviceError::Unexpected);
+        }
+        self.record(NativeCommand::BeginNativeOcclusion(query.inner.clone()));
+        if let Some(error) = self.failure.clone() {
+            return Err(error);
+        }
+        self.active_native_occlusion = Some(query.inner.clone());
+        Ok(())
+    }
+
+    /// End the matching native numerical occlusion generation.
+    pub fn end_native_occlusion_query(
+        &mut self,
+        query: &super::query::NativeOcclusionQuery,
+    ) -> Result<(), DeviceError> {
+        if !query.belongs_to(&self.device)
+            || self.recording.is_none()
+            || self.compute
+            || self.failure.is_some()
+            || !self
+                .active_native_occlusion
+                .as_ref()
+                .is_some_and(|active| Arc::ptr_eq(active, &query.inner))
+        {
+            return Err(DeviceError::Unexpected);
+        }
+        self.record(NativeCommand::EndNativeOcclusion(query.inner.clone()));
+        if let Some(error) = self.failure.clone() {
+            return Err(error);
+        }
+        self.active_native_occlusion = None;
+        Ok(())
+    }
+
     fn reject(&mut self) {
         self.failure.get_or_insert(DeviceError::Unexpected);
     }
@@ -649,6 +705,7 @@ impl CommandEncoder {
             render: None,
             compute: false,
             end_compute_timestamp: None,
+            active_native_occlusion: None,
             failure: None,
             viewport_buffer: None,
         }
@@ -704,6 +761,7 @@ impl crate::CommandEncoder for CommandEncoder {
         self.render = None;
         self.compute = false;
         self.end_compute_timestamp = None;
+        self.active_native_occlusion = None;
         self.recording = Some(Vec::new());
         Ok(())
     }
@@ -713,6 +771,7 @@ impl crate::CommandEncoder for CommandEncoder {
         self.render = None;
         self.compute = false;
         self.end_compute_timestamp = None;
+        self.active_native_occlusion = None;
         self.failure = None;
     }
 
@@ -720,8 +779,9 @@ impl crate::CommandEncoder for CommandEncoder {
         let commands = self.recording.take().ok_or(DeviceError::Unexpected)?;
         let render_open = self.render.take().is_some();
         let compute_open = core::mem::take(&mut self.compute);
+        let native_query_open = self.active_native_occlusion.take().is_some();
         self.end_compute_timestamp = None;
-        if render_open || compute_open {
+        if render_open || compute_open || native_query_open {
             self.reject();
         }
         if let Some(error) = self.failure.take() {
@@ -1092,6 +1152,10 @@ impl crate::CommandEncoder for CommandEncoder {
     unsafe fn end_debug_marker(&mut self) {}
 
     unsafe fn begin_query(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
+        if self.active_native_occlusion.is_some() {
+            self.reject();
+            return;
+        }
         let Some(render) = self.render.as_mut() else {
             self.reject();
             return;
@@ -3215,11 +3279,43 @@ mod tests {
         }
     }
 
+    #[test]
+    fn fl9_2_native_numeric_occlusion_and_reset() -> windows::core::Result<()> {
+        let adapters = enumerate_native_adapters()?;
+        let required =
+            std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+        let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
+            .unwrap_or_else(|message| panic!("{message}"))
+        else {
+            std::println!("SKIP: no physical D3D11 adapter");
+            return Ok(());
+        };
+        let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_2])?);
+        assert_eq!(native.feature_level(), FeatureLevel::L9_2);
+        std::println!(
+            "Hardware: {:?}; requested and actual FL9_2",
+            adapter.identity()
+        );
+        indexed_triangle(native)
+    }
+
     fn indexed_triangle(native: Arc<NativeDevice>) -> windows::core::Result<()> {
         use crate::dx11::Device;
         use alloc::borrow::Cow;
         let device = Device::new(native.clone());
         let queue = Queue::new(native.clone());
+        let native_query = if native.feature_level() == FeatureLevel::L9_2 {
+            Some(device.create_native_occlusion_query()?)
+        } else {
+            None
+        };
+        let reset_query = native_query
+            .as_ref()
+            .map(|query| device.reset_native_occlusion_query(query))
+            .transpose()?;
+        if let Some(query) = &native_query {
+            assert!(device.native_occlusion_result(query).is_err());
+        }
         let entry_module = naga::front::wgsl::parse_str(
             r#"
             struct Input { @location(0) p: vec2f, @builtin(vertex_index) id: u32 }
@@ -3567,6 +3663,25 @@ mod tests {
             )
             .unwrap()
         };
+        if let (Some(query), Some(reset)) = (&native_query, &reset_query) {
+            unsafe {
+                crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            }
+            assert!(encoder.end_native_occlusion_query(query).is_err());
+            encoder.begin_native_occlusion_query(query).unwrap();
+            assert!(encoder.begin_native_occlusion_query(reset).is_err());
+            assert!(encoder.end_native_occlusion_query(reset).is_err());
+            encoder.end_native_occlusion_query(query).unwrap();
+            assert!(encoder.begin_native_occlusion_query(query).is_err());
+            unsafe {
+                crate::CommandEncoder::discard_encoding(&mut encoder);
+            }
+            unsafe {
+                crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            }
+            encoder.begin_native_occlusion_query(query).unwrap();
+            assert!(unsafe { crate::CommandEncoder::end_encoding(&mut encoder) }.is_err());
+        }
         let upload_commands = unsafe {
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
             crate::CommandEncoder::copy_buffer_to_buffer(
@@ -3593,6 +3708,9 @@ mod tests {
         };
         let commands = unsafe {
             crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+            if let Some(query) = &native_query {
+                encoder.begin_native_occlusion_query(query).unwrap();
+            }
             crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
             crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
             crate::CommandEncoder::set_vertex_buffer(
@@ -3609,6 +3727,11 @@ mod tests {
             crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &empty_group, &[]);
             crate::CommandEncoder::draw_indexed(&mut encoder, 0, 3, 0, 0, 1);
             crate::CommandEncoder::end_render_pass(&mut encoder);
+            if let (Some(query), Some(reset)) = (&native_query, &reset_query) {
+                encoder.end_native_occlusion_query(query).unwrap();
+                encoder.begin_native_occlusion_query(reset).unwrap();
+                encoder.end_native_occlusion_query(reset).unwrap();
+            }
             crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
         };
         let before = native.read_rgba_texture(&texture, 0, 0)?;
@@ -3621,6 +3744,16 @@ mod tests {
             crate::Queue::submit(&queue, &[&upload_commands, &commands], &[], (&fence, 1)).unwrap();
         }
         assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
+        if let (Some(query), Some(reset)) = (&native_query, &reset_query) {
+            let samples = device.native_occlusion_result(query)?;
+            assert!(samples > 1, "expected numerical samples, got {samples}");
+            assert_eq!(device.native_occlusion_result(reset)?, 0);
+            assert_eq!(device.native_occlusion_result(query)?, samples);
+            assert!(
+                native.submit_copy_commands(&commands).is_err(),
+                "query generations must not be resubmitted"
+            );
+        }
         let pixels = native.read_rgba_texture(&texture, 0, 0)?;
         assert_eq!(pixels.len(), 8 * 8 * 4);
         assert!(
@@ -3632,6 +3765,9 @@ mod tests {
         std::println!(
             "Readback: 64/64 pixels RGBA [255, 0, 0, 255]; before submission: 64/64 blue"
         );
+        if native_query.is_some() {
+            return Ok(());
+        }
         let base_vertices = unsafe {
             crate::Device::create_buffer(
                 &device,

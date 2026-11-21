@@ -41,7 +41,9 @@ pub use device::{
 pub use hal_device::Device;
 pub use hal_encoder::CommandEncoder;
 pub use hal_queue::Queue;
+pub use hal_sampler::Sampler;
 pub use instance::Instance;
+pub use query::NativeOcclusionQuery;
 pub use surface::Surface;
 #[doc(hidden)]
 pub use swapchain::{CoreWindowFrame, CoreWindowSwapchain};

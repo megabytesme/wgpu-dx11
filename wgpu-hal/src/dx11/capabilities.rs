@@ -18,11 +18,21 @@ use windows::Win32::Graphics::{
         DXGI_FORMAT_B5G6R5_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
         DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_BC1_UNORM_SRGB, DXGI_FORMAT_BC2_UNORM,
         DXGI_FORMAT_BC2_UNORM_SRGB, DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB,
-        DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM,
-        DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
-        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
+        DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16B16A16_UNORM,
+        DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16G16_UNORM, DXGI_FORMAT_R16_UNORM,
+        DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+        DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
     },
 };
+
+const FL92_UNORM16_FORMATS: [(wgt::TextureFormat, DXGI_FORMAT); 3] = [
+    (wgt::TextureFormat::R16Unorm, DXGI_FORMAT_R16_UNORM),
+    (wgt::TextureFormat::Rg16Unorm, DXGI_FORMAT_R16G16_UNORM),
+    (
+        wgt::TextureFormat::Rgba16Unorm,
+        DXGI_FORMAT_R16G16B16A16_UNORM,
+    ),
+];
 
 const FL9X_MAX_BUFFER_RESOURCE_SIZE: u64 = 128 << 20;
 const FL9X_MAX_BUFFER_SIZE: u64 = FL9X_MAX_BUFFER_RESOURCE_SIZE - wgt::COPY_BUFFER_ALIGNMENT;
@@ -247,7 +257,7 @@ pub(super) struct DriverCapabilities {
     pub rg8_unorm: Query<u32>,
     pub rg8_snorm: Query<u32>,
     pub rg16_snorm: Query<u32>,
-    pub r16_unorm: Query<u32>,
+    unorm16_sampled: [Query<u32>; FL92_UNORM16_FORMATS.len()],
     pub rgba8_snorm: Query<u32>,
     pub bc1_unorm: Query<u32>,
     pub bc2_unorm: Query<u32>,
@@ -1130,7 +1140,9 @@ impl Capabilities {
         if self.wireframe_rasterizer_supported() {
             features |= wgt::Features::POLYGON_MODE_LINE;
         }
-        if self.fl92_r16_unorm_sampled()
+        if FL92_UNORM16_FORMATS
+            .iter()
+            .any(|&(format, _)| self.fl92_unorm16_sampled(format))
             || self
                 .texture_format_capabilities(wgt::TextureFormat::Rg16Snorm)
                 .contains(crate::TextureFormatCapabilities::SAMPLED)
@@ -1422,10 +1434,10 @@ impl Capabilities {
                 rg8_unorm: format(DXGI_FORMAT_R8G8_UNORM),
                 rg8_snorm: format(DXGI_FORMAT_R8G8_SNORM),
                 rg16_snorm: format(DXGI_FORMAT_R16G16_SNORM),
-                r16_unorm: if device.experimental_fl92_enabled() {
-                    format(DXGI_FORMAT_R16_UNORM)
+                unorm16_sampled: if device.experimental_fl92_enabled() {
+                    FL92_UNORM16_FORMATS.map(|(_, dxgi)| format(dxgi))
                 } else {
-                    Query::Unavailable(-1)
+                    [Query::Unavailable(-1); FL92_UNORM16_FORMATS.len()]
                 },
                 rgba8_snorm: format(DXGI_FORMAT_R8G8B8A8_SNORM),
                 bc1_unorm: format(DXGI_FORMAT_BC1_UNORM),
@@ -1875,11 +1887,20 @@ impl Capabilities {
         guaranteed | optional
     }
 
-    pub(super) fn fl92_r16_unorm_sampled(&self) -> bool {
+    fn unorm16_sampled_index(format: wgt::TextureFormat) -> Option<usize> {
+        FL92_UNORM16_FORMATS
+            .iter()
+            .position(|&(candidate, _)| candidate == format)
+    }
+
+    pub(super) fn fl92_unorm16_sampled(&self, format: wgt::TextureFormat) -> bool {
+        let Some(index) = Self::unorm16_sampled_index(format) else {
+            return false;
+        };
         let required =
             (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
         self.experimental_fl92
-            && matches!(self.driver.r16_unorm, Query::Value(bits) if bits & required == required)
+            && matches!(self.driver.unorm16_sampled[index], Query::Value(bits) if bits & required == required)
     }
 
     pub fn texture_format_capabilities(
@@ -1888,8 +1909,8 @@ impl Capabilities {
     ) -> crate::TextureFormatCapabilities {
         use crate::TextureFormatCapabilities as Caps;
 
-        if format == wgt::TextureFormat::R16Unorm {
-            return if self.fl92_r16_unorm_sampled() {
+        if Self::unorm16_sampled_index(format).is_some() {
+            return if self.fl92_unorm16_sampled(format) {
                 Caps::SAMPLED | Caps::SAMPLED_LINEAR | Caps::COPY_DST | Caps::SINGLE_MIP_ONLY
             } else {
                 Caps::empty()
@@ -2326,7 +2347,7 @@ mod tests {
                 rg8_unorm: Query::Value(u32::MAX),
                 rg8_snorm: Query::Value(u32::MAX),
                 rg16_snorm: Query::Value(u32::MAX),
-                r16_unorm: Query::Unavailable(-1),
+                unorm16_sampled: [Query::Unavailable(-1); FL92_UNORM16_FORMATS.len()],
                 rgba8_snorm: Query::Value(u32::MAX),
                 bc1_unorm: Query::Value(u32::MAX),
                 bc2_unorm: Query::Value(u32::MAX),
@@ -2761,26 +2782,33 @@ mod tests {
     }
 
     #[test]
-    fn r16_unorm_requires_experimental_fl92_and_a_positive_sampling_query() {
-        let format = wgt::TextureFormat::R16Unorm;
-        let mut caps = model(FeatureLevel::L9_2);
-        caps.driver.r16_unorm = Query::Value(
-            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32,
-        );
-        assert!(caps.texture_format_capabilities(format).is_empty());
+    fn unorm16_requires_experimental_fl92_and_its_own_positive_sampling_query() {
+        for (index, &(format, _)) in FL92_UNORM16_FORMATS.iter().enumerate() {
+            let mut caps = model(FeatureLevel::L9_2);
+            caps.driver.unorm16_sampled[index] = Query::Value(
+                (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32,
+            );
+            assert!(caps.texture_format_capabilities(format).is_empty());
 
-        caps.experimental_fl92 = true;
-        assert_eq!(
-            caps.texture_format_capabilities(format),
-            FormatCaps::SAMPLED
-                | FormatCaps::SAMPLED_LINEAR
-                | FormatCaps::COPY_DST
-                | FormatCaps::SINGLE_MIP_ONLY
-        );
-        caps.driver.r16_unorm = Query::Value(D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32);
-        assert!(caps.texture_format_capabilities(format).is_empty());
-        caps.driver.r16_unorm = Query::Unavailable(-1);
-        assert!(caps.texture_format_capabilities(format).is_empty());
+            caps.experimental_fl92 = true;
+            for (candidate, _) in FL92_UNORM16_FORMATS {
+                let expected = if candidate == format {
+                    FormatCaps::SAMPLED
+                        | FormatCaps::SAMPLED_LINEAR
+                        | FormatCaps::COPY_DST
+                        | FormatCaps::SINGLE_MIP_ONLY
+                } else {
+                    FormatCaps::empty()
+                };
+                assert_eq!(caps.texture_format_capabilities(candidate), expected);
+            }
+
+            caps.driver.unorm16_sampled[index] =
+                Query::Value(D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32);
+            assert!(caps.texture_format_capabilities(format).is_empty());
+            caps.driver.unorm16_sampled[index] = Query::Unavailable(-1);
+            assert!(caps.texture_format_capabilities(format).is_empty());
+        }
     }
 
     #[test]
