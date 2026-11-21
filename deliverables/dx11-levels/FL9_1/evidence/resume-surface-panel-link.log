@@ -1,0 +1,7 @@
+**********************************************************************
+** Visual Studio 2026 Developer Command Prompt vError: Unknown error
+** Copyright (c) 2026 Microsoft Corporation
+**********************************************************************
+App.cpp
+dead-import-sentinels.c
+Strict UWP link succeeded; no diagnostic sentinel remains in C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\host\Dx11PanelProbe.exe.map

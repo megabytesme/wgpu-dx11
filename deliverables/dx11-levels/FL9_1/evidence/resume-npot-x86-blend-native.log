@@ -1,0 +1,20 @@
+
+running 1 test
+test dx11::native_bgrx::render_tests::fl91_bgrx_srgb_blend_space_diagnostic ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+sRGB blend diagnostic: explicit IDXGIAdapter / D3D_DRIVER_TYPE_UNKNOWN; actual level=0x9100; adapter LUID=0x0000000000014a80
+sRGB blend diagnostic: BGRX8_SRGB BGR=[137, 188, 187]; model=linear-space; encoded-space model=[94, 128, 128]; linear-space model=[137, 188, 188]
+sRGB blend diagnostic: RGBA8_SRGB RGBA=[187, 188, 137, 159]; model=linear-space; encoded-space model=[128, 128, 94, 159]; linear-space model=[188, 188, 137, 159]
+sRGB blend diagnostic: BGRA8_SRGB BGRA=[137, 188, 187, 159]; model=linear-space; encoded-space model=[94, 128, 128, 159]; linear-space model=[137, 188, 188, 159]
+sRGB blend diagnostic: default adapter / D3D_DRIVER_TYPE_HARDWARE; actual level=0x9100; adapter LUID=0x0000000000014a80
+sRGB blend diagnostic: BGRX8_SRGB BGR=[137, 188, 187]; model=linear-space; encoded-space model=[94, 128, 128]; linear-space model=[137, 188, 188]
+sRGB blend diagnostic: RGBA8_SRGB RGBA=[187, 188, 137, 159]; model=linear-space; encoded-space model=[128, 128, 94, 159]; linear-space model=[188, 188, 137, 159]
+sRGB blend diagnostic: BGRA8_SRGB BGRA=[137, 188, 187, 159]; model=linear-space; encoded-space model=[94, 128, 128, 159]; linear-space model=[137, 188, 188, 159]
+sRGB blend diagnostic: default L9_1 and explicit L9_1 use the same adapter: true
+sRGB blend diagnostic: default adapter / D3D_DRIVER_TYPE_HARDWARE; actual level=0xa000; adapter LUID=0x0000000000014a80
+sRGB blend diagnostic: BGRX8_SRGB BGR=[137, 188, 187]; model=linear-space; encoded-space model=[94, 128, 128]; linear-space model=[137, 188, 188]
+sRGB blend diagnostic: RGBA8_SRGB RGBA=[187, 188, 137, 159]; model=linear-space; encoded-space model=[128, 128, 94, 159]; linear-space model=[188, 188, 137, 159]
+sRGB blend diagnostic: BGRA8_SRGB BGRA=[137, 188, 187, 159]; model=linear-space; encoded-space model=[94, 128, 128, 159]; linear-space model=[137, 188, 188, 159]
+sRGB blend diagnostic: default L10_0 and explicit L9_1 use the same adapter: true
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 568 filtered out; finished in 0.93s

@@ -133,5 +133,125 @@
     "lumia": "Device unavailable. Signed CoreWindow and low-memory execution remain pending.",
     "true_fl91_ceiling": "No ceiling adapter was available for execution.",
     "physical_device_removal": "No controlled physical removal was executed."
+  },
+  "resume": {
+    "candidate_sha": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+    "surface": {
+      "source_before_npot_fix": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+      "architecture": "ARM64",
+      "adapter": "Qualcomm Adreno 680, driver 27.20.2160.0",
+      "requested_level": "0x9100",
+      "returned_level": "0x9100",
+      "binary_sha256": "77246f05788d3dffce1a130492ef119e6f5d06637d356265099d4c44ea88acdb",
+      "fixture_build": "Integrated source with equivalent fixture contents before whitespace-only formatting.",
+      "session": "SSH session 0",
+      "public_offscreen": {
+        "path": "evidence/resume-surface-RepeatBlend-Offscreen.log",
+        "sha256": "562b6d7b3a237d8abd6fa41e368a525c2d4e209b377b36c1ebf5ee9f230634ba"
+      },
+      "signed_panel": {
+        "source_sha": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+        "package": "C:\\Users\\ben\\AppData\\Local\\Temp\\mission-fl91-panel-7ce54912-arm64\\Fl91PanelProbe-arm64.appx",
+        "sha256": "e2c5f1de22c1655cd1ca4b0c0b1c02794230d30610887b23f25457511145aab1",
+        "remote_package_destination": "C:/Users/ben/AppData/Local/Temp/wgpu-fl91-resume/SignedPanel7ce54912/Fl91PanelProbe-arm64.appx",
+        "rust_build": {
+          "path": "evidence/resume-surface-panel-build.log",
+          "sha256": "f9d1e56772de320a3aaea33980d9b2a11f7e0a0ac474c6be81b477e95ccf3393"
+        },
+        "strict_link": {
+          "path": "evidence/resume-surface-panel-link.log",
+          "sha256": "4661b97d3d0d140e252172dc178e2d16527c5ce9ea37d9ebf91a63163a6231f9"
+        },
+        "signing": {
+          "path": "evidence/resume-surface-panel-signing.log",
+          "sha256": "6d487c2c93087148e8ac03ff9057559937babe6273e3336b025dabb00dcef12c"
+        },
+        "deployment_attempt": {
+          "path": "evidence/resume-surface-signed-panel.log",
+          "sha256": "7e64ab3d6c8f09796b3a82e05b3775ff5628ceaf2fc09beaa593b5968fcf4561"
+        }
+      },
+      "interactive_attempt": {
+        "path": "evidence/resume-surface-active-hwnd.log",
+        "sha256": "8806a9c3283bfd3c87a9858bac7bdc869d70da3becbb745bde327129a3df529f"
+      },
+      "final_public_attempt": {
+        "path": "evidence/resume-surface-npot-final-attempt.log",
+        "sha256": "7e64ab3d6c8f09796b3a82e05b3775ff5628ceaf2fc09beaa593b5968fcf4561"
+      }
+    },
+    "lumia": {
+      "architecture": "ARM32",
+      "model": "Lumia 950 XL",
+      "adapter": "Qualcomm Adreno 430",
+      "requested_level": "0x9100",
+      "returned_level": "0x9100",
+      "adapter_maximum": "0xb100",
+      "native_package_name": "MCHorizonUWP.Fl91CoreBlendProbe_1.0.0.0_arm__4pd4jeb6snrqw",
+      "native_package_sha256": "4738e65f863e1e00e674a96d16de360ece13a12d979c3a2e567bfe27d3d2ecc8",
+      "native_probe_source_sha256": "4a226ecb4c2a4f1423a382986c63a34e656a1c6bd9639202877adee4e982fdec",
+      "native_control": {
+        "path": "evidence/resume-lumia-native.log",
+        "sha256": "042f081ee6c83a0019d19a6267ae90d93472e370e1aa31db7f056af47b43667b"
+      },
+      "native_signature": {
+        "path": "evidence/resume-lumia-native-signature.log",
+        "sha256": "74311b1b88ba8250e846eb87176c6fc79e2103fb9431695840a45dc3d9f5c648"
+      },
+      "signed_hal_build": {
+        "path": "evidence/resume-lumia-hal-provenance.json",
+        "sha256": "240cadb0a7d77492a064cddd5f18d4d5db8e2dd4e5ad7fc15051107e22c8d1a0"
+      },
+      "signed_hal_attempt": {
+        "path": "evidence/resume-lumia-wgpu.log",
+        "sha256": "7be381eb73f7306db05a19386d2db5c9172e4bdf60df0d5b46d35c6b69310d61"
+      },
+      "signed_hal_retry": {
+        "path": "evidence/resume-lumia-wgpu-retry.log",
+        "sha256": "6f9f28565d4958a0335472fc30b8303f3922d27b19257a1ec42b0087c053e01d"
+      },
+      "signed_hal_slot_reuse": {
+        "path": "evidence/resume-lumia-wgpu-slot.log",
+        "sha256": "b6a38b5d74a0093fcbb5fffbb24ee6b7092720afef83f09cb8c98df8fefa307f"
+      },
+      "initial_installer_state": {
+        "path": "evidence/resume-lumia-hal-initial-installer.log",
+        "sha256": "251509c4879eaddb695b48a5434e29ecd24cf8c37b01895ce9c2f41a945bd0d5"
+      },
+      "first_hal_install": {
+        "path": "evidence/resume-lumia-hal-installed.log",
+        "sha256": "62f1918d496970e58f75e7ee142bcbbe1ab667f6e0e1aa29e85f2e0117fde429"
+      },
+      "first_hal_report": {
+        "path": "evidence/resume-lumia-hal-exact-device.log",
+        "sha256": "4cee9cfb11a14834014b1abe2b391fac6a94c4a10437b4fb27d09d40f12df38d"
+      },
+      "dispatcher_update": {
+        "source_sha": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+        "build": {
+          "path": "evidence/resume-lumia-wgpu-v2-build.log",
+          "sha256": "37d3917b8060b0ba341cd55f65a32faca8bf16300a4e6683eda3404dadff7d94"
+        },
+        "deployment_attempt": {
+          "path": "evidence/resume-lumia-wgpu-v2-run.log",
+          "sha256": "8d333082caade90fad87204afc8ffd77a698db9d5d8b8a1d265769573dce1bbf"
+        },
+        "second_deployment_attempt": {
+          "path": "evidence/resume-lumia-wgpu-v2-retry.log",
+          "sha256": "8d333082caade90fad87204afc8ffd77a698db9d5d8b8a1d265769573dce1bbf"
+        },
+        "provenance": {
+          "path": "evidence/resume-lumia-hal-v2-provenance.json",
+          "sha256": "ac2572da79d3a726caa5e455904ba99d3be889993cd10af52257ef63884f70f8"
+        },
+        "host_source_sha256": "0f45b4928090995cd5859923c31f645d5b27e8cd1c090ce94476ca013bec28a3"
+      },
+      "initial_transport_error": {
+        "path": "evidence/resume-lumia-native-first.log",
+        "sha256": "75b6d7730fcd9c481e76392e02e98ca672c32a156335293af7193ac3c9121a88"
+      }
+    },
+    "physical_removal_verified": false,
+    "fl91_ceiling_hardware_verified": false
   }
 }

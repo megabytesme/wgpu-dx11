@@ -1,0 +1,83 @@
+[WARN  wgpu_core::instance] DX11 is experimental and exposes a restricted FL9_1 graphics backend with constrained owner-thread HWND and CoreWindow surfaces
+D3D11 strict hardware selection: backend=Dx11 name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 device_type=Other driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" verified_FL9_1_marker=true
+D3D11 strict hardware selection: backend=Dx11 name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 device_type=Other driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" verified_FL9_1_marker=true
+[fail] webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method="WriteTexture";format="depth16unorm";dimension="2d" (390ms). Log:
+  - (in subcase: rowsPerImage=1) INFO: subcase ran
+  - (in subcase: rowsPerImage=2) INFO: subcase ran
+  - (in subcase: rowsPerImage=3) INFO: subcase ran
+  - EXCEPTION: Error: Unexpected validation error occurred: Texture usages TextureUsages(COPY_SRC | COPY_DST) are not allowed on a texture of type Depth16Unorm due to downlevel restrictions
+        at DeviceHolder.attemptEndTestScope (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:466:13)
+        at eventLoopTick (ext:core/01_core.js:179:7)
+        at async DevicePool.release (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:104:7)
+        at async Promise.allSettled (<anonymous>)
+        at async AllFeaturesMaxLimitsGPUTestSubcaseBatchState.finalize (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/gpu_test.js:154:21)
+        at async RunCaseSpecific.run (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/internal/test_group.js:694:9)
+        at async file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/runtime/cmdline.js:218:5
+[fail] webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method="CopyB2T";format="depth16unorm";dimension="2d" (14ms). Log:
+  - (in subcase: rowsPerImage=1) INFO: subcase ran
+  - (in subcase: rowsPerImage=2) INFO: subcase ran
+  - (in subcase: rowsPerImage=3) INFO: subcase ran
+  - EXCEPTION: Error: Unexpected validation error occurred: Texture usages TextureUsages(COPY_SRC | COPY_DST) are not allowed on a texture of type Depth16Unorm due to downlevel restrictions
+        at DeviceHolder.attemptEndTestScope (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:466:13)
+        at eventLoopTick (ext:core/01_core.js:179:7)
+        at async DevicePool.release (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:104:7)
+        at async Promise.allSettled (<anonymous>)
+        at async AllFeaturesMaxLimitsGPUTestSubcaseBatchState.finalize (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/gpu_test.js:154:21)
+        at async RunCaseSpecific.run (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/internal/test_group.js:694:9)
+        at async file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/runtime/cmdline.js:218:5
+[fail] webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method="CopyT2B";format="depth16unorm";dimension="2d" (14ms). Log:
+  - (in subcase: rowsPerImage=1) INFO: subcase ran
+  - (in subcase: rowsPerImage=2) INFO: subcase ran
+  - (in subcase: rowsPerImage=3) INFO: subcase ran
+  - EXCEPTION: Error: Unexpected validation error occurred: Texture usages TextureUsages(COPY_SRC | COPY_DST) are not allowed on a texture of type Depth16Unorm due to downlevel restrictions
+        at DeviceHolder.attemptEndTestScope (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:466:13)
+        at eventLoopTick (ext:core/01_core.js:179:7)
+        at async DevicePool.release (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:104:7)
+        at async Promise.allSettled (<anonymous>)
+        at async AllFeaturesMaxLimitsGPUTestSubcaseBatchState.finalize (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/gpu_test.js:154:21)
+        at async RunCaseSpecific.run (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/internal/test_group.js:694:9)
+        at async file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/runtime/cmdline.js:218:5
+
+** Failures **
+[fail] webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method="WriteTexture";format="depth16unorm";dimension="2d" (390ms). Log:
+  - (in subcase: rowsPerImage=1) INFO: subcase ran
+  - (in subcase: rowsPerImage=2) INFO: subcase ran
+  - (in subcase: rowsPerImage=3) INFO: subcase ran
+  - EXCEPTION: Error: Unexpected validation error occurred: Texture usages TextureUsages(COPY_SRC | COPY_DST) are not allowed on a texture of type Depth16Unorm due to downlevel restrictions
+        at DeviceHolder.attemptEndTestScope (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:466:13)
+        at eventLoopTick (ext:core/01_core.js:179:7)
+        at async DevicePool.release (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:104:7)
+        at async Promise.allSettled (<anonymous>)
+        at async AllFeaturesMaxLimitsGPUTestSubcaseBatchState.finalize (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/gpu_test.js:154:21)
+        at async RunCaseSpecific.run (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/internal/test_group.js:694:9)
+        at async file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/runtime/cmdline.js:218:5
+[fail] webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method="CopyB2T";format="depth16unorm";dimension="2d" (14ms). Log:
+  - (in subcase: rowsPerImage=1) INFO: subcase ran
+  - (in subcase: rowsPerImage=2) INFO: subcase ran
+  - (in subcase: rowsPerImage=3) INFO: subcase ran
+  - EXCEPTION: Error: Unexpected validation error occurred: Texture usages TextureUsages(COPY_SRC | COPY_DST) are not allowed on a texture of type Depth16Unorm due to downlevel restrictions
+        at DeviceHolder.attemptEndTestScope (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:466:13)
+        at eventLoopTick (ext:core/01_core.js:179:7)
+        at async DevicePool.release (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:104:7)
+        at async Promise.allSettled (<anonymous>)
+        at async AllFeaturesMaxLimitsGPUTestSubcaseBatchState.finalize (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/gpu_test.js:154:21)
+        at async RunCaseSpecific.run (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/internal/test_group.js:694:9)
+        at async file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/runtime/cmdline.js:218:5
+[fail] webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method="CopyT2B";format="depth16unorm";dimension="2d" (14ms). Log:
+  - (in subcase: rowsPerImage=1) INFO: subcase ran
+  - (in subcase: rowsPerImage=2) INFO: subcase ran
+  - (in subcase: rowsPerImage=3) INFO: subcase ran
+  - EXCEPTION: Error: Unexpected validation error occurred: Texture usages TextureUsages(COPY_SRC | COPY_DST) are not allowed on a texture of type Depth16Unorm due to downlevel restrictions
+        at DeviceHolder.attemptEndTestScope (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:466:13)
+        at eventLoopTick (ext:core/01_core.js:179:7)
+        at async DevicePool.release (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/util/device_pool.js:104:7)
+        at async Promise.allSettled (<anonymous>)
+        at async AllFeaturesMaxLimitsGPUTestSubcaseBatchState.finalize (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/webgpu/gpu_test.js:154:21)
+        at async RunCaseSpecific.run (file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/internal/test_group.js:694:9)
+        at async file:///C:/dev/personal/wgpu-dx11-FL91-cert-Nov21/cts/out/common/runtime/cmdline.js:218:5
+
+** Summary **
+Passed  w/o warnings = 0 / 3 =   0.00%
+Passed with warnings = 0 / 3 =   0.00%
+Skipped              = 0 / 3 =   0.00%
+Failed               = 3 / 3 = 100.00%

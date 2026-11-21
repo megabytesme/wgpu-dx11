@@ -1,0 +1,8 @@
+The signed probe package did not register. Inspect installer results in
+C:\Users\ben\AppData\Local\Temp\wgpu-fl91-corewindow-7ce54912-arm\run-20261121-221219-6612
+At C:\Users\ben\AppData\Local\Temp\wgpu-fl91-corewindow-7ce54912-arm\run-on-lumia.ps1:54 char:9
++         throw "The signed probe package did not register. Inspect ins ...
++         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (The signed prob...121-221219-6612:String) [], RuntimeException
+    + FullyQualifiedErrorId : The signed probe package did not register. Inspect installer results in C:\Users\ben\App
+   Data\Local\Temp\wgpu-fl91-corewindow-7ce54912-arm\run-20261121-221219-6612

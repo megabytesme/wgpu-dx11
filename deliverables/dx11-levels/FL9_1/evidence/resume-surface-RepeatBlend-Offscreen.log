@@ -1,0 +1,39 @@
+Surface=BEN-TABLET; native ARM64 binary=77246f05788d3dffce1a130492ef119e6f5d06637d356265099d4c44ea88acdb; SSH session=0
+
+running 2 tests
+test public_dx11_blending_and_downlevel_rejections_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false
+PASS: public core rejected source-alpha-saturated blending before HAL
+PASS: public core rejected separate alpha equations before HAL
+FL9_1 Rgba8Unorm blend first pixel [128, 0, 127, 255], expected [128, 0, 128, 255]
+FL9_1 Rgba8Unorm blend first pixel [128, 0, 255, 128], expected [128, 0, 255, 128]
+FL9_1 Rgba8UnormSrgb blend first pixel [137, 0, 188, 159], expected [137, 0, 188, 159]
+FL9_1 Bgra8UnormSrgb blend first pixel [188, 0, 137, 159], expected [188, 0, 137, 159]
+PASS: public FL9_1 premultiplied blend matched [128, 0, 128, 255], and alpha-equivalent inverse-color blend matched [128, 0, 255, 128], all 64 pixels each
+ok
+test public_dx11_repeat_sampler_limit_at_fl91 ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_1; physical DXGI adapter; driver version 27.20.2160.0" requested=FL9_1 actual=FL9_1 software=false; max_texture_repeat_per_primitive=128
+PASS: bounded Repeat Nearest GPU pixel [81, 0, 0, 255]
+PASS: bounded Repeat Linear GPU pixel [128, 0, 0, 255]
+System.Management.Automation.RemoteException
+thread 'public_dx11_repeat_sampler_limit_at_fl91' (19932) panicked at wgpu\src\backend\wgpu_core.rs:3944:18:
+Error in RenderBundleEncoder::finish: Validation Error
+System.Management.Automation.RemoteException
+Caused by:
+  In a draw command, kind: Draw
+    Sampler group 0 binding 1 uses Repeat or MirrorRepeat without a proven coordinate bound (device limit 128 repeats per primitive)
+System.Management.Automation.RemoteException
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+PASS: Core rejected an unproven Repeat render-bundle draw
+PASS: bounded MirrorRepeat Nearest GPU pixel [23, 0, 0, 255]
+PASS: bounded MirrorRepeat Linear GPU pixel [255, 0, 0, 255]
+System.Management.Automation.RemoteException
+thread 'public_dx11_repeat_sampler_limit_at_fl91' (19932) panicked at wgpu\src\backend\wgpu_core.rs:3944:18:
+Error in RenderBundleEncoder::finish: Validation Error
+System.Management.Automation.RemoteException
+Caused by:
+  In a draw command, kind: Draw
+    Sampler group 0 binding 1 uses Repeat or MirrorRepeat without a proven coordinate bound (device limit 128 repeats per primitive)
+System.Management.Automation.RemoteException
+PASS: Core rejected an unproven MirrorRepeat render-bundle draw
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 176 filtered out; finished in 1.62s

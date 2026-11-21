@@ -1,0 +1,7 @@
+
+running 3 tests
+test dx11::capabilities::tests::portable_srgb_blend_projection_requires_selected_format_and_native_blend_flag ... ok
+test dx11::srgb_blend::tests::portable_srgb_blend_probe_requires_both_linear_pixels_and_alpha ... ok
+test dx11::srgb_blend::tests::portable_srgb_blend_selected_override_is_format_level_and_sample_count_specific ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 566 filtered out; finished in 0.02s

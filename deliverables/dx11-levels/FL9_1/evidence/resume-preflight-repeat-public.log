@@ -1,0 +1,22 @@
+
+running 1 test
+test public_dx11_repeat_sampler_limit_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; max_texture_repeat_per_primitive=128
+PASS: bounded Repeat Nearest GPU pixel [81, 0, 0, 255]
+PASS: bounded Repeat Linear GPU pixel [127, 0, 0, 255]
+
+thread 'public_dx11_repeat_sampler_limit_at_fl91' (57328) panicked at wgpu\src\backend\wgpu_core.rs:3944:18:
+Error in RenderBundleEncoder::finish: Validation Error
+
+Caused by:
+  In a draw command, kind: Draw
+    Sampler group 0 binding 1 uses Repeat or MirrorRepeat without a proven coordinate bound (device limit 128 repeats per primitive)
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+FAILED
+
+failures:
+
+failures:
+    public_dx11_repeat_sampler_limit_at_fl91
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.78s

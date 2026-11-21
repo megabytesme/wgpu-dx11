@@ -1,0 +1,6 @@
+Invoke-LumiaPortal : Exception calling "GetResponse" with "0" argument(s): "The operation has timed out"
+At C:\Users\ben\AppData\Local\Temp\wgpu-fl91-corewindow-7ce54912-arm-v2\run-on-lumia.ps1:30 char:1
++ Invoke-LumiaPortal -Path '/api/os/devicefamily' | Set-Content -Litera ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: (:) [Invoke-LumiaPortal], MethodInvocationException
+    + FullyQualifiedErrorId : WebException,Invoke-LumiaPortal

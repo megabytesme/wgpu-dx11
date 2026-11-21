@@ -1,0 +1,9 @@
+{
+  "stage": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\resume-cts-surface-stage-7ce54912",
+  "path": "out\\webgpu\\api\\operation\\sampling\\filter_mode.spec.js",
+  "original_sha256": "4e83edcd4df0cc19f2952e05a0407edc82a2d73bbcde793a495a9f997ef2b61b",
+  "temporary_sha256": "dc9af45378ed177e597f3c058ddf2a14c1b6aa24206e138218f88e01fb0f8230",
+  "scope": "Two magFilter vertex shaders. Replace dynamic indexing of identical corner tuples and linear UV offsets with float comparisons. Fragment sampling and texture oracle remain unchanged.",
+  "replacement_wgsl": "        let vertex = f32(vi);\n        let positiveX = vertex == 0.0 || vertex == 1.0 || vertex == 3.0;\n        let positiveY = vertex == 0.0 || vertex == 3.0 || vertex == 5.0;\n        let basePosition = vec2f(select(-1.0, 1.0, positiveX), select(-1.0, 1.0, positiveY));\n        let baseUv = vec2f((basePosition.x + 1.0) * 0.5, (1.0 - basePosition.y) * 0.5);\n",
+  "linear_offset_wgsl": "let u = select(select(0.0, 0.75, cell.x == 1.0), select(2.0, 2.75, cell.x == 3.0), cell.x >= 2.0);\n        let v = select(select(0.0, 1.0, cell.y == 1.0), select(1.75, 2.75, cell.y == 3.0), cell.y >= 2.0);\n        let uvPixelOffset = vec2f(u, -v);"
+}

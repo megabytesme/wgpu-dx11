@@ -1,0 +1,63 @@
+started_utc=2026-11-21T21:32:14.642Z
+probe_kind=ARM32 UWP native DX11 CoreWindow control
+requested_level=0x9100
+D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr, flags, &exact, 1, D3D11_SDK_VERSION, &device, &returned, &ctx)=0x00000000
+returned_level=0x9100
+device.As(&dxgi)=0x00000000
+dxgi->GetAdapter(&base)=0x00000000
+base.As(&adapter)=0x00000000
+adapter->GetDesc1(&desc)=0x00000000
+adapter=Qualcomm Adreno 430 vendor=0x4d4f4351 device=0x46363432 flags=0x00000000 luid=0x00000000000095fe
+driver_query_hr=0x00000000
+driver_version=11.18.1078.53
+adapter_ceiling_hr=0x00000001
+adapter_maximum=0xb100
+device->CreateVertexShader(probe_vs, sizeof(probe_vs), nullptr, &vs)=0x00000000
+device->CreatePixelShader(probe_ps, sizeof(probe_ps), nullptr, &ps)=0x00000000
+device->CreateInputLayout(&position, 1, probe_vs, sizeof(probe_vs), &layout)=0x00000000
+device->CreateBuffer(&vb, &init, &geometry)=0x00000000
+device->CreateRasterizerState(&rs, &raster)=0x00000000
+device->CreateBlendState(&bs, &blend)=0x00000000
+blend_format=RGBA8_SRGB
+device->CheckFormatSupport(format, &support)=0x00000000
+blend_format_flags=0x112ef3e0
+device->CreateTexture2D(&desc, nullptr, &target)=0x00000000
+device->CreateRenderTargetView(target.Get(), nullptr, &rtv)=0x00000000
+device->CreateTexture2D(&desc, nullptr, &staging)=0x00000000
+ctx->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &map)=0x00000000
+blend_pixel=RGBA8_SRGB RGBA=188,188,137,159 model=linear-space alpha_ok=1
+blend_format=BGRA8_SRGB
+device->CheckFormatSupport(format, &support)=0x00000000
+blend_format_flags=0x112ef3e0
+device->CreateTexture2D(&desc, nullptr, &target)=0x00000000
+device->CreateRenderTargetView(target.Get(), nullptr, &rtv)=0x00000000
+device->CreateTexture2D(&desc, nullptr, &staging)=0x00000000
+ctx->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &map)=0x00000000
+blend_pixel=BGRA8_SRGB RGBA=188,188,137,159 model=linear-space alpha_ok=1
+blend_format=BGRX8_SRGB
+device->CheckFormatSupport(format, &support)=0x00000000
+blend_format_flags=0x0026f3e0
+device->CreateTexture2D(&desc, nullptr, &target)=0x00000000
+device->CreateRenderTargetView(target.Get(), nullptr, &rtv)=0x00000000
+device->CreateTexture2D(&desc, nullptr, &staging)=0x00000000
+ctx->Map(staging.Get(), 0, D3D11_MAP_READ, 0, &map)=0x00000000
+blend_pixel=BGRX8_SRGB RGB=188,188,137 model=linear-space
+corewindow_owner_thread=2040
+corewindow_present_thread=2040
+corewindow_dispatcher_access=1
+corewindow_visible=1
+corewindow_bounds_dip=411.43,731.43
+adapter->GetParent(IID_PPV_ARGS(&factory))=0x00000000
+factory->CreateSwapChainForCoreWindow(device.Get(), coreWindow, &desc, nullptr, &chain)=0x00000000
+chain->GetBuffer(0, IID_PPV_ARGS(&back))=0x00000000
+corewindow_back_buffer=1439x2560 format=87
+device->CreateRenderTargetView(back.Get(), nullptr, &view)=0x00000000
+corewindow_visible_at_present=1
+corewindow_present_hr=0x00000000
+corewindow_visible_at_present=1
+corewindow_present_hr=0x00000000
+device_removed_reason=0x00000000
+blend_models_classified=1
+strict_corewindow_present=1
+probe_complete=0x00000001
+Report: C:\Users\ben\AppData\Local\Temp\wgpu-fl91-lumia-arm-20261121-212245\run-20261121-213221-3432\fl91-core-blend-probe.txt

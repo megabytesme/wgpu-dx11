@@ -1,0 +1,6 @@
+
+running 2 tests
+test command::bind::tests::npot_repeat_validation_uses_the_bound_relationship ... ok
+test validation::tests::fl9_repeat_proof_uses_selected_entry_and_reflected_sampler ... ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 155 filtered out; finished in 0.01s

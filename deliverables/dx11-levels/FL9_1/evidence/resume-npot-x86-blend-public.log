@@ -1,0 +1,13 @@
+
+running 1 test
+test public_dx11_blending_and_downlevel_rejections_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="D3D11" driver_info="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false
+PASS: public core rejected source-alpha-saturated blending before HAL
+PASS: public core rejected separate alpha equations before HAL
+FL9_1 Rgba8Unorm blend first pixel [127, 0, 128, 255], expected [128, 0, 128, 255]
+FL9_1 Rgba8Unorm blend first pixel [127, 0, 255, 127], expected [128, 0, 255, 128]
+FL9_1 Rgba8UnormSrgb blend first pixel [137, 0, 188, 159], expected [137, 0, 188, 159]
+FL9_1 Bgra8UnormSrgb blend first pixel [188, 0, 137, 159], expected [188, 0, 137, 159]
+PASS: public FL9_1 premultiplied blend matched [128, 0, 128, 255], and alpha-equivalent inverse-color blend matched [128, 0, 255, 128], all 64 pixels each
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.58s

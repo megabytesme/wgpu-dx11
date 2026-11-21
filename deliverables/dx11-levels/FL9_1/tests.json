@@ -2488,7 +2488,7 @@
   },
   "coverage_matrix": {
     "path": "contract.csv",
-    "sha256": "ab9becbf445138f795e17bc0afde114a7a3f79ee5b4ca5bce5d157cd60d7d3de"
+    "sha256": "46f1d0d6ae4bd70cbf2d6e55fa1b9093fee0f5eade4db1bdea6f6c9c4c0b9b11"
   },
   "surface_public_run": {
     "receipt": {
@@ -2814,15 +2814,15 @@
     "cts_audit": [
       {
         "path": "cts-runtime-skips.csv",
-        "sha256": "49a3e384ca7d9c7e69014125d2a5676d789ac240e1bca9fd36f76887b72c7ab6"
+        "sha256": "caa0f9f0218b448b0669a6ac953e4ae718fda99be3de01483add78157f0a6edf"
       },
       {
         "path": "cts-excluded-selectors.csv",
-        "sha256": "b9d18712712e6384a6918a389ad61b9d6ed7738977226ae28d6e08789b90b213"
+        "sha256": "182308b29c9351a64f12f833800304b3daa58724d9f2a04740e4f44b01602e0c"
       },
       {
         "path": "cts-exclusion-audit.json",
-        "sha256": "bea1cb0510ba41309c8dc0a08647af8c83f344aebaf4c8d1b1f9a1ae971fb805"
+        "sha256": "c25756b98c8931a41b479b04fe40537f27b7493416c0a15c66d65af9b118fc36"
       }
     ],
     "notes": [
@@ -3233,6 +3233,822 @@
     "arm32_first_attempt": {
       "path": "evidence/followup-arm32-disk-failure.log",
       "sha256": "e8f1ca7140895309b67929e0345807ede18cd18d329a4388e3b94c5df4123803"
+    }
+  },
+  "resume": {
+    "candidate_sha": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+    "earlier_candidate_sha": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+    "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+    "cts_exclusions": {
+      "path": "cts-excluded-selectors.csv",
+      "sha256": "182308b29c9351a64f12f833800304b3daa58724d9f2a04740e4f44b01602e0c"
+    },
+    "cts_exclusion_audit": {
+      "path": "cts-exclusion-audit.json",
+      "sha256": "c25756b98c8931a41b479b04fe40537f27b7493416c0a15c66d65af9b118fc36"
+    },
+    "cts_runtime_skips": {
+      "path": "cts-runtime-skips.csv",
+      "sha256": "caa0f9f0218b448b0669a6ac953e4ae718fda99be3de01483add78157f0a6edf"
+    },
+    "artifact_normalization": "LF line endings and trailing log whitespace normalized. Source captures remain in the system temporary directory.",
+    "strict_hardware_environment": {
+      "WGPU_DX11_FORCE_FL9_1": "1",
+      "WGPU_DX11_REQUIRE_HARDWARE": "1"
+    },
+    "builds": [
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+        "command": "cargo +1.93.1 test --locked --offline -j4 -p wgpu -p wgpu-core -p wgpu-hal --features wgpu/dx11-test-fixture,wgpu-core/dx11-test-fixture,wgpu-hal/dx11-test-fixture --lib --test dx11_public --no-run",
+        "result": "pass",
+        "source_candidate": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+        "artifact": {
+          "path": "evidence/resume-integrated-x64-build.log",
+          "sha256": "d7e9c4cd9341dde8827ded52b37db187e364b6f1ca010b6e56b82bd59e40d291"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target",
+        "command": "cargo +1.93.1 test --locked --offline -j4 -p wgpu -p wgpu-core -p wgpu-hal --target i686-pc-windows-msvc --no-default-features --features wgpu/dx11,wgpu/wgsl,wgpu/std,wgpu-core/dx11-test-fixture,wgpu-hal/dx11-test-fixture --lib --test dx11_public --no-run",
+        "result": "pass",
+        "source_candidate": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+        "artifact": {
+          "path": "evidence/resume-integrated-x86-build.log",
+          "sha256": "5ef6d8605ebe965432c2d132a76fa94522ba73b39ce0c0d2ff87b90bb60892dd"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target",
+        "command": "cargo +1.93.1 test --locked --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --target aarch64-pc-windows-msvc --test dx11_public --no-run",
+        "result": "pass",
+        "source_candidate": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+        "artifact": {
+          "path": "evidence/resume-integrated-arm64-build.log",
+          "sha256": "0bc9977dff9263607033eba6032f49a9e5d6e47f892ec982bb862bb7dde5c8e1"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\uwp-target",
+        "command": "cargo +1.93.1 -Z build-std=core,alloc,std,panic_abort build --offline --target thumbv7a-uwp-windows-msvc --manifest-path <scratch>/uwp-arm32-link/Cargo.toml",
+        "result": "pass",
+        "source_candidate": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+        "artifact": {
+          "path": "evidence/resume-arm32-offscreen-link.log",
+          "sha256": "b183bb84338b0dc10f8cc309958bf1a7b7bd686d27849e4d440b5b281251d06b"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+        "command": "cargo +1.93.1 build --locked --offline -j3 -p cts_runner --bin cts_runner --features deno_webgpu/dx11",
+        "result": "pass",
+        "source_candidate": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+        "artifact": {
+          "path": "evidence/resume-exact-cts-build.log",
+          "sha256": "69f6de7d58e989b37e680dbf02b5975511963c133d9a2f7ecb2c7b0a87016a39"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+        "command": "cargo +1.93.1 clippy --locked --offline -j4 -p wgpu -p wgpu-core -p wgpu-hal --features wgpu/dx11-test-fixture,wgpu-core/dx11-test-fixture,wgpu-hal/dx11-test-fixture --tests",
+        "result": "pass",
+        "source_candidate": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+        "artifact": {
+          "path": "evidence/resume-clippy.log",
+          "sha256": "b7d9c8b8cb937f5a832889b68ddef0439a0ec2061a9bba0dce56d6d4559034a2"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+        "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21/cargo-x64.cmd test --locked --offline -j4 -p wgpu -p wgpu-core -p wgpu-hal --features wgpu/dx11-test-fixture,wgpu-core/dx11-test-fixture,wgpu-hal/dx11-test-fixture --lib --test dx11_public --no-run",
+        "source_candidate": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "result": "pass",
+        "artifact": {
+          "path": "evidence/resume-npot-x64-build.log",
+          "sha256": "502466b2a913ec918377f68d9a5574a95e986c9a5d4a9c444a011a8b480cf353"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target",
+        "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21/cargo-x86.cmd test --locked --offline -j4 -p wgpu -p wgpu-core -p wgpu-hal --target i686-pc-windows-msvc --no-default-features --features wgpu/dx11,wgpu/wgsl,wgpu/std,wgpu-core/dx11-test-fixture,wgpu-hal/dx11-test-fixture --lib --test dx11_public --no-run",
+        "source_candidate": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "result": "pass",
+        "artifact": {
+          "path": "evidence/resume-npot-x86-build.log",
+          "sha256": "a11c8c55ea0ca8c6edf8364949c87b6922de25cb6c032ffe4246f82ae3903449"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\cross-target",
+        "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21/cargo-arm64.cmd test --locked --offline -j4 -p wgpu --no-default-features --features dx11,wgsl,std --target aarch64-pc-windows-msvc --test dx11_public --no-run",
+        "source_candidate": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "result": "pass",
+        "artifact": {
+          "path": "evidence/resume-npot-arm64-build.log",
+          "sha256": "b081ebc555d26ea1a723bf6df8bf50efb12d364a74576243b9e168214a295f40"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+        "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21/cargo-x64.cmd build --locked --offline -j4 -p cts_runner --bin cts_runner --features deno_webgpu/dx11",
+        "source_candidate": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "result": "pass",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-build.log",
+          "sha256": "906594eabe9ea7918a1d04937822bc56f79c4eaf0feb39743a7503d12d1d6cd6"
+        }
+      },
+      {
+        "worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+        "target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\candidate-target",
+        "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21/cargo-x64.cmd clippy --locked --offline -j4 -p wgpu -p wgpu-core -p wgpu-hal --features wgpu/dx11-test-fixture,wgpu-core/dx11-test-fixture,wgpu-hal/dx11-test-fixture --tests",
+        "source_candidate": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "result": "pass",
+        "artifact": {
+          "path": "evidence/resume-npot-clippy.log",
+          "sha256": "111ec4e5d06e87a312b8b500e092955d834b6233220ac94441bae3e0d6e6779a"
+        }
+      }
+    ],
+    "exact_core_cpu": {
+      "path": "evidence/resume-npot-cpu.log",
+      "sha256": "d9ab178434ac99194344dff5911d8f47f0a0bb7a5a1d9d9a15c2821a0f328067"
+    },
+    "desktop_runs": [
+      {
+        "exit": 0,
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/candidate-target\\debug\\deps\\wgpu_core-abe3313f8792fb7e.exe",
+        "filter": "npot_repeat_validation_uses_the_bound_relationship",
+        "suite": "npot-cpu",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "binary_sha256": "7d9a6595b9918c5a354e33453f7a311f9858cf9706045bc63ae1e1fbf4ea1411",
+        "artifact": {
+          "path": "evidence/resume-npot-x64-npot-cpu.log",
+          "sha256": "3aff3ba1940224e5a39a2dd28cfc813f73af279b14c6210f27ae7d08762f6eeb"
+        }
+      },
+      {
+        "exit": 0,
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/candidate-target\\debug\\deps\\wgpu_core-abe3313f8792fb7e.exe",
+        "filter": "fl9_repeat_proof_uses_selected_entry_and_reflected_sampler",
+        "suite": "repeat-cpu",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "binary_sha256": "7d9a6595b9918c5a354e33453f7a311f9858cf9706045bc63ae1e1fbf4ea1411",
+        "artifact": {
+          "path": "evidence/resume-npot-x64-repeat-cpu.log",
+          "sha256": "c3a60233eb42ba9d12cb4b7a9c5286f58b9b4c1ff5fed2934b5ccf9afa227a39"
+        }
+      },
+      {
+        "exit": 0,
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/candidate-target\\debug\\deps\\wgpu_hal-3cd728d518d72a33.exe",
+        "filter": "portable_srgb_blend",
+        "suite": "blend-cpu",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "binary_sha256": "d24df00dac84c061916d1e97dd6cfced98048f2d36464c826663810c52408367",
+        "artifact": {
+          "path": "evidence/resume-npot-x64-blend-cpu.log",
+          "sha256": "2bde43009e4d7a30c0d0f9f85469aab6e90a4a81c9bc5e9145b16af000f89e14"
+        }
+      },
+      {
+        "exit": 0,
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/candidate-target\\debug\\deps\\wgpu_hal-3cd728d518d72a33.exe",
+        "filter": "fl91_bgrx_srgb_blend_space_diagnostic",
+        "suite": "blend-native",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "binary_sha256": "d24df00dac84c061916d1e97dd6cfced98048f2d36464c826663810c52408367",
+        "artifact": {
+          "path": "evidence/resume-npot-x64-blend-native.log",
+          "sha256": "af934d6b8395235f9bc987aea19926da59b8722ae40bbbf19cf3b6bbe951dac7"
+        }
+      },
+      {
+        "exit": 0,
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/candidate-target\\debug\\deps\\dx11_public-95967d1a5cf2cc22.exe",
+        "filter": "public_dx11_repeat_sampler_limit_at_fl91",
+        "suite": "repeat-public",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "binary_sha256": "ef488f4237edfb8148cb8aecea38932274cdbe86ebee8fe13561782cdfd4f928",
+        "artifact": {
+          "path": "evidence/resume-npot-x64-repeat-public.log",
+          "sha256": "847ab58957ac3d10b7cd18ff47edf48e8164f205168caa05519993900577eb86"
+        }
+      },
+      {
+        "exit": 0,
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/candidate-target\\debug\\deps\\dx11_public-95967d1a5cf2cc22.exe",
+        "filter": "public_dx11_blending_and_downlevel_rejections_at_fl91",
+        "suite": "blend-public",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "binary_sha256": "ef488f4237edfb8148cb8aecea38932274cdbe86ebee8fe13561782cdfd4f928",
+        "artifact": {
+          "path": "evidence/resume-npot-x64-blend-public.log",
+          "sha256": "88aa4eddc070098f04f9d07899de32fd877685803b17fc998e3086ca4db35eaa"
+        }
+      },
+      {
+        "exit": 0,
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/candidate-target\\debug\\deps\\dx11_public-95967d1a5cf2cc22.exe",
+        "filter": "",
+        "suite": "all-public",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "binary_sha256": "ef488f4237edfb8148cb8aecea38932274cdbe86ebee8fe13561782cdfd4f928",
+        "artifact": {
+          "path": "evidence/resume-npot-x64-all-public.log",
+          "sha256": "e12b5e51a1cbd4e869accba71d5f78e888d92a408045247918e4ae1a9b6ecc63"
+        }
+      },
+      {
+        "suite": "npot-cpu",
+        "exit": 0,
+        "filter": "npot_repeat_validation_uses_the_bound_relationship",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/cross-target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_core-335255896bb386a7.exe",
+        "binary_sha256": "77822638f1a3c9a7edd88222e606348ee0e911b51ea671b2648efd106e489591",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "artifact": {
+          "path": "evidence/resume-npot-x86-npot-cpu.log",
+          "sha256": "3aff3ba1940224e5a39a2dd28cfc813f73af279b14c6210f27ae7d08762f6eeb"
+        }
+      },
+      {
+        "suite": "repeat-cpu",
+        "exit": 0,
+        "filter": "fl9_repeat_proof_uses_selected_entry_and_reflected_sampler",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/cross-target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_core-335255896bb386a7.exe",
+        "binary_sha256": "77822638f1a3c9a7edd88222e606348ee0e911b51ea671b2648efd106e489591",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "artifact": {
+          "path": "evidence/resume-npot-x86-repeat-cpu.log",
+          "sha256": "9f970dbfbe2ec8ae904723cdb247e0d581698adf6f745eb2327cd3d129e00905"
+        }
+      },
+      {
+        "suite": "blend-cpu",
+        "exit": 0,
+        "filter": "portable_srgb_blend",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/cross-target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-19058c935d2818c5.exe",
+        "binary_sha256": "25d8c0fc7d53ebb8e715d8120585b430da5e1a3118189ea8d8b6433ffc9b1970",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "artifact": {
+          "path": "evidence/resume-npot-x86-blend-cpu.log",
+          "sha256": "fb252e4810b3c3a31b42620b2235a37ed72e0fe0afbefe01172827a7e87edfae"
+        }
+      },
+      {
+        "suite": "blend-native",
+        "exit": 0,
+        "filter": "fl91_bgrx_srgb_blend_space_diagnostic",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/cross-target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-19058c935d2818c5.exe",
+        "binary_sha256": "25d8c0fc7d53ebb8e715d8120585b430da5e1a3118189ea8d8b6433ffc9b1970",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "artifact": {
+          "path": "evidence/resume-npot-x86-blend-native.log",
+          "sha256": "fcf2076c724c5d650334823e23f0850db738a3335e0f13692c61fe2febb8485e"
+        }
+      },
+      {
+        "suite": "repeat-public",
+        "exit": 0,
+        "filter": "public_dx11_repeat_sampler_limit_at_fl91",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/cross-target\\i686-pc-windows-msvc\\debug\\deps\\dx11_public-ef9cde3d11bf8398.exe",
+        "binary_sha256": "df0f7f363fa1f671fe5109e23b4194bc903647def06932f3937f5674461519ef",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "artifact": {
+          "path": "evidence/resume-npot-x86-repeat-public.log",
+          "sha256": "9567dc2fba6a6fac5f98c0968fb220f2e964202532891e63dddf801b32c91689"
+        }
+      },
+      {
+        "suite": "blend-public",
+        "exit": 0,
+        "filter": "public_dx11_blending_and_downlevel_rejections_at_fl91",
+        "binary": "C:\\Users\\ben\\AppData\\Local\\Temp/wgpu-fl91-cert-Nov21/cross-target\\i686-pc-windows-msvc\\debug\\deps\\dx11_public-ef9cde3d11bf8398.exe",
+        "binary_sha256": "df0f7f363fa1f671fe5109e23b4194bc903647def06932f3937f5674461519ef",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "artifact": {
+          "path": "evidence/resume-npot-x86-blend-public.log",
+          "sha256": "a4cf2127450c84980c0d17719cdaa4663e607b818eb55ee72f878b2d73a3d544"
+        }
+      }
+    ],
+    "preflight": [
+      {
+        "path": "evidence/resume-preflight-repeat-public.log",
+        "sha256": "60937792e118db71e7b7893af56098cb05e11fb01a4a58487e93808067cddb2d"
+      },
+      {
+        "path": "evidence/resume-preflight-blend-native.log",
+        "sha256": "57c61f61f1bbcbad88992b84c5ae902929f77096fc9220c6348e5d0b1a1e023c"
+      },
+      {
+        "path": "evidence/resume-srgb-cpu-final.log",
+        "sha256": "b701ed765b6d7c48bde805e1bd29c94d1f2a80b9a4316816948fae17bedbb8d0"
+      },
+      {
+        "path": "evidence/resume-npot-x64-link-env-error.log",
+        "sha256": "06545116dc0166e65d704a7497426837baed9508ff539d23449187bab9b66dae"
+      },
+      {
+        "path": "evidence/resume-npot-x86-link-env-error.log",
+        "sha256": "67a5025aeb587a3ff1f849e3e0a1fb343603606dcb7b82d1c2e2930e11ae1223"
+      }
+    ],
+    "surface": {
+      "source_before_npot_fix": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+      "architecture": "ARM64",
+      "adapter": "Qualcomm Adreno 680, driver 27.20.2160.0",
+      "requested_level": "0x9100",
+      "returned_level": "0x9100",
+      "binary_sha256": "77246f05788d3dffce1a130492ef119e6f5d06637d356265099d4c44ea88acdb",
+      "fixture_build": "Integrated source with equivalent fixture contents before whitespace-only formatting.",
+      "session": "SSH session 0",
+      "public_offscreen": {
+        "path": "evidence/resume-surface-RepeatBlend-Offscreen.log",
+        "sha256": "562b6d7b3a237d8abd6fa41e368a525c2d4e209b377b36c1ebf5ee9f230634ba"
+      },
+      "signed_panel": {
+        "source_sha": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+        "package": "C:\\Users\\ben\\AppData\\Local\\Temp\\mission-fl91-panel-7ce54912-arm64\\Fl91PanelProbe-arm64.appx",
+        "sha256": "e2c5f1de22c1655cd1ca4b0c0b1c02794230d30610887b23f25457511145aab1",
+        "remote_package_destination": "C:/Users/ben/AppData/Local/Temp/wgpu-fl91-resume/SignedPanel7ce54912/Fl91PanelProbe-arm64.appx",
+        "rust_build": {
+          "path": "evidence/resume-surface-panel-build.log",
+          "sha256": "f9d1e56772de320a3aaea33980d9b2a11f7e0a0ac474c6be81b477e95ccf3393"
+        },
+        "strict_link": {
+          "path": "evidence/resume-surface-panel-link.log",
+          "sha256": "4661b97d3d0d140e252172dc178e2d16527c5ce9ea37d9ebf91a63163a6231f9"
+        },
+        "signing": {
+          "path": "evidence/resume-surface-panel-signing.log",
+          "sha256": "6d487c2c93087148e8ac03ff9057559937babe6273e3336b025dabb00dcef12c"
+        },
+        "deployment_attempt": {
+          "path": "evidence/resume-surface-signed-panel.log",
+          "sha256": "7e64ab3d6c8f09796b3a82e05b3775ff5628ceaf2fc09beaa593b5968fcf4561"
+        }
+      },
+      "interactive_attempt": {
+        "path": "evidence/resume-surface-active-hwnd.log",
+        "sha256": "8806a9c3283bfd3c87a9858bac7bdc869d70da3becbb745bde327129a3df529f"
+      },
+      "final_public_attempt": {
+        "path": "evidence/resume-surface-npot-final-attempt.log",
+        "sha256": "7e64ab3d6c8f09796b3a82e05b3775ff5628ceaf2fc09beaa593b5968fcf4561"
+      }
+    },
+    "lumia": {
+      "architecture": "ARM32",
+      "model": "Lumia 950 XL",
+      "adapter": "Qualcomm Adreno 430",
+      "requested_level": "0x9100",
+      "returned_level": "0x9100",
+      "adapter_maximum": "0xb100",
+      "native_package_name": "MCHorizonUWP.Fl91CoreBlendProbe_1.0.0.0_arm__4pd4jeb6snrqw",
+      "native_package_sha256": "4738e65f863e1e00e674a96d16de360ece13a12d979c3a2e567bfe27d3d2ecc8",
+      "native_probe_source_sha256": "4a226ecb4c2a4f1423a382986c63a34e656a1c6bd9639202877adee4e982fdec",
+      "native_control": {
+        "path": "evidence/resume-lumia-native.log",
+        "sha256": "042f081ee6c83a0019d19a6267ae90d93472e370e1aa31db7f056af47b43667b"
+      },
+      "native_signature": {
+        "path": "evidence/resume-lumia-native-signature.log",
+        "sha256": "74311b1b88ba8250e846eb87176c6fc79e2103fb9431695840a45dc3d9f5c648"
+      },
+      "signed_hal_build": {
+        "path": "evidence/resume-lumia-hal-provenance.json",
+        "sha256": "240cadb0a7d77492a064cddd5f18d4d5db8e2dd4e5ad7fc15051107e22c8d1a0"
+      },
+      "signed_hal_attempt": {
+        "path": "evidence/resume-lumia-wgpu.log",
+        "sha256": "7be381eb73f7306db05a19386d2db5c9172e4bdf60df0d5b46d35c6b69310d61"
+      },
+      "signed_hal_retry": {
+        "path": "evidence/resume-lumia-wgpu-retry.log",
+        "sha256": "6f9f28565d4958a0335472fc30b8303f3922d27b19257a1ec42b0087c053e01d"
+      },
+      "signed_hal_slot_reuse": {
+        "path": "evidence/resume-lumia-wgpu-slot.log",
+        "sha256": "b6a38b5d74a0093fcbb5fffbb24ee6b7092720afef83f09cb8c98df8fefa307f"
+      },
+      "initial_installer_state": {
+        "path": "evidence/resume-lumia-hal-initial-installer.log",
+        "sha256": "251509c4879eaddb695b48a5434e29ecd24cf8c37b01895ce9c2f41a945bd0d5"
+      },
+      "first_hal_install": {
+        "path": "evidence/resume-lumia-hal-installed.log",
+        "sha256": "62f1918d496970e58f75e7ee142bcbbe1ab667f6e0e1aa29e85f2e0117fde429"
+      },
+      "first_hal_report": {
+        "path": "evidence/resume-lumia-hal-exact-device.log",
+        "sha256": "4cee9cfb11a14834014b1abe2b391fac6a94c4a10437b4fb27d09d40f12df38d"
+      },
+      "dispatcher_update": {
+        "source_sha": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+        "build": {
+          "path": "evidence/resume-lumia-wgpu-v2-build.log",
+          "sha256": "37d3917b8060b0ba341cd55f65a32faca8bf16300a4e6683eda3404dadff7d94"
+        },
+        "deployment_attempt": {
+          "path": "evidence/resume-lumia-wgpu-v2-run.log",
+          "sha256": "8d333082caade90fad87204afc8ffd77a698db9d5d8b8a1d265769573dce1bbf"
+        },
+        "second_deployment_attempt": {
+          "path": "evidence/resume-lumia-wgpu-v2-retry.log",
+          "sha256": "8d333082caade90fad87204afc8ffd77a698db9d5d8b8a1d265769573dce1bbf"
+        },
+        "provenance": {
+          "path": "evidence/resume-lumia-hal-v2-provenance.json",
+          "sha256": "ac2572da79d3a726caa5e455904ba99d3be889993cd10af52257ef63884f70f8"
+        },
+        "host_source_sha256": "0f45b4928090995cd5859923c31f645d5b27e8cd1c090ce94476ca013bec28a3"
+      },
+      "initial_transport_error": {
+        "path": "evidence/resume-lumia-native-first.log",
+        "sha256": "75b6d7730fcd9c481e76392e02e98ca672c32a156335293af7193ac3c9121a88"
+      }
+    },
+    "targeted_cts_runs": [
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 0,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 2
+        },
+        "exit": 0,
+        "strict_physical": true,
+        "selector": "webgpu:api,validation,render_pipeline,fragment_state:targets_format_filterable:format=\"rgba8unorm-srgb\";*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "rgba8-srgb-pipeline",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-rgba8-srgb-pipeline.log",
+          "sha256": "f2ad8fb127d9610fb39eadc522a1692046ecb8221198c5bdd935f22291abc97b"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 0,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 2
+        },
+        "exit": 0,
+        "strict_physical": true,
+        "selector": "webgpu:api,validation,render_pipeline,fragment_state:targets_format_filterable:format=\"bgra8unorm-srgb\";*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "bgra8-srgb-pipeline",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-bgra8-srgb-pipeline.log",
+          "sha256": "899783e3e65f315311f901199452071e9649fd15f58eaad5b3b016e01d6f8c32"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 0,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 1
+        },
+        "exit": 0,
+        "strict_physical": true,
+        "selector": "webgpu:api,operation,rendering,color_target_state:blending,formats:format=\"rgba8unorm-srgb\";*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "rgba8-srgb-blend",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-rgba8-srgb-blend.log",
+          "sha256": "5b73da94edac1bf601cb49b6f1e216f3b245286ca07fe401181d24ad0148e463"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 0,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 1
+        },
+        "exit": 0,
+        "strict_physical": true,
+        "selector": "webgpu:api,operation,rendering,color_target_state:blending,formats:format=\"bgra8unorm-srgb\";*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "bgra8-srgb-blend",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-bgra8-srgb-blend.log",
+          "sha256": "6e9f1792a5b04138a733b5b9e08538ea34f6daa20561b7b7e83573d1bd270fc9"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 0,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 3
+        },
+        "exit": 0,
+        "strict_physical": true,
+        "selector": "webgpu:api,validation,image_copy,layout_related:bound_on_rows_per_image:dimension=\"2d\";size=[4,4,1];*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "rgba8-single-layer-rows",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-rgba8-single-layer-rows.log",
+          "sha256": "2f379d76aa7265a1e0a94cd5af8ca671c236217dbaccb58aa74e69866c965f53"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 0,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 1
+        },
+        "exit": 0,
+        "strict_physical": true,
+        "selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba8unorm\";dimension=\"2d\";*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "rgba8-single-layer-alignment",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-rgba8-single-layer-alignment.log",
+          "sha256": "eb58172c0bfa999ced05dccb3b93352f2e59211f5e1689325fc6999bd2831898"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 0,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 1
+        },
+        "exit": 0,
+        "strict_physical": true,
+        "selector": "webgpu:api,validation,createView:texture_view_usage:format=\"rgba8unorm\";textureUsage=1;*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "rgba8-view-copy-source",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-rgba8-view-copy-source.log",
+          "sha256": "c6a8c4d6a8b8d0ef3a5912d921c4e8a8219d6452af3a8fb6d4e42f8cfce8bd15"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 3,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 0
+        },
+        "exit": 1,
+        "strict_physical": true,
+        "selector": "webgpu:api,validation,image_copy,buffer_related:bytes_per_row_alignment:format=\"depth16unorm\";dimension=\"2d\";*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "copy-list-1106",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-copy-list-1106.log",
+          "sha256": "fc1be104b8679cb02dabd5ab991f31ba3d19451dc73a3617fae7ddf08c317660"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 3,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 0
+        },
+        "exit": 1,
+        "strict_physical": true,
+        "selector": "webgpu:api,validation,image_copy,buffer_related:bytes_per_row_alignment:format=\"r32float\";dimension=\"2d\";*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "copy-list-1111",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-copy-list-1111.log",
+          "sha256": "ec984acc6a287824723eaaa1fc388aab0c6bf85a992f10066b3f8c97da16af4b"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 3,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 0
+        },
+        "exit": 1,
+        "strict_physical": true,
+        "selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"depth16unorm\";dimension=\"2d\";*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "copy-list-1273",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-copy-list-1273.log",
+          "sha256": "e84824dc99b731f2aa1187096b060ab3031baaa051baca549ae8287282cd3693"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 3,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 0
+        },
+        "exit": 1,
+        "strict_physical": true,
+        "selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r32float\";dimension=\"2d\";*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "copy-list-1280",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-copy-list-1280.log",
+          "sha256": "f03ca836986768b042d0d81ad7d07b0187b7596d87b0d596d7ba4403eaff42a2"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 3,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 0
+        },
+        "exit": 1,
+        "strict_physical": true,
+        "selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"depth16unorm\";*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "copy-list-1375",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-copy-list-1375.log",
+          "sha256": "6e28393f6ca18a9635fcb73dd340d7d98f02d413133c20927f5fce7d478aaf6e"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "counts": {
+          "Failed": 3,
+          "Skipped": 0,
+          "Passed with warnings": 0,
+          "Passed  w/o warnings": 0
+        },
+        "exit": 1,
+        "strict_physical": true,
+        "selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"r32float\";*",
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "label": "copy-list-1379",
+        "artifact": {
+          "path": "evidence/resume-npot-cts-copy-list-1379.log",
+          "sha256": "4d7babce7fcf8b08fc79da36673a27bcad4a5797d715f8a4aeb660cf83288325"
+        }
+      }
+    ],
+    "targeted_cts_command": {
+      "runner": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-cert-Nov21\\exact-npot\\cts_runner.exe",
+      "cwd": "C:\\dev\\personal\\wgpu-dx11-FL91-cert-Nov21\\cts",
+      "arguments": [
+        "./tools/run_deno",
+        "--verbose",
+        "<selector from targeted_cts_runs>"
+      ],
+      "environment": {
+        "DENO_WEBGPU_BACKEND": "dx11",
+        "WGPU_DX11_FORCE_FL9_1": "1",
+        "WGPU_DX11_REQUIRE_HARDWARE": "1"
+      }
+    },
+    "targeted_cts_controls": [
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "selector": "webgpu:api,operation,sampling,filter_mode:magFilter,nearest:format=\"rgba8unorm\";*",
+        "label": "rgba8-repeat-nearest",
+        "exit": 1,
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "counts": {
+          "Passed  w/o warnings": 0,
+          "Passed with warnings": 0,
+          "Failed": 1,
+          "Skipped": 0
+        },
+        "strict_physical": true,
+        "artifact": {
+          "path": "evidence/resume-npot-cts-rgba8-repeat-nearest.log",
+          "sha256": "d8abe0e70a889b633ff70de2f33450674dee780babf55f84c2a2dcff73df4fc7"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "selector": "webgpu:api,operation,sampling,filter_mode:magFilter,linear:format=\"rgba8unorm\";*",
+        "label": "rgba8-repeat-linear",
+        "exit": 1,
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "counts": {
+          "Passed  w/o warnings": 0,
+          "Passed with warnings": 0,
+          "Failed": 1,
+          "Skipped": 0
+        },
+        "strict_physical": true,
+        "artifact": {
+          "path": "evidence/resume-npot-cts-rgba8-repeat-linear.log",
+          "sha256": "10bb73b1027fbed6c9b3870352f03d02dfca6d633dbb98a452fe472f2f8e2ced"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "selector": "webgpu:api,validation,image_copy,buffer_related:bytes_per_row_alignment:format=\"rgba8unorm\";dimension=\"2d\";*",
+        "label": "rgba8-copy-bytes-per-row",
+        "exit": 0,
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "counts": {
+          "Passed  w/o warnings": 3,
+          "Passed with warnings": 0,
+          "Failed": 0,
+          "Skipped": 0
+        },
+        "strict_physical": true,
+        "artifact": {
+          "path": "evidence/resume-npot-cts-rgba8-copy-bytes-per-row.log",
+          "sha256": "28f21f4c87bc4a8ad25833fb97d4da9c94cb9540fcab3331b92dfdede7f93e80"
+        }
+      },
+      {
+        "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+        "selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba8unorm\";*",
+        "label": "rgba8-copy-format-mips",
+        "exit": 0,
+        "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+        "counts": {
+          "Passed  w/o warnings": 3,
+          "Passed with warnings": 0,
+          "Failed": 0,
+          "Skipped": 0
+        },
+        "strict_physical": true,
+        "artifact": {
+          "path": "evidence/resume-npot-cts-rgba8-copy-format-mips.log",
+          "sha256": "92d0690c3cda70eb685010a74ec767aa27315c7bba0edc1cf2f1cd6cd9479023"
+        }
+      }
+    ],
+    "targeted_cts_repeat_overlay": {
+      "shader_change": {
+        "path": "evidence/resume-npot-cts-repeat-overlay.json",
+        "sha256": "ed0ba93327474254d67c80cc976d921e3b44ff792cfd74aa0cf992eb4d6da8ec"
+      },
+      "runs": [
+        {
+          "label": "rgba8-interpolant-overlay-nearest",
+          "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+          "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+          "selector": "webgpu:api,operation,sampling,filter_mode:magFilter,nearest:format=\"rgba8unorm\";*",
+          "exit": 1,
+          "counts": {
+            "Passed  w/o warnings": 0,
+            "Failed": 1,
+            "Skipped": 0,
+            "Passed with warnings": 0
+          },
+          "strict_physical": true,
+          "artifact": {
+            "path": "evidence/resume-npot-cts-rgba8-interpolant-overlay-nearest.log",
+            "sha256": "a4d2dff4e5cef9cada9600f821014b7880b6758867c9b397870392c20e78bc0d"
+          }
+        },
+        {
+          "label": "rgba8-interpolant-overlay-linear",
+          "binary_sha256": "ee1c3df471e042484bcb516d78065608ee18f20ada048cc9813f176cd853c0a7",
+          "worktree_head": "a2794cdf864d879f4409f7c318c1d1320ff72bef",
+          "selector": "webgpu:api,operation,sampling,filter_mode:magFilter,linear:format=\"rgba8unorm\";*",
+          "exit": 1,
+          "counts": {
+            "Passed  w/o warnings": 0,
+            "Failed": 1,
+            "Skipped": 0,
+            "Passed with warnings": 0
+          },
+          "strict_physical": true,
+          "artifact": {
+            "path": "evidence/resume-npot-cts-rgba8-interpolant-overlay-linear.log",
+            "sha256": "089fda63b095c421b90438f66f9f28e94b5a1a330e19aa733de0e2218ad7e057"
+          }
+        }
+      ]
+    },
+    "cts_selector_resolution": {
+      "path": "evidence/resume-cts-selector-resolution.json",
+      "sha256": "138afb945af4cdf0f26f6c256720ddab58a518c19f9e8a1db897a2739615b931"
     }
   }
 }

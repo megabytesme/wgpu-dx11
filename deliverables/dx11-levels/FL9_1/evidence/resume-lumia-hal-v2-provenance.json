@@ -1,0 +1,19 @@
+{
+  "candidate_sha": "7ce54912b48ca1985db7aa66af0300b31e70c11e",
+  "source_worktree": "C:/dev/personal/wgpu-dx11-FL91-cert-Nov21",
+  "target": "thumbv7a-uwp-windows-msvc",
+  "build_profile": "dev, debug info disabled, offline, four Cargo jobs",
+  "rust_toolchain": "1.99.1",
+  "rust_src": "C:\\Users\\ben\\AppData\\Local\\Temp\\mission-fl91-corewindow-dbae/rust-src/library",
+  "patched_parking_lot_core": "C:\\Users\\ben\\AppData\\Local\\Temp\\mission-fl91-corewindow-dbae/parking_lot_core",
+  "host_template": "C:\\Users\\ben\\AppData\\Local\\Temp\\mission-fl91-corewindow-dbae/source/experiments/dx11-surface",
+  "strict_host_link_receipt": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-corewindow-7ce54912-arm-v2/build-host.log",
+  "package": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-corewindow-7ce54912-arm-v2\\Fl91CoreWindow7ce54912-v2-arm.signed.appx",
+  "package_full_name": "MCHorizonUWP.Fl91CoreWindow7ce54912_1.0.1.0_arm__4pd4jeb6snrqw",
+  "package_sha256": "57E4C5BEDE0109464EB8AA6EAF3D889C2D776E2EEE379A8720BD3C1D78022887",
+  "executable": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-corewindow-7ce54912-arm-v2\\smoke\\host\\build\\Dx11SurfaceProbe.exe",
+  "executable_sha256": "5AF8E55A31A116E5B0F386C3E317CC54FA3433C432838E7BE7C2F72CB044F46C",
+  "static_library_sha256": "CDCFAE11CB18D79B73ECDD0C686F9F7E784C0E737FEAF06502A8985DE8E05F1B",
+  "signer_thumbprint": "5C04DFADA800DF60EE1B301B1292CBB214B582DA",
+  "runner": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl91-corewindow-7ce54912-arm-v2/run-on-lumia.ps1"
+}

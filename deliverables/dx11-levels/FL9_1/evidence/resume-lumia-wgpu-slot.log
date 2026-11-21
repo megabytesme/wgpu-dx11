@@ -1,0 +1,10 @@
+
+Reused the slot of MCHorizonUWP.Fl91CoreBlendProbe_1.0.0.0_arm__4pd4jeb6snrqw after verifying its package and archiving its readback.
+The probe did not publish a fresh completed report. Evidence:
+C:\Users\ben\AppData\Local\Temp\wgpu-fl91-corewindow-7ce54912-arm\run-20261121-221429-4564. Last read error:
+At C:\Users\ben\AppData\Local\Temp\wgpu-fl91-corewindow-7ce54912-arm\run-on-lumia.ps1:77 char:1
++ throw "The probe did not publish a fresh completed report. Evidence:  ...
++ ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : OperationStopped: (The probe did n...st read error: :String) [], RuntimeException
+    + FullyQualifiedErrorId : The probe did not publish a fresh completed report. Evidence: C:\Users\ben\AppData\Local
+   \Temp\wgpu-fl91-corewindow-7ce54912-arm\run-20261121-221429-4564. Last read error:

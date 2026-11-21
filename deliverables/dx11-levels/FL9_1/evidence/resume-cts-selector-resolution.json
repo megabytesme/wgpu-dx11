@@ -1,0 +1,67 @@
+[
+  {
+    "name": "rgba8-srgb-pipeline",
+    "exit": 0,
+    "cts_cases": 2
+  },
+  {
+    "name": "bgra8-srgb-pipeline",
+    "exit": 0,
+    "cts_cases": 2
+  },
+  {
+    "name": "rgba8-srgb-blend",
+    "exit": 0,
+    "cts_cases": 1
+  },
+  {
+    "name": "bgra8-srgb-blend",
+    "exit": 0,
+    "cts_cases": 1
+  },
+  {
+    "name": "rgba8-single-layer-rows",
+    "exit": 0,
+    "cts_cases": 3
+  },
+  {
+    "name": "rgba8-single-layer-alignment",
+    "exit": 0,
+    "cts_cases": 1
+  },
+  {
+    "name": "rgba8-view-copy-source",
+    "exit": 0,
+    "cts_cases": 1
+  },
+  {
+    "name": "copy-list-1106",
+    "exit": 0,
+    "cts_cases": 3
+  },
+  {
+    "name": "copy-list-1111",
+    "exit": 0,
+    "cts_cases": 3
+  },
+  {
+    "name": "copy-list-1273",
+    "exit": 1,
+    "cts_cases": 0
+  },
+  {
+    "name": "copy-list-1280",
+    "exit": 1,
+    "cts_cases": 0
+  },
+  {
+    "name": "copy-list-1375",
+    "exit": 1,
+    "cts_cases": 0
+  },
+  {
+    "name": "copy-list-1379",
+    "exit": 1,
+    "cts_cases": 0
+  }
+]

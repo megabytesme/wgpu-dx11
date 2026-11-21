@@ -2,7 +2,27 @@
 
 **INCOMPLETE**
 
-## Follow-up candidate
+## Portable repeat and selected-device sRGB blending
+
+Source candidate `a2794cdf864d879f4409f7c318c1d1320ff72bef` allows portable Repeat and MirrorRepeat when Core can prove the selected draw stays within the FL9_1 native repeat limit. The proof currently covers direct 2D samples with constant coordinates in `[-63, 63]`. Draws and render bundles reject unresolved coordinates. On drivers with conditional NPOT support, a single-mip NPOT texture can use bounded MirrorRepeat and rejects Repeat. The native sampler still performs filtering and mip selection. [Direct3D downlevel limits](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro)
+
+The selected-device probe checks RGBA8 and BGRA8 sRGB independently. Each must match two linear-space blend readbacks, including stored alpha, before the adapter advertises single-sample blending for that format. Pipeline validation uses the same cached result and rejects formats whose probe fails or times out.
+
+On the physical RTX 3090 Ti, the exact candidate passed all 178 x64 public test functions, including HWND presentation and resize, and both x86 public fixtures for repeat and blending. Both architectures verified nearest and linear samples, render-bundle replay, rejection of unresolved repeat and positive full-NPOT sampling. Six focused test groups passed on each architecture. Restricted-NPOT rejection was covered by CPU checks and skipped on the RTX, whose driver reports full NPOT. The full x64 suite logged five skipped subcases.
+
+The ARM64 Surface Pro X passed both portable fixtures offscreen on Adreno 680 with exact FL9_1 requested and returned, before the NPOT follow-up. RGBA8 and BGRA8 sRGB matched raw bytes `[137, 0, 188, 159]` and `[188, 0, 137, 159]` on both Surface and RTX. The Surface's interactive HWND rerun produced no completion marker. The final ARM64 executable and signed SwapChainPanel package built, and the subsequent SSH attempts timed out before either transfer began.
+
+On the Lumia, the signed native AppContainer returned exact FL9_1 on Adreno 430 and queued two visible CoreWindow presents with `S_OK`. RGBA8 and BGRA8 normalized to RGBA `[188, 188, 137, 159]` and BGRX8 to RGB `[188, 188, 137]`. These readbacks agree with the linear-space model. Native RTX controls agreed across three formats and matched the same-adapter FL10_0 control. Microsoft's documented native rule calls for encoded-space blending under the stated low-feature-level hardware conditions. The driver discrepancy and broader blend-state coverage remain open. [D3D11 blend rules](https://learn.microsoft.com/en-us/windows/win32/api/d3d11/ns-d3d11-d3d11_blend_desc)
+
+The signed wgpu CoreWindow package installed after reusing the completed native test's sideload slot. It logged the exact `0x9100` physical Adreno selection, then published no triangle or presentation result. The follow-up host uses the same HAL binary and schedules the first draw from the visible CoreWindow's dispatcher. It was rebuilt and re-signed, and the Portal timed out before the update could upload.
+
+The exact RTX CTS runs passed all six targeted sRGB cases and eleven RGBA8 copy and view controls. Eighteen `Depth16Unorm` or `R32Float` cases failed before the intended assertion. Five selectors require both copy usages during texture creation and one requests five depth mips. The matching RGBA8 cases passed all three transfer methods for buffer row alignment and format validation. The two exact sRGB pipeline selectors remain conditional on selected-device transfer support. The blend-format wildcard still covers other formats. [Test receipts](../deliverables/dx11-levels/FL9_1/tests.json)
+
+Two unmodified RGBA8 sampler cases failed when their generated vertex shaders used runtime integer operations. An isolated control replaced the integer array lookups with equivalent float comparisons while preserving the fragment sampling and texel oracle. Both controls reached draw validation and rejected interpolated Repeat or MirrorRepeat coordinates. General interpolated repeat remains open. [Test receipts](../deliverables/dx11-levels/FL9_1/tests.json)
+
+The audit classifies 439 excluded selectors by format or usage conditions, two by selected-device sRGB blend transfer, and five by positive setups that need unsupported non-cube 2D arrays. It leaves 684 selectors fully unresolved. The pinned CTS identity mapping matches 136 stale selectors to 408 current case occurrences. The original exclusion list is preserved. For the 4,720 historical runtime skips, source inspection classified 77 previously unresolved parent results. Nine format/sample-count checks, two browser-canvas checks and one WGSL language exposure check remain open, along with a separately identified unimplemented query case. [CTS exclusion audit](../deliverables/dx11-levels/FL9_1/cts-exclusion-audit.json)
+
+## Previous BGRX8, mip and varying candidate
 
 Candidate `dbae35d184974c22b08da2426804facc5550acec` adds guarded native BGRX8 textures and native mip generation. A public device reaches these operations through `Device::as_hal::<wgpu::hal::api::Dx11>()`. The extension validates device ownership and uses the immediate-context lock shared with queue submission. Keep native textures within the extension and initialize their subresources by upload or clear before use.
 

@@ -1,0 +1,2931 @@
+{
+  "schema_version": 1,
+  "classification_state": "ENUMERATED_IDENTITIES_ONLY",
+  "source_pins": {
+    "wgpu": "dbae35d184974c22b08da2426804facc5550acec",
+    "worker_packet": "b532abe5b59f8f057f4508756d0ef9e6bc71cb3c",
+    "cts": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+    "selector_inventory_sha256": "3b724208b9307d1702f73e93d9ea318ef312fcaf6b083c5ec70cd261f8cfe7fe",
+    "worker_csv_sha256": "b9d18712712e6384a6918a389ad61b9d6ed7738977226ae28d6e08789b90b213",
+    "recorded_runner_sha256": "7b9c61e60cae2aaa3c80e2e71fee7bf9badd44ba4330b02d930003af6dfd8b3d"
+  },
+  "controlled_query_runner_sha256": "941628dc32c9e9190556b3b09b7b3ecf5c38a84fa273062a72375efa7a29713f",
+  "controlled_query_runner_note": "The recorded runner binary was no longer present at its path; these CPU-only listing controls used the available runner with a different hash against the same clean CTS revision. This confirms current CTS query syntax/case identities only.",
+  "residual_count": 136,
+  "residual_index_ranges": [
+    [
+      638,
+      701
+    ],
+    [
+      704,
+      768
+    ],
+    [
+      773,
+      773
+    ],
+    [
+      779,
+      784
+    ]
+  ],
+  "family_counts": {
+    "layout_related:rows_per_image_alignment": 64,
+    "texture_related:format": 65,
+    "texture_related:mip_level": 1,
+    "texture_related:valid": 6
+  },
+  "mapped_case_ids_per_original_selector": {
+    "3": 136
+  },
+  "current_case_id_occurrences_mapped": 408,
+  "queries": {
+    "layout_related:rows_per_image_alignment": {
+      "selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "exit": 0,
+      "case_ids": 676,
+      "distinct_case_ids": 676,
+      "output_sha256": "43ce9d2a994f11be869d331fe734a490350501670a09b41a584e51fe1db2a4d5"
+    },
+    "texture_related:format": {
+      "selector": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "exit": 0,
+      "case_ids": 968,
+      "distinct_case_ids": 968,
+      "output_sha256": "6748abacd0e581d05abb0755a427b9e3f9d5d8637427f725fa209470b5a571d0"
+    },
+    "texture_related:mip_level": {
+      "selector": "webgpu:api,validation,image_copy,texture_related:mip_level:*",
+      "exit": 0,
+      "case_ids": 12,
+      "distinct_case_ids": 12,
+      "output_sha256": "13e24445c858b638a192b644c5b3c9b4d2ff78ddc87051a1b41fc3ac9e3b4458"
+    },
+    "texture_related:valid": {
+      "selector": "webgpu:api,validation,image_copy,texture_related:valid:*",
+      "exit": 0,
+      "case_ids": 36,
+      "distinct_case_ids": 36,
+      "output_sha256": "54169f2f6bcc911085b5a59139f0b60773e9fa42a4119143b1dd524410770573"
+    }
+  },
+  "records": [
+    {
+      "source_index": 638,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"depth16unorm\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"depth16unorm\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"depth16unorm\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"depth16unorm\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 639,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r16float\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r16float\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r16float\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r16float\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 640,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r16float\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r16float\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r16float\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r16float\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 641,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r16sint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r16sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r16sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r16sint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 642,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r16sint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r16sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r16sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r16sint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 643,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r16uint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r16uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r16uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r16uint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 644,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r16uint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r16uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r16uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r16uint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 645,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r32float\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r32float\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r32float\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r32float\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 646,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r32float\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r32float\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r32float\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r32float\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 647,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r32sint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r32sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r32sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r32sint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 648,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r32sint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r32sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r32sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r32sint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 649,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r32uint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r32uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r32uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r32uint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 650,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r32uint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r32uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r32uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r32uint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 651,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r8sint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r8sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r8sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r8sint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 652,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r8sint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r8sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r8sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r8sint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 653,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r8snorm\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r8snorm\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r8snorm\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r8snorm\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 654,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r8snorm\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r8snorm\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r8snorm\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r8snorm\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 655,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r8uint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r8uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r8uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r8uint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 656,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"r8uint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"r8uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"r8uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"r8uint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 657,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg11b10ufloat\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg11b10ufloat\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg11b10ufloat\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg11b10ufloat\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 658,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg11b10ufloat\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg11b10ufloat\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg11b10ufloat\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg11b10ufloat\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 659,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg16float\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg16float\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg16float\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg16float\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 660,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg16float\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg16float\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg16float\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg16float\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 661,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg16sint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg16sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg16sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg16sint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 662,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg16sint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg16sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg16sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg16sint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 663,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg16uint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg16uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg16uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg16uint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 664,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg16uint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg16uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg16uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg16uint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 665,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg32float\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg32float\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg32float\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg32float\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 666,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg32float\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg32float\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg32float\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg32float\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 667,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg32sint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg32sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg32sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg32sint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 668,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg32sint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg32sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg32sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg32sint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 669,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg32uint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg32uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg32uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg32uint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 670,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg32uint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg32uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg32uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg32uint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 671,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg8sint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg8sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg8sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg8sint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 672,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg8sint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg8sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg8sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg8sint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 673,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg8snorm\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg8snorm\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg8snorm\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg8snorm\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 674,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg8uint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg8uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg8uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg8uint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 675,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg8uint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg8uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg8uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg8uint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 676,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rg8unorm\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rg8unorm\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rg8unorm\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rg8unorm\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 677,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgb10a2uint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgb10a2uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgb10a2uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgb10a2uint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 678,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgb10a2uint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgb10a2uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgb10a2uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgb10a2uint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 679,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgb10a2unorm\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgb10a2unorm\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgb10a2unorm\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgb10a2unorm\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 680,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgb10a2unorm\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgb10a2unorm\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgb10a2unorm\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgb10a2unorm\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 681,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgb9e5ufloat\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgb9e5ufloat\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgb9e5ufloat\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgb9e5ufloat\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 682,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgb9e5ufloat\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgb9e5ufloat\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgb9e5ufloat\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgb9e5ufloat\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 683,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba16float\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba16float\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba16float\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba16float\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 684,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba16float\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba16float\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba16float\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba16float\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 685,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba16sint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba16sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba16sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba16sint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 686,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba16sint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba16sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba16sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba16sint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 687,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba16uint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba16uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba16uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba16uint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 688,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba16uint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba16uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba16uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba16uint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 689,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba32float\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba32float\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba32float\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba32float\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 690,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba32float\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba32float\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba32float\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba32float\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 691,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba32sint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba32sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba32sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba32sint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 692,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba32sint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba32sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba32sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba32sint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 693,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba32uint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba32uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba32uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba32uint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 694,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba32uint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba32uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba32uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba32uint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 695,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba8sint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba8sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba8sint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba8sint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 696,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba8sint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba8sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba8sint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba8sint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 697,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba8snorm\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba8snorm\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba8snorm\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba8snorm\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 698,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba8uint\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba8uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba8uint\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba8uint\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 699,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba8uint\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba8uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba8uint\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba8uint\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 700,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"rgba8unorm-srgb\";dimension=\"3d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"rgba8unorm-srgb\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"rgba8unorm-srgb\";dimension=\"3d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"rgba8unorm-srgb\";dimension=\"3d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 701,
+      "original_selector": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format=\"stencil8\";dimension=\"2d\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"WriteTexture\";format=\"stencil8\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyB2T\";format=\"stencil8\";dimension=\"2d\"",
+        "webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:method=\"CopyT2B\";format=\"stencil8\";dimension=\"2d\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 704,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"depth16unorm\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"depth16unorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"depth16unorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"depth16unorm\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 705,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"r16float\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r16float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r16float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r16float\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 706,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"r16sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r16sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r16sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r16sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 707,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"r16uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r16uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r16uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r16uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 708,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"r32float\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r32float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r32float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r32float\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 709,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"r32sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r32sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r32sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r32sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 710,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"r32uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r32uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r32uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r32uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 711,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"r8sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r8sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r8sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r8sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 712,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"r8snorm\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r8snorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r8snorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r8snorm\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 713,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"r8uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r8uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r8uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"r8uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 714,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rg11b10ufloat\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg11b10ufloat\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg11b10ufloat\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg11b10ufloat\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 715,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rg16float\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg16float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg16float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg16float\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 716,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rg16sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg16sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg16sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg16sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 717,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rg16uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg16uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg16uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg16uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 718,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rg32float\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg32float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg32float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg32float\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 719,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rg32sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg32sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg32sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg32sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 720,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rg32uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg32uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg32uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg32uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 721,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rg8sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg8sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg8sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg8sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 722,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rg8uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg8uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg8uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg8uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 723,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rg8unorm\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg8unorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg8unorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rg8unorm\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 724,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rgb10a2uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgb10a2uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgb10a2uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgb10a2uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 725,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rgb10a2unorm\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgb10a2unorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgb10a2unorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgb10a2unorm\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 726,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rgb9e5ufloat\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgb9e5ufloat\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgb9e5ufloat\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgb9e5ufloat\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 727,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba16float\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba16float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba16float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba16float\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 728,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba16sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba16sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba16sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba16sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 729,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba16uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba16uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba16uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba16uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 730,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba32float\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba32float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba32float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba32float\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 731,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba32sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba32sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba32sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba32sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 732,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba32uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba32uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba32uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba32uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 733,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba8sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba8sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba8sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba8sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 734,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba8uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba8uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba8uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"rgba8uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 735,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=1;dimension=\"2d\";format=\"stencil8\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=1;dimension=\"2d\";format=\"stencil8\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=1;dimension=\"2d\";format=\"stencil8\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=1;dimension=\"2d\";format=\"stencil8\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 736,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"r16float\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r16float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r16float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r16float\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 737,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"r16sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r16sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r16sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r16sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 738,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"r16uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r16uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r16uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r16uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 739,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"r32float\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r32float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r32float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r32float\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 740,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"r32sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r32sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r32sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r32sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 741,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"r32uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r32uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r32uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r32uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 742,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"r8sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r8sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r8sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r8sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 743,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"r8snorm\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r8snorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r8snorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r8snorm\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 744,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"r8uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r8uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r8uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"r8uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 745,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rg11b10ufloat\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg11b10ufloat\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg11b10ufloat\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg11b10ufloat\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 746,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rg16float\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg16float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg16float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg16float\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 747,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rg16sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg16sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg16sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg16sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 748,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rg16uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg16uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg16uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg16uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 749,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rg32float\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg32float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg32float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg32float\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 750,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rg32sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg32sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg32sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg32sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 751,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rg32uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg32uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg32uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg32uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 752,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 753,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8snorm\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8snorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8snorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8snorm\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 754,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 755,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8unorm\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8unorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8unorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rg8unorm\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 756,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgb10a2uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgb10a2uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgb10a2uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgb10a2uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 757,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgb10a2unorm\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgb10a2unorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgb10a2unorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgb10a2unorm\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 758,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgb9e5ufloat\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgb9e5ufloat\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgb9e5ufloat\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgb9e5ufloat\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 759,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba16float\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba16float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba16float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba16float\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 760,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba16sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba16sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba16sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba16sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 761,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba16uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba16uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba16uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba16uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 762,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba32float\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba32float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba32float\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba32float\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 763,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba32sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba32sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba32sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba32sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 764,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba32uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba32uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba32uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba32uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 765,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8sint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8sint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8sint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 766,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8snorm\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8snorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8snorm\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8snorm\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 767,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8uint\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8uint\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8uint\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 768,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:format:depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8unorm-srgb\"",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:format:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"WriteTexture\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8unorm-srgb\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyB2T\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8unorm-srgb\"",
+        "webgpu:api,validation,image_copy,texture_related:format:method=\"CopyT2B\";depthOrArrayLayers=32;dimension=\"3d\";format=\"rgba8unorm-srgb\""
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 773,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:mip_level:dimension=\"2d\";size=[32,32,3]",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:mip_level:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:mip_level:method=\"WriteTexture\";dimension=\"2d\";size=[32,32,3]",
+        "webgpu:api,validation,image_copy,texture_related:mip_level:method=\"CopyB2T\";dimension=\"2d\";size=[32,32,3]",
+        "webgpu:api,validation,image_copy,texture_related:mip_level:method=\"CopyT2B\";dimension=\"2d\";size=[32,32,3]"
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 779,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:valid:textureState=\"destroyed\";dimension=\"1d\";size=[4,1,1]",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:valid:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"WriteTexture\";textureState=\"destroyed\";dimension=\"1d\";size=[4,1,1]",
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"CopyB2T\";textureState=\"destroyed\";dimension=\"1d\";size=[4,1,1]",
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"CopyT2B\";textureState=\"destroyed\";dimension=\"1d\";size=[4,1,1]"
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 780,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:valid:textureState=\"destroyed\";dimension=\"2d\";size=[4,4,3]",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:valid:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"WriteTexture\";textureState=\"destroyed\";dimension=\"2d\";size=[4,4,3]",
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"CopyB2T\";textureState=\"destroyed\";dimension=\"2d\";size=[4,4,3]",
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"CopyT2B\";textureState=\"destroyed\";dimension=\"2d\";size=[4,4,3]"
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 781,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:valid:textureState=\"destroyed\";dimension=\"3d\";size=[4,4,3]",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:valid:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"WriteTexture\";textureState=\"destroyed\";dimension=\"3d\";size=[4,4,3]",
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"CopyB2T\";textureState=\"destroyed\";dimension=\"3d\";size=[4,4,3]",
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"CopyT2B\";textureState=\"destroyed\";dimension=\"3d\";size=[4,4,3]"
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 782,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:valid:textureState=\"valid\";dimension=\"1d\";size=[4,1,1]",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:valid:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"WriteTexture\";textureState=\"valid\";dimension=\"1d\";size=[4,1,1]",
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"CopyB2T\";textureState=\"valid\";dimension=\"1d\";size=[4,1,1]",
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"CopyT2B\";textureState=\"valid\";dimension=\"1d\";size=[4,1,1]"
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 783,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:valid:textureState=\"valid\";dimension=\"2d\";size=[4,4,3]",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:valid:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"WriteTexture\";textureState=\"valid\";dimension=\"2d\";size=[4,4,3]",
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"CopyB2T\";textureState=\"valid\";dimension=\"2d\";size=[4,4,3]",
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"CopyT2B\";textureState=\"valid\";dimension=\"2d\";size=[4,4,3]"
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    },
+    {
+      "source_index": 784,
+      "original_selector": "webgpu:api,validation,image_copy,texture_related:valid:textureState=\"valid\";dimension=\"3d\";size=[4,4,3]",
+      "original_exit": 1,
+      "classification": "parameter_schema_mismatch_current_test_still_exists",
+      "current_enumeration_query": "webgpu:api,validation,image_copy,texture_related:valid:*",
+      "missing_current_parameter": [
+        "method"
+      ],
+      "matched_current_case_ids": [
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"WriteTexture\";textureState=\"valid\";dimension=\"3d\";size=[4,4,3]",
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"CopyB2T\";textureState=\"valid\";dimension=\"3d\";size=[4,4,3]",
+        "webgpu:api,validation,image_copy,texture_related:valid:method=\"CopyT2B\";textureState=\"valid\";dimension=\"3d\";size=[4,4,3]"
+      ],
+      "matched_methods": [
+        "WriteTexture",
+        "CopyB2T",
+        "CopyT2B"
+      ],
+      "disposition": "IDENTITY_ONLY_NO_WAIVER_NO_RUNTIME_RESULT"
+    }
+  ]
+}

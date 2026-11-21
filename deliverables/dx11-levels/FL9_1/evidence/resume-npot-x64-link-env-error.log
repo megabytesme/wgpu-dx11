@@ -1,0 +1,165 @@
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+    Blocking waiting for file lock on package cache
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\buffer.rs:605:17
+    |
+605 |                 windows::Win32::Foundation::E_OUTOFMEMORY,
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: the lint level is defined here
+   --> wgpu-hal\src\lib.rs:238:5
+    |
+238 |     unused_qualifications
+    |     ^^^^^^^^^^^^^^^^^^^^^
+help: remove the unnecessary path segments
+    |
+605 -                 windows::Win32::Foundation::E_OUTOFMEMORY,
+605 +                 E_OUTOFMEMORY,
+    |
+
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\buffer.rs:615:17
+    |
+615 |                 windows::Win32::Foundation::E_OUTOFMEMORY,
+    |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+615 -                 windows::Win32::Foundation::E_OUTOFMEMORY,
+615 +                 E_OUTOFMEMORY,
+    |
+
+warning: `wgpu-hal` (lib) generated 2 warnings (run `cargo fix --lib -p wgpu-hal` to apply 2 suggestions)
+   Compiling wgpu-core v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-core)
+   Compiling wgpu v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu)
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\hal_queue.rs:452:56
+    |
+452 |                 super::super::hal_device::device_error(windows::core::Error::from_hresult(code)),
+    |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+452 -                 super::super::hal_device::device_error(windows::core::Error::from_hresult(code)),
+452 +                 super::super::hal_device::device_error(Error::from_hresult(code)),
+    |
+
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\hal_queue.rs:457:52
+    |
+457 |             super::super::hal_device::device_error(windows::core::Error::from_hresult(
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+457 -             super::super::hal_device::device_error(windows::core::Error::from_hresult(
+457 +             super::super::hal_device::device_error(Error::from_hresult(
+    |
+
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\hal_queue.rs:463:52
+    |
+463 |             super::super::hal_device::device_error(windows::core::Error::from_hresult(E_FAIL)),
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+463 -             super::super::hal_device::device_error(windows::core::Error::from_hresult(E_FAIL)),
+463 +             super::super::hal_device::device_error(Error::from_hresult(E_FAIL)),
+    |
+
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\hal_queue.rs:469:71
+    |
+469 |     fn dynamic_queue_submits_copy_batches_and_signals_real_fence() -> windows::core::Result<()> {
+    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+469 -     fn dynamic_queue_submits_copy_batches_and_signals_real_fence() -> windows::core::Result<()> {
+469 +     fn dynamic_queue_submits_copy_batches_and_signals_real_fence() -> Result<()> {
+    |
+
+warning: unnecessary qualification
+    --> wgpu-hal\src\dx11\hal_shader.rs:6198:13
+     |
+6198 |             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+help: remove the unnecessary path segments
+     |
+6198 -             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+6198 +             translate_naga_with_viewport_and_fl9_inputs(
+     |
+
+warning: unnecessary qualification
+    --> wgpu-hal\src\dx11\hal_shader.rs:6314:13
+     |
+6314 |             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+help: remove the unnecessary path segments
+     |
+6314 -             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+6314 +             translate_naga_with_viewport_and_fl9_inputs(
+     |
+
+warning: unnecessary qualification
+    --> wgpu-hal\src\dx11\hal_shader.rs:6550:13
+     |
+6550 |             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+help: remove the unnecessary path segments
+     |
+6550 -             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+6550 +             translate_naga_with_viewport_and_fl9_inputs(
+     |
+
+warning: `wgpu-hal` (lib test) generated 9 warnings (2 duplicates) (run `cargo fix --lib -p wgpu-hal --tests` to apply 7 suggestions)
+warning: method `test_fixture_orphaned_queue_count` is never used
+   --> wgpu-core\src\hub.rs:333:19
+    |
+289 | impl Hub {
+    | -------- method in this implementation
+...
+333 |     pub(crate) fn test_fixture_orphaned_queue_count(&self) -> usize {
+    |                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `open`
+    --> wgpu-core\src\dx11_fixture_tests.rs:1437:9
+     |
+1437 |     let open = unsafe { fixture.open_test_fixture() };
+     |         ^^^^ help: if this is intentional, prefix it with an underscore: `_open`
+     |
+     = note: `#[warn(unused_variables)]` (part of `#[warn(unused)]`) on by default
+
+warning: unused variable: `vertex_format_mask`
+    --> wgpu-core\src\dx11_fixture_tests.rs:2529:9
+     |
+2529 |     let vertex_format_mask = fixture.test_fixture_vertex_format_mask();
+     |         ^^^^^^^^^^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_vertex_format_mask`
+
+warning: unused variable: `rgba_mips`
+    --> wgpu-core\src\dx11_fixture_tests.rs:2577:9
+     |
+2577 |     let rgba_mips = fixture
+     |         ^^^^^^^^^ help: if this is intentional, prefix it with an underscore: `_rgba_mips`
+
+error: linker `link.exe` not found
+  |
+  = note: program not found
+
+note: the msvc targets depend on the msvc linker but `link.exe` was not found
+
+note: please ensure that Visual Studio 2017 or later, or Build Tools for Visual Studio were installed with the Visual C++ option.
+
+note: VS Code is a different product, and is not sufficient.
+
+warning: `wgpu-core` (lib test) generated 3 warnings
+error: could not compile `wgpu-core` (lib test) due to 1 previous error; 3 warnings emitted
+warning: build failed, waiting for other jobs to finish...
+warning: `wgpu-core` (lib) generated 1 warning

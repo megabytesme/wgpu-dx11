@@ -1,0 +1,5 @@
+
+running 1 test
+test validation::tests::fl9_repeat_proof_uses_selected_entry_and_reflected_sampler ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 156 filtered out; finished in 0.01s

@@ -1,0 +1,74 @@
+**********************************************************************
+** Visual Studio 2026 Developer Command Prompt vError: Unknown error
+** Copyright (c) 2026 Microsoft Corporation
+**********************************************************************
+   Compiling windows-link v0.2.1
+   Compiling foldhash v0.2.0
+   Compiling windows-result v0.4.1
+   Compiling windows-strings v0.5.1
+   Compiling libm v0.2.16
+   Compiling hashbrown v0.17.1
+   Compiling thiserror v2.0.18
+   Compiling equivalent v1.0.2
+   Compiling cfg-if v1.0.4
+   Compiling zerocopy v0.8.52
+   Compiling windows-core v0.62.2
+   Compiling num-traits v0.2.19
+   Compiling indexmap v2.14.0
+   Compiling bitflags v2.13.0
+   Compiling rustc-hash v1.1.0
+   Compiling naga v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\naga)
+   Compiling naga-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\naga-types)
+   Compiling log v0.4.32
+   Compiling raw-window-handle v0.6.2
+   Compiling unicode-width v0.2.2
+   Compiling bit-vec v0.9.1
+   Compiling codespan-reporting v0.13.1
+   Compiling bit-set v0.10.0
+   Compiling parking_lot_core v0.9.12
+   Compiling bytemuck v1.25.0
+   Compiling windows-threading v0.2.1
+   Compiling unicode-ident v1.0.24
+   Compiling smallvec v1.15.2
+   Compiling once_cell v1.21.4
+   Compiling scopeguard v1.2.0
+   Compiling arrayvec v0.7.6
+   Compiling static_assertions v1.1.0
+   Compiling wgpu-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-types)
+   Compiling lock_api v0.4.14
+   Compiling windows-future v0.3.2
+   Compiling windows-numerics v0.3.1
+   Compiling windows-collections v0.3.2
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-hal)
+   Compiling windows_aarch64_msvc v0.52.6
+   Compiling half v2.7.1
+   Compiling windows v0.62.2
+   Compiling parking_lot v0.12.5
+   Compiling libloading v0.8.9
+   Compiling renderdoc-sys v1.1.0
+   Compiling wgpu-core v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-core)
+   Compiling windows-targets v0.52.6
+   Compiling wgpu v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu)
+   Compiling profiling v1.0.18
+   Compiling tracing-core v0.1.36
+   Compiling pin-project-lite v0.2.17
+   Compiling winit v0.30.13
+   Compiling tracing v0.1.44
+   Compiling windows-sys v0.52.0
+   Compiling cursor-icon v1.2.0
+   Compiling smol_str v0.2.2
+   Compiling unicode-segmentation v1.13.3
+   Compiling dpi v0.1.2
+   Compiling wgpu-naga-bridge v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-naga-bridge)
+warning: function `adjust_raw_limits` is never used
+   --> wgpu-hal\src\auxil\mod.rs:128:15
+    |
+128 | pub(crate) fn adjust_raw_limits(mut limits: wgt::Limits) -> wgt::Limits {
+    |               ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1 (C:\dev\personal\wgpu-dx11-FL91-cert-Nov21\wgpu-core\platform-deps\windows-linux-android)
+warning: `wgpu-hal` (lib) generated 1 warning
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 1m 44s
+  Executable tests\dx11_public.rs (C:\Users\ben\AppData\Local\Temp/wgpu-fl91-cert-Nov21/cross-target\aarch64-pc-windows-msvc\debug\deps\dx11_public-9d58aa886fc71f27.exe)

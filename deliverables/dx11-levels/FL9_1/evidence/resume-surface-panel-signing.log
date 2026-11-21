@@ -1,0 +1,44 @@
+Microsoft (R) MakeAppx Tool
+
+Copyright (C) 2013 Microsoft.  All rights reserved.
+
+
+
+The path (/p) parameter is: "\\?\C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\Fl91PanelProbe-arm64.appx"
+
+The content directory (/d) parameter is: "\\?\C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\package"
+
+Enumerating files from directory "\\?\C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\package"
+
+Packing 6 file(s) in "\\?\C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\package" (content directory) to "\\?\C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\Fl91PanelProbe-arm64.appx" (output file name).
+
+Memory limit defaulting to 21433608192 bytes.
+
+Using "\\?\C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\package\AppxManifest.xml" as the manifest for the package.
+
+Processing "\\?\C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\package\Assets\Square44x44Logo.png" as a payload file.  Its path in the package will be "Assets\Square44x44Logo.png".
+
+Processing "\\?\C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\package\Assets\StoreLogo.png" as a payload file.  Its path in the package will be "Assets\StoreLogo.png".
+
+Processing "\\?\C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\package\Assets\Square150x150Logo.png" as a payload file.  Its path in the package will be "Assets\Square150x150Logo.png".
+
+Processing "\\?\C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\package\HorizonUWP.winmd" as a payload file.  Its path in the package will be "HorizonUWP.winmd".
+
+Processing "\\?\C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\package\Dx11PanelProbe.exe" as a payload file.  Its path in the package will be "Dx11PanelProbe.exe".
+
+Package creation succeeded.
+
+Done Adding Additional Store
+Successfully signed: C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\Fl91PanelProbe-arm64.appx
+
+File: C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\Fl91PanelProbe-arm64.appx
+Index  Algorithm  Timestamp
+========================================
+0      sha256     None
+
+Successfully verified: C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\Fl91PanelProbe-arm64.appx
+
+
+Algorithm : SHA256
+Hash      : E2C5F1DE22C1655CD1CA4B0C0B1C02794230D30610887B23F25457511145AAB1
+Path      : C:\Users\ben\AppData\Local\Temp\mission-fl91-panel-7ce54912-arm64\Fl91PanelProbe-arm64.appx

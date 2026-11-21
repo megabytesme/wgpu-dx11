@@ -1,0 +1,12 @@
+{"LastTaskResult":0,"LastRunTime":"\/Date(1795298024000)\/"}
+No active-console completion marker
+
+At line:21 char:93
+
++ ... rAction SilentlyContinue;throw 'No active-console completion marker'}
+
++                              ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+    + CategoryInfo          : OperationStopped: (No active-console completion marker:String) [], RuntimeException
+
+    + FullyQualifiedErrorId : No active-console completion marker

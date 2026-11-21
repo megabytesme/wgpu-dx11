@@ -1,0 +1,13 @@
+
+running 1 test
+test dx11::native_bgrx::render_tests::fl91_bgrx_srgb_blend_space_diagnostic ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }; requested and actual FL9_1
+sRGB blend diagnostic: explicit IDXGIAdapter / D3D_DRIVER_TYPE_UNKNOWN; actual level=0x9100; adapter LUID=0x0000000000014a80
+Error: Error { code: HRESULT(0x80070057), message: "The parameter is incorrect." }
+FAILED
+
+failures:
+
+failures:
+    dx11::native_bgrx::render_tests::fl91_bgrx_srgb_blend_space_diagnostic
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 576 filtered out; finished in 1.04s

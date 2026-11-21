@@ -1,0 +1,36 @@
+
+running 1 test
+test public_dx11_repeat_sampler_limit_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1; physical DXGI adapter; driver version 32.0.16.2101" requested=FL9_1 actual=FL9_1 software=false; max_texture_repeat_per_primitive=128
+PASS: bounded Repeat Nearest GPU pixel [81, 0, 0, 255]
+PASS: bounded Repeat Linear GPU pixel [127, 0, 0, 255]
+PASS: bounded Repeat Nearest GPU pixel [81, 0, 0, 255]
+PASS: bounded Repeat render-bundle replay
+
+thread 'public_dx11_repeat_sampler_limit_at_fl91' (23600) panicked at wgpu\src\backend\wgpu_core.rs:3944:18:
+Error in RenderBundleEncoder::finish: Validation Error
+
+Caused by:
+  In a draw command, kind: Draw
+    Sampler group 0 binding 1 uses Repeat or MirrorRepeat without a proven coordinate bound (device limit 128 repeats per primitive)
+
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+PASS: Core rejected an unproven Repeat render-bundle draw
+PASS: bounded MirrorRepeat Nearest GPU pixel [23, 0, 0, 255]
+PASS: bounded MirrorRepeat Linear GPU pixel [255, 0, 0, 255]
+PASS: bounded MirrorRepeat Nearest GPU pixel [23, 0, 0, 255]
+PASS: bounded MirrorRepeat render-bundle replay
+
+thread 'public_dx11_repeat_sampler_limit_at_fl91' (23600) panicked at wgpu\src\backend\wgpu_core.rs:3944:18:
+Error in RenderBundleEncoder::finish: Validation Error
+
+Caused by:
+  In a draw command, kind: Draw
+    Sampler group 0 binding 1 uses Repeat or MirrorRepeat without a proven coordinate bound (device limit 128 repeats per primitive)
+
+PASS: Core rejected an unproven MirrorRepeat render-bundle draw
+PASS: bounded MirrorRepeat Nearest GPU pixel [47, 0, 0, 255]
+PASS: bounded Repeat Nearest GPU pixel [47, 0, 0, 255]
+SKIP: conditional NPOT WRAP rejection requires a restricted device
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.48s
