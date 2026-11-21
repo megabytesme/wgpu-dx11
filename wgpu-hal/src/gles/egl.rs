@@ -173,6 +173,29 @@ fn choose_config(
     )))
 }
 
+#[cfg(target_vendor = "uwp")]
+fn choose_angle_fp16_config(
+    egl: &EglInstance,
+    display: khronos_egl::Display,
+) -> Result<Option<khronos_egl::Config>, khronos_egl::Error> {
+    const COLOR_COMPONENT_TYPE_EXT: khronos_egl::Int = 0x3339;
+    const COLOR_COMPONENT_TYPE_FLOAT_EXT: khronos_egl::Int = 0x333B;
+    const OPENGL_ES3_BIT_KHR: khronos_egl::Int = 0x0040;
+    let mut configs = Vec::with_capacity(egl.get_config_count(display)?);
+    egl.get_configs(display, &mut configs)?;
+    Ok(configs.into_iter().find(|&config| {
+        let attr = |name| egl.get_config_attrib(display, config, name);
+        attr(khronos_egl::SURFACE_TYPE).is_ok_and(|bits| bits & khronos_egl::WINDOW_BIT != 0)
+            && attr(khronos_egl::RENDERABLE_TYPE).is_ok_and(|bits| bits & OPENGL_ES3_BIT_KHR != 0)
+            && attr(COLOR_COMPONENT_TYPE_EXT) == Ok(COLOR_COMPONENT_TYPE_FLOAT_EXT)
+            && attr(khronos_egl::RED_SIZE) == Ok(16)
+            && attr(khronos_egl::GREEN_SIZE) == Ok(16)
+            && attr(khronos_egl::BLUE_SIZE) == Ok(16)
+            && attr(khronos_egl::ALPHA_SIZE) == Ok(16)
+            && attr(khronos_egl::SAMPLE_BUFFERS) == Ok(0)
+    }))
+}
+
 #[derive(Clone, Debug)]
 struct EglContext {
     instance: Arc<EglInstance>,
@@ -347,6 +370,8 @@ struct Inner {
     version: (i32, i32),
     supports_native_window: bool,
     config: khronos_egl::Config,
+    #[cfg(target_vendor = "uwp")]
+    angle_fp16_config: Option<khronos_egl::Config>,
     /// Method by which the framebuffer should support srgb
     srgb_kind: SrgbFrameBufferKind,
 }
@@ -408,6 +433,7 @@ impl Inner {
         egl: Arc<EglInstance>,
         display: khronos_egl::Display,
         force_gles_minor_version: wgt::Gles3MinorVersion,
+        #[cfg(target_vendor = "uwp")] angle_d3d11: bool,
     ) -> Result<Self, crate::InstanceError> {
         let version = initialize_display(&egl, display)
             .map_err(instance_err("failed to initialize EGL display connection"))?;
@@ -515,6 +541,8 @@ impl Inner {
         gl_context_attributes.extend(&context_attributes);
         gles_context_attributes.extend(&context_attributes);
 
+        #[cfg(target_vendor = "uwp")]
+        let mut angle_fp16_config = None;
         let context = {
             #[derive(Copy, Clone)]
             enum Robustness {
@@ -530,7 +558,7 @@ impl Inner {
                 None
             };
 
-            let create_context = |api, base_attributes: &[khronos_egl::Int]| {
+            let create_context = |api, base_attributes: &[khronos_egl::Int], context_config| {
                 egl.bind_api(api)?;
 
                 let mut robustness = robustness;
@@ -556,7 +584,7 @@ impl Inner {
                     let mut context_attributes = base_attributes.to_vec();
                     context_attributes.extend(&robustness_attributes);
 
-                    match egl.create_context(display, config, None, &context_attributes) {
+                    match egl.create_context(display, context_config, None, &context_attributes) {
                         Ok(context) => {
                             match robustness {
                                 Some(Robustness::Core) => {
@@ -596,16 +624,68 @@ impl Inner {
                 }
             };
 
-            let result = if supports_opengl {
-                create_context(khronos_egl::OPENGL_API, &gl_context_attributes).or_else(
-                    |gl_error| {
-                        log::debug!("Failed to create desktop OpenGL context: {gl_error}, falling back to OpenGL ES");
-                        create_context(khronos_egl::OPENGL_ES_API, &gles_context_attributes)
-                    },
-                )
-            } else {
-                create_context(khronos_egl::OPENGL_ES_API, &gles_context_attributes)
+            let create_default_context = || {
+                if supports_opengl {
+                    create_context(khronos_egl::OPENGL_API, &gl_context_attributes, config).or_else(
+                        |gl_error| {
+                            log::debug!("Failed to create desktop OpenGL context: {gl_error}, falling back to OpenGL ES");
+                            create_context(khronos_egl::OPENGL_ES_API, &gles_context_attributes, config)
+                        },
+                    )
+                } else {
+                    create_context(khronos_egl::OPENGL_ES_API, &gles_context_attributes, config)
+                }
             };
+
+            #[cfg(target_vendor = "uwp")]
+            let try_angle_hdr = || {
+                let has_extension = |name| {
+                    display_extensions
+                        .split_ascii_whitespace()
+                        .any(|ext| ext == name)
+                };
+                if !angle_d3d11
+                    || !supports_native_window
+                    || !std::env::var_os("WGPU_UWP_ANGLE_HDR").is_some_and(|v| v == "1")
+                    || !has_extension("EGL_KHR_no_config_context")
+                    || !has_extension("EGL_EXT_pixel_format_float")
+                {
+                    return None;
+                }
+                let fp16_config = match choose_angle_fp16_config(&egl, display) {
+                    Ok(config) => config?,
+                    Err(error) => {
+                        log::warn!("Could not enumerate ANGLE FP16 window configs: {error}");
+                        return None;
+                    }
+                };
+                // EGL_KHR_no_config_context defines the null EGLConfig as a legal input.
+                // One configless context can retain resources while the window changes format.
+                let no_config = unsafe { khronos_egl::Config::from_ptr(ptr::null_mut()) };
+                match create_context(
+                    khronos_egl::OPENGL_ES_API,
+                    &gles_context_attributes,
+                    no_config,
+                ) {
+                    Ok(context) => Some((context, fp16_config)),
+                    Err(error) => {
+                        log::warn!("Could not create the configless ANGLE context: {error}");
+                        None
+                    }
+                }
+            };
+
+            #[cfg(target_vendor = "uwp")]
+            let result = match try_angle_hdr() {
+                Some((context, fp16_config)) => {
+                    angle_fp16_config = Some(fp16_config);
+                    Ok(context)
+                }
+                None => create_default_context(),
+            };
+
+            #[cfg(not(target_vendor = "uwp"))]
+            let result = create_default_context();
 
             result.map_err(|e| {
                 crate::InstanceError::with_source(
@@ -652,6 +732,8 @@ impl Inner {
             version,
             supports_native_window,
             config,
+            #[cfg(target_vendor = "uwp")]
+            angle_fp16_config,
             srgb_kind,
         })
     }
@@ -840,6 +922,8 @@ impl crate::Instance for Instance {
                 "UWP requires ANGLE with D3D11".into(),
             ));
         }
+        #[cfg(target_vendor = "uwp")]
+        let mut angle_d3d11 = false;
         let (display, wsi_kind) = match (desc.display.map(|d| d.as_raw()), egl1_5) {
             (Some(Rdh::Wayland(wayland_display_handle)), Some(egl))
                 if client_ext_str.contains("EGL_EXT_platform_wayland") =>
@@ -936,6 +1020,7 @@ impl crate::Instance for Instance {
                     )
                 };
                 // Request D3D11 explicitly, excluding ANGLE's other renderers.
+                angle_d3d11 = true;
                 let attrs = [0x3203, 0x3208, khronos_egl::NONE];
                 let raw = unsafe {
                     get_display(EGL_PLATFORM_ANGLE_ANGLE, ptr::null_mut(), attrs.as_ptr())
@@ -1015,6 +1100,8 @@ impl crate::Instance for Instance {
             egl,
             display,
             desc.backend_options.gl.gles_minor_version,
+            #[cfg(target_vendor = "uwp")]
+            angle_d3d11,
         )?;
 
         Ok(Instance {
@@ -1088,6 +1175,10 @@ impl crate::Instance for Instance {
             egl: inner.egl.clone(),
             wsi: self.wsi.clone(),
             config: inner.config,
+            #[cfg(target_vendor = "uwp")]
+            angle_fp16_config: inner
+                .angle_fp16_config
+                .filter(|_| matches!(window_handle, Rwh::WinRt(_))),
             presentable: inner.supports_native_window,
             raw_window_handle: window_handle,
             swapchain: RwLock::new(None),
@@ -1208,6 +1299,8 @@ pub struct Surface {
     egl: EglContext,
     wsi: WindowSystemInterface,
     config: khronos_egl::Config,
+    #[cfg(target_vendor = "uwp")]
+    angle_fp16_config: Option<khronos_egl::Config>,
     pub(super) presentable: bool,
     raw_window_handle: raw_window_handle::RawWindowHandle,
     swapchain: RwLock<Option<Swapchain>>,
@@ -1218,6 +1311,11 @@ unsafe impl Send for Surface {}
 unsafe impl Sync for Surface {}
 
 impl Surface {
+    #[cfg(target_vendor = "uwp")]
+    pub(super) fn supports_angle_scrgb(&self) -> bool {
+        self.angle_fp16_config.is_some()
+    }
+
     pub(super) unsafe fn present(
         &self,
         _suf_texture: super::Texture,
@@ -1396,6 +1494,22 @@ impl crate::Surface for Surface {
             log::debug!("Configuring the UWP ANGLE EGL surface against the XAML SwapChainPanel");
         }
 
+        #[cfg(target_vendor = "uwp")]
+        let egl_config = if config.color_space == wgt::SurfaceColorSpace::ExtendedSrgbLinear {
+            if config.format != wgt::TextureFormat::Rgba16Float {
+                return Err(crate::SurfaceError::Other(
+                    "ANGLE scRGB requires Rgba16Float",
+                ));
+            }
+            self.angle_fp16_config.ok_or(crate::SurfaceError::Other(
+                "ANGLE scRGB window configuration is unavailable",
+            ))?
+        } else {
+            self.config
+        };
+        #[cfg(not(target_vendor = "uwp"))]
+        let egl_config = self.config;
+
         #[cfg_attr(not(target_vendor = "uwp"), allow(unused_mut))]
         let mut old_surface = unsafe { self.unconfigure_impl(device) };
         #[cfg(target_vendor = "uwp")]
@@ -1569,7 +1683,7 @@ impl crate::Surface for Surface {
                         unsafe {
                             egl.create_platform_window_surface(
                                 self.egl.display,
-                                self.config,
+                                egl_config,
                                 native_window_ptr,
                                 &attributes_usize,
                             )
@@ -1578,7 +1692,7 @@ impl crate::Surface for Surface {
                     _ => unsafe {
                         self.egl.instance.create_window_surface(
                             self.egl.display,
-                            self.config,
+                            egl_config,
                             native_window_ptr,
                             Some(&attributes),
                         )

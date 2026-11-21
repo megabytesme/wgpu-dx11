@@ -1471,8 +1471,6 @@ impl crate::Adapter for super::Adapter {
         }
 
         if surface.presentable {
-            // There is no extended-range or wide-gamut path in the GLES
-            // backend; everything is presented as sRGB.
             let format_caps = |format: wgt::TextureFormat| wgt::SurfaceFormatCapabilities {
                 format,
                 color_spaces: wgt::SurfaceColorSpaces::SRGB,
@@ -1494,7 +1492,13 @@ impl crate::Adapter for super::Adapter {
                 .private_caps
                 .contains(super::PrivateCapabilities::COLOR_BUFFER_HALF_FLOAT)
             {
-                formats.push(format_caps(wgt::TextureFormat::Rgba16Float))
+                #[cfg_attr(not(target_vendor = "uwp"), allow(unused_mut))]
+                let mut fp16 = format_caps(wgt::TextureFormat::Rgba16Float);
+                #[cfg(target_vendor = "uwp")]
+                if surface.supports_angle_scrgb() {
+                    fp16.color_spaces |= wgt::SurfaceColorSpaces::EXTENDED_SRGB_LINEAR;
+                }
+                formats.push(fp16);
             }
 
             Some(crate::SurfaceCapabilities {
