@@ -1343,6 +1343,25 @@ pub(crate) struct BindGroupLateBufferBindingInfo {
     pub size: wgt::BufferSize,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum SamplerAddressing {
+    NonPeriodic,
+    MirrorRepeat,
+    Repeat,
+}
+
+impl SamplerAddressing {
+    pub(crate) fn from_modes(modes: &[wgt::AddressMode; 3]) -> Self {
+        if modes.contains(&wgt::AddressMode::Repeat) {
+            Self::Repeat
+        } else if modes.contains(&wgt::AddressMode::MirrorRepeat) {
+            Self::MirrorRepeat
+        } else {
+            Self::NonPeriodic
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct BindGroup {
     pub(crate) raw: Snatchable<Box<dyn hal::DynBindGroup>>,
@@ -1363,7 +1382,7 @@ pub struct BindGroup {
     pub(crate) sampled_texture_mip_levels: FastHashMap<u32, Vec<u32>>,
     pub(crate) sampled_texture_formats: FastHashMap<u32, Vec<wgt::TextureFormat>>,
     pub(crate) fl9_texture_load_compatible: FastHashMap<u32, Vec<Fl9TextureLoadViewCompatibility>>,
-    pub(crate) sampler_uses_repeat: FastHashMap<u32, Vec<bool>>,
+    pub(crate) sampler_addressing: FastHashMap<u32, Vec<SamplerAddressing>>,
     pub(crate) sampler_clamp_to_edge: FastHashMap<u32, Vec<bool>>,
     pub(crate) sampler_mip_compatibility: FastHashMap<u32, Vec<hal::SamplerMipCompatibility>>,
     pub(crate) sampler_texture_sample_bias_compatible: FastHashMap<u32, Vec<bool>>,

@@ -34067,10 +34067,8 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
     assert_eq!(info.backend, Backend::Dx11);
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
-    let max_repeat = adapter
-        .get_downlevel_capabilities()
-        .limits
-        .max_texture_repeat_per_primitive;
+    let downlevel = adapter.get_downlevel_capabilities();
+    let max_repeat = downlevel.limits.max_texture_repeat_per_primitive;
     assert_eq!(max_repeat, 128);
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; max_texture_repeat_per_primitive={max_repeat}",
@@ -34220,7 +34218,7 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
-    let make_group = |mode, filter| {
+    let make_group = |src_view: &TextureView, mode, filter| {
         let sampler = device.create_sampler(&SamplerDescriptor {
             address_mode_u: mode,
             min_filter: filter,
@@ -34233,7 +34231,7 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
             entries: &[
                 BindGroupEntry {
                     binding: 0,
-                    resource: BindingResource::TextureView(&src_view),
+                    resource: BindingResource::TextureView(src_view),
                 },
                 BindGroupEntry {
                     binding: 1,
@@ -34242,7 +34240,7 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
             ],
         })
     };
-    let encode = |pipeline: &RenderPipeline, group: &BindGroup| {
+    let encode = |pipeline: &RenderPipeline, group: &BindGroup, bundle: Option<&RenderBundle>| {
         let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
         {
             let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -34257,10 +34255,14 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
                 })],
                 ..Default::default()
             });
-            pass.set_pipeline(pipeline);
-            pass.set_bind_group(0, group, &[]);
-            pass.set_vertex_buffer(0, vertex.slice(..));
-            pass.draw(0..3, 0..1);
+            if let Some(bundle) = bundle {
+                pass.execute_bundles([bundle]);
+            } else {
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, group, &[]);
+                pass.set_vertex_buffer(0, vertex.slice(..));
+                pass.draw(0..3, 0..1);
+            }
         }
         encoder.copy_texture_to_buffer(
             target.as_image_copy(),
@@ -34276,6 +34278,36 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
         );
         encoder.finish()
     };
+    let check_pixel = |commands, mode, filter, expected: u8| {
+        let submission = queue.submit([commands]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        map.slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .unwrap();
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        {
+            let view = map.slice(..).get_mapped_range().unwrap();
+            assert!(
+                view[0].abs_diff(expected) <= 1,
+                "{mode:?} {filter:?}: {:?}",
+                &view[..4]
+            );
+            assert_eq!(&view[1..4], &[0, 0, 255]);
+            println!(
+                "PASS: bounded {mode:?} {filter:?} GPU pixel {:?}",
+                &view[..4]
+            );
+        }
+        map.unmap();
+    };
     for (mode, nearest, linear) in [
         (AddressMode::Repeat, 81u8, 128u8),
         (AddressMode::MirrorRepeat, 23, 255),
@@ -34284,49 +34316,12 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
             (&bounded, FilterMode::Nearest, nearest),
             (&edge, FilterMode::Linear, linear),
         ] {
-            let group = make_group(mode, filter);
-            let submission = queue.submit([encode(pipeline, &group)]);
-            let (sender, receiver) = std::sync::mpsc::channel();
-            map.slice(..)
-                .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
-            device
-                .poll(PollType::Wait {
-                    submission_index: Some(submission),
-                    timeout: Some(Duration::from_secs(10)),
-                })
-                .unwrap();
-            receiver
-                .recv_timeout(Duration::from_secs(10))
-                .unwrap()
-                .unwrap();
-            {
-                let view = map.slice(..).get_mapped_range().unwrap();
-                assert!(
-                    view[0].abs_diff(expected) <= 1,
-                    "{mode:?} {filter:?}: {:?}",
-                    &view[..4]
-                );
-                assert_eq!(&view[1..4], &[0, 0, 255]);
-                println!(
-                    "PASS: bounded {mode:?} {filter:?} GPU pixel {:?}",
-                    &view[..4]
-                );
-            }
-            map.unmap();
+            let group = make_group(&src_view, mode, filter);
+            check_pixel(encode(pipeline, &group, None), mode, filter, expected);
         }
 
-        let group = make_group(mode, FilterMode::Nearest);
-        for pipeline in [&dynamic, &large] {
-            expect_validation_error_containing(
-                &device,
-                "unproven texture repeat draw",
-                "UnprovenTextureRepeat",
-                || {
-                    drop(encode(pipeline, &group));
-                },
-            );
-        }
-        let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let group = make_group(&src_view, mode, FilterMode::Nearest);
+        let encode_bundle = |pipeline| {
             let mut bundle = device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
                 label: None,
                 color_formats: &[Some(format)],
@@ -34334,11 +34329,32 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
                 sample_count: 1,
                 multiview: None,
             });
-            bundle.set_pipeline(&dynamic);
+            bundle.set_pipeline(pipeline);
             bundle.set_bind_group(0, &group, &[]);
             bundle.set_vertex_buffer(0, vertex.slice(..));
             bundle.draw(0..3, 0..1);
-            drop(bundle.finish(&RenderBundleDescriptor::default()));
+            bundle.finish(&RenderBundleDescriptor::default())
+        };
+        let bundle = encode_bundle(&bounded);
+        check_pixel(
+            encode(&bounded, &group, Some(&bundle)),
+            mode,
+            FilterMode::Nearest,
+            nearest,
+        );
+        println!("PASS: bounded {mode:?} render-bundle replay");
+        for pipeline in [&dynamic, &large] {
+            expect_validation_error_containing(
+                &device,
+                "unproven texture repeat draw",
+                "UnprovenTextureRepeat",
+                || {
+                    drop(encode(pipeline, &group, None));
+                },
+            );
+        }
+        let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            drop(encode_bundle(&dynamic));
         }))
         .expect_err("the native render-bundle API must reject an unproven repeat draw");
         let message = error
@@ -34351,6 +34367,45 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
             "{message}"
         );
         println!("PASS: Core rejected an unproven {mode:?} render-bundle draw");
+    }
+
+    let npot_size = Extent3d { width: 3, ..size };
+    let npot = device.create_texture(&TextureDescriptor {
+        size: npot_size,
+        ..texture_desc
+    });
+    queue.write_texture(
+        npot.as_image_copy(),
+        &[0, 0, 0, 255, 47, 0, 0, 255, 255, 0, 0, 255],
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(12),
+            rows_per_image: Some(1),
+        },
+        npot_size,
+    );
+    let npot_view = npot.create_view(&TextureViewDescriptor::default());
+    let mirror = AddressMode::MirrorRepeat;
+    let nearest = FilterMode::Nearest;
+    let mirrored_npot = make_group(&npot_view, mirror, nearest);
+    let wrapped_npot = make_group(&npot_view, AddressMode::Repeat, nearest);
+    // Mirror folds U=1.625 to 0.375, selecting the middle texel of the 3-wide image.
+    check_pixel(encode(&bounded, &mirrored_npot, None), mirror, nearest, 47);
+    if downlevel.limits.unrestricted_npot_texture_sampling {
+        check_pixel(
+            encode(&bounded, &wrapped_npot, None),
+            AddressMode::Repeat,
+            nearest,
+            47,
+        );
+        println!("SKIP: conditional NPOT WRAP rejection requires a restricted device");
+    } else {
+        expect_validation_error_containing(
+            &device,
+            "conditional NPOT with bounded WRAP",
+            "NpotTextureWithRepeatSampler",
+            || drop(encode(&bounded, &wrapped_npot, None)),
+        );
     }
 }
 

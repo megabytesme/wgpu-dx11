@@ -4391,13 +4391,7 @@ impl Device {
         let mut sampled_texture_mip_levels = FastHashMap::default();
         let mut sampled_texture_formats = FastHashMap::default();
         let mut fl9_texture_load_compatible = FastHashMap::default();
-        let mut sampler_uses_repeat = FastHashMap::default();
-        let bounded_repeat_on_draw = self.checks_bounded_repeat_on_draw();
-        let sampler_repeats = |address_modes: &[wgt::AddressMode; 3]| {
-            address_modes.contains(&wgt::AddressMode::Repeat)
-                || (bounded_repeat_on_draw
-                    && address_modes.contains(&wgt::AddressMode::MirrorRepeat))
-        };
+        let mut sampler_addressing = FastHashMap::default();
         let mut sampler_clamp_to_edge = FastHashMap::default();
         let mut sampler_mip_compatibility = FastHashMap::default();
         let mut sampler_texture_sample_bias_compatible = FastHashMap::default();
@@ -4463,14 +4457,15 @@ impl Device {
                     (res_index, num_bindings)
                 }
                 Br::Sampler(ref sampler) => {
-                    let uses_repeat = sampler_repeats(&sampler.address_modes);
+                    let addressing =
+                        binding_model::SamplerAddressing::from_modes(&sampler.address_modes);
                     let clamp_to_edge = sampler_clamps_to_edge_u_v(&sampler.address_modes);
                     let bias_compatible = sampler.texture_sample_bias_compatible;
                     sampler_mip_compatibility.insert(binding, vec![sampler.mip_compatibility]);
                     sampler_texture_sample_level_zero_compatible
                         .insert(binding, vec![sampler.texture_sample_level_zero_compatible]);
                     let sampler = self.create_sampler_binding(&mut used, binding, decl, sampler)?;
-                    sampler_uses_repeat.insert(binding, vec![uses_repeat]);
+                    sampler_addressing.insert(binding, vec![addressing]);
                     sampler_clamp_to_edge.insert(binding, vec![clamp_to_edge]);
                     sampler_texture_sample_bias_compatible.insert(binding, vec![bias_compatible]);
 
@@ -4482,11 +4477,13 @@ impl Device {
                     let num_bindings = samplers.len();
                     Self::check_array_binding(self.features, decl.count, num_bindings)?;
 
-                    sampler_uses_repeat.insert(
+                    sampler_addressing.insert(
                         binding,
                         samplers
                             .iter()
-                            .map(|sampler| sampler_repeats(&sampler.address_modes))
+                            .map(|sampler| {
+                                binding_model::SamplerAddressing::from_modes(&sampler.address_modes)
+                            })
                             .collect(),
                     );
                     sampler_clamp_to_edge.insert(
@@ -4722,7 +4719,7 @@ impl Device {
             sampled_texture_mip_levels,
             sampled_texture_formats,
             fl9_texture_load_compatible,
-            sampler_uses_repeat,
+            sampler_addressing,
             sampler_clamp_to_edge,
             sampler_mip_compatibility,
             sampler_texture_sample_bias_compatible,
