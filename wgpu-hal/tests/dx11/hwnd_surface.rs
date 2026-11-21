@@ -247,15 +247,24 @@ unsafe fn record_clone_sample(
 
 #[test]
 fn fl91_hidden_hwnd_surface_renders_and_resizes() -> windows::core::Result<()> {
-    run_hidden_hwnd(false)
+    run_hidden_hwnd(false, super::super::FeatureLevel::L9_1)
 }
 
 #[test]
 fn fl91_hidden_hwnd_clone_sampling_presents_and_resizes() -> windows::core::Result<()> {
-    run_hidden_hwnd(true)
+    run_hidden_hwnd(true, super::super::FeatureLevel::L9_1)
 }
 
-fn run_hidden_hwnd(clone_sample: bool) -> windows::core::Result<()> {
+#[test]
+#[ignore = "requires a physical D3D11 FL9_2 device and a Win32 session"]
+fn fl92_hidden_hwnd_clone_sampling_presents_and_resizes() -> windows::core::Result<()> {
+    run_hidden_hwnd(true, super::super::FeatureLevel::L9_2)
+}
+
+fn run_hidden_hwnd(
+    clone_sample: bool,
+    level: super::super::FeatureLevel,
+) -> windows::core::Result<()> {
     let adapters = super::super::enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -264,10 +273,14 @@ fn run_hidden_hwnd(clone_sample: bool) -> windows::core::Result<()> {
         std::println!("SKIP: no hardware adapter");
         return Ok(());
     };
-    let native = Arc::new(adapter.open_device(&[super::super::FeatureLevel::L9_1])?);
-    assert_eq!(native.feature_level(), super::super::FeatureLevel::L9_1);
+    let mut native = adapter.open_device(&[level])?;
+    assert_eq!(native.feature_level(), level);
+    if level == super::super::FeatureLevel::L9_2 {
+        native.enable_experimental_fl92(adapter.identity());
+    }
+    let native = Arc::new(native);
     std::println!(
-        "Hardware: {:?}; requested FL9_1; actual {:?}",
+        "Hardware: {:?}; requested {level:?}; actual {:?}",
         adapter.identity(),
         native.feature_level()
     );

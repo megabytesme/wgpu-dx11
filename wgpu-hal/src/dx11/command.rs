@@ -201,8 +201,11 @@ pub(super) enum NativeCommand {
     Copy(NativeBufferCopy),
     ClearBuffer(NativeBufferClear),
     WriteTimestamp(ID3D11Asynchronous),
+    BeginOcclusionQuery(ID3D11Asynchronous),
+    EndOcclusionQuery,
     CopyQueryResults {
         queries: Vec<ID3D11Asynchronous>,
+        occlusion: bool,
         buffer: ID3D11Buffer,
         buffer_shadow: Option<Arc<BufferCpuShadow>>,
         offset: u32,
@@ -575,6 +578,19 @@ fn direct_strip_vertex_indices(first: u32, count: u32) -> Result<Vec<u64>> {
     Ok(indices)
 }
 
+struct ActiveOcclusionQuery<'a> {
+    context: &'a ID3D11DeviceContext,
+    query: Option<&'a ID3D11Asynchronous>,
+}
+
+impl Drop for ActiveOcclusionQuery<'_> {
+    fn drop(&mut self) {
+        if let Some(query) = self.query.take() {
+            unsafe { self.context.End(query) };
+        }
+    }
+}
+
 /// Owned commands retain their D3D11 resources until the command buffer drops.
 #[allow(dead_code)]
 #[derive(Debug)]
@@ -629,6 +645,10 @@ impl CommandBuffer {
         let mut blend_constant = [0.0; 4];
         let mut stencil_reference = 0;
         let mut active_vertex_index_slot = None;
+        let mut occlusion_query = ActiveOcclusionQuery {
+            context,
+            query: None,
+        };
         for command in &self.commands {
             unsafe {
                 match command {
@@ -662,8 +682,23 @@ impl CommandBuffer {
                         }
                     }
                     NativeCommand::WriteTimestamp(query) => context.End(query),
+                    NativeCommand::BeginOcclusionQuery(query) => {
+                        if occlusion_query.query.is_some() {
+                            return Err(Error::from_hresult(E_INVALIDARG));
+                        }
+                        context.Begin(query);
+                        occlusion_query.query = Some(query);
+                    }
+                    NativeCommand::EndOcclusionQuery => {
+                        let query = occlusion_query
+                            .query
+                            .take()
+                            .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+                        context.End(query);
+                    }
                     NativeCommand::CopyQueryResults {
                         queries,
+                        occlusion,
                         buffer,
                         buffer_shadow,
                         offset,
@@ -672,6 +707,9 @@ impl CommandBuffer {
                         for (index, query) in queries.iter().enumerate() {
                             let mut value = 0u64;
                             super::query::wait_for_query_data(context, query, &mut value)?;
+                            if *occlusion {
+                                value = u64::from(value != 0);
+                            }
                             let byte_offset = offset
                                 .checked_add(
                                     u32::try_from(index)
@@ -1635,6 +1673,9 @@ impl CommandBuffer {
                     }
                 }
             }
+        }
+        if occlusion_query.query.is_some() {
+            return Err(Error::from_hresult(E_INVALIDARG));
         }
         Ok(())
     }

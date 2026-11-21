@@ -34,10 +34,20 @@ fn translate_sampler(
     translate_sampler_with_shadow_support(desc, level, false)
 }
 
+#[cfg(test)]
 fn translate_sampler_with_shadow_support(
     desc: &crate::SamplerDescriptor,
     level: super::device::FeatureLevel,
     shadow_supported: bool,
+) -> Result<(D3D11_SAMPLER_DESC, bool), crate::DeviceError> {
+    translate_sampler_with_capabilities(desc, level, shadow_supported, MAX_ANISOTROPY)
+}
+
+fn translate_sampler_with_capabilities(
+    desc: &crate::SamplerDescriptor,
+    level: super::device::FeatureLevel,
+    shadow_supported: bool,
+    max_anisotropy: u16,
 ) -> Result<(D3D11_SAMPLER_DESC, bool), crate::DeviceError> {
     use wgt::FilterMode::{Linear, Nearest};
     use wgt::MipmapFilterMode::{Linear as MipLinear, Nearest as MipNearest};
@@ -57,7 +67,7 @@ fn translate_sampler_with_shadow_support(
             || desc.compare != Some(wgt::CompareFunction::LessEqual)
             || desc.min_filter != desc.mag_filter
             || desc.anisotropy_clamp != 1))
-        || !comparison && !(1..=MAX_ANISOTROPY).contains(&desc.anisotropy_clamp)
+        || !comparison && !(1..=max_anisotropy).contains(&desc.anisotropy_clamp)
         || (desc.anisotropy_clamp > 1
             && (desc.min_filter != Linear
                 || desc.mag_filter != Linear
@@ -99,7 +109,7 @@ fn translate_sampler_with_shadow_support(
             }
             (Linear, wgt::MipmapFilterMode::Linear) => D3D11_FILTER_COMPARISON_MIN_MAG_MIP_LINEAR,
         }
-    } else if desc.anisotropy_clamp == 2 {
+    } else if desc.anisotropy_clamp > 1 {
         D3D11_FILTER_ANISOTROPIC
     } else {
         match (desc.min_filter, desc.mag_filter, desc.mipmap_filter) {
@@ -191,10 +201,13 @@ impl Sampler {
         desc: &crate::SamplerDescriptor,
     ) -> Result<Self, crate::DeviceError> {
         let comparison = desc.compare.is_some();
-        let shadow_supported = super::capabilities::Capabilities::query(&owner)
-            .private_fl91_depth_comparison_sampling();
-        let (native, _) =
-            translate_sampler_with_shadow_support(desc, owner.feature_level(), shadow_supported)?;
+        let capabilities = super::capabilities::Capabilities::query(&owner);
+        let (native, _) = translate_sampler_with_capabilities(
+            desc,
+            owner.feature_level(),
+            capabilities.private_fl91_depth_comparison_sampling(),
+            capabilities.max_sampler_anisotropy(),
+        )?;
         let lod = sampler_lod(desc, &native);
         let mut raw = None;
         unsafe {
@@ -435,7 +448,10 @@ mod tests {
         let (higher_level, _) =
             translate_sampler_with_shadow_support(&desc, FeatureLevel::L9_3, true)
                 .expect("comparison sampler stays supported across L9_1..=L11_1");
-        assert_eq!(higher_level.Filter, D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT);
+        assert_eq!(
+            higher_level.Filter,
+            D3D11_FILTER_COMPARISON_MIN_MAG_MIP_POINT
+        );
     }
 
     #[test]

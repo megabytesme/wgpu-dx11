@@ -216,6 +216,9 @@ impl NativeAdapter {
             immediate: Mutex::new(immediate),
             idle_query: Mutex::new(Some(idle_query)),
             level,
+            experimental_fl92: false,
+            fl92_two_sided_stencil: false,
+            occlusion_visibility_supported: false,
             timestamp_frequency,
             debug_info_queue,
             #[cfg(any(test, feature = "dx11-test-fixture"))]
@@ -235,6 +238,9 @@ pub struct NativeDevice {
     immediate: Mutex<ID3D11DeviceContext>,
     pub(super) idle_query: Mutex<Option<ID3D11Asynchronous>>,
     level: FeatureLevel,
+    experimental_fl92: bool,
+    fl92_two_sided_stencil: bool,
+    occlusion_visibility_supported: bool,
     timestamp_frequency: Option<u64>,
     #[cfg_attr(not(test), allow(dead_code))]
     debug_info_queue: Option<ID3D11InfoQueue>,
@@ -247,6 +253,27 @@ pub struct NativeDevice {
 }
 
 impl NativeDevice {
+    pub(super) fn enable_experimental_fl92(&mut self, adapter: &AdapterIdentity) {
+        debug_assert_eq!(self.level, FeatureLevel::L9_2);
+        self.experimental_fl92 = true;
+        // The Surface Pro X Adreno 680 applies the wrong operation to back faces.
+        self.fl92_two_sided_stencil =
+            (adapter.vendor_id, adapter.device_id) != (0x4d4f4351, 0x41333430);
+        self.occlusion_visibility_supported = super::query::probe_occlusion_visibility(self);
+    }
+
+    pub(super) fn experimental_fl92_enabled(&self) -> bool {
+        self.experimental_fl92
+    }
+
+    pub(super) fn fl92_two_sided_stencil_supported(&self) -> bool {
+        self.fl92_two_sided_stencil
+    }
+
+    pub(super) fn occlusion_visibility_supported(&self) -> bool {
+        self.occlusion_visibility_supported
+    }
+
     #[cfg(test)]
     pub(super) fn clear_debug_messages(&self) {
         if let Some(queue) = &self.debug_info_queue {

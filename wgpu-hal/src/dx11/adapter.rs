@@ -1,4 +1,4 @@
-//! Physical D3D11 adapters restricted to the implemented FL9_1 contract.
+//! Physical D3D11 adapters and their wgpu capability projections.
 
 use alloc::{string::String, sync::Arc, vec};
 
@@ -9,7 +9,7 @@ enum AdapterInner {
     Fixture(Arc<super::NativeDevice>),
 }
 
-/// An adapter restricted to the implemented FL9_1 capability projection.
+/// An adapter exposing the implemented capability projection.
 #[derive(Debug)]
 pub struct Adapter {
     inner: AdapterInner,
@@ -28,7 +28,9 @@ impl Adapter {
         info.device = identity.device_id;
         info.driver = String::from("D3D11");
         let level = native.feature_level();
-        let level_tag = if level == super::FeatureLevel::L9_1 {
+        let level_tag = if native.experimental_fl92_enabled() {
+            String::from("FL9_2")
+        } else if level == super::FeatureLevel::L9_1 {
             String::from("FL9_1")
         } else {
             alloc::format!("FL9_1 (hardware {level:?})")

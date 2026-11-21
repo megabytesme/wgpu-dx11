@@ -43,6 +43,8 @@ struct RenderState {
     target: Option<windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
     resolve: Option<ResolveOperation>,
     end_timestamp: Option<windows::Win32::Graphics::Direct3D11::ID3D11Asynchronous>,
+    occlusion_query_set: Option<super::query::QuerySet>,
+    active_occlusion_query: Option<u32>,
     target_mip: Option<u32>,
     pipeline: bool,
     active_plan: Option<Arc<super::hal_bind_group::BindingPlan>>,
@@ -622,6 +624,7 @@ impl CommandEncoder {
         DeviceError,
     > {
         if !set.belongs_to(&self.device)
+            || !set.is_timestamp()
             || (beginning_index.is_none() && end_index.is_none())
             || (beginning_index.is_some() && beginning_index == end_index)
         {
@@ -1089,15 +1092,47 @@ impl crate::CommandEncoder for CommandEncoder {
     unsafe fn end_debug_marker(&mut self) {}
 
     unsafe fn begin_query(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
-        self.reject()
+        let Some(render) = self.render.as_mut() else {
+            self.reject();
+            return;
+        };
+        if render.active_occlusion_query.is_some()
+            || !render
+                .occlusion_query_set
+                .as_ref()
+                .is_some_and(|active_set| active_set.same_set(set))
+        {
+            self.reject();
+            return;
+        }
+        let Some(query) = set.query(index) else {
+            self.reject();
+            return;
+        };
+        render.active_occlusion_query = Some(index);
+        self.record(NativeCommand::BeginOcclusionQuery(query));
     }
 
     unsafe fn end_query(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
-        self.reject()
+        let Some(render) = self.render.as_mut() else {
+            self.reject();
+            return;
+        };
+        if render.active_occlusion_query != Some(index)
+            || !render
+                .occlusion_query_set
+                .as_ref()
+                .is_some_and(|active_set| active_set.same_set(set))
+        {
+            self.reject();
+            return;
+        }
+        render.active_occlusion_query = None;
+        self.record(NativeCommand::EndOcclusionQuery);
     }
 
     unsafe fn write_timestamp(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
-        if !set.belongs_to(&self.device) {
+        if !set.belongs_to(&self.device) || !set.is_timestamp() {
             self.reject();
             return;
         }
@@ -1109,6 +1144,7 @@ impl crate::CommandEncoder for CommandEncoder {
     }
 
     unsafe fn reset_queries(&mut self, set: &<Self::A as Api>::QuerySet, range: Range<u32>) {
+        // D3D11 Begin/End replaces the old result on reuse.
         if !set.belongs_to(&self.device) || !set.contains_range(&range) {
             self.reject();
         }
@@ -1122,7 +1158,9 @@ impl crate::CommandEncoder for CommandEncoder {
         offset: wgt::BufferAddress,
         stride: wgt::BufferSize,
     ) {
-        if !set.belongs_to(&self.device)
+        if self.render.is_some()
+            || self.compute
+            || !set.belongs_to(&self.device)
             || !set.contains_range(&range)
             || stride.get() != u64::from(wgt::QUERY_SIZE)
             || !offset.is_multiple_of(u64::from(wgt::QUERY_SIZE))
@@ -1154,6 +1192,7 @@ impl crate::CommandEncoder for CommandEncoder {
             };
         self.record(NativeCommand::CopyQueryResults {
             queries,
+            occlusion: set.is_occlusion(),
             buffer,
             buffer_shadow,
             offset: buffer_offset,
@@ -1208,7 +1247,11 @@ impl crate::CommandEncoder for CommandEncoder {
             || self.compute
             || !matches!(desc.sample_count, 1 | 2 | 4 | 8 | 16)
             || desc.multiview_mask.is_some()
-            || desc.occlusion_query_set.is_some()
+            || desc.occlusion_query_set.is_some_and(|set| {
+                !set.belongs_to(&self.device)
+                    || !set.is_occlusion()
+                    || !self.device.occlusion_visibility_supported()
+            })
             || color.is_some_and(|color| {
                 color.depth_slice.is_some()
                     || (color.target.usage != wgt::TextureUses::COLOR_TARGET
@@ -1416,6 +1459,8 @@ impl crate::CommandEncoder for CommandEncoder {
             target: target.clone(),
             resolve,
             end_timestamp,
+            occlusion_query_set: desc.occlusion_query_set.cloned(),
+            active_occlusion_query: None,
             target_mip: color.map(|color| color.target.view.mip_base()),
             pipeline: false,
             active_plan: None,
@@ -1469,6 +1514,10 @@ impl crate::CommandEncoder for CommandEncoder {
             self.reject();
             return;
         };
+        if render.active_occlusion_query.is_some() {
+            self.reject();
+            return;
+        }
         self.record(NativeCommand::EndRender {
             resolve: render.resolve,
         });

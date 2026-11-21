@@ -815,6 +815,7 @@ pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLay
         }),
         DXGI_FORMAT_R8G8_UNORM
         | DXGI_FORMAT_R8G8_SNORM
+        | DXGI_FORMAT_R16_UNORM
         | DXGI_FORMAT_B5G6R5_UNORM
         | DXGI_FORMAT_B5G5R5A1_UNORM
         | DXGI_FORMAT_B4G4R4A4_UNORM => Ok(TextureBlockLayout {
@@ -1190,7 +1191,8 @@ impl NativeDevice {
         if !texture.usage.contains(wgt::TextureUses::COPY_DST)
             || !matches!(
                 desc.Format,
-                DXGI_FORMAT_R8_UNORM
+                DXGI_FORMAT_R16_UNORM
+                    | DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
                     | DXGI_FORMAT_R16G16_SNORM
@@ -1299,7 +1301,8 @@ impl NativeDevice {
             || desc.Height == 0
             || !matches!(
                 desc.Format,
-                DXGI_FORMAT_R8_UNORM
+                DXGI_FORMAT_R16_UNORM
+                    | DXGI_FORMAT_R8_UNORM
                     | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
                     | DXGI_FORMAT_R16G16_SNORM
@@ -1354,7 +1357,8 @@ impl NativeDevice {
             false
         } else if matches!(
             desc.Format,
-            DXGI_FORMAT_R8_UNORM
+            DXGI_FORMAT_R16_UNORM
+                | DXGI_FORMAT_R8_UNORM
                 | DXGI_FORMAT_R8G8_UNORM
                 | DXGI_FORMAT_R8G8_SNORM
                 | DXGI_FORMAT_R16G16_SNORM
@@ -1615,6 +1619,13 @@ impl NativeDevice {
                 | DXGI_FORMAT_R8G8B8A8_UNORM_SRGB
                 | DXGI_FORMAT_B8G8R8A8_UNORM_SRGB
         );
+        let fl92_r16_unorm = format == DXGI_FORMAT_R16_UNORM
+            && self.experimental_fl92_enabled()
+            && !cube
+            && !render_target
+            && layers == 1
+            && mip_levels == 1
+            && sample_count == 1;
         let sampled_mip_shape = layers == 1 && mip_levels > 1 && sample_count == 1;
         let packed_sampled_mip_chain = sampled_mip_shape
             && match format {
@@ -1703,7 +1714,7 @@ impl NativeDevice {
             || layers > 2048
             || mip_levels == 0
             || mip_levels > width.max(height).ilog2() + 1
-            || !(rgba_bgra || uncompressed_sampled || bc_sampled)
+            || !(rgba_bgra || uncompressed_sampled || bc_sampled || fl92_r16_unorm)
             || (cube
                 && (layers != 6
                     || width != height
@@ -1768,7 +1779,8 @@ impl NativeDevice {
             usage: if !render_target
                 && matches!(
                     format,
-                    DXGI_FORMAT_R8_UNORM
+                    DXGI_FORMAT_R16_UNORM
+                        | DXGI_FORMAT_R8_UNORM
                         | DXGI_FORMAT_R8G8_UNORM
                         | DXGI_FORMAT_R8G8_SNORM
                         | DXGI_FORMAT_R16G16_SNORM

@@ -35,6 +35,31 @@ fn poll_ready<T>(future: impl Future<Output = T>) -> T {
     }
 }
 
+fn verify_hardware_adapter(adapter: &Adapter, operation: &str) {
+    use wgpu_hal::dx11::FeatureLevel;
+
+    let info = adapter.get_info();
+    assert_eq!(info.backend, Backend::Dx11);
+    let hal = unsafe { adapter.as_hal::<wgpu_hal::api::Dx11>() }.unwrap();
+    assert!(!hal.is_software());
+    let level = hal.feature_level();
+    if std::env::var_os("WGPU_DX11_FEATURE_LEVEL").is_some_and(|v| v == "9_2") {
+        assert_eq!(level, FeatureLevel::L9_2);
+        assert!(info.driver_info.starts_with("FL9_2;"), "{info:?}");
+    } else {
+        assert!(info.driver_info.starts_with("FL9_1"), "{info:?}");
+        if std::env::var_os("WGPU_DX11_FEATURE_LEVEL").is_some_and(|v| v == "9_1")
+            || std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1")
+        {
+            assert_eq!(level, FeatureLevel::L9_1);
+        }
+    }
+    println!(
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} actual={level:?} software=false; operation={operation}",
+        info.name, info.vendor, info.device, info.driver_info
+    );
+}
+
 #[test]
 fn public_dx11_reconfigure_timeout_preserves_previous_device_association() {
     use windows::{
@@ -112,13 +137,9 @@ fn public_dx11_reconfigure_timeout_preserves_previous_device_association() {
             return;
         }
     };
-    let info = adapter.get_info();
-    assert_eq!(info.backend, Backend::Dx11);
-    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
-    assert!(info.driver_info.contains("physical"), "{info:?}");
-    println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=cross-device HWND reconfiguration timeout recovery",
-        info.name, info.vendor, info.device, info.driver_info
+    verify_hardware_adapter(
+        &adapter,
+        "cross-device HWND reconfiguration timeout recovery",
     );
 
     let descriptor = DeviceDescriptor {
@@ -264,14 +285,7 @@ fn public_dx11_unconfigure_device_loss_retires_old_surface_and_notifies_old_devi
             return;
         }
     };
-    let info = adapter.get_info();
-    assert_eq!(info.backend, Backend::Dx11);
-    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
-    assert!(info.driver_info.contains("physical"), "{info:?}");
-    println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=cross-device unconfigure device-loss recovery",
-        info.name, info.vendor, info.device, info.driver_info
-    );
+    verify_hardware_adapter(&adapter, "cross-device unconfigure device-loss recovery");
 
     let descriptor = DeviceDescriptor {
         label: Some("public D3D11 FL9_1 unconfigure device-loss fixture"),
@@ -459,14 +473,7 @@ fn public_dx11_hwnd_present_device_loss_reaches_callback() {
             return;
         }
     };
-    let info = adapter.get_info();
-    assert_eq!(info.backend, Backend::Dx11);
-    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
-    assert!(info.driver_info.contains("physical"), "{info:?}");
-    println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=synthetic HWND Present device loss",
-        info.name, info.vendor, info.device, info.driver_info
-    );
+    verify_hardware_adapter(&adapter, "synthetic HWND Present device loss");
 
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public D3D11 FL9_1 Present error fixture"),
@@ -664,14 +671,7 @@ fn public_dx11_hwnd_resize_device_loss_reaches_callback_and_releases_reservation
             return;
         }
     };
-    let info = adapter.get_info();
-    assert_eq!(info.backend, Backend::Dx11);
-    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
-    assert!(info.driver_info.contains("physical"), "{info:?}");
-    println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=synthetic HWND ResizeBuffers device loss",
-        info.name, info.vendor, info.device, info.driver_info
-    );
+    verify_hardware_adapter(&adapter, "synthetic HWND ResizeBuffers device loss");
 
     let (device, _queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public D3D11 FL9_1 ResizeBuffers error fixture"),
@@ -853,13 +853,9 @@ fn public_dx11_reentrant_present_releases_consumed_frame_after_device_loss() {
             return;
         }
     };
-    let info = adapter.get_info();
-    assert_eq!(info.backend, Backend::Dx11);
-    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
-    assert!(info.driver_info.contains("physical"), "{info:?}");
-    println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; operation=reentrant Present cleanup after synthetic device loss",
-        info.name, info.vendor, info.device, info.driver_info
+    verify_hardware_adapter(
+        &adapter,
+        "reentrant Present cleanup after synthetic device loss",
     );
 
     let make_device = |label| {

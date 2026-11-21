@@ -322,23 +322,26 @@ impl crate::Device for Device {
                 | wgt::TextureFormat::Depth24PlusStencil8
         );
         let depth_sampled = depth && desc.usage.contains(wgt::TextureUses::RESOURCE);
-        let sampled_upload = matches!(
-            desc.format,
-            wgt::TextureFormat::R8Unorm
-                | wgt::TextureFormat::Rg8Unorm
-                | wgt::TextureFormat::Rg8Snorm
-                | wgt::TextureFormat::Rg16Snorm
-                | wgt::TextureFormat::Rgba8Snorm
-                | wgt::TextureFormat::Bc1RgbaUnorm
-                | wgt::TextureFormat::Bc2RgbaUnorm
-                | wgt::TextureFormat::Bc3RgbaUnorm
-                | wgt::TextureFormat::Bc1RgbaUnormSrgb
-                | wgt::TextureFormat::Bc2RgbaUnormSrgb
-                | wgt::TextureFormat::Bc3RgbaUnormSrgb
-                | wgt::TextureFormat::Rgb5g6b5Unorm
-                | wgt::TextureFormat::Rgb5a1Unorm
-                | wgt::TextureFormat::Rgba4Unorm
-        );
+        let fl92_r16_unorm =
+            desc.format == wgt::TextureFormat::R16Unorm && capabilities.fl92_r16_unorm_sampled();
+        let sampled_upload = fl92_r16_unorm
+            || matches!(
+                desc.format,
+                wgt::TextureFormat::R8Unorm
+                    | wgt::TextureFormat::Rg8Unorm
+                    | wgt::TextureFormat::Rg8Snorm
+                    | wgt::TextureFormat::Rg16Snorm
+                    | wgt::TextureFormat::Rgba8Snorm
+                    | wgt::TextureFormat::Bc1RgbaUnorm
+                    | wgt::TextureFormat::Bc2RgbaUnorm
+                    | wgt::TextureFormat::Bc3RgbaUnorm
+                    | wgt::TextureFormat::Bc1RgbaUnormSrgb
+                    | wgt::TextureFormat::Bc2RgbaUnormSrgb
+                    | wgt::TextureFormat::Bc3RgbaUnormSrgb
+                    | wgt::TextureFormat::Rgb5g6b5Unorm
+                    | wgt::TextureFormat::Rgb5a1Unorm
+                    | wgt::TextureFormat::Rgba4Unorm
+            );
         let sampled_color_target = matches!(
             desc.format,
             wgt::TextureFormat::R8Unorm
@@ -538,7 +541,7 @@ impl crate::Device for Device {
                 DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB, DXGI_FORMAT_BC1_UNORM,
                 DXGI_FORMAT_BC1_UNORM_SRGB, DXGI_FORMAT_BC2_UNORM, DXGI_FORMAT_BC2_UNORM_SRGB,
                 DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB, DXGI_FORMAT_R16G16_SNORM,
-                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
                 DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
                 DXGI_FORMAT_R8_UNORM,
             },
@@ -552,6 +555,7 @@ impl crate::Device for Device {
             wgt::TextureFormat::Rg8Unorm => DXGI_FORMAT_R8G8_UNORM,
             wgt::TextureFormat::Rg8Snorm => DXGI_FORMAT_R8G8_SNORM,
             wgt::TextureFormat::Rg16Snorm => DXGI_FORMAT_R16G16_SNORM,
+            wgt::TextureFormat::R16Unorm => DXGI_FORMAT_R16_UNORM,
             wgt::TextureFormat::Rgba8Snorm => DXGI_FORMAT_R8G8B8A8_SNORM,
             wgt::TextureFormat::Bc1RgbaUnorm => DXGI_FORMAT_BC1_UNORM,
             wgt::TextureFormat::Bc2RgbaUnorm => DXGI_FORMAT_BC2_UNORM,
@@ -780,9 +784,9 @@ impl crate::Device for Device {
                 DXGI_FORMAT_BC1_UNORM_SRGB, DXGI_FORMAT_BC2_UNORM, DXGI_FORMAT_BC2_UNORM_SRGB,
                 DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB, DXGI_FORMAT_D16_UNORM,
                 DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16_TYPELESS,
-                DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
-                DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R8G8B8A8_SNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
+                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_R8_UNORM,
             },
         };
         if texture.dimension == wgt::TextureDimension::D3 {
@@ -828,6 +832,7 @@ impl crate::Device for Device {
             DXGI_FORMAT_R8G8_UNORM => wgt::TextureFormat::Rg8Unorm,
             DXGI_FORMAT_R8G8_SNORM => wgt::TextureFormat::Rg8Snorm,
             DXGI_FORMAT_R16G16_SNORM => wgt::TextureFormat::Rg16Snorm,
+            DXGI_FORMAT_R16_UNORM => wgt::TextureFormat::R16Unorm,
             DXGI_FORMAT_R8G8B8A8_SNORM => wgt::TextureFormat::Rgba8Snorm,
             DXGI_FORMAT_BC1_UNORM => wgt::TextureFormat::Bc1RgbaUnorm,
             DXGI_FORMAT_BC2_UNORM => wgt::TextureFormat::Bc2RgbaUnorm,
@@ -853,7 +858,8 @@ impl crate::Device for Device {
         );
         let sampled_upload = matches!(
             format,
-            wgt::TextureFormat::R8Unorm
+            wgt::TextureFormat::R16Unorm
+                | wgt::TextureFormat::R8Unorm
                 | wgt::TextureFormat::Rg8Unorm
                 | wgt::TextureFormat::Rg8Snorm
                 | wgt::TextureFormat::Rg16Snorm
@@ -1167,10 +1173,18 @@ impl crate::Device for Device {
         &self,
         desc: &wgt::QuerySetDescriptor<Label>,
     ) -> Result<<Self::A as Api>::QuerySet, DeviceError> {
-        if !matches!(desc.ty, wgt::QueryType::Timestamp) {
-            return Err(DeviceError::Unexpected);
-        }
-        super::query::QuerySet::new(&self.native, desc.count).map_err(device_error)
+        use windows::Win32::Graphics::Direct3D11::{D3D11_QUERY_OCCLUSION, D3D11_QUERY_TIMESTAMP};
+
+        let kind = match desc.ty {
+            wgt::QueryType::Timestamp if self.native.timestamp_frequency().is_some() => {
+                D3D11_QUERY_TIMESTAMP
+            }
+            wgt::QueryType::Occlusion if self.native.occlusion_visibility_supported() => {
+                D3D11_QUERY_OCCLUSION
+            }
+            _ => return Err(DeviceError::Unexpected),
+        };
+        super::query::QuerySet::new(&self.native, kind, desc.count).map_err(device_error)
     }
 
     unsafe fn destroy_query_set(&self, set: <Self::A as Api>::QuerySet) {

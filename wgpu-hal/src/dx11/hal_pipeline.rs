@@ -236,23 +236,24 @@ fn stencil_face(face: &wgt::StencilFaceState) -> D3D11_DEPTH_STENCILOP_DESC {
 
 fn stencil_state(
     stencil: &wgt::StencilState,
-) -> Option<(bool, u8, u8, D3D11_DEPTH_STENCILOP_DESC)> {
+    two_sided_supported: bool,
+) -> Option<(bool, u8, u8, [D3D11_DEPTH_STENCILOP_DESC; 2])> {
     if stencil_is_noop(stencil) {
         return Some((
             false,
             0xff,
             0xff,
-            stencil_face(&wgt::StencilFaceState::IGNORE),
+            [stencil_face(&wgt::StencilFaceState::IGNORE); 2],
         ));
     }
-    if stencil.front != stencil.back {
+    if !two_sided_supported && stencil.front != stencil.back {
         return None;
     }
     Some((
         true,
         stencil.read_mask as u8,
         stencil.write_mask as u8,
-        stencil_face(&stencil.front),
+        [stencil_face(&stencil.front), stencil_face(&stencil.back)],
     ))
 }
 
@@ -1264,7 +1265,7 @@ mod tests {
             read_mask: 0x1a5,
             write_mask: 0x2ff,
         };
-        let (enabled, read_mask, write_mask, desc) = stencil_state(&state).unwrap();
+        let (enabled, read_mask, write_mask, [desc, _]) = stencil_state(&state, false).unwrap();
         assert!(enabled);
         assert_eq!(read_mask, 0xa5);
         assert_eq!(write_mask, 0xff);
@@ -1286,8 +1287,11 @@ mod tests {
             read_mask: 0xff,
             write_mask: 0xff,
         };
-        assert!(stencil_state(&asymmetric).is_none());
-        assert!(!stencil_state(&StencilState::default()).unwrap().0);
+        assert!(stencil_state(&asymmetric, false).is_none());
+        let (_, _, _, [front, back]) = stencil_state(&asymmetric, true).unwrap();
+        assert_eq!(front.StencilPassOp, D3D11_STENCIL_OP_REPLACE);
+        assert_eq!(back.StencilPassOp, D3D11_STENCIL_OP_KEEP);
+        assert!(!stencil_state(&StencilState::default(), false).unwrap().0);
     }
 
     #[test]
@@ -2981,8 +2985,9 @@ impl RenderPipeline {
             ) {
                 return Err(invalid());
             }
-            let (stencil_enable, stencil_read_mask, stencil_write_mask, mut face) =
-                stencil_state(&state.stencil).ok_or_else(invalid)?;
+            let (stencil_enable, stencil_read_mask, stencil_write_mask, mut faces) =
+                stencil_state(&state.stencil, owner.fl92_two_sided_stencil_supported())
+                    .ok_or_else(invalid)?;
             if state.format != wgt::TextureFormat::Depth24PlusStencil8 && stencil_enable {
                 return Err(invalid());
             }
@@ -2995,7 +3000,14 @@ impl RenderPipeline {
                         .validate_no_fragment_depth(fragment.entry_point)?;
                 }
             }
-            let (comparison, suppress_draws) = depth_comparison(state.depth_compare);
+            let (comparison, suppress_draws) = if owner.experimental_fl92_enabled() {
+                (
+                    stencil_comparison(state.depth_compare.unwrap_or(wgt::CompareFunction::Always)),
+                    false,
+                )
+            } else {
+                depth_comparison(state.depth_compare)
+            };
             let depth_never = suppress_draws && !stencil_enable;
             let emulate_never_with_stencil = suppress_draws && stencil_enable;
             if suppress_draws {
@@ -3004,16 +3016,20 @@ impl RenderPipeline {
                 }
             }
             let comparison = if emulate_never_with_stencil {
-                face.StencilPassOp = face.StencilDepthFailOp;
+                for face in &mut faces {
+                    face.StencilPassOp = face.StencilDepthFailOp;
+                }
                 D3D11_COMPARISON_ALWAYS
             } else {
                 comparison
             };
             stencil_write = stencil_enable
                 && stencil_write_mask != 0
-                && (face.StencilFailOp != D3D11_STENCIL_OP_KEEP
-                    || face.StencilDepthFailOp != D3D11_STENCIL_OP_KEEP
-                    || face.StencilPassOp != D3D11_STENCIL_OP_KEEP);
+                && faces.iter().any(|face| {
+                    face.StencilFailOp != D3D11_STENCIL_OP_KEEP
+                        || face.StencilDepthFailOp != D3D11_STENCIL_OP_KEEP
+                        || face.StencilPassOp != D3D11_STENCIL_OP_KEEP
+                });
             D3D11_DEPTH_STENCIL_DESC {
                 DepthEnable: true.into(),
                 DepthWriteMask: if state.depth_write_enabled.unwrap_or(false)
@@ -3028,8 +3044,8 @@ impl RenderPipeline {
                 StencilEnable: stencil_enable.into(),
                 StencilReadMask: stencil_read_mask,
                 StencilWriteMask: stencil_write_mask,
-                FrontFace: face,
-                BackFace: face,
+                FrontFace: faces[0],
+                BackFace: faces[1],
             }
         } else {
             // D3D11's null state enables depth testing. Some drivers still

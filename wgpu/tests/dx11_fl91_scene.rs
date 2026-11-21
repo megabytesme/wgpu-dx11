@@ -1,6 +1,12 @@
 #![cfg(all(windows, feature = "dx11", feature = "wgsl"))]
 
-use std::{future::Future, sync::Arc, task::Wake, thread, time::Duration};
+use std::{
+    future::Future,
+    sync::Arc,
+    task::Wake,
+    thread,
+    time::{Duration, Instant},
+};
 use wgpu::*;
 
 struct ThreadWaker(thread::Thread);
@@ -50,6 +56,8 @@ fn mapped_buffer(
 #[test]
 fn public_dx11_textured_depth_tested_3d_scene_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+    let experimental = std::env::var_os("WGPU_DX11_FEATURE_LEVEL").is_some_and(|v| v == "9_2");
+    let tier = if experimental { "FL9_2" } else { "FL9_1" };
     let mut descriptor = InstanceDescriptor::new_without_display_handle();
     descriptor.backends = Backends::DX11;
     let instance = Instance::new(descriptor);
@@ -57,17 +65,24 @@ fn public_dx11_textured_depth_tested_3d_scene_at_fl91() {
     let Some(adapter) = adapters.into_iter().next() else {
         assert!(
             !required,
-            "strict mode requires a physical FL9_1 D3D11 adapter"
+            "strict mode requires a physical {tier} D3D11 adapter"
         );
-        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
+        println!("SKIP: public D3D11 enumeration found no physical {tier} adapter");
         return;
     };
     let info = adapter.get_info();
     assert_eq!(info.backend, Backend::Dx11);
-    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+    assert!(info.driver_info.starts_with(tier), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
+    let native = unsafe { adapter.as_hal::<wgpu_hal::api::Dx11>() }.unwrap();
+    assert!(!native.is_software());
+    let level = native.feature_level();
+    if experimental {
+        assert_eq!(level, wgpu_hal::dx11::FeatureLevel::L9_2);
+    }
+    drop(native);
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=textured perspective cube with D16 depth",
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} projection={tier} actual={level:?} software=false; workload=textured perspective cube with D16 depth",
         info.name, info.vendor, info.device, info.driver_info
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
@@ -436,6 +451,54 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         mapped_at_creation: false,
     });
 
+    let record_scene = |encoder: &mut CommandEncoder, index_buffer: &Buffer, use_depth, draws| {
+        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+            label: Some(if use_depth {
+                "FL9_1 textured cube depth pass"
+            } else {
+                "FL9_1 textured cube painter-order control pass"
+            }),
+            color_attachments: &[Some(RenderPassColorAttachment {
+                view: &color_view,
+                depth_slice: None,
+                resolve_target: None,
+                ops: Operations {
+                    load: LoadOp::Clear(Color::BLACK),
+                    store: StoreOp::Store,
+                },
+            })],
+            depth_stencil_attachment: use_depth.then_some(RenderPassDepthStencilAttachment {
+                view: &depth_view,
+                depth_ops: Some(Operations {
+                    load: LoadOp::Clear(1.0),
+                    store: StoreOp::Store,
+                }),
+                stencil_ops: None,
+            }),
+            timestamp_writes: None,
+            occlusion_query_set: None,
+            multiview_mask: None,
+        });
+        pass.set_pipeline(if use_depth {
+            &pipeline
+        } else {
+            &painter_pipeline
+        });
+        pass.set_bind_group(
+            0,
+            if use_depth {
+                &bind_group
+            } else {
+                &painter_bind_group
+            },
+            &[],
+        );
+        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+        pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
+        for _ in 0..draws {
+            pass.draw_indexed(0..36, 0, 0..1);
+        }
+    };
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 render scene in opposite primitive orders"),
     });
@@ -445,52 +508,7 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         (2 * 32 * 256, &forward_indices, false),
         (3 * 32 * 256, &reverse_indices, false),
     ] {
-        {
-            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-                label: Some(if use_depth {
-                    "FL9_1 textured cube depth pass"
-                } else {
-                    "FL9_1 textured cube painter-order control pass"
-                }),
-                color_attachments: &[Some(RenderPassColorAttachment {
-                    view: &color_view,
-                    depth_slice: None,
-                    resolve_target: None,
-                    ops: Operations {
-                        load: LoadOp::Clear(Color::BLACK),
-                        store: StoreOp::Store,
-                    },
-                })],
-                depth_stencil_attachment: use_depth.then_some(RenderPassDepthStencilAttachment {
-                    view: &depth_view,
-                    depth_ops: Some(Operations {
-                        load: LoadOp::Clear(1.0),
-                        store: StoreOp::Store,
-                    }),
-                    stencil_ops: None,
-                }),
-                timestamp_writes: None,
-                occlusion_query_set: None,
-                multiview_mask: None,
-            });
-            pass.set_pipeline(if use_depth {
-                &pipeline
-            } else {
-                &painter_pipeline
-            });
-            pass.set_bind_group(
-                0,
-                if use_depth {
-                    &bind_group
-                } else {
-                    &painter_bind_group
-                },
-                &[],
-            );
-            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-            pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
-            pass.draw_indexed(0..36, 0, 0..1);
-        }
+        record_scene(&mut encoder, index_buffer, use_depth, 1);
         encoder.copy_texture_to_buffer(
             TexelCopyTextureInfo {
                 texture: &color_texture,
@@ -577,6 +595,37 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
     drop(data);
     readback.unmap();
     println!(
-        "PASS: public FL9_1 perspective cube sampled a 2x2 face texture and used D16 depth; depth-tested opposite face orders matched all 1,024 pixels, while painter-order controls differed at {painter_order_differences} pixels; clear/red/green/blue/yellow={colors:?}"
+        "PASS: public {tier} perspective cube sampled a 2x2 face texture and used D16 depth; depth-tested opposite face orders matched all 1,024 pixels, while painter-order controls differed at {painter_order_differences} pixels; clear/red/green/blue/yellow={colors:?}"
     );
+
+    if std::env::var_os("WGPU_DX11_SCENE_BENCH").is_some_and(|value| value == "1") {
+        const WARMUPS: usize = 5;
+        const SAMPLES: usize = 25;
+        for draws in [1, 128] {
+            let mut timings = Vec::with_capacity(SAMPLES);
+            for index in 0..(WARMUPS + SAMPLES) {
+                let start = Instant::now();
+                let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+                    label: Some("D3D11 benchmark scene"),
+                });
+                record_scene(&mut encoder, &forward_indices, true, draws);
+                let submission = queue.submit([encoder.finish()]);
+                device
+                    .poll(PollType::Wait {
+                        submission_index: Some(submission),
+                        timeout: Some(Duration::from_secs(10)),
+                    })
+                    .expect("wait for D3D11 benchmark submission");
+                if index >= WARMUPS {
+                    timings.push(start.elapsed().as_secs_f64() * 1000.0);
+                }
+            }
+            timings.sort_by(f64::total_cmp);
+            println!(
+                "BENCHMARK projection={tier} actual={level:?} draws={draws} samples={SAMPLES} median_ms={:.4} p95_ms={:.4}",
+                timings[SAMPLES / 2],
+                timings[(SAMPLES * 95).div_ceil(100) - 1],
+            );
+        }
+    }
 }

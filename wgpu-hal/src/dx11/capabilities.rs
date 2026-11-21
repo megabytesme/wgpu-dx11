@@ -19,8 +19,8 @@ use windows::Win32::Graphics::{
         DXGI_FORMAT_BC1_UNORM, DXGI_FORMAT_BC1_UNORM_SRGB, DXGI_FORMAT_BC2_UNORM,
         DXGI_FORMAT_BC2_UNORM_SRGB, DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB,
         DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16_SNORM,
-        DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-        DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
+        DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
     },
 };
 
@@ -84,8 +84,8 @@ impl HardwareGuarantees {
     pub fn for_level(level: FeatureLevel) -> Self {
         use FeatureLevel::*;
         let texture_3d_dimension = match level {
-            L9_1 => 256,
-            L9_2 | L9_3 => 512,
+            L9_1 | L9_2 => 256,
+            L9_3 => 512,
             L10_0 | L10_1 | L11_0 | L11_1 => 2048,
         };
         let (
@@ -247,6 +247,7 @@ pub(super) struct DriverCapabilities {
     pub rg8_unorm: Query<u32>,
     pub rg8_snorm: Query<u32>,
     pub rg16_snorm: Query<u32>,
+    pub r16_unorm: Query<u32>,
     pub rgba8_snorm: Query<u32>,
     pub bc1_unorm: Query<u32>,
     pub bc2_unorm: Query<u32>,
@@ -628,6 +629,8 @@ pub(super) struct Capabilities {
     pub hardware: HardwareGuarantees,
     pub driver: DriverCapabilities,
     pub backend: BackendCapabilities,
+    experimental_fl92: bool,
+    occlusion_visibility_supported: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -854,6 +857,14 @@ impl Capabilities {
             && self.backend.r8_unorm_sampled_mips
     }
 
+    pub(super) fn max_sampler_anisotropy(&self) -> u16 {
+        if self.experimental_fl92 {
+            16
+        } else {
+            self.backend.max_sampler_anisotropy
+        }
+    }
+
     pub fn wgpu_projection(&self) -> Option<WgpuCapabilityProjection> {
         let cube_texture_format_mask = self.cube_texture_format_mask();
         let rgba8_cube =
@@ -919,8 +930,18 @@ impl Capabilities {
         if self.backend.uniform_binding_sizes_unaligned_16 {
             flags |= wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED;
         }
-        if self.backend.max_sampler_anisotropy > 1 {
+        let max_sampler_anisotropy = self.max_sampler_anisotropy();
+        if max_sampler_anisotropy > 1 {
             flags |= wgt::DownlevelFlags::ANISOTROPIC_FILTERING;
+        }
+        if self.experimental_fl92 {
+            flags |= wgt::DownlevelFlags::SEPARATE_ALPHA_BLEND;
+        }
+        if self.backend.two_sided_stencil {
+            flags |= wgt::DownlevelFlags::TWO_SIDED_STENCIL;
+        }
+        if self.occlusion_visibility_supported {
+            flags |= wgt::DownlevelFlags::OCCLUSION_QUERY;
         }
         if cube_texture_sampling {
             flags |= wgt::DownlevelFlags::CUBE_TEXTURES;
@@ -1020,7 +1041,7 @@ impl Capabilities {
                     }),
                 unrestricted_npot_texture_sampling: self.unrestricted_npot_texture_sampling(),
                 max_texture_repeat_per_primitive: self.hardware.max_texture_repeat_per_primitive,
-                max_sampler_anisotropy: self.backend.max_sampler_anisotropy,
+                max_sampler_anisotropy,
                 src_alpha_saturated_blend: self.backend.src_alpha_saturated_blend,
                 viewport_rectangles_outside_target: false,
                 depth_bias_with_fragment_depth: self.backend.fragment_depth_with_bias,
@@ -1109,9 +1130,10 @@ impl Capabilities {
         if self.wireframe_rasterizer_supported() {
             features |= wgt::Features::POLYGON_MODE_LINE;
         }
-        if self
-            .texture_format_capabilities(wgt::TextureFormat::Rg16Snorm)
-            .contains(crate::TextureFormatCapabilities::SAMPLED)
+        if self.fl92_r16_unorm_sampled()
+            || self
+                .texture_format_capabilities(wgt::TextureFormat::Rg16Snorm)
+                .contains(crate::TextureFormatCapabilities::SAMPLED)
         {
             features |= wgt::Features::TEXTURE_FORMAT_16BIT_NORM;
         }
@@ -1376,6 +1398,8 @@ impl Capabilities {
         });
         Self {
             hardware: HardwareGuarantees::for_level(device.feature_level()),
+            experimental_fl92: device.experimental_fl92_enabled(),
+            occlusion_visibility_supported: device.occlusion_visibility_supported(),
             driver: DriverCapabilities {
                 timestamp_frequency: device
                     .timestamp_frequency()
@@ -1398,6 +1422,11 @@ impl Capabilities {
                 rg8_unorm: format(DXGI_FORMAT_R8G8_UNORM),
                 rg8_snorm: format(DXGI_FORMAT_R8G8_SNORM),
                 rg16_snorm: format(DXGI_FORMAT_R16G16_SNORM),
+                r16_unorm: if device.experimental_fl92_enabled() {
+                    format(DXGI_FORMAT_R16_UNORM)
+                } else {
+                    Query::Unavailable(-1)
+                },
                 rgba8_snorm: format(DXGI_FORMAT_R8G8B8A8_SNORM),
                 bc1_unorm: format(DXGI_FORMAT_BC1_UNORM),
                 bc2_unorm: format(DXGI_FORMAT_BC2_UNORM),
@@ -1410,7 +1439,10 @@ impl Capabilities {
                 rgba4444_unorm: format(DXGI_FORMAT_B4G4R4A4_UNORM),
                 vertex_input_formats,
             },
-            backend: BackendCapabilities::CURRENT,
+            backend: BackendCapabilities {
+                two_sided_stencil: device.fl92_two_sided_stencil_supported(),
+                ..BackendCapabilities::CURRENT
+            },
         }
     }
 
@@ -1843,11 +1875,26 @@ impl Capabilities {
         guaranteed | optional
     }
 
+    pub(super) fn fl92_r16_unorm_sampled(&self) -> bool {
+        let required =
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+        self.experimental_fl92
+            && matches!(self.driver.r16_unorm, Query::Value(bits) if bits & required == required)
+    }
+
     pub fn texture_format_capabilities(
         &self,
         format: wgt::TextureFormat,
     ) -> crate::TextureFormatCapabilities {
         use crate::TextureFormatCapabilities as Caps;
+
+        if format == wgt::TextureFormat::R16Unorm {
+            return if self.fl92_r16_unorm_sampled() {
+                Caps::SAMPLED | Caps::SAMPLED_LINEAR | Caps::COPY_DST | Caps::SINGLE_MIP_ONLY
+            } else {
+                Caps::empty()
+            };
+        }
 
         if matches!(
             format,
@@ -2242,6 +2289,8 @@ mod tests {
     fn model(level: FeatureLevel) -> Capabilities {
         Capabilities {
             hardware: HardwareGuarantees::for_level(level),
+            experimental_fl92: false,
+            occlusion_visibility_supported: false,
             driver: DriverCapabilities {
                 timestamp_frequency: Query::Value(1_000_000_000),
                 rgba8: Query::Value(u32::MAX),
@@ -2277,6 +2326,7 @@ mod tests {
                 rg8_unorm: Query::Value(u32::MAX),
                 rg8_snorm: Query::Value(u32::MAX),
                 rg16_snorm: Query::Value(u32::MAX),
+                r16_unorm: Query::Unavailable(-1),
                 rgba8_snorm: Query::Value(u32::MAX),
                 bc1_unorm: Query::Value(u32::MAX),
                 bc2_unorm: Query::Value(u32::MAX),
@@ -2708,6 +2758,61 @@ mod tests {
         caps.backend.fl91_depth_comparison_sampling = true;
         caps.hardware = HardwareGuarantees::for_level(FeatureLevel::L9_2);
         assert!(caps.private_fl91_depth_comparison_sampling());
+    }
+
+    #[test]
+    fn r16_unorm_requires_experimental_fl92_and_a_positive_sampling_query() {
+        let format = wgt::TextureFormat::R16Unorm;
+        let mut caps = model(FeatureLevel::L9_2);
+        caps.driver.r16_unorm = Query::Value(
+            (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32,
+        );
+        assert!(caps.texture_format_capabilities(format).is_empty());
+
+        caps.experimental_fl92 = true;
+        assert_eq!(
+            caps.texture_format_capabilities(format),
+            FormatCaps::SAMPLED
+                | FormatCaps::SAMPLED_LINEAR
+                | FormatCaps::COPY_DST
+                | FormatCaps::SINGLE_MIP_ONLY
+        );
+        caps.driver.r16_unorm = Query::Value(D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32);
+        assert!(caps.texture_format_capabilities(format).is_empty());
+        caps.driver.r16_unorm = Query::Unavailable(-1);
+        assert!(caps.texture_format_capabilities(format).is_empty());
+    }
+
+    #[test]
+    fn experimental_fl92_projection_exposes_only_implemented_deltas() {
+        let mut caps = model(FeatureLevel::L9_2);
+        let baseline = caps.wgpu_projection().unwrap().capabilities.downlevel;
+        let delta =
+            wgt::DownlevelFlags::SEPARATE_ALPHA_BLEND | wgt::DownlevelFlags::TWO_SIDED_STENCIL;
+        assert!(!baseline.flags.intersects(delta));
+        assert_eq!(baseline.limits.max_sampler_anisotropy, 2);
+
+        caps.experimental_fl92 = true;
+        let stencil_disabled = caps.wgpu_projection().unwrap().capabilities.downlevel;
+        assert_eq!(
+            stencil_disabled.flags,
+            baseline.flags | wgt::DownlevelFlags::SEPARATE_ALPHA_BLEND
+        );
+        caps.backend.two_sided_stencil = true;
+        let experimental = caps.wgpu_projection().unwrap().capabilities;
+        assert_eq!(experimental.limits.max_texture_dimension_3d, 256);
+        let experimental = experimental.downlevel;
+        assert_eq!(experimental.flags, baseline.flags | delta);
+        assert_eq!(experimental.limits.max_sampler_anisotropy, 16);
+        assert_eq!(experimental.limits.max_texture_repeat_per_primitive, 2048);
+        assert_eq!(experimental.shader_model, wgt::ShaderModel::Sm2);
+
+        caps.occlusion_visibility_supported = true;
+        let queried = caps.wgpu_projection().unwrap().capabilities.downlevel;
+        assert_eq!(
+            queried.flags,
+            experimental.flags | wgt::DownlevelFlags::OCCLUSION_QUERY
+        );
     }
 
     #[test]

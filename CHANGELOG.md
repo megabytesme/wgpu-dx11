@@ -54,6 +54,8 @@ Bottom level categories:
 
 #### Hal
 
+- Add developer opt-in for exact D3D11 FL9_2 devices with an experimental capability projection.
+
 - Accept alpha-equivalent color and alpha blend equations in the opt-in FL9_1 D3D11 backend without enabling separate-alpha blending.
 - Emulate the direct single-mip fragment `textureSampleGrad` subset in the opt-in FL9_1 D3D11 backend.
 - Extend the opt-in FL9_1 D3D11 literal-zero texture-sampling subset to support bounded helper coordinate arithmetic and validate render-bundle view compatibility.

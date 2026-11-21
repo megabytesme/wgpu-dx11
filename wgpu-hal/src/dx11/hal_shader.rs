@@ -11309,6 +11309,7 @@ where
 }
 
 fn selected_shader_profile(stage: naga::ShaderStage) -> Option<ShaderProfile> {
+    // FL9_1 and FL9_2 use the same FXC profiles.
     match stage {
         naga::ShaderStage::Vertex => Some(ShaderProfile::VertexLevel9_1),
         naga::ShaderStage::Fragment => Some(ShaderProfile::PixelLevel9_1),
