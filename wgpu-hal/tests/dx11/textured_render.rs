@@ -356,6 +356,11 @@ fn sampler_state_anisotropic_minification() -> windows::core::Result<()> {
 }
 
 #[test]
+fn fl92_anisotropic_minification() -> windows::core::Result<()> {
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 57)
+}
+
+#[test]
 fn sampler_state_lod_one_minification() -> windows::core::Result<()> {
     sampled_triangle_variant(true, true, false, true, false, 0, None, 44)
 }
@@ -424,8 +429,11 @@ fn sampled_triangle_variant(
 ) -> windows::core::Result<()> {
     let mirror_once = matches!(variant, 54 | 55);
     let bounded_repeat = variant == 56;
+    let fl92_anisotropy = variant == 57;
+    let anisotropic_minification = variant == 53 || fl92_anisotropy;
     let sampler_case = (30..=39).contains(&variant)
-        || matches!(variant, 42 | 44 | 45 | 46 | 47 | 48 | 50 | 51 | 52 | 53)
+        || matches!(variant, 42 | 44 | 45 | 46 | 47 | 48 | 50 | 51 | 52)
+        || anisotropic_minification
         || mirror_once
         || bounded_repeat;
     let conditional_npot = (20..=24).contains(&variant);
@@ -454,7 +462,8 @@ fn sampled_triangle_variant(
         std::println!("SKIP: no hardware adapter");
         return Ok(());
     };
-    let level = if mirror_once || bounded_repeat {
+    let experimental_fl92 = mirror_once || bounded_repeat || fl92_anisotropy;
+    let level = if experimental_fl92 {
         FeatureLevel::L9_2
     } else {
         FeatureLevel::L9_1
@@ -462,7 +471,7 @@ fn sampled_triangle_variant(
     std::println!("Hardware: {:?}; requested {level:?}", adapter.identity());
     let mut native = adapter.open_device(&[level])?;
     assert_eq!(native.feature_level(), level);
-    if mirror_once || bounded_repeat {
+    if experimental_fl92 {
         native.enable_experimental_fl92(adapter.identity());
     }
     if alpha || invert || effect == 2 {
@@ -512,6 +521,9 @@ fn sampled_triangle_variant(
         if sampler_case {
             let (scale, bias) = if bounded_repeat {
                 ("vec2f(256.0, 0.0)", "vec2f(-1022.625, 0.375)")
+            } else if fl92_anisotropy {
+                // Eight texels per pixel horizontally and half a texel vertically.
+                ("vec2f(0.0625, 0.00390625)", "vec2f(0.23828125, 0.375)")
             } else if variant == 51 {
                 ("0.125", "0.0")
             } else if variant == 53 {
@@ -521,12 +533,12 @@ fn sampled_triangle_variant(
             } else {
                 ("0.03125", "0.359375")
             };
-            let scale = if variant == 53 || bounded_repeat {
+            let scale = if anisotropic_minification || bounded_repeat {
                 alloc::string::String::from(scale)
             } else {
                 alloc::format!("vec2f({scale})")
             };
-            let bias = if variant == 53 || bounded_repeat {
+            let bias = if anisotropic_minification || bounded_repeat {
                 alloc::string::String::from(bias)
             } else {
                 alloc::format!("vec2f({bias})")
@@ -537,7 +549,7 @@ fn sampled_triangle_variant(
         }
         if sampler_case {
             let uv = match variant {
-                30 | 31 | 32 | 33 | 34 | 35 | 42 | 44 | 45 | 46 | 47 | 51 | 53 | 56 => "in.uv",
+                30 | 31 | 32 | 33 | 34 | 35 | 42 | 44 | 45 | 46 | 47 | 51 | 53 | 56 | 57 => "in.uv",
                 36 | 37 => "vec2f(1.625, 0.125)",
                 48 => "vec2f(1.125, 0.125)",
                 39 => "vec2f(1.625, 1.625)",
@@ -1013,7 +1025,11 @@ fn sampled_triangle_variant(
         assert_eq!(mapped.textures[1], Some(3));
         assert_eq!(mapped.samplers[1], Some(4));
     }
-    let texture_side = if variant == 53 { 64 } else { 4 };
+    let texture_side = match variant {
+        53 => 64,
+        57 => 128,
+        _ => 4,
+    };
     let texture_desc = crate::TextureDescriptor {
         label: None,
         size: wgt::Extent3d {
@@ -1053,8 +1069,9 @@ fn sampled_triangle_variant(
     if sampler_case {
         for y in 0..texture_side as usize {
             for x in 0..texture_side as usize {
-                let color = if variant == 53 {
-                    if x % 2 == 0 {
+                let color = if anisotropic_minification {
+                    let stripe_width = if fl92_anisotropy { 4 } else { 1 };
+                    if (x / stripe_width) % 2 == 0 {
                         [0, 0, 0, 255]
                     } else {
                         [255, 255, 255, 255]
@@ -1345,7 +1362,7 @@ fn sampled_triangle_variant(
         border_color: None,
     };
     match variant {
-        31 | 42 | 47 | 53 => {
+        31 | 42 | 47 | 53 | 57 => {
             sampler_desc.min_filter = wgt::FilterMode::Linear;
             sampler_desc.mag_filter = wgt::FilterMode::Linear;
         }
@@ -1362,8 +1379,8 @@ fn sampled_triangle_variant(
     if variant == 44 || variant == 45 {
         sampler_desc.lod_clamp.end = 1.0;
     }
-    if variant == 42 || variant == 53 {
-        sampler_desc.anisotropy_clamp = 2;
+    if variant == 42 || anisotropic_minification {
+        sampler_desc.anisotropy_clamp = if fl92_anisotropy { 16 } else { 2 };
         sampler_desc.mipmap_filter = wgt::MipmapFilterMode::Linear;
     }
     let sampler = if mirror_once {
@@ -1373,18 +1390,26 @@ fn sampled_triangle_variant(
     } else {
         unsafe { device.create_sampler(&sampler_desc).unwrap() }
     };
-    if variant == 42 {
+    if variant == 42 || fl92_anisotropy {
         let mut unsupported = sampler_desc.clone();
-        unsupported.anisotropy_clamp = 3;
+        unsupported.anisotropy_clamp += 1;
         assert!(unsafe { device.create_sampler(&unsupported) }.is_err());
     }
-    let transition_sampler = if variant == 38 || variant == 53 {
+    if fl92_anisotropy {
+        let mut intermediate = sampler_desc.clone();
+        for clamp in [4, 8] {
+            intermediate.anisotropy_clamp = clamp;
+            let sampler = unsafe { device.create_sampler(&intermediate).unwrap() };
+            unsafe { device.destroy_sampler(sampler) };
+        }
+    }
+    let transition_sampler = if variant == 38 || anisotropic_minification {
         let mut next = sampler_desc.clone();
         if variant == 38 {
             next.mag_filter = wgt::FilterMode::Linear;
             next.min_filter = wgt::FilterMode::Linear;
         } else {
-            next.anisotropy_clamp = 1;
+            next.anisotropy_clamp = if fl92_anisotropy { 2 } else { 1 };
         }
         Some(unsafe { device.create_sampler(&next).unwrap() })
     } else {
@@ -2413,10 +2438,10 @@ fn sampled_triangle_variant(
     let pixels = native.read_rgba_texture(&target, 0, 0)?;
     let actual = &pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4];
     if variant != 0 {
-        std::println!("FL9_1 variant {variant} readback: {actual:?}");
+        std::println!("{level:?} variant {variant} readback: {actual:?}");
     }
     if sampler_case {
-        if variant == 53 {
+        if anisotropic_minification {
             let mean_contrast = |x_range: core::ops::Range<usize>| {
                 let mut total = 0u32;
                 let mut count = 0u32;
@@ -2429,13 +2454,14 @@ fn sampled_triangle_variant(
                 }
                 total / count
             };
-            let anisotropic_contrast = mean_contrast(0..4);
-            let isotropic_contrast = mean_contrast(4..8);
+            let higher_contrast = mean_contrast(0..4);
+            let lower_contrast = mean_contrast(4..8);
+            let (higher, lower) = if fl92_anisotropy { (16, 2) } else { (2, 1) };
             std::println!(
-                "FL9_1 minification contrast: anisotropy=2 {anisotropic_contrast}, anisotropy=1 {isotropic_contrast}"
+                "{level:?} minification contrast: anisotropy={higher} {higher_contrast}, anisotropy={lower} {lower_contrast}"
             );
             assert!(
-                anisotropic_contrast + 24 < isotropic_contrast,
+                higher_contrast + 24 < lower_contrast,
                 "anisotropic filtering should average the alternating minified columns: {pixels:?}"
             );
         } else {
