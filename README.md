@@ -79,6 +79,8 @@ Contributors are welcome! See [CONTRIBUTING.md][contrib] for more information.
 🌋 = Requires the [MoltenVK](https://vulkan.lunarg.com/sdk/home#mac) translation layer  
 🛠️ = Unsupported, though open to contributions
 
+This fork also includes an opt-in Windows D3D11 backend. See the [D3D11 development and conformance guide](docs/d3d11-programme.md) for its current scope and tests.
+
 ## Environment Variables
 
 Testing, examples, and `::from_env()` methods use a standardized set of environment variables to control wgpu's behavior.
