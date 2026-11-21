@@ -1,0 +1,22 @@
+source_sha256=EAF089AF5B18340C03C762C9498384D1DBA4515F7B29F87DADAE61177050B62B
+local_payload_sha256=68F50397B46085A22CF08ECB7A94933009A191F0D0C0B879828C176FE68C3335
+2026-11-21T21:22:42.7620272Z
+remote_payload_sha256=68F50397B46085A22CF08ECB7A94933009A191F0D0C0B879828C176FE68C3335
+adapter=0 name=Qualcomm(R) Adreno(TM) 680 GPU vendor=0x4d4f4351 device=0x41333430 flags=0x00000000
+requested=0x9200 actual=0x9200
+case=symmetric_replace equality_reference=1 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=symmetric_keep equality_reference=1 left_red=0 right_red=0 expected_left=0 expected_right=0 mismatches=0
+case=symmetric_replace_cull_back equality_reference=1 left_red=128 right_red=0 expected_left=128 expected_right=0 mismatches=0
+case=symmetric_replace_cull_front equality_reference=1 left_red=0 right_red=128 expected_left=0 expected_right=128 mismatches=0
+case=ordered_ccw_front equality_reference=2 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=grouped_ccw_front equality_reference=4 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=ordered_cw_front equality_reference=2 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=grouped_cw_front equality_reference=4 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=asymmetric_ccw_front equality_reference=1 left_red=128 right_red=128 expected_left=128 expected_right=0 mismatches=128
+case=asymmetric_cw_front equality_reference=1 left_red=128 right_red=128 expected_left=0 expected_right=128 mismatches=128
+case=symmetric_replace_depth_disabled equality_reference=1 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=symmetric_replace_color_enabled equality_reference=1 left_red=128 right_red=128 expected_left=128 expected_right=128 mismatches=0
+case=asymmetric_depth_disabled equality_reference=1 left_red=128 right_red=128 expected_left=128 expected_right=0 mismatches=128
+case=asymmetric_color_enabled equality_reference=1 left_red=128 right_red=128 expected_left=128 expected_right=0 mismatches=128
+probe_exit=1
+ssh_exit=1

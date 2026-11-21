@@ -1,0 +1,68 @@
+runtime_build_commit=abf47903e38b1a45e663f2180d395a24af442405
+local_payload_sha256=24C6C8CA1279B45ABACF4890F16D511AC5F7B8514A71F85F21CD5A361078DD6F payload=dx11_fl92-eebe8537f990f98c.exe
+local_payload_sha256=7484B5FDFBC44061D993ED468FEA6F441EE9C0A55660F5C61BB782283193007D payload=dx11_fl92_limits-159aeb8a67b814b8.exe
+local_payload_sha256=0757F56785B3EF73E3E12E5C451D6C35E0A18863953FF940D2A52427BA5E29AA payload=dx11_fl92_r16unorm-7bcca23c07a70733.exe
+host=BEN-TABLET
+process_arch=ARM64
+utc=2026-11-21T21:28:12.9570696Z
+
+
+Name          : Qualcomm(R) Adreno(TM) 680 GPU
+DriverVersion : 27.20.2160.0
+
+
+
+
+payload_sha256=7484B5FDFBC44061D993ED468FEA6F441EE9C0A55660F5C61BB782283193007D payload=dx11_fl92_limits-159aeb8a67b814b8.exe
+command: dx11_fl92_limits-159aeb8a67b814b8.exe --ignored --nocapture --test-threads=1
+
+running 2 tests
+test forced_dx11_fl92_primitive_count_boundary ... FL9_2 hardware AdapterInfo { name: "Qualcomm(R) Adreno(TM) 680 GPU", vendor: 1297040209, device: 1093874736, device_type: Other, device_pci_bus_id: "", driver: "D3D11", driver_info: "FL9_2; physical DXGI adapter; driver version 27.20.2160.0", backend: Dx11, subgroup_min_size: 4, subgroup_max_size: 128, transient_saves_memory: None, limit_bucket: None }, arch=aarch64
+FL9_2 draw with 1048575 point primitives: verified all 64 pixels
+FL9_2 draw with 1048576 point primitives: verified all 64 pixels
+ok
+test forced_dx11_fl92_uint32_vertex_index_boundary ... FL9_2 hardware AdapterInfo { name: "Qualcomm(R) Adreno(TM) 680 GPU", vendor: 1297040209, device: 1093874736, device_type: Other, device_pci_bus_id: "", driver: "D3D11", driver_info: "FL9_2; physical DXGI adapter; driver version 27.20.2160.0", backend: Dx11, subgroup_min_size: 4, subgroup_max_size: 128, transient_saves_memory: None, limit_bucket: None }, arch=aarch64
+FL9_2 native index 1048575: verified all 64 pixels
+FL9_2 rebased index 1048576: verified all 64 pixels
+FL9_2 out-of-bounds index 1048577: verified all 64 pixels
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 9.15s
+
+test_exit=0 payload=dx11_fl92_limits-159aeb8a67b814b8.exe
+payload_sha256=0757F56785B3EF73E3E12E5C451D6C35E0A18863953FF940D2A52427BA5E29AA payload=dx11_fl92_r16unorm-7bcca23c07a70733.exe
+command: dx11_fl92_r16unorm-7bcca23c07a70733.exe --ignored --nocapture --test-threads=1
+
+running 1 test
+test forced_dx11_unorm16_upload_and_sample ... hardware AdapterInfo { name: "Qualcomm(R) Adreno(TM) 680 GPU", vendor: 1297040209, device: 1093874736, device_type: Other, device_pci_bus_id: "", driver: "D3D11", driver_info: "FL9_2; physical DXGI adapter; driver version 27.20.2160.0", backend: Dx11, subgroup_min_size: 4, subgroup_max_size: 128, transient_saves_memory: None, limit_bucket: None }; exact L9_2; aarch64
+Verified R16Unorm sampled centers and linear interpolation from zero-init, queue upload and encoder copy
+Verified Rg16Unorm sampled centers and linear interpolation from zero-init, queue upload and encoder copy
+Verified Rgba16Unorm sampled centers and linear interpolation from zero-init, queue upload and encoder copy
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 4.55s
+
+test_exit=0 payload=dx11_fl92_r16unorm-7bcca23c07a70733.exe
+payload_sha256=24C6C8CA1279B45ABACF4890F16D511AC5F7B8514A71F85F21CD5A361078DD6F payload=dx11_fl92-eebe8537f990f98c.exe
+command: dx11_fl92-eebe8537f990f98c.exe --ignored --nocapture --test-threads=1
+
+running 4 tests
+test forced_dx11_tier_occlusion_queries ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_2; physical DXGI adapter; driver version 27.20.2160.0" native=L9_2 arch=aarch64
+Verified direct and cross-submission occlusion resolves, including visible, depth-occluded, stencil depth-fail, unused, and reused slots
+ok
+test forced_dx11_tier_overlapping_attributes_and_uint32_indices ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_2; physical DXGI adapter; driver version 27.20.2160.0" native=L9_2 arch=aarch64
+Verified 64 overlapping indexed pixels with [65535, 65536, 65537]
+ok
+test forced_dx11_tier_sample_blend_scissor_and_limits ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_2; physical DXGI adapter; driver version 27.20.2160.0" native=L9_2 arch=aarch64
+Rejected 3D texture width 257 (limit 256)
+Verified 64 Rgba8Unorm draw/scissor pixels
+Verified 64 Rg16Snorm draw/scissor pixels
+ok
+test forced_dx11_tier_two_sided_stencil ... Hardware: name="Qualcomm(R) Adreno(TM) 680 GPU" vendor=0x4d4f4351 device=0x41333430 driver="FL9_2; physical DXGI adapter; driver version 27.20.2160.0" native=L9_2 arch=aarch64
+Verified asymmetric stencil rejection on L9_2: Qualcomm(R) Adreno(TM) 680 GPU
+ok
+
+test result: ok. 4 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 17.10s
+
+test_exit=0 payload=dx11_fl92-eebe8537f990f98c.exe
+remote_test_ssh_exit=0

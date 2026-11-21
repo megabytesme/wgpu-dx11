@@ -1,0 +1,63 @@
+{
+  "schema_version": 1,
+  "date": "2026-11-21",
+  "artifacts": {
+    "lumia-resume-native-raw.txt": {
+      "path": "evidence/lumia-resume-native-raw.txt",
+      "record_sha256": "cb1bc3d5de05ff52ce02c591efb19c363caaf87a06f3dd716917cddd1a5d1748",
+      "capture_path": "C:\\Users\\ben\\AppData\\Local\\Temp/dx11-roadmap-qa-nov21-arm-reviewed/lumia-resume-native-raw.txt",
+      "capture_sha256": "cb1bc3d5de05ff52ce02c591efb19c363caaf87a06f3dd716917cddd1a5d1748"
+    },
+    "surface-fl92-native-stencil-resume.txt": {
+      "path": "evidence/surface-fl92-native-stencil-resume.txt",
+      "record_sha256": "a96940ceea415f223c8dda3ada21c7540e134529be081654fd0d24640187e70b",
+      "capture_path": "E:/Temp/fl92-finish/surface-native-stencil-ordered-arm64.txt",
+      "capture_sha256": "c443ed1df36052ea2b07dfb9267721ece8639f0c90f56d0526aae2917954cf4f"
+    },
+    "surface-fl92-public-resume.txt": {
+      "path": "evidence/surface-fl92-public-resume.txt",
+      "record_sha256": "992b3e7b5fd5ca30fb32a2db49998e1f347f3abb3e29a3ee2be38320f8361aa1",
+      "capture_path": "E:/Temp/fl92-finish/surface-public-fl92-arm64.txt",
+      "capture_sha256": "2c48940f8ea8a1d3c520bc21654238d3cdb0e16b72f4a2d4f14c92fad740fc92"
+    }
+  },
+  "lumia": {
+    "package": "MCHorizonUWP.Dx11TierProbe_1.0.0.1_arm__4pd4jeb6snrqw",
+    "package_sha256": "7f78b0f417f2cc82c3daf3d9f84e543d05657e7fc59b5e2504488feaa9ea9eb1",
+    "harness_commit": "028635225ad96e93fbbbc8e2b4598966c84dabec",
+    "device": "Lumia 950 XL",
+    "gpu": "Qualcomm Adreno 430",
+    "activation_utc": "2026-11-21T21:34:50.4091166Z",
+    "exact_requests": [
+      "9_1",
+      "9_2",
+      "9_3",
+      "10_0",
+      "10_1",
+      "11_0",
+      "11_1"
+    ],
+    "highest_tested": "11_1",
+    "overall": "FAIL",
+    "failed_operation": "rgba8_resolve_four_samples_and_reject_33",
+    "failed_levels": [
+      "10_1",
+      "11_0",
+      "11_1"
+    ],
+    "hresult": "80004005"
+  },
+  "surface": {
+    "device": "Surface Pro X",
+    "gpu": "Qualcomm Adreno 680",
+    "driver": "27.20.2160.0",
+    "exact_tier": "9_2",
+    "native_binary_sha256": "68f50397b46085a22cf08ecb7a94933009a191f0d0c0b879828c176fe68c3335",
+    "public_candidate": "abf47903e38b1a45e663f2180d395a24af442405",
+    "public_stencil": "Expected rejection",
+    "native_stencil": "One-pass asymmetric incorrect; ordered/grouped controls pass",
+    "signed_appcontainer": "Package transferred; interactive task queued without activation receipt",
+    "direct_arm64_retry": "SSH port 22 timeout during transfer after locked lane comparison"
+  },
+  "cts": "cts-audit/case-review-summary.json"
+}

@@ -1,0 +1,35 @@
+{
+  "scope": "Archived detailed captures and pinned sources",
+  "wgpu_candidate": "dbdc67913fcc858924ca553f68764fd8b432bd70",
+  "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+  "receipt_commit": "b532abe5b59f8f057f4508756d0ef9e6bc71cb3c",
+  "case_inventory_sha256": "49a3e384ca7d9c7e69014125d2a5676d789ac240e1bca9fd36f76887b72c7ab6",
+  "captures": [
+    {
+      "file": "cts-x64-candidate-prefix.log",
+      "sha256": "f185360a60dbb80b8759e1d7b9cc2cd15b83e45b3c9347bb47bcf7ab56ba4ce1",
+      "runner_sha256": "c3ff4b9f3c61b98709522c26d1bfd0d7b538e4723f58685f8e3d9be3f5224edd",
+      "raw_skip_blocks": 1824,
+      "unique_case_ids": 912
+    },
+    {
+      "file": "cts-x64-continuation.log",
+      "sha256": "2bf5ea469ad95e48b7f86a1cba287ef2544e59cffbd2b418e505e1eec484dd62",
+      "runner_sha256": "c3ff4b9f3c61b98709522c26d1bfd0d7b538e4723f58685f8e3d9be3f5224edd",
+      "raw_skip_blocks": 7616,
+      "unique_case_ids": 3808
+    }
+  ],
+  "unique_runtime_skip_ids": 4720,
+  "duplicate_skip_blocks": 4720,
+  "reviewed_cases": 86,
+  "classifications": {
+    "ADAPTER_LIMIT_PRECONDITION": 21,
+    "FORMAT_ATTACHMENT_PRECONDITION": 4,
+    "DXGI_TABLE_LACKS_4X_AND_RESOLVE": 9,
+    "BROWSER_FIXTURE_REQUIRED": 2,
+    "WGSL_EXTENSION_PRECONDITION": 1,
+    "GENERATOR_PRECONDITION": 49
+  },
+  "waived": 0
+}
