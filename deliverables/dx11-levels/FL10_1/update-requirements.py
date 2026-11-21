@@ -60,11 +60,18 @@ def main():
     parser.add_argument("roadmap_repository", type=Path)
     args = parser.parse_args()
     tests = json.loads((HERE / "tests.json").read_text(encoding="utf-8"))
-    supplemental = tests["supplemental_requirements"]
-    evidence = tests["requirement_evidence"]
     rows = list(native_requirements(args.roadmap_repository))
     rows += list(format_requirements(args.roadmap_repository))
-    rows += supplemental
+    rows += tests["supplemental_requirements"]
+    evidence = tests["requirement_evidence"]
+    followup_path = HERE / "portable-and-formats.json"
+    if followup_path.exists():
+        followup = json.loads(followup_path.read_text(encoding="utf-8"))
+        rows += followup["supplemental_requirements"]
+        evidence = evidence | {
+            key: {"candidate_sha": followup["source_sha"]} | result
+            for key, result in followup["requirement_evidence"].items()
+        }
     ids = {row["id"] for row in rows}
     if len(ids) != len(rows):
         raise ValueError("Duplicate requirement ID")

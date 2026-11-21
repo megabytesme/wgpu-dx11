@@ -80,6 +80,59 @@ at each tier.
 Horizon gameplay performance and peak video memory over a gameplay trace
 require a product build on the reviewed integration candidate.
 
+## Portable renderer opt-in
+
+Build `wgpu` with `dx11-experimental-fl10` and `wgsl`. Select
+`Backends::DX11` explicitly and set `WGPU_DX11_EXPERIMENTAL_FL10_1=1`
+before enumerating adapters. The DX11 backend requests only FL10.1 and
+uses the native hardware-identity checks. The experimental adapter is
+identified by `FL10_1 (experimental portable subset)` in its driver info.
+An explicit `WGPU_DX11_FORCE_FL9_1=1` takes precedence.
+
+The portable path creates an alpha-to-coverage blend state even when
+color blending is disabled and the pipeline writes all color channels.
+Its GPU fixture draws three alpha values into a four-sample attachment,
+resolves into a single-sampled texture, and checks GPU readback. It also
+checks rejection of one-sample alpha-to-coverage and of the feature on
+the legacy path. Resource-free WGSL stages with no emulated vertex
+identifiers use SM4.1 FXC profiles. The remaining stages retain the legacy
+compiler path while their HAL contracts are expanded.
+
+```powershell
+cargo test --offline --target x86_64-pc-windows-msvc -p wgpu --no-default-features --features std,wgsl,dx11-experimental-fl10 --test dx11_fl10_1 --no-run
+```
+
+Run the test executable using `run-desktop.ps1` with
+`-Filter public_dx11_alpha_to_coverage_requires_opt_in_and_resolves`.
+Set the environment before running the script. For Surface, build the
+wgpu integration test and wgpu-hal unit tests for
+`aarch64-pc-windows-msvc`, and pass both executables to
+`run-surface.ps1`. The runner verifies the transfer hashes over SSH
+and keeps the Surface lock through completion. These are Win32 tests.
+The ARM64 and ARM32 UWP library checks are separate build evidence.
+
+The portable test passed on RTX 3090 Ti using x64 and x86, and on
+Surface Pro X using native ARM64 Win32. The alpha-0.5 draw resolved to
+average red 127 on RTX and 135.875 on Adreno 680. Both lower-path controls
+passed on desktop. Six native format fixtures passed on each of the three
+targets. The evidence includes executable digests and the Surface transfer
+paths. [Follow-up test record](../deliverables/dx11-levels/FL10_1/portable-and-formats.json)
+
+The follow-up native format cases exercise all five newly mandatory
+filtering entries from the Direct3D FL10.1 format table, including
+typed views of D24S8 and D32S8 resources, and nine normalized color
+formats with native additive blending. Both suites check input support
+bits and verify pixel values from real render targets. The P010 and P016
+entries require separate video-plane coverage.
+[Direct3D FL10.1 format table](https://learn.microsoft.com/en-us/windows/win32/direct3ddxgi/format-support-for-direct3d-feature-level-10-1-hardware)
+
+The installed signed roadmap reference on Lumia reported exact FL10.1
+creation on Adreno 430 and successful native draw and dispatch readbacks.
+Its combined RGBA8 4× resolve and invalid-33-sample control failed.
+The complete report was already present when retrieved. Those observations
+apply to the roadmap reference package.
+[Signed Lumia reference output](../deliverables/dx11-levels/FL10_1/evidence/lumia-signed-reference.log)
+
 The RGBA8 render oracles use the Direct3D conversion tolerance of 0.6
 integer ULP. This accounts for the NVIDIA driver converting 0.5 to 127.
 The driver also returned success for a seven-face cube resource, though

@@ -1,0 +1,231 @@
+{
+  "state": "INCOMPLETE",
+  "source_sha": "32551d2777c4fc5c2c55e9cfc31272ec08c35942",
+  "source_tree": "c042c610ef3624170c7482ed57be969c91efce97",
+  "executables": {
+    "native-x64": {
+      "path": "E:\\temp\\wgpu-fl10_1\\target\\x86_64-pc-windows-msvc\\debug\\deps\\wgpu_hal-e34d3818602bb199.exe",
+      "sha256": "f510a6d197d64b953ebfad45358f22a097435dc8faeba6fe20ee24e1de295764"
+    },
+    "native-x86": {
+      "path": "E:\\temp\\wgpu-fl10_1\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-4da916a18891cfc3.exe",
+      "sha256": "aff1db7589159df33d5455e3c06ab55ba50236b1acf06c94e908691dc947a578"
+    },
+    "portable-x64": {
+      "path": "E:\\temp\\wgpu-fl10_1\\target\\x86_64-pc-windows-msvc\\debug\\deps\\dx11_fl10_1-61052a4eb6ce8321.exe",
+      "sha256": "83a4ca4c540eef8e4c3c0d32bcbd6abb4376867525db22ba5494d9f39f3f9ba9"
+    },
+    "portable-x86": {
+      "path": "E:\\temp\\wgpu-fl10_1\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl10_1-85419bba8d74a5a1.exe",
+      "sha256": "68f842e86437c434719ad20341db6ab03608291f6423a105ec938607a5bfb602"
+    },
+    "native-arm64": {
+      "path": "E:\\temp\\wgpu-fl10_1\\arm64-target\\aarch64-pc-windows-msvc\\debug\\deps\\wgpu_hal-aad88a4f9e5059e7.exe",
+      "sha256": "795ac6b7faf7f76538f1b877ff109377474dd68b7506ee5cb36f66999bea8bf8"
+    },
+    "portable-arm64": {
+      "path": "E:\\temp\\wgpu-fl10_1\\arm64-target\\aarch64-pc-windows-msvc\\debug\\deps\\dx11_fl10_1-171890669df25d5e.exe",
+      "sha256": "29a21d9feb1de33297af3d6f9c6016feda5bd1ef0abecba3d1b48b2b62761b70"
+    }
+  },
+  "build": {
+    "host": "BEN-DESKTOP",
+    "directory": "C:/dev/personal/wgpu-dx11-FL10_1-Nov21",
+    "desktop_toolchain": "1.93",
+    "desktop_targets": [
+      "x86_64-pc-windows-msvc",
+      "i686-pc-windows-msvc",
+      "aarch64-pc-windows-msvc"
+    ],
+    "portable_command": "cargo test --offline --target <target> -p wgpu --no-default-features --features std,wgsl,dx11-experimental-fl10 --test dx11_fl10_1 --no-run",
+    "native_command": "cargo test --offline --target <target> -p wgpu-hal --no-default-features --features dx11-experimental-fl10 --lib --no-run",
+    "uwp_command": "RUSTC_BOOTSTRAP=1 cargo +1.99.1 check --offline -Z build-std=std,panic_abort -p wgpu --no-default-features --features std,wgsl,dx11-experimental-fl10 --lib --target <target>",
+    "uwp_results": {
+      "aarch64-uwp-windows-msvc": "pass",
+      "thumbv7a-uwp-windows-msvc": "pass"
+    }
+  },
+  "artifacts": {
+    "format-x64-followup": {
+      "log": "evidence/format-x64-followup.log",
+      "sha256": "88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0",
+      "result_lines": [
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 561 filtered out; finished in 4.39s"
+      ]
+    },
+    "format-x86-followup": {
+      "log": "evidence/format-x86-followup.log",
+      "sha256": "317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d",
+      "result_lines": [
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 561 filtered out; finished in 4.39s"
+      ]
+    },
+    "surface-followup": {
+      "log": "evidence/surface-followup.log",
+      "sha256": "6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "result_lines": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s",
+        "test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 561 filtered out; finished in 1.49s"
+      ]
+    },
+    "portable-x64-exact-followup": {
+      "log": "evidence/portable-x64-exact-followup.log",
+      "sha256": "176b2bb76e6676b8b2aebac4c203ef65e29424693719582aa3afff98fd2f1e28",
+      "result_lines": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.61s"
+      ]
+    },
+    "portable-x64-default-followup": {
+      "log": "evidence/portable-x64-default-followup.log",
+      "sha256": "b12ce11d19ed8ba4f2cfb16fe07ba212f88885e91bcb8cd5f5a3be626c17fb86",
+      "result_lines": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.98s"
+      ]
+    },
+    "portable-x64-forced-fl91-followup": {
+      "log": "evidence/portable-x64-forced-fl91-followup.log",
+      "sha256": "40c36e4d9b8a25761611a3aae5f34c6f8317d542193e5d6b5b631c533819ff24",
+      "result_lines": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.16s"
+      ]
+    },
+    "portable-x86-exact-followup": {
+      "log": "evidence/portable-x86-exact-followup.log",
+      "sha256": "ce5a550c9eee2a305f5564a9b41636f3146adc98bf6ce3cf8c7f9ed40e61f878",
+      "result_lines": [
+        "test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 1.14s"
+      ]
+    },
+    "lumia-signed-reference": {
+      "log": "evidence/lumia-signed-reference.log",
+      "sha256": "cb1bc3d5de05ff52ce02c591efb19c363caaf87a06f3dd716917cddd1a5d1748",
+      "original_download_sha256": "cb1bc3d5de05ff52ce02c591efb19c363caaf87a06f3dd716917cddd1a5d1748",
+      "package": "MCHorizonUWP.Dx11TierProbe_1.0.0.1_arm__4pd4jeb6snrqw",
+      "package_sha256": "7f78b0f417f2cc82c3daf3d9f84e543d05657e7fc59b5e2504488feaa9ea9eb1",
+      "scope": "Installed signed roadmap reference report retrieved via the pinned Lumia Device Portal.",
+      "notes": "The complete report is byte-identical to the file before relaunch. A second launch was observed but its retrieved report was incomplete. Use only as signed native reference evidence.",
+      "adapter": "Qualcomm Adreno 430",
+      "exact_fl10_1": "request|10_1|a100|00000000|a100|a100",
+      "fl10_1_draw_readback": "pass",
+      "fl10_1_dispatch_readback": "pass",
+      "fl10_1_4x_resolve_and_reject_33_combined_control": "fail",
+      "overall": "fail"
+    }
+  },
+  "supplemental_requirements": [],
+  "requirement_evidence": {
+    "FL10_1.DXGI.DXGI_FORMAT_R32_FLOAT.sample_filtered": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_float32_format_linear_filtering",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R32G32_FLOAT.sample_filtered": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_float32_format_linear_filtering",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R32G32B32A32_FLOAT.sample_filtered": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_float32_format_linear_filtering",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R24_UNORM_X8_TYPELESS.sample_filtered": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_depth_view_linear_filtering",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R32_FLOAT_X8X24_TYPELESS.sample_filtered": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_depth_view_linear_filtering",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R8_SNORM.blend_attachment": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_normalized_format_blending",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R8G8_SNORM.blend_attachment": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_normalized_format_blending",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R8G8B8A8_SNORM.blend_attachment": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_normalized_format_blending",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R16_SNORM.blend_attachment": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_normalized_format_blending",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R16G16_SNORM.blend_attachment": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_normalized_format_blending",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R16G16B16A16_SNORM.blend_attachment": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_normalized_format_blending",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R16_UNORM.blend_attachment": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_normalized_format_blending",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R16G16_UNORM.blend_attachment": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_normalized_format_blending",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.DXGI.DXGI_FORMAT_R16G16B16A16_UNORM.blend_attachment": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "exact_fl10_normalized_format_blending",
+      "artifact_sha256": "format-x64-followup=88ec71da23bdd1781866034839340c8457decb9e17329d73a8a772bfc49ce3a0; format-x86-followup=317b6d25b326880b161dba6e353d0e60a0d3d37c7048fc957d811bd1d7ebbe3d; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Exact FL10.1 D3D11 shader render and staged readback. Portable format capability is separate."
+    },
+    "FL10_1.OP.alpha_to_coverage": {
+      "native_result": "pass",
+      "devices": "RTX 3090 Ti x64; RTX 3090 Ti x86; Surface Pro X ARM64 Win32 / Adreno 680",
+      "test_command": "public_dx11_alpha_to_coverage_requires_opt_in_and_resolves",
+      "artifact_sha256": "portable-x64-exact-followup=176b2bb76e6676b8b2aebac4c203ef65e29424693719582aa3afff98fd2f1e28; portable-x86-exact-followup=ce5a550c9eee2a305f5564a9b41636f3146adc98bf6ce3cf8c7f9ed40e61f878; surface-followup=6a1aa6920491c56ee228389295f5297b495780239193e6451d3864c030afef5b",
+      "notes": "Opt-in wgpu 4x RGBA8 render, resolve, and GPU readback at alpha 0, 0.5, and 1.",
+      "hal_result": "pass",
+      "public_result": "pass"
+    }
+  },
+  "remaining": [
+    "Signed AppContainer execution from the same source",
+    "Full public wgpu and HAL FL10.1 projection",
+    "Native formats and uses whose evidence is still unknown",
+    "Cumulative certified FL10.0 and earlier gates"
+  ]
+}

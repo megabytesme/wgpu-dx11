@@ -1,0 +1,40 @@
+running 6 tests
+test dx11::exact::tests::formats::exact_fl10_cube_array_nonzero_view_base_and_copy ... requested=L10_0 actual=L10_0 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86
+requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86
+DXBC profile=ps_4_1
+seven-face resource create HRESULT=0x00000000
+out-of-bounds cube SRV rejected: 0x80070057
+cube array base-face=6 copied readback=[[106, 0, 0, 255], [122, 0, 0, 255], [138, 0, 0, 255], [154, 0, 0, 255], [170, 0, 0, 255], [186, 0, 0, 255]]
+ok
+test dx11::exact::tests::formats::exact_fl10_depth_view_linear_filtering ... requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86
+R24_UNORM_X8_TYPELESS CheckFormatSupport=0x00d217b0 filtered center=[[127, 0, 0, 255]]
+R32_FLOAT_X8X24_TYPELESS CheckFormatSupport=0x00d217b0 filtered center=[[127, 0, 0, 255]]
+ok
+test dx11::exact::tests::formats::exact_fl10_float32_format_linear_filtering ... requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86
+R32_FLOAT CheckFormatSupport=0x00f6f7fb filtered center=[[127, 0, 0, 255]]
+R32G32_FLOAT CheckFormatSupport=0x0076f3fb filtered center=[[127, 64, 0, 255]]
+R32G32B32A32_FLOAT CheckFormatSupport=0x0076f3fb filtered center=[[127, 64, 191, 159]]
+ok
+test dx11::exact::tests::formats::exact_fl10_independent_blend_eight_targets ... requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86
+DXBC profile=ps_4_1
+independent blend RGBA8 readback=[[127, 64, 0, 255], [0, 0, 255, 255], [127, 64, 0, 255], [0, 0, 255, 255], [127, 64, 0, 255], [0, 0, 255, 255], [127, 64, 0, 255], [127, 0, 255, 255]]
+ok
+test dx11::exact::tests::formats::exact_fl10_normalized_format_blending ... requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86
+R8_SNORM CheckFormatSupport=0x00f6f3f3 blended readback=[[63, 127, 127, 255]]
+R8G8_SNORM CheckFormatSupport=0x0076f3f3 blended readback=[[63, 63, 127, 255]]
+R8G8B8A8_SNORM CheckFormatSupport=0x0076f3f3 blended readback=[[63, 63, 63, 126]]
+R16_SNORM CheckFormatSupport=0x00f6f3f3 blended readback=[[64, 127, 127, 255]]
+R16G16_SNORM CheckFormatSupport=0x0076f3f3 blended readback=[[64, 64, 127, 255]]
+R16G16B16A16_SNORM CheckFormatSupport=0x0076f3f3 blended readback=[[64, 64, 64, 127]]
+R16_UNORM CheckFormatSupport=0x00f6f7f3 blended readback=[[223, 127, 127, 255]]
+R16G16_UNORM CheckFormatSupport=0x0076f3f3 blended readback=[[223, 223, 127, 255]]
+R16G16B16A16_UNORM CheckFormatSupport=0x0076f3f3 blended readback=[[223, 223, 223, 127]]
+ok
+test dx11::exact::tests::formats::exact_fl10_standard_4x_sample_frequency_copy_and_readback ... requested=L10_1 actual=L10_1 gpu=NVIDIA GeForce RTX 3090 Ti vendor=0x10de device=0x2203 luid=0x0000000000014a80 driver=Some("32.0.16.2101") architecture=x86
+RGBA8 CheckFormatSupport=0x317ef3f3 quality levels for 4x=1
+DXBC profile=ps_4_1
+DXBC profile=ps_4_1
+RGBA8 4x standard sample readback=[[96, 32, 32, 255], [223, 96, 64, 255], [32, 159, 96, 255], [159, 223, 127, 255]]
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 561 filtered out; finished in 4.39s

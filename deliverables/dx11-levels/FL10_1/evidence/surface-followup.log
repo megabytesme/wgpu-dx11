@@ -1,0 +1,57 @@
+ARM64 source portable=E:\temp\wgpu-fl10_1\arm64-target\aarch64-pc-windows-msvc\debug\deps\dx11_fl10_1-171890669df25d5e.exe SHA256=29A21D9FEB1DE33297AF3D6F9C6016FEDA5BD1EF0ABECBA3D1B48B2B62761B70
+ARM64 source native=E:\temp\wgpu-fl10_1\arm64-target\aarch64-pc-windows-msvc\debug\deps\wgpu_hal-aad88a4f9e5059e7.exe SHA256=795AC6B7FAF7F76538F1B877FF109377474DD68B7506EE5CB36F66999BEA8BF8
+ARM64 destination host=ben@192.168.1.227 directory=C:\Users\ben\AppData\Local\Temp\wgpu-fl101-0938b46c67e94e799afeb67505761da2
+host=BEN-TABLET os=10.0.26320.0 architecture=ARM64
+
+running 1 test
+test public_dx11_alpha_to_coverage_requires_opt_in_and_resolves ... DX11 adapter: AdapterInfo { name: "Qualcomm(R) Adreno(TM) 680 GPU", vendor: 1297040209, device: 1093874736, device_type: Other, device_pci_bus_id: "", driver: "D3D11", driver_info: "FL10_1 (experimental portable subset); physical DXGI adapter; driver version 27.20.2160.0", backend: Dx11, subgroup_min_size: 4, subgroup_max_size: 128, transient_saves_memory: None, limit_bucket: None }
+4x alpha-to-coverage alpha=0 resolved average red=0
+4x alpha-to-coverage alpha=0.5 resolved average red=135.875
+4x alpha-to-coverage alpha=1 resolved average red=255
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.77s
+
+
+running 6 tests
+test dx11::exact::tests::formats::exact_fl10_cube_array_nonzero_view_base_and_copy ... requested=L10_0 actual=L10_0 gpu=Qualcomm(R) Adreno(TM) 680 GPU vendor=0x4d4f4351 device=0x41333430 luid=0x0000000000011583 driver=Some("27.20.2160.0") architecture=aarch64
+requested=L10_1 actual=L10_1 gpu=Qualcomm(R) Adreno(TM) 680 GPU vendor=0x4d4f4351 device=0x41333430 luid=0x0000000000011583 driver=Some("27.20.2160.0") architecture=aarch64
+DXBC profile=ps_4_1
+seven-face resource create HRESULT=0x00000000
+out-of-bounds cube SRV rejected: 0x80070057
+cube array base-face=6 copied readback=[[106, 0, 0, 255], [122, 0, 0, 255], [138, 0, 0, 255], [154, 0, 0, 255], [170, 0, 0, 255], [186, 0, 0, 255]]
+ok
+test dx11::exact::tests::formats::exact_fl10_depth_view_linear_filtering ... requested=L10_1 actual=L10_1 gpu=Qualcomm(R) Adreno(TM) 680 GPU vendor=0x4d4f4351 device=0x41333430 luid=0x0000000000011583 driver=Some("27.20.2160.0") architecture=aarch64
+R24_UNORM_X8_TYPELESS CheckFormatSupport=0x00d217b0 filtered center=[[128, 0, 0, 255]]
+R32_FLOAT_X8X24_TYPELESS CheckFormatSupport=0x00d217b0 filtered center=[[128, 0, 0, 255]]
+ok
+test dx11::exact::tests::formats::exact_fl10_float32_format_linear_filtering ... requested=L10_1 actual=L10_1 gpu=Qualcomm(R) Adreno(TM) 680 GPU vendor=0x4d4f4351 device=0x41333430 luid=0x0000000000011583 driver=Some("27.20.2160.0") architecture=aarch64
+R32_FLOAT CheckFormatSupport=0x00f6f7fb filtered center=[[128, 0, 0, 255]]
+R32G32_FLOAT CheckFormatSupport=0x0076f3fb filtered center=[[128, 64, 0, 255]]
+R32G32B32A32_FLOAT CheckFormatSupport=0x0076f3fb filtered center=[[128, 64, 191, 159]]
+ok
+test dx11::exact::tests::formats::exact_fl10_independent_blend_eight_targets ... requested=L10_1 actual=L10_1 gpu=Qualcomm(R) Adreno(TM) 680 GPU vendor=0x4d4f4351 device=0x41333430 luid=0x0000000000011583 driver=Some("27.20.2160.0") architecture=aarch64
+DXBC profile=ps_4_1
+independent blend RGBA8 readback=[[128, 64, 0, 255], [0, 0, 255, 255], [128, 64, 0, 255], [0, 0, 255, 255], [128, 64, 0, 255], [0, 0, 255, 255], [128, 64, 0, 255], [128, 0, 255, 255]]
+ok
+test dx11::exact::tests::formats::exact_fl10_normalized_format_blending ... requested=L10_1 actual=L10_1 gpu=Qualcomm(R) Adreno(TM) 680 GPU vendor=0x4d4f4351 device=0x41333430 luid=0x0000000000011583 driver=Some("27.20.2160.0") architecture=aarch64
+R8_SNORM CheckFormatSupport=0x00f6f3f3 blended readback=[[64, 128, 128, 255]]
+R8G8_SNORM CheckFormatSupport=0x0076f3f3 blended readback=[[64, 64, 128, 255]]
+R8G8B8A8_SNORM CheckFormatSupport=0x0076f3f3 blended readback=[[64, 64, 64, 129]]
+R16_SNORM CheckFormatSupport=0x00f6f3f3 blended readback=[[64, 128, 128, 255]]
+R16G16_SNORM CheckFormatSupport=0x0076f3f3 blended readback=[[64, 64, 128, 255]]
+R16G16B16A16_SNORM CheckFormatSupport=0x0076f3f3 blended readback=[[64, 64, 64, 128]]
+R16_UNORM CheckFormatSupport=0x00f6f7f3 blended readback=[[223, 128, 128, 255]]
+R16G16_UNORM CheckFormatSupport=0x0076f3f3 blended readback=[[223, 223, 128, 255]]
+R16G16B16A16_UNORM CheckFormatSupport=0x0076f3f3 blended readback=[[223, 223, 223, 128]]
+ok
+test dx11::exact::tests::formats::exact_fl10_standard_4x_sample_frequency_copy_and_readback ... requested=L10_1 actual=L10_1 gpu=Qualcomm(R) Adreno(TM) 680 GPU vendor=0x4d4f4351 device=0x41333430 luid=0x0000000000011583 driver=Some("27.20.2160.0") architecture=aarch64
+RGBA8 CheckFormatSupport=0x317ef3f3 quality levels for 4x=1
+DXBC profile=ps_4_1
+DXBC profile=ps_4_1
+RGBA8 4x standard sample readback=[[96, 32, 32, 255], [223, 96, 64, 255], [32, 159, 96, 255], [159, 223, 128, 255]]
+ok
+
+test result: ok. 6 passed; 0 failed; 0 ignored; 0 measured; 561 filtered out; finished in 1.49s
+
+portable status=0 native status=0
