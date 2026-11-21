@@ -726,5 +726,109 @@
       "scope": "Observable desktop window with a bounded frame count"
     }
   },
-  "baseline_receipt_candidate": "912fc25d497f872e744185a2564555647e4e2b46"
+  "baseline_receipt_candidate": "912fc25d497f872e744185a2564555647e4e2b46",
+  "sampler_and_visible_window_follow_up": {
+    "sampler_fixture_commit": "353d9dda4510a184bbeef559e36671453f1d6eea",
+    "sampler_fixture_source_sha256": "87335e66d4231bf252d0583abe70e58e42424b9aad1564eb0109df9631316128",
+    "adapter": "NVIDIA GeForce RTX 3090 Ti, driver 32.0.16.2101",
+    "build_dir": "C:/dev/personal/wgpu-dx11-FL92-Nov21",
+    "cargo_target_dir": "E:/Temp/fl92-finish/cargo",
+    "build_environment": {
+      "CARGO_INCREMENTAL": "0",
+      "CARGO_PROFILE_DEV_DEBUG": "0",
+      "CARGO_PROFILE_TEST_DEBUG": "0"
+    },
+    "builds": [
+      {
+        "architecture": "x64",
+        "command": "cargo test --locked --offline -j 32 -p wgpu-hal --no-default-features --features dx11 --lib --no-run",
+        "log": "E:/Temp/fl92-finish/build-anisotropy-x64-retry.log",
+        "status": "PASS"
+      },
+      {
+        "architecture": "x86",
+        "command": "cargo test --locked --offline -j 32 --target i686-pc-windows-msvc -p wgpu-hal --no-default-features --features dx11 --lib --no-run",
+        "log": "E:/Temp/fl92-finish/build-anisotropy-x86.log",
+        "status": "PASS"
+      }
+    ],
+    "fl9_2_sampler_descriptor_values_pass": [
+      2,
+      4,
+      8,
+      16
+    ],
+    "fl9_2_sampler_descriptor_value_rejected": 17,
+    "sampler_results": [
+      {
+        "architecture": "x64",
+        "requested": "9_1",
+        "actual": "9_1",
+        "mean_deviation_from_gray": {
+          "2": 1,
+          "1": 128
+        },
+        "log": "E:/Temp/fl92-finish/anisotropy-x64-9_1.log",
+        "log_sha256": "6a157d15a9e9496bccb85e9e2aebd39570fcfb0b3e41c3168dd20c4904dde20e",
+        "executable": "E:/Temp/fl92-finish/cargo/debug/deps/wgpu_hal-d5b6fac3528f5e96.exe",
+        "executable_sha256": "7a2631b604622b22f2285e3c6c0e2ebf219475149e5ba70f35fb85ae5310c3e6"
+      },
+      {
+        "architecture": "x64",
+        "requested": "9_2",
+        "actual": "9_2",
+        "mean_deviation_from_gray": {
+          "16": 1,
+          "2": 128
+        },
+        "log": "E:/Temp/fl92-finish/anisotropy-x64-9_2.log",
+        "log_sha256": "162876d7cf6ebc61eca0c3e6060eb9e2cf13cdf19c89a152b1cfc60982a4c192",
+        "executable": "E:/Temp/fl92-finish/cargo/debug/deps/wgpu_hal-d5b6fac3528f5e96.exe",
+        "executable_sha256": "7a2631b604622b22f2285e3c6c0e2ebf219475149e5ba70f35fb85ae5310c3e6"
+      },
+      {
+        "architecture": "x86",
+        "requested": "9_1",
+        "actual": "9_1",
+        "mean_deviation_from_gray": {
+          "2": 1,
+          "1": 128
+        },
+        "log": "E:/Temp/fl92-finish/anisotropy-x86-9_1.log",
+        "log_sha256": "6a157d15a9e9496bccb85e9e2aebd39570fcfb0b3e41c3168dd20c4904dde20e",
+        "executable": "E:/Temp/fl92-finish/cargo/i686-pc-windows-msvc/debug/deps/wgpu_hal-6d8df81e7b413024.exe",
+        "executable_sha256": "1672a452ad8292a99e7658a2501d89ef199ed48f926ef1e82eb2b93349d073dc"
+      },
+      {
+        "architecture": "x86",
+        "requested": "9_2",
+        "actual": "9_2",
+        "mean_deviation_from_gray": {
+          "16": 1,
+          "2": 128
+        },
+        "log": "E:/Temp/fl92-finish/anisotropy-x86-9_2.log",
+        "log_sha256": "7dca69dc91d9f8bae77fc8a00a8dd28da6769496d3f742aa734c36fac74a1a8d",
+        "executable": "E:/Temp/fl92-finish/cargo/i686-pc-windows-msvc/debug/deps/wgpu_hal-6d8df81e7b413024.exe",
+        "executable_sha256": "1672a452ad8292a99e7658a2501d89ef199ed48f926ef1e82eb2b93349d073dc"
+      }
+    ],
+    "visible_window": {
+      "architecture": "x86",
+      "requested": "9_1",
+      "actual": "9_1",
+      "frames_requested": 30,
+      "frames_presented": 30,
+      "status": "PASS",
+      "executable": "E:/Temp/fl92-finish/cargo/i686-pc-windows-msvc/debug/examples/dx11_fl91_windowed.exe",
+      "executable_sha256": "889a15923f69cc6a631e76fcfa5896bd1e6fa581e7ec1a549c6cc922e434c821",
+      "arguments": [
+        "--frames=30"
+      ],
+      "log": "E:/Temp/fl92-finish/x86-visible-retry.log",
+      "log_sha256": "79e2f782c418dff757ae36ba24ee1c8781ba34855ada06416e0e509dc729866a",
+      "build_log": "E:/Temp/fl92-finish/build-x86-visible.log",
+      "open": "The separate strict hidden HWND cases still fail because Present is occluded."
+    }
+  }
 }

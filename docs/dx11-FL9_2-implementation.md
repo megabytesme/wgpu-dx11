@@ -117,6 +117,18 @@ isolated rerun when Present returned the allowed occluded status and the
 strict fixture required a queued frame. The x64 FL9_1 suite passed all 557
 selected tests. See the per-run records in [tests.json](../deliverables/dx11-levels/FL9_2/tests.json).
 
+The x86 visible HWND control at exact FL9_1 presented all 30 requested
+textured, indexed, depth-tested frames. The two strict hidden HWND fixtures
+still require separate coverage.
+
+The anisotropic minification fixture in
+`353d9dda4510a184bbeef559e36671453f1d6eea` creates samplers at 2, 4, 8
+and 16 and rejects 17 at exact FL9_2. At eight texels per pixel along the
+major axis, mean absolute deviation from mid-gray was 1 at anisotropy 16
+and 128 at anisotropy 2. Both x64 and x86 produced the same readback. The
+existing matched FL9_1 control at two texels per pixel gave 1 at anisotropy
+2 and 128 at anisotropy 1 on both architectures.
+
 Selected CTS cases use the exact-tier verification in
 `383f40a8c8c936dc715cd7f8773c488b04910b67`. This runner checks the
 requested FL9_1 or FL9_2 marker together with the physical adapter identity.
@@ -136,6 +148,7 @@ $env:WGPU_DX11_REQUIRE_HARDWARE = '1'
 $env:WGPU_DX11_FEATURE_LEVEL = '9_1'
 cargo test --locked --offline -p wgpu-hal --no-default-features --features dx11 --lib dx11:: -- --nocapture --test-threads=1
 $env:WGPU_DX11_FEATURE_LEVEL = '9_2'
+cargo test --locked --offline -p wgpu-hal --no-default-features --features dx11 --lib fl92_anisotropic_minification -- --nocapture --test-threads=1
 cargo test --locked --offline -p wgpu-hal --no-default-features --features dx11 --lib fl92_hidden_hwnd_clone_sampling_presents_and_resizes -- --ignored --nocapture --test-threads=1
 cargo test --locked --offline -p wgpu --no-default-features --features std,dx11-test-fixture --test dx11_surface_error_fixture -- --nocapture --test-threads=1
 cargo xtask cts --skip-checkout --backend dx11 --require-dx11-hardware 'webgpu:api,operation,command_buffer,basic:empty:*' 'webgpu:api,operation,rendering,basic:clear:*'
@@ -150,7 +163,8 @@ fixture and selected CTS cases with `WGPU_DX11_FEATURE_LEVEL=9_1`.
 The runtime commits on `codex/dx11-fl92-nov21` are
 `912fc25d497f872e744185a2564555647e4e2b46` and
 `6224078a56ea049d7f98f62d237b84db7d1b32ff`. The separate CTS harness
-commit is `383f40a8c8c936dc715cd7f8773c488b04910b67`.
+commit is `383f40a8c8c936dc715cd7f8773c488b04910b67` and the anisotropy
+fixture commit is `353d9dda4510a184bbeef559e36671453f1d6eea`.
 
 Review the runtime diff with
 `git diff aa7b65c43ef008d0a92d20fcdf9f10fa0883f157 6224078a56ea049d7f98f62d237b84db7d1b32ff`.
