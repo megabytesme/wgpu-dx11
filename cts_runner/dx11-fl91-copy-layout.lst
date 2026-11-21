@@ -1,0 +1,5 @@
+# FL9_1 supported-format copy-layout validation on the pinned CTS.
+# The copy fixtures below use RGBA8Unorm 2D textures with one layer.
+webgpu:api,validation,image_copy,buffer_related:bytes_per_row_alignment:format="rgba8unorm";dimension="2d";*
+webgpu:api,validation,image_copy,layout_related:rows_per_image_alignment:format="rgba8unorm";dimension="2d";*
+webgpu:api,validation,image_copy,layout_related:bound_on_rows_per_image:dimension="2d";size=[4,4,1];*

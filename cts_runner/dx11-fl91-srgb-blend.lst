@@ -1,0 +1,3 @@
+# FL9_1 optional-format public blending on the strict hardware path.
+webgpu:api,operation,rendering,color_target_state:blending,formats:format="rgba8unorm-srgb"
+webgpu:api,operation,rendering,color_target_state:blending,formats:format="bgra8unorm-srgb"

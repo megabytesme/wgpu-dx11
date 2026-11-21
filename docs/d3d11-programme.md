@@ -50,6 +50,14 @@ cargo xtask cts --backend dx11 --require-dx11-hardware -f <reviewed-test-list>
 
 Keep logs with individual results and skip reasons. Record the candidate, CTS
 pin, test-list and runner hashes, selected device and exact feature level.
+For a reproducible FL9_1 copy-layout batch, run
+`python cts_runner/capture-dx11-fl91.py --help` and use
+`cts_runner/dx11-fl91-copy-layout.lst`. It checks the pinned CTS revision,
+runner digest and strict physical adapter marker. The batch keeps complete
+selector logs and requires a pass without skips or warnings. Supply the
+lab's canonical shared GPU lock file. Build the runner with
+`cargo build --locked -p cts_runner --features deno_webgpu/dx11`.
+
 The default list contains `fails-if(dx11)` exclusions. Audit excluded selectors
 and runtime skips by case. A skipped optional operation does not settle mandatory
 negative validation. Browser and canvas behavior requires a browser fixture.
