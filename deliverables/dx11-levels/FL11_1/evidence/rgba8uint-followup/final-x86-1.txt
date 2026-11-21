@@ -1,0 +1,10 @@
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\wgpu-hal)
+   Compiling wgpu v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\wgpu)
+   Compiling wgpu-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\wgpu-types)
+   Compiling wgpu-naga-bridge v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\wgpu-naga-bridge)
+wgpu-hal\src\auxil\mod.rs:128:15: warning: function `adjust_raw_limits` is never used
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\wgpu-core\platform-deps\windows-linux-android)
+   Compiling wgpu-core v30.0.1 (C:\dev\personal\wgpu-dx11-FL11_1-Nov21\wgpu-core)
+warning: `wgpu-hal` (lib) generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 1m 27s
+  Executable tests\dx11_public.rs (C:\Users\ben\AppData\Local\Temp\codex-fl11_1-copy\target-x86\i686-pc-windows-msvc\debug\deps\dx11_public-4608849de13b1387.exe)

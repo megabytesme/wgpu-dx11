@@ -1,0 +1,8 @@
+[pass] webgpu:api,validation,capability_checks,limits,maxStorageBufferBindingSize:validate: (684ms). Log:
+[pass] webgpu:api,validation,capability_checks,limits,maxStorageBufferBindingSize:validate,maxBufferSize: (106ms). Log:
+
+** Summary **
+Passed  w/o warnings = 2 / 2 = 100.00%
+Passed with warnings = 0 / 2 =   0.00%
+Skipped              = 0 / 2 =   0.00%
+Failed               = 0 / 2 =   0.00%

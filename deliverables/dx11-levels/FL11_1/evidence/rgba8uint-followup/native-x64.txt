@@ -1,0 +1,201 @@
+
+running 8 tests
+test dx11::fl11_1::tests::packed::tier_fl11_1_packed_sample_level_stages ... adapter AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }, driver Some("32.0.16.2101"), LUID 00000000:00014a80, requested L11_1, returned L11_1, GetFeatureLevel 0xb100
+DXGI_FORMAT(85) first_mip=0 filter=point compute=[255, 0, 0, 255, 0, 255, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255] pixel=[[255, 0, 0, 255], [0, 255, 0, 255], [255, 0, 0, 255], [0, 255, 0, 255], [255, 0, 0, 255]] expected=[[255, 0, 0, 255], [0, 255, 0, 255], [255, 0, 0, 255], [0, 255, 0, 255], [255, 0, 0, 255]]
+DXGI_FORMAT(85) first_mip=0 filter=linear compute=[255, 0, 0, 255, 0, 255, 0, 255, 255, 0, 0, 255, 0, 255, 0, 255] pixel=[[255, 0, 0, 255], [0, 255, 0, 255], [255, 0, 0, 255], [0, 255, 0, 255], [255, 0, 0, 255]] expected=[[255, 0, 0, 255], [0, 255, 0, 255], [255, 0, 0, 255], [0, 255, 0, 255], [255, 0, 0, 255]]
+DXGI_FORMAT(85) first_mip=1 filter=point compute=[0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 0, 0, 255] pixel=[[0, 255, 0, 255], [0, 255, 0, 255], [0, 255, 0, 255], [0, 0, 0, 255], [0, 255, 0, 255]] expected=[[0, 255, 0, 255], [0, 255, 0, 255], [0, 255, 0, 255], [0, 0, 0, 255], [0, 255, 0, 255]]
+DXGI_FORMAT(85) first_mip=1 filter=linear compute=[0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 255, 0, 0, 0, 255] pixel=[[0, 255, 0, 255], [0, 255, 0, 255], [0, 255, 0, 255], [0, 0, 0, 255], [0, 255, 0, 255]] expected=[[0, 255, 0, 255], [0, 255, 0, 255], [0, 255, 0, 255], [0, 0, 0, 255], [0, 255, 0, 255]]
+DXGI_FORMAT(86) first_mip=0 filter=point compute=[0, 0, 255, 255, 255, 0, 0, 255, 0, 0, 255, 255, 255, 0, 0, 255] pixel=[[0, 0, 255, 255], [255, 0, 0, 255], [0, 0, 255, 255], [255, 0, 0, 255], [0, 0, 255, 255]] expected=[[0, 0, 255, 255], [255, 0, 0, 255], [0, 0, 255, 255], [255, 0, 0, 255], [0, 0, 255, 255]]
+DXGI_FORMAT(86) first_mip=0 filter=linear compute=[0, 0, 255, 255, 255, 0, 0, 255, 0, 0, 255, 255, 255, 0, 0, 255] pixel=[[0, 0, 255, 255], [255, 0, 0, 255], [0, 0, 255, 255], [255, 0, 0, 255], [0, 0, 255, 255]] expected=[[0, 0, 255, 255], [255, 0, 0, 255], [0, 0, 255, 255], [255, 0, 0, 255], [0, 0, 255, 255]]
+DXGI_FORMAT(86) first_mip=1 filter=point compute=[255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 0, 0] pixel=[[255, 0, 0, 255], [255, 0, 0, 255], [255, 0, 0, 255], [0, 0, 0, 0], [255, 0, 0, 255]] expected=[[255, 0, 0, 255], [255, 0, 0, 255], [255, 0, 0, 255], [0, 0, 0, 0], [255, 0, 0, 255]]
+DXGI_FORMAT(86) first_mip=1 filter=linear compute=[255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 0, 0, 0, 0] pixel=[[255, 0, 0, 255], [255, 0, 0, 255], [255, 0, 0, 255], [0, 0, 0, 0], [255, 0, 0, 255]] expected=[[255, 0, 0, 255], [255, 0, 0, 255], [255, 0, 0, 255], [0, 0, 0, 0], [255, 0, 0, 255]]
+DXGI_FORMAT(115) first_mip=0 filter=point compute=[0, 255, 0, 255, 0, 0, 255, 255, 0, 255, 0, 255, 0, 0, 255, 255] pixel=[[0, 255, 0, 255], [0, 0, 255, 255], [0, 255, 0, 255], [0, 0, 255, 255], [0, 255, 0, 255]] expected=[[0, 255, 0, 255], [0, 0, 255, 255], [0, 255, 0, 255], [0, 0, 255, 255], [0, 255, 0, 255]]
+DXGI_FORMAT(115) first_mip=0 filter=linear compute=[0, 255, 0, 255, 0, 0, 255, 255, 0, 255, 0, 255, 0, 0, 255, 255] pixel=[[0, 255, 0, 255], [0, 0, 255, 255], [0, 255, 0, 255], [0, 0, 255, 255], [0, 255, 0, 255]] expected=[[0, 255, 0, 255], [0, 0, 255, 255], [0, 255, 0, 255], [0, 0, 255, 255], [0, 255, 0, 255]]
+DXGI_FORMAT(115) first_mip=1 filter=point compute=[0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 0, 0] pixel=[[0, 0, 255, 255], [0, 0, 255, 255], [0, 0, 255, 255], [0, 0, 0, 0], [0, 0, 255, 255]] expected=[[0, 0, 255, 255], [0, 0, 255, 255], [0, 0, 255, 255], [0, 0, 0, 0], [0, 0, 255, 255]]
+DXGI_FORMAT(115) first_mip=1 filter=linear compute=[0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 255, 255, 0, 0, 0, 0] pixel=[[0, 0, 255, 255], [0, 0, 255, 255], [0, 0, 255, 255], [0, 0, 0, 0], [0, 0, 255, 255]] expected=[[0, 0, 255, 255], [0, 0, 255, 255], [0, 0, 255, 255], [0, 0, 0, 0], [0, 0, 255, 255]]
+ok
+test dx11::fl11_1::tests::tier_fl11_1_clear_overlap_and_graphics_uav ... adapter AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }, driver Some("32.0.16.2101"), LUID 00000000:00014a80, requested L11_1, returned L11_1, GetFeatureLevel 0xb100
+FL11_0 VS UAV rejection Error { code: HRESULT(0x80070057), message: "The parameter is incorrect." }
+cleared and overlapping copy [[128, 34, 240, 25], [128, 34, 240, 25], [21, 255, 7, 33], [128, 34, 240, 25]]
+render logic readback [[188, 34, 255, 25], [188, 34, 255, 25], [41, 255, 8, 33], [188, 34, 255, 25]], UAV stage contributions [31]
+ok
+test dx11::fl11_1::tests::tier_fl11_1_compute_slots_and_constant_updates ... adapter AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }, driver Some("32.0.16.2101"), LUID 00000000:00014a80, requested L11_1, returned L11_1, GetFeatureLevel 0xb100
+dispatch u0 with CB window 0..16
+dispatch u8 with CB window 16..32
+dispatch u63 with CB window 4096..8192
+compute readback [33, 77, 84, 99]
+ok
+test dx11::fl11_1::tests::tier_fl11_1_deferred_commands_and_context_state ... adapter AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }, driver Some("32.0.16.2101"), LUID 00000000:00014a80, requested L11_1, returned L11_1, GetFeatureLevel 0xb100
+deferred replay after releasing source and context [1, 2, 3, 4]
+ok
+test dx11::fl11_1::tests::tier_fl11_1_exact_options_and_format_queries ... adapter AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }, driver Some("32.0.16.2101"), LUID 00000000:00014a80, requested L11_1, returned L11_1, GetFeatureLevel 0xb100
+D3D11_OPTIONS D3D11_FEATURE_DATA_D3D11_OPTIONS { OutputMergerLogicOp: BOOL(1), UAVOnlyRenderingForcedSampleCount: BOOL(1), DiscardAPIsSeenByDriver: BOOL(1), FlagsForUpdateAndCopySeenByDriver: BOOL(1), ClearView: BOOL(1), CopyWithOverlap: BOOL(1), ConstantBufferPartialUpdate: BOOL(1), ConstantBufferOffsetting: BOOL(1), MapNoOverwriteOnDynamicConstantBuffer: BOOL(1), MapNoOverwriteOnDynamicBufferSRV: BOOL(1), MultisampleRTVWithForcedSampleCountOne: BOOL(1), SAD4ShaderInstructions: BOOL(1), ExtendedDoublesShaderInstructions: BOOL(1), ExtendedResourceSharing: BOOL(1) }
+optional basic doubles Ok(true)
+FL11_0 D3D11_OPTIONS Ok(D3D11_FEATURE_DATA_D3D11_OPTIONS { OutputMergerLogicOp: BOOL(1), UAVOnlyRenderingForcedSampleCount: BOOL(1), DiscardAPIsSeenByDriver: BOOL(1), FlagsForUpdateAndCopySeenByDriver: BOOL(1), ClearView: BOOL(1), CopyWithOverlap: BOOL(1), ConstantBufferPartialUpdate: BOOL(1), ConstantBufferOffsetting: BOOL(1), MapNoOverwriteOnDynamicConstantBuffer: BOOL(1), MapNoOverwriteOnDynamicBufferSRV: BOOL(1), MultisampleRTVWithForcedSampleCountOne: BOOL(1), SAD4ShaderInstructions: BOOL(1), ExtendedDoublesShaderInstructions: BOOL(1), ExtendedResourceSharing: BOOL(1) })
+DXGI   0 SUPPORT Ok(131073) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI   1 SUPPORT Ok(1183984) SUPPORT2 Ok(1536)
+DXGI   2 SUPPORT Ok(49738747) SUPPORT2 Ok(1728)
+DXGI   3 SUPPORT Ok(41046523) SUPPORT2 Ok(1984)
+DXGI   4 SUPPORT Ok(41046523) SUPPORT2 Ok(1728)
+DXGI   5 SUPPORT Ok(1183984) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI   6 SUPPORT Ok(5640699) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI   7 SUPPORT Ok(5378555) SUPPORT2 Ok(256)
+DXGI   8 SUPPORT Ok(5378555) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI   9 SUPPORT Ok(1183984) SUPPORT2 Ok(1536)
+DXGI  10 SUPPORT Ok(318698483) SUPPORT2 Ok(83648)
+DXGI  11 SUPPORT Ok(49738739) SUPPORT2 Ok(1728)
+DXGI  12 SUPPORT Ok(41046515) SUPPORT2 Ok(1984)
+DXGI  13 SUPPORT Ok(49738739) SUPPORT2 Ok(1728)
+DXGI  14 SUPPORT Ok(41046515) SUPPORT2 Ok(1728)
+DXGI  15 SUPPORT Ok(1183984) SUPPORT2 Ok(512)
+DXGI  16 SUPPORT Ok(49738747) SUPPORT2 Ok(704)
+DXGI  17 SUPPORT Ok(41046523) SUPPORT2 Ok(960)
+DXGI  18 SUPPORT Ok(41046523) SUPPORT2 Ok(704)
+DXGI  19 SUPPORT Ok(1183920) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI  20 SUPPORT Ok(3346608) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI  21 SUPPORT Ok(80877488) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI  22 SUPPORT Ok(5378480) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI  23 SUPPORT Ok(1183984) SUPPORT2 Ok(1536)
+DXGI  24 SUPPORT Ok(872346611) SUPPORT2 Ok(83648)
+DXGI  25 SUPPORT Ok(41046515) SUPPORT2 Ok(1984)
+DXGI  26 SUPPORT Ok(48690163) SUPPORT2 Ok(1728)
+DXGI  27 SUPPORT Ok(1183984) SUPPORT2 Ok(1536)
+DXGI  28 SUPPORT Ok(872346611) SUPPORT2 Ok(83648)
+DXGI  29 SUPPORT Ok(301921264) SUPPORT2 Ok(1536)
+DXGI  30 SUPPORT Ok(41046515) SUPPORT2 Ok(1984)
+DXGI  31 SUPPORT Ok(49738739) SUPPORT2 Ok(1728)
+DXGI  32 SUPPORT Ok(41046515) SUPPORT2 Ok(1728)
+DXGI  33 SUPPORT Ok(1183984) SUPPORT2 Ok(1536)
+DXGI  34 SUPPORT Ok(49738739) SUPPORT2 Ok(1728)
+DXGI  35 SUPPORT Ok(49738739) SUPPORT2 Ok(1728)
+DXGI  36 SUPPORT Ok(41046515) SUPPORT2 Ok(1984)
+DXGI  37 SUPPORT Ok(49738739) SUPPORT2 Ok(1728)
+DXGI  38 SUPPORT Ok(41046515) SUPPORT2 Ok(1728)
+DXGI  39 SUPPORT Ok(1183984) SUPPORT2 Ok(1536)
+DXGI  40 SUPPORT Ok(3346608) SUPPORT2 Ok(1536)
+DXGI  41 SUPPORT Ok(116848635) SUPPORT2 Ok(1736)
+DXGI  42 SUPPORT Ok(41046527) SUPPORT2 Ok(2047)
+DXGI  43 SUPPORT Ok(41046523) SUPPORT2 Ok(1791)
+DXGI  44 SUPPORT Ok(1183920) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI  45 SUPPORT Ok(3346608) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI  46 SUPPORT Ok(80877488) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI  47 SUPPORT Ok(5378480) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI  48 SUPPORT Ok(1183984) SUPPORT2 Ok(1536)
+DXGI  49 SUPPORT Ok(49738739) SUPPORT2 Ok(1728)
+DXGI  50 SUPPORT Ok(41046515) SUPPORT2 Ok(1984)
+DXGI  51 SUPPORT Ok(49738739) SUPPORT2 Ok(1728)
+DXGI  52 SUPPORT Ok(41046515) SUPPORT2 Ok(1728)
+DXGI  53 SUPPORT Ok(1183984) SUPPORT2 Ok(1536)
+DXGI  54 SUPPORT Ok(49738739) SUPPORT2 Ok(1728)
+DXGI  55 SUPPORT Ok(3346608) SUPPORT2 Ok(1536)
+DXGI  56 SUPPORT Ok(116848627) SUPPORT2 Ok(1728)
+DXGI  57 SUPPORT Ok(41046519) SUPPORT2 Ok(1984)
+DXGI  58 SUPPORT Ok(49738739) SUPPORT2 Ok(1728)
+DXGI  59 SUPPORT Ok(41046515) SUPPORT2 Ok(1728)
+DXGI  60 SUPPORT Ok(1183984) SUPPORT2 Ok(1536)
+DXGI  61 SUPPORT Ok(49738739) SUPPORT2 Ok(1728)
+DXGI  62 SUPPORT Ok(41046515) SUPPORT2 Ok(1984)
+DXGI  63 SUPPORT Ok(49738739) SUPPORT2 Ok(1728)
+DXGI  64 SUPPORT Ok(41046515) SUPPORT2 Ok(1728)
+DXGI  65 SUPPORT Ok(48690160) SUPPORT2 Ok(1728)
+DXGI  66 SUPPORT Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" }) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI  67 SUPPORT Ok(8524784) SUPPORT2 Ok(1536)
+DXGI  68 SUPPORT Ok(8524784) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI  69 SUPPORT Ok(8524784) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI  70 SUPPORT Ok(1183968) SUPPORT2 Ok(1536)
+DXGI  71 SUPPORT Ok(9573344) SUPPORT2 Ok(1536)
+DXGI  72 SUPPORT Ok(9573344) SUPPORT2 Ok(1536)
+DXGI  73 SUPPORT Ok(1183968) SUPPORT2 Ok(1536)
+DXGI  74 SUPPORT Ok(9573344) SUPPORT2 Ok(1536)
+DXGI  75 SUPPORT Ok(9573344) SUPPORT2 Ok(1536)
+DXGI  76 SUPPORT Ok(1183968) SUPPORT2 Ok(1536)
+DXGI  77 SUPPORT Ok(9573344) SUPPORT2 Ok(1536)
+DXGI  78 SUPPORT Ok(9573344) SUPPORT2 Ok(1536)
+DXGI  79 SUPPORT Ok(1183968) SUPPORT2 Ok(512)
+DXGI  80 SUPPORT Ok(9573344) SUPPORT2 Ok(512)
+DXGI  81 SUPPORT Ok(9573344) SUPPORT2 Ok(512)
+DXGI  82 SUPPORT Ok(1183968) SUPPORT2 Ok(512)
+DXGI  83 SUPPORT Ok(9573344) SUPPORT2 Ok(512)
+DXGI  84 SUPPORT Ok(9573344) SUPPORT2 Ok(512)
+DXGI  85 SUPPORT Ok(15135728) SUPPORT2 Ok(512)
+DXGI  86 SUPPORT Ok(15135728) SUPPORT2 Ok(512)
+DXGI  87 SUPPORT Ok(872346611) SUPPORT2 Ok(83648)
+DXGI  88 SUPPORT Ok(821490675) SUPPORT2 Ok(1536)
+DXGI  89 SUPPORT Ok(286916640) SUPPORT2 Ok(1536)
+DXGI  90 SUPPORT Ok(1183984) SUPPORT2 Ok(1536)
+DXGI  91 SUPPORT Ok(301921264) SUPPORT2 Ok(1536)
+DXGI  92 SUPPORT Ok(1183984) SUPPORT2 Ok(1536)
+DXGI  93 SUPPORT Ok(16184304) SUPPORT2 Ok(1536)
+DXGI  94 SUPPORT Ok(1183968) SUPPORT2 Ok(512)
+DXGI  95 SUPPORT Ok(9573344) SUPPORT2 Ok(512)
+DXGI  96 SUPPORT Ok(9573344) SUPPORT2 Ok(512)
+DXGI  97 SUPPORT Ok(1183968) SUPPORT2 Ok(512)
+DXGI  98 SUPPORT Ok(9573344) SUPPORT2 Ok(512)
+DXGI  99 SUPPORT Ok(9573344) SUPPORT2 Ok(512)
+DXGI 100 SUPPORT Ok(713224992) SUPPORT2 Ok(1152)
+DXGI 101 SUPPORT Ok(713163552) SUPPORT2 Ok(1152)
+DXGI 102 SUPPORT Ok(713167648) SUPPORT2 Ok(1152)
+DXGI 103 SUPPORT Ok(4202873632) SUPPORT2 Ok(83072)
+DXGI 104 SUPPORT Ok(981648160) SUPPORT2 Ok(83072)
+DXGI 105 SUPPORT Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" }) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI 106 SUPPORT Ok(939524128) SUPPORT2 Ok(1024)
+DXGI 107 SUPPORT Ok(981599008) SUPPORT2 Ok(83072)
+DXGI 108 SUPPORT Ok(578945824) SUPPORT2 Ok(1152)
+DXGI 109 SUPPORT Ok(578945824) SUPPORT2 Ok(1152)
+DXGI 110 SUPPORT Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" }) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI 111 SUPPORT Ok(537002016) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI 112 SUPPORT Ok(537002016) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI 113 SUPPORT Ok(537002016) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI 114 SUPPORT Ok(537002016) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI 115 SUPPORT Ok(8786928) SUPPORT2 Ok(512)
+DXGI 130 SUPPORT Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" }) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI 131 SUPPORT Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" }) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI 132 SUPPORT Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" }) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI 189 SUPPORT Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" }) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI 190 SUPPORT Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" }) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+DXGI 191 SUPPORT Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" }) SUPPORT2 Err(Error { code: HRESULT(0x80004005), message: "Unspecified error" })
+ok
+test dx11::fl11_1::tests::tier_fl11_1_forced_rasterizer_sample_masks ... adapter AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }, driver Some("32.0.16.2101"), LUID 00000000:00014a80, requested L11_1, returned L11_1, GetFeatureLevel 0xb100
+ForcedSampleCount 1, RTV samples 4, coverage [1]
+ForcedSampleCount 4, RTV samples 1, coverage [f]
+ForcedSampleCount 8, RTV samples 1, coverage [ff]
+ForcedSampleCount 16, RTV samples 1, coverage [ffff]
+ForcedSampleCount 1, RTV samples 0, coverage [1]
+ForcedSampleCount 4, RTV samples 0, coverage [f]
+ForcedSampleCount 8, RTV samples 0, coverage [ff]
+ForcedSampleCount 16, RTV samples 0, coverage [ffff]
+ok
+test dx11::fl11_1::tests::tier_fl11_1_packed_color_mips ... adapter AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }, driver Some("32.0.16.2101"), LUID 00000000:00014a80, requested L11_1, returned L11_1, GetFeatureLevel 0xb100
+packed literal bytecode: sample_l_indexable(texture2d)(float,float,float,float) r0.xyzw, l(0.500000, 0.500000, 0.000000, 0.000000), t0.xyzw, s0, l(1.000000)
+packed dynamic bytecode: sample_l_indexable(texture2d)(float,float,float,float) r0.xyzw, l(0.500000, 0.500000, 0.000000, 0.000000), t0.xyzw, s0, r0.x
+DXGI_FORMAT(85) lod=literal srv=default sampled/loaded=[255, 0, 0, 255, 255, 0, 0, 255] generated=false
+DXGI_FORMAT(85) lod=literal srv=explicit sampled/loaded=[255, 0, 0, 255, 255, 0, 0, 255] generated=false
+DXGI_FORMAT(85) lod=dynamic srv=default sampled/loaded=[255, 0, 0, 255, 255, 0, 0, 255] generated=false
+DXGI_FORMAT(85) lod=dynamic srv=explicit sampled/loaded=[255, 0, 0, 255, 255, 0, 0, 255] generated=false
+DXGI_FORMAT(85) packed=[f800, f800] generated=false
+DXGI_FORMAT(85) lod=literal srv=default sampled/loaded=[255, 0, 0, 255, 255, 0, 0, 255] generated=true
+DXGI_FORMAT(85) lod=literal srv=explicit sampled/loaded=[255, 0, 0, 255, 255, 0, 0, 255] generated=true
+DXGI_FORMAT(85) lod=dynamic srv=default sampled/loaded=[255, 0, 0, 255, 255, 0, 0, 255] generated=true
+DXGI_FORMAT(85) lod=dynamic srv=explicit sampled/loaded=[255, 0, 0, 255, 255, 0, 0, 255] generated=true
+DXGI_FORMAT(85) packed=[f800, f800] generated=true
+DXGI_FORMAT(86) lod=literal srv=default sampled/loaded=[0, 0, 255, 255, 0, 0, 255, 255] generated=false
+DXGI_FORMAT(86) lod=literal srv=explicit sampled/loaded=[0, 0, 255, 255, 0, 0, 255, 255] generated=false
+DXGI_FORMAT(86) lod=dynamic srv=default sampled/loaded=[0, 0, 255, 255, 0, 0, 255, 255] generated=false
+DXGI_FORMAT(86) lod=dynamic srv=explicit sampled/loaded=[0, 0, 255, 255, 0, 0, 255, 255] generated=false
+DXGI_FORMAT(86) packed=[801f, 801f] generated=false
+DXGI_FORMAT(86) lod=literal srv=default sampled/loaded=[0, 0, 255, 255, 0, 0, 255, 255] generated=true
+DXGI_FORMAT(86) lod=literal srv=explicit sampled/loaded=[0, 0, 255, 255, 0, 0, 255, 255] generated=true
+DXGI_FORMAT(86) lod=dynamic srv=default sampled/loaded=[0, 0, 255, 255, 0, 0, 255, 255] generated=true
+DXGI_FORMAT(86) lod=dynamic srv=explicit sampled/loaded=[0, 0, 255, 255, 0, 0, 255, 255] generated=true
+DXGI_FORMAT(86) packed=[801f, 801f] generated=true
+DXGI_FORMAT(115) lod=literal srv=default sampled/loaded=[0, 255, 0, 255, 0, 255, 0, 255] generated=false
+DXGI_FORMAT(115) lod=literal srv=explicit sampled/loaded=[0, 255, 0, 255, 0, 255, 0, 255] generated=false
+DXGI_FORMAT(115) lod=dynamic srv=default sampled/loaded=[0, 255, 0, 255, 0, 255, 0, 255] generated=false
+DXGI_FORMAT(115) lod=dynamic srv=explicit sampled/loaded=[0, 255, 0, 255, 0, 255, 0, 255] generated=false
+DXGI_FORMAT(115) packed=[f0f0, f0f0] generated=false
+ok
+test dx11::fl11_1::tests::tier_fl11_1_shared_texture_mips_and_layers ... adapter AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false }, driver Some("32.0.16.2101"), LUID 00000000:00014a80, requested L11_1, returned L11_1, GetFeatureLevel 0xb100
+shared texture subresources [10203040, 50607080, 90a0b0c0, d0e0f0ff]
+ok
+
+test result: ok. 8 passed; 0 failed; 0 ignored; 0 measured; 560 filtered out; finished in 2.46s

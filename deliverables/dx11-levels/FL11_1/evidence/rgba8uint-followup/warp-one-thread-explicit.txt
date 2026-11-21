@@ -1,0 +1,26 @@
+WARP requested=b100 actual=b100
+DXGI_FORMAT(85) lod=literal srv=default generated=0 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=literal srv=explicit generated=0 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=dynamic srv=default generated=0 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=dynamic srv=explicit generated=0 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=literal srv=default generated=1 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=literal srv=explicit generated=1 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=dynamic srv=default generated=1 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=dynamic srv=explicit generated=1 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(86) lod=literal srv=default generated=0 sampled/loaded= 0 0 255 255 0 0 255 255 pass
+DXGI_FORMAT(86) lod=literal srv=explicit generated=0 sampled/loaded= 0 0 255 255 0 0 255 255 pass
+DXGI_FORMAT(86) lod=dynamic srv=default generated=0 sampled/loaded= 0 0 255 255 0 0 255 255 pass
+DXGI_FORMAT(86) lod=dynamic srv=explicit generated=0 sampled/loaded= 0 0 255 255 0 0 255 255 pass
+DXGI_FORMAT(86) lod=literal srv=default generated=1 sampled/loaded= 0 0 255 255 0 0 255 255 pass
+DXGI_FORMAT(86) lod=literal srv=explicit generated=1 sampled/loaded= 0 0 255 255 0 0 255 255 pass
+DXGI_FORMAT(86) lod=dynamic srv=default generated=1 sampled/loaded= 0 0 255 255 0 0 255 255 pass
+DXGI_FORMAT(86) lod=dynamic srv=explicit generated=1 sampled/loaded= 0 0 255 255 0 0 255 255 pass
+DXGI_FORMAT(115) lod=literal srv=default generated=0 sampled/loaded= 0 255 0 255 0 255 0 255 pass
+DXGI_FORMAT(115) lod=literal srv=explicit generated=0 sampled/loaded= 0 255 0 255 0 255 0 255 pass
+DXGI_FORMAT(115) lod=dynamic srv=default generated=0 sampled/loaded= 0 255 0 255 0 255 0 255 pass
+DXGI_FORMAT(115) lod=dynamic srv=explicit generated=0 sampled/loaded= 0 255 0 255 0 255 0 255 pass
+DXGI_FORMAT(115) lod=literal srv=default generated=1 sampled/loaded= 0 255 0 255 0 255 0 255 pass
+DXGI_FORMAT(115) lod=literal srv=explicit generated=1 sampled/loaded= 0 255 0 255 0 255 0 255 pass
+DXGI_FORMAT(115) lod=dynamic srv=default generated=1 sampled/loaded= 0 255 0 255 0 255 0 255 pass
+DXGI_FORMAT(115) lod=dynamic srv=explicit generated=1 sampled/loaded= 0 255 0 255 0 255 0 255 pass
+WARP one-thread: 24 passed, 0 failed

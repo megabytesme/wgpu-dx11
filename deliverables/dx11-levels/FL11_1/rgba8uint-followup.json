@@ -1,0 +1,490 @@
+{
+  "source": "1a7ace2706f36e9f12dacda0856ca4261617e176",
+  "native_test_source": "a0cc1c90a1cbd40d511d4384fa4b31271bca4822",
+  "baseline_evidence": "7e13fd31caa9bc7271716e84eb19b6e7bcdb74f0",
+  "utc": "2026-11-21T22:19:19.302936+00:00",
+  "host": "BEN-DESKTOP",
+  "physical_adapter": {
+    "name": "NVIDIA GeForce RTX 3090 Ti",
+    "driver": "32.0.16.2101",
+    "vendor": "0x10de",
+    "device": "0x2203"
+  },
+  "software_control": "D3D_DRIVER_TYPE_WARP, requested and returned FL11_1",
+  "scope": {
+    "physical": "Exact FL11_1 desktop RTX 3090 Ti, x64 and x86.",
+    "cts": "Two x64 selectors at exact FL11_1, FL11_0, and FL9_1.",
+    "forced_fl9_1_public_regression": "x64 only."
+  },
+  "builds": [
+    {
+      "architecture": "x64",
+      "source": "1a7ace2706f36e9f12dacda0856ca4261617e176",
+      "worktree": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "target_directory": "C:\\Users\\ben\\AppData\\Local\\Temp\\codex-fl11_1-copy\\target",
+      "command": "cargo +1.93.1 build -p cts_runner --bin cts_runner --features deno_webgpu/dx11 --offline",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/rgba8uint-followup/final-x64-0.txt",
+        "sha256": "c101bf107db070d4f11d9487904a99e6020ba28f52e7c96993159f19c0e76a81",
+        "raw_sha256": "0e5796b90b8ccad766fc078882d2e65f7584904c4222b17a2f982c20b6c14e60"
+      }
+    },
+    {
+      "architecture": "x64",
+      "source": "a0cc1c90a1cbd40d511d4384fa4b31271bca4822",
+      "worktree": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "target_directory": "C:\\Users\\ben\\AppData\\Local\\Temp\\codex-fl11_1-copy\\target",
+      "command": "cargo +1.93.1 test -p wgpu-hal --no-default-features --features dx11 --lib --no-run --offline",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/rgba8uint-followup/fixed-hal-x64.txt",
+        "sha256": "036bc3f3dcd39c9f67a4264298ec0748972e12f59a8393f09d59dd9d412bed7b",
+        "raw_sha256": "12232e725c43402e02151136ac3f135bf2cdda1efccc07109aafed93f381a261"
+      }
+    },
+    {
+      "architecture": "x64",
+      "source": "1a7ace2706f36e9f12dacda0856ca4261617e176",
+      "worktree": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "target_directory": "C:\\Users\\ben\\AppData\\Local\\Temp\\codex-fl11_1-copy\\target",
+      "command": "cargo +1.93.1 test -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public --no-run --offline",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/rgba8uint-followup/final-x64-2.txt",
+        "sha256": "2e686698bec5e21deeb141a2f41f6be0e215b0500c34c2227f5ded2f3cc84550",
+        "raw_sha256": "70fe17477c8f876f11333bce1e6129199e26318f0fbc57df4d6069a578ac8891"
+      }
+    },
+    {
+      "architecture": "x86",
+      "source": "a0cc1c90a1cbd40d511d4384fa4b31271bca4822",
+      "worktree": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "target_directory": "C:\\Users\\ben\\AppData\\Local\\Temp\\codex-fl11_1-copy\\target-x86",
+      "command": "cargo +1.93.1 test -p wgpu-hal --no-default-features --features dx11 --lib --no-run --target i686-pc-windows-msvc --offline",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/rgba8uint-followup/fixed-hal-x86.txt",
+        "sha256": "73aa1485b4a47996712af6229461ba0589de63e596f5d2d904cb75a5b5bb1439",
+        "raw_sha256": "8d7290d99234b6ed1f83c1f25908ac22a673068ad4a38f3b2ab6da1904ebd1d0"
+      }
+    },
+    {
+      "architecture": "x86",
+      "source": "1a7ace2706f36e9f12dacda0856ca4261617e176",
+      "worktree": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "target_directory": "C:\\Users\\ben\\AppData\\Local\\Temp\\codex-fl11_1-copy\\target-x86",
+      "command": "cargo +1.93.1 test -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_public --no-run --target i686-pc-windows-msvc --offline",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/rgba8uint-followup/final-x86-1.txt",
+        "sha256": "f5f733a6a7b2f0bf17d1469aeab815f4d7b12f34e708132e4ee35c386b07fb27",
+        "raw_sha256": "b6027c0f36e6013a0ca42a688b56512782168bee0e87384dd6958ad31990b34c"
+      }
+    },
+    {
+      "architecture": "x64",
+      "worktree": "C:\\dev\\personal\\wgpu-dx11-FL11_1-Nov21",
+      "target_directory": "C:\\Users\\ben\\AppData\\Local\\Temp\\codex-fl11_1-copy\\target",
+      "command": "cargo +1.93.1 clippy --offline -p wgpu-hal --no-default-features --features dx11 --tests",
+      "result": "pass",
+      "artifact": {
+        "path": "evidence/rgba8uint-followup/fixed-clippy.txt",
+        "sha256": "d678d222e5d7bf5c68f65d33f38e6226fd50e31772b09844d655cdc681e7c171",
+        "raw_sha256": "ff2c71cc9206b0973755c9950b7fc1f3746bd3062480153cf0d6a663e34152ca"
+      }
+    }
+  ],
+  "binaries": [
+    {
+      "architecture": "x64",
+      "step": "cts_runner",
+      "path": "C:\\Users\\ben\\AppData\\Local\\Temp\\codex-fl11_1-copy\\artifacts\\cts_runner-x64.exe",
+      "sha256": "1359c142eb74a511f47d0246d59f4d6889d0c472e39a391fa4e3c21191169847"
+    },
+    {
+      "architecture": "x64",
+      "step": "wgpu-hal",
+      "path": "C:\\Users\\ben\\AppData\\Local\\Temp\\codex-fl11_1-copy\\artifacts\\wgpu-hal-x64.exe",
+      "sha256": "d23cf77f8eb5ae1f3693fd7d528054149712847b124af3bb163d10d4503d570c"
+    },
+    {
+      "architecture": "x64",
+      "step": "dx11_public",
+      "path": "C:\\Users\\ben\\AppData\\Local\\Temp\\codex-fl11_1-copy\\artifacts\\dx11_public-x64.exe",
+      "sha256": "6a6a0794a5386fcaed516ee2d07a2930118101c89999cab13b4b437feea4d9ca"
+    },
+    {
+      "architecture": "x86",
+      "step": "wgpu-hal",
+      "path": "C:\\Users\\ben\\AppData\\Local\\Temp\\codex-fl11_1-copy\\artifacts\\wgpu-hal-x86.exe",
+      "sha256": "e185808d518b385cb8994c57329028a52a07d3af48add4cc161f2b0224d8ebe3"
+    },
+    {
+      "architecture": "x86",
+      "step": "dx11_public",
+      "path": "C:\\Users\\ben\\AppData\\Local\\Temp\\codex-fl11_1-copy\\artifacts\\dx11_public-x86.exe",
+      "sha256": "daf12318ed18fa17dd397dec37d004634bbd44113d3b9133aa02037f73514fe1"
+    }
+  ],
+  "runs": [
+    {
+      "kind": "native",
+      "architecture": "x64",
+      "requested": "11_1",
+      "command": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "summary": "ok. 8 passed; 0 failed; 0 ignored; 0 measured; 560 filtered out; finished in 2.46s",
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/native-x64.txt",
+        "sha256": "88939959d4376fe000b8a70cbdee24c3ed6b789c379c49feef74274a7da9e841",
+        "raw_sha256": "b792b453b7dbbe8cedaa323a0a004fd0486dceb48204360718dc7109b3691aa3"
+      },
+      "stderr": {
+        "path": "evidence/rgba8uint-followup/native-x64.stderr.txt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "kind": "public",
+      "architecture": "x64",
+      "requested": "11_1",
+      "command": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "summary": "ok. 2 passed; 0 failed; 0 ignored; 0 measured; 177 filtered out; finished in 1.44s",
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/public-x64.txt",
+        "sha256": "f3453e14373b34994a71c7ab3351f2ea8ae6e0583de980c7b67c5033c4ce38f4",
+        "raw_sha256": "3dd5bae399f814e9f0b4281121249b05890a39393a3ce42ce7e53bfbe5c04772"
+      },
+      "stderr": {
+        "path": "evidence/rgba8uint-followup/public-x64.stderr.txt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "kind": "public-fl9_1",
+      "architecture": "x64",
+      "requested": "9_1",
+      "command": "--test-threads=1 --nocapture",
+      "summary": "FAILED. 176 passed; 1 failed; 2 ignored; 0 measured; 0 filtered out; finished in 88.95s",
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/public-fl9_1-x64.txt",
+        "sha256": "c0b610fcaa13fd2ab51c6826fdf218faaa5ab5463cbe245c036c57f56949ed3e",
+        "raw_sha256": "68154c78eb9a3c126e4f11738fd244e5a9ae2261b1fb5b8fd6c88fd305834687"
+      },
+      "stderr": {
+        "path": "evidence/rgba8uint-followup/public-fl9_1-x64.stderr.txt",
+        "sha256": "6f30fca152e0eb0652be72545712a7d50f448594a861f4f3aa9588a72c38c508",
+        "raw_sha256": "6f30fca152e0eb0652be72545712a7d50f448594a861f4f3aa9588a72c38c508"
+      }
+    },
+    {
+      "kind": "warp",
+      "architecture": "x64",
+      "command": "--ignored --nocapture packed_sample_level_warp_control",
+      "summary": "ok. 1 passed; 0 failed; 0 ignored; 0 measured; 567 filtered out; finished in 0.32s",
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/final-warp-x64.txt",
+        "sha256": "1430e9db34f9a47ba7ea94d6b3f0b74c134e442ea5d607013eecea895ebbf5c1",
+        "raw_sha256": "dfcebf1642db7170aa240db77221df7467cee3685007f618a5fbbc608977e06c"
+      }
+    },
+    {
+      "kind": "shader",
+      "architecture": "x64",
+      "command": "--nocapture tier_fl11_1_six_shader_profiles",
+      "summary": "ok. 1 passed; 0 failed; 0 ignored; 0 measured; 567 filtered out; finished in 0.44s",
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/final-shader-x64.txt",
+        "sha256": "ef1b1a76bfff7c5058221a5822349a185c588a9ac9f82ba40d219a2efec92dc8",
+        "raw_sha256": "29e2954075ca23f4ea30d091ce8b45c4c411858370725c60c37d92b280b6c4c8"
+      }
+    },
+    {
+      "kind": "native",
+      "architecture": "x86",
+      "requested": "11_1",
+      "command": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "summary": "ok. 8 passed; 0 failed; 0 ignored; 0 measured; 560 filtered out; finished in 2.76s",
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/native-x86.txt",
+        "sha256": "379a0c0f4a49fd70901c535da1abf31f2dc63deda177379c53a4dc3bf37e9a0e",
+        "raw_sha256": "5054d057548bc1a5c0feea1f6fe0a7a24031b428883840ade1273299ca996548"
+      },
+      "stderr": {
+        "path": "evidence/rgba8uint-followup/native-x86.stderr.txt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "kind": "public",
+      "architecture": "x86",
+      "requested": "11_1",
+      "command": "tier_fl11_1 --ignored --test-threads=1 --nocapture",
+      "summary": "ok. 2 passed; 0 failed; 0 ignored; 0 measured; 177 filtered out; finished in 0.56s",
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/public-x86.txt",
+        "sha256": "636fa9c6b1e7855846b27910b3aaf7e40471752d6fc403de4b4b1da41af466c3",
+        "raw_sha256": "3150ca0b85c206bd3b1004355b85cddba05ec4f448a24baf9ee39dd3134d1b2b"
+      },
+      "stderr": {
+        "path": "evidence/rgba8uint-followup/public-x86.stderr.txt",
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "raw_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    {
+      "kind": "warp",
+      "architecture": "x86",
+      "command": "--ignored --nocapture packed_sample_level_warp_control",
+      "summary": "ok. 1 passed; 0 failed; 0 ignored; 0 measured; 567 filtered out; finished in 0.32s",
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/final-warp-x86.txt",
+        "sha256": "1430e9db34f9a47ba7ea94d6b3f0b74c134e442ea5d607013eecea895ebbf5c1",
+        "raw_sha256": "dfcebf1642db7170aa240db77221df7467cee3685007f618a5fbbc608977e06c"
+      }
+    },
+    {
+      "kind": "shader",
+      "architecture": "x86",
+      "command": "--nocapture tier_fl11_1_six_shader_profiles",
+      "summary": "ok. 1 passed; 0 failed; 0 ignored; 0 measured; 567 filtered out; finished in 0.47s",
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/final-shader-x86.txt",
+        "sha256": "1bd5989b2b35545cb7faa78d588d119a31f6f3928147a6a493bbc4d795f3e898",
+        "raw_sha256": "27b7734c945fd142331639ef0cdda55bda6e29065a7f51bed69a9ed128994fee"
+      }
+    },
+    {
+      "kind": "CTS",
+      "architecture": "x64",
+      "requested": "11_1",
+      "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "command": "cts_runner.exe ./tools/run_deno --verbose webgpu:api,operation,command_buffer,basic:*",
+      "case_counts": {
+        "passed": 3,
+        "failed": 0,
+        "skipped": 0
+      },
+      "verified_exact_hardware": true,
+      "exit_code": 0,
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/cts-11_1-command-buffer-basic-x64.txt",
+        "sha256": "c8eb36995f4abe2d50e9ed1c4e6084cec9a29bdefb4acb163de59c93b16564ca",
+        "raw_sha256": "c8eb36995f4abe2d50e9ed1c4e6084cec9a29bdefb4acb163de59c93b16564ca"
+      },
+      "stderr": {
+        "path": "evidence/rgba8uint-followup/cts-11_1-command-buffer-basic-x64.stderr.txt",
+        "sha256": "84378b22691532ffd665e9774dd3a73a6a3f111412d67049fb0d83dcc8868d9d",
+        "raw_sha256": "84378b22691532ffd665e9774dd3a73a6a3f111412d67049fb0d83dcc8868d9d"
+      }
+    },
+    {
+      "kind": "CTS",
+      "architecture": "x64",
+      "requested": "11_1",
+      "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "command": "cts_runner.exe ./tools/run_deno --verbose webgpu:api,validation,capability_checks,limits,maxStorageBufferBindingSize:validate,*",
+      "case_counts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "verified_exact_hardware": true,
+      "exit_code": 0,
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/cts-11_1-storage-buffer-limit-x64.txt",
+        "sha256": "503d978de8cfb382b0b0d170caf8b3178a63f843645bedead575110d6f3cd979",
+        "raw_sha256": "503d978de8cfb382b0b0d170caf8b3178a63f843645bedead575110d6f3cd979"
+      },
+      "stderr": {
+        "path": "evidence/rgba8uint-followup/cts-11_1-storage-buffer-limit-x64.stderr.txt",
+        "sha256": "44b4a52d20a809c5e77779d79e9b9b6d3665d5cba0f05975e3c4b93fe8ce8a10",
+        "raw_sha256": "44b4a52d20a809c5e77779d79e9b9b6d3665d5cba0f05975e3c4b93fe8ce8a10"
+      }
+    },
+    {
+      "kind": "CTS",
+      "architecture": "x64",
+      "requested": "11_0",
+      "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "command": "cts_runner.exe ./tools/run_deno --verbose webgpu:api,operation,command_buffer,basic:*",
+      "case_counts": {
+        "passed": 1,
+        "failed": 2,
+        "skipped": 0
+      },
+      "verified_exact_hardware": true,
+      "exit_code": 1,
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/cts-11_0-command-buffer-basic-x64.txt",
+        "sha256": "801c41ab56e539bbafbeb8826d4522e6e006f55a7e8b1aa28f79842d936df6c5",
+        "raw_sha256": "801c41ab56e539bbafbeb8826d4522e6e006f55a7e8b1aa28f79842d936df6c5"
+      },
+      "stderr": {
+        "path": "evidence/rgba8uint-followup/cts-11_0-command-buffer-basic-x64.stderr.txt",
+        "sha256": "e8bc77293e7ea0e9f23f13f0cebc8efc63c67da67a3e7be0fac68bf37960a77c",
+        "raw_sha256": "e8bc77293e7ea0e9f23f13f0cebc8efc63c67da67a3e7be0fac68bf37960a77c"
+      }
+    },
+    {
+      "kind": "CTS",
+      "architecture": "x64",
+      "requested": "11_0",
+      "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "command": "cts_runner.exe ./tools/run_deno --verbose webgpu:api,validation,capability_checks,limits,maxStorageBufferBindingSize:validate,*",
+      "case_counts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "verified_exact_hardware": true,
+      "exit_code": 0,
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/cts-11_0-storage-buffer-limit-x64.txt",
+        "sha256": "35f20237d6e487b3da9fca3b8fdb2bea074032a4f71e609ed71a57c6bb02d3a6",
+        "raw_sha256": "35f20237d6e487b3da9fca3b8fdb2bea074032a4f71e609ed71a57c6bb02d3a6"
+      },
+      "stderr": {
+        "path": "evidence/rgba8uint-followup/cts-11_0-storage-buffer-limit-x64.stderr.txt",
+        "sha256": "aa38f8e3cae35a57f374bf5742cd68c49c9899391ba3f130a5c5f4a79a1146fe",
+        "raw_sha256": "aa38f8e3cae35a57f374bf5742cd68c49c9899391ba3f130a5c5f4a79a1146fe"
+      }
+    },
+    {
+      "kind": "CTS",
+      "architecture": "x64",
+      "requested": "9_1",
+      "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "command": "cts_runner.exe ./tools/run_deno --verbose webgpu:api,operation,command_buffer,basic:*",
+      "case_counts": {
+        "passed": 1,
+        "failed": 2,
+        "skipped": 0
+      },
+      "verified_exact_hardware": true,
+      "exit_code": 1,
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/cts-9_1-command-buffer-basic-x64.txt",
+        "sha256": "40b54f2414d19439418b9359863c90b7d1642f37c535faf2efa199edfb45f2e2",
+        "raw_sha256": "40b54f2414d19439418b9359863c90b7d1642f37c535faf2efa199edfb45f2e2"
+      },
+      "stderr": {
+        "path": "evidence/rgba8uint-followup/cts-9_1-command-buffer-basic-x64.stderr.txt",
+        "sha256": "1800b8cfa84cef58a4a914954fc53c3c0ccb6f9c770a22b71e2d0c1d931b46f1",
+        "raw_sha256": "1800b8cfa84cef58a4a914954fc53c3c0ccb6f9c770a22b71e2d0c1d931b46f1"
+      }
+    },
+    {
+      "kind": "CTS",
+      "architecture": "x64",
+      "requested": "9_1",
+      "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "command": "cts_runner.exe ./tools/run_deno --verbose webgpu:api,validation,capability_checks,limits,maxStorageBufferBindingSize:validate,*",
+      "case_counts": {
+        "passed": 2,
+        "failed": 0,
+        "skipped": 0
+      },
+      "verified_exact_hardware": true,
+      "exit_code": 0,
+      "stdout": {
+        "path": "evidence/rgba8uint-followup/cts-9_1-storage-buffer-limit-x64.txt",
+        "sha256": "a4f983100dc9cc2eefeaa0933c9d5e47a7ceba860ee7acb264c2d041b237a2f2",
+        "raw_sha256": "a4f983100dc9cc2eefeaa0933c9d5e47a7ceba860ee7acb264c2d041b237a2f2"
+      },
+      "stderr": {
+        "path": "evidence/rgba8uint-followup/cts-9_1-storage-buffer-limit-x64.stderr.txt",
+        "sha256": "d0676835b9cff5a3d5a3ce0f7aac5799000bcb3b29f33506e5cfed48d6821302",
+        "raw_sha256": "d0676835b9cff5a3d5a3ce0f7aac5799000bcb3b29f33506e5cfed48d6821302"
+      }
+    }
+  ],
+  "one_thread_warp_x64": {
+    "source": {
+      "path": "evidence/rgba8uint-followup/warp-one-thread.cpp",
+      "sha256": "281c061688108b39b596c3893b2e8a0f30a1adf50e70f6dd4c65a6aaf24f9ad3",
+      "raw_sha256": "bac0a63191389d1c804a44d05da2fdda44eb8faa1ebdd4523963b1c7bb2ec29a"
+    },
+    "unrolled_shader": {
+      "path": "evidence/rgba8uint-followup/sample-level.hlsl",
+      "sha256": "b8e710ac04ee5d02901182bae67c2d98967641d7e4c162ccb5a28cf1cba488a9",
+      "raw_sha256": "9e0f769dde7a2f5f4951244dd3a3fe9ca1e2bd25d208ab3c0095769b5dc1ed42"
+    },
+    "explicit_shader": {
+      "path": "evidence/rgba8uint-followup/explicit-stores.hlsl",
+      "sha256": "4f6faeacd6819daae64764ad5c3c99d0f4f3f53f5eee2fea96ac6a7f5816d183",
+      "raw_sha256": "993a8d07d3a91b48c10ab0294bf24e8074abb01710ac439b1570bdb0b341b49d"
+    },
+    "commands": [
+      "cl /nologo /EHsc /MP warp-one-thread.cpp /link d3d11.lib",
+      "fxc /nologo /Ges /E main /T cs_5_0 /Fo <literal-or-dynamic>.cso /Fc <assembly> <shader>",
+      "Add /D DYNAMIC_LOD=1 for the dynamic shader and /Od for the optimization control.",
+      "warp-one-thread.exe (reads literal.cso and dynamic.cso)"
+    ],
+    "comparisons": [
+      {
+        "variant": "unrolled",
+        "passed": 8,
+        "failed": 16,
+        "runtime": {
+          "path": "evidence/rgba8uint-followup/warp-one-thread.txt",
+          "sha256": "e6f8e20f773c20d4502dc2876fea66e214d32e8e72a2095cff867f797fd438da",
+          "raw_sha256": "397dc0e9c291256b3d7893c02fb0eaf37d53b4bac5b36d45e38ce6b80af9ef51"
+        },
+        "literal_dxbc": {
+          "path": "evidence/rgba8uint-followup/literal.asm",
+          "sha256": "62167faf9d2252e5ca59204e5be5425b2657ac0498dec7a71f7fb509ff0f871c",
+          "raw_sha256": "577721c09ffd230ecbe9ca15fc514983da1cabf7f095320ff81b83b8093c2335"
+        },
+        "dynamic_dxbc": {
+          "path": "evidence/rgba8uint-followup/dynamic.asm",
+          "sha256": "98acdd874bc6f2bd84ded842a47f5b4805eff795752260d43664abd8796fd694",
+          "raw_sha256": "0fbd0ba1fa40dcc02ebc5ecffe4f93dafa2ab033be7487db7c27db57dcd49ae2"
+        }
+      },
+      {
+        "variant": "explicit-stores",
+        "passed": 24,
+        "failed": 0,
+        "runtime": {
+          "path": "evidence/rgba8uint-followup/warp-one-thread-explicit.txt",
+          "sha256": "5dab8b5ef6312fd1e76aa93cb3ff38e2852851b017f5ca6b9105a75152a8b112",
+          "raw_sha256": "82e94ad66d2fe83e6930e4fcbc476e4ed1397415e14c56605be7024278c1aaf1"
+        },
+        "literal_dxbc": {
+          "path": "evidence/rgba8uint-followup/explicit-literal.asm",
+          "sha256": "4e7353be382ea949debaa67690769f12d1b1d836abb27e84d7c0b2fd1369c2f5",
+          "raw_sha256": "d710552569ee64a45a12e54a21c0cfb87bb4fcc322350cde587d76214ca9a9f5"
+        },
+        "dynamic_dxbc": {
+          "path": "evidence/rgba8uint-followup/explicit-dynamic.asm",
+          "sha256": "2a854c737a041f5c39b0b591415ce4bf8be8ccbf0b5781020c1b95ff17746c6e",
+          "raw_sha256": "f9082290c78b34b90aedac41fd8f161793ca05e2e39365caf2fddae623c39a9e"
+        }
+      },
+      {
+        "variant": "optimizations-disabled",
+        "passed": 24,
+        "failed": 0,
+        "runtime": {
+          "path": "evidence/rgba8uint-followup/warp-one-thread-skip-optimization.txt",
+          "sha256": "5dab8b5ef6312fd1e76aa93cb3ff38e2852851b017f5ca6b9105a75152a8b112",
+          "raw_sha256": "82e94ad66d2fe83e6930e4fcbc476e4ed1397415e14c56605be7024278c1aaf1"
+        },
+        "literal_dxbc": {
+          "path": "evidence/rgba8uint-followup/skip-optimization-literal.asm",
+          "sha256": "55d1ba71417c8d2cbfba17888c50e409c407be719848c5b8a2ff18a20da915ac",
+          "raw_sha256": "75a49347cdf4b3d148e2668b5b92b136f68bdd88326a1bb8594e44a690f78fb2"
+        },
+        "dynamic_dxbc": {
+          "path": "evidence/rgba8uint-followup/skip-optimization-dynamic.asm",
+          "sha256": "b0ba381d6e2e5d3ed1355fbf46ee2a021aad5314c18a055c005e9634f06569c1",
+          "raw_sha256": "2b31fd03883f0ca261afc2204b448607561bb2b02385540f03794845b2a589bd"
+        }
+      }
+    ]
+  }
+}

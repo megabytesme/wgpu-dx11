@@ -1,0 +1,36 @@
+**********************************************************************
+** Visual Studio 2026 Developer Command Prompt vError: Unknown error
+** Copyright (c) 2026 Microsoft Corporation
+**********************************************************************
+[vcvarsall.bat] Environment initialized for: 'x64'
+compilation code save succeeded; see C:\Users\ben\AppData\Local\Temp\codex-fl11_1-copy\literal.asm
+compilation object save succeeded; see C:\Users\ben\AppData\Local\Temp\codex-fl11_1-copy\literal.cso
+compilation code save succeeded; see C:\Users\ben\AppData\Local\Temp\codex-fl11_1-copy\dynamic.asm
+compilation object save succeeded; see C:\Users\ben\AppData\Local\Temp\codex-fl11_1-copy\dynamic.cso
+warp-one-thread.cpp
+WARP requested=b100 actual=b100
+DXGI_FORMAT(85) lod=literal srv=default generated=0 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=literal srv=explicit generated=0 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=dynamic srv=default generated=0 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=dynamic srv=explicit generated=0 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=literal srv=default generated=1 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=literal srv=explicit generated=1 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=dynamic srv=default generated=1 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(85) lod=dynamic srv=explicit generated=1 sampled/loaded= 255 0 0 255 255 0 0 255 pass
+DXGI_FORMAT(86) lod=literal srv=default generated=0 sampled/loaded= 0 0 0 255 0 0 255 255 fail
+DXGI_FORMAT(86) lod=literal srv=explicit generated=0 sampled/loaded= 0 0 0 255 0 0 255 255 fail
+DXGI_FORMAT(86) lod=dynamic srv=default generated=0 sampled/loaded= 0 0 0 255 0 0 255 255 fail
+DXGI_FORMAT(86) lod=dynamic srv=explicit generated=0 sampled/loaded= 0 0 0 255 0 0 255 255 fail
+DXGI_FORMAT(86) lod=literal srv=default generated=1 sampled/loaded= 0 0 0 255 0 0 255 255 fail
+DXGI_FORMAT(86) lod=literal srv=explicit generated=1 sampled/loaded= 0 0 0 255 0 0 255 255 fail
+DXGI_FORMAT(86) lod=dynamic srv=default generated=1 sampled/loaded= 0 0 0 255 0 0 255 255 fail
+DXGI_FORMAT(86) lod=dynamic srv=explicit generated=1 sampled/loaded= 0 0 0 255 0 0 255 255 fail
+DXGI_FORMAT(115) lod=literal srv=default generated=0 sampled/loaded= 0 0 0 255 0 255 0 255 fail
+DXGI_FORMAT(115) lod=literal srv=explicit generated=0 sampled/loaded= 0 0 0 255 0 255 0 255 fail
+DXGI_FORMAT(115) lod=dynamic srv=default generated=0 sampled/loaded= 0 0 0 255 0 255 0 255 fail
+DXGI_FORMAT(115) lod=dynamic srv=explicit generated=0 sampled/loaded= 0 0 0 255 0 255 0 255 fail
+DXGI_FORMAT(115) lod=literal srv=default generated=1 sampled/loaded= 0 0 0 255 0 255 0 255 fail
+DXGI_FORMAT(115) lod=literal srv=explicit generated=1 sampled/loaded= 0 0 0 255 0 255 0 255 fail
+DXGI_FORMAT(115) lod=dynamic srv=default generated=1 sampled/loaded= 0 0 0 255 0 255 0 255 fail
+DXGI_FORMAT(115) lod=dynamic srv=explicit generated=1 sampled/loaded= 0 0 0 255 0 255 0 255 fail
+WARP one-thread: 8 passed, 16 failed
