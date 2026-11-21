@@ -46,6 +46,11 @@ RWStructuredBuffer<uint> result : register(u0);
 [numthreads(1, 1, 1)]
 void main(uint3 id : SV_DispatchThreadID) { result[id.x] = id.x; }
 '@
+$raw = @'
+RWByteAddressBuffer result : register(u0);
+[numthreads(1, 1, 1)]
+void main(uint3 id : SV_DispatchThreadID) { result.Store(id.x * 4, id.x); }
+'@
 $typed = @'
 RWTexture2D<float4> result : register(u0);
 [numthreads(1, 1, 1)]
@@ -53,6 +58,7 @@ void main(uint3 id : SV_DispatchThreadID) { result[id.xy] = float4(1, 2, 3, 4); 
 '@
 $cases = @(
     @{ Name = 'structured-uav-cs4'; Source = $structured; Target = 'cs_4_0'; Success = $true },
+    @{ Name = 'raw-uav-cs4'; Source = $raw; Target = 'cs_4_0'; Success = $true },
     @{ Name = 'typed-uav-cs4'; Source = $typed; Target = 'cs_4_0'; Success = $false; Error = 'X3666' },
     @{ Name = 'typed-uav-cs5'; Source = $typed; Target = 'cs_5_0'; Success = $true }
 )
