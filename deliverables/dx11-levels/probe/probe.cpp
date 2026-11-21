@@ -2,6 +2,7 @@
 #include <d3d11_1.h>
 #include <dxgi1_2.h>
 #include <wrl/client.h>
+#include <array>
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -34,93 +35,36 @@ struct Tier {
     const char* label;
     Bytecode vertex;
     Bytecode pixel;
+    Bytecode mirror;
+    Bytecode sample;
 };
 
 const Tier tiers[] = {
-    {D3D_FEATURE_LEVEL_9_1, "9_1", vs91, ps91},
-    {D3D_FEATURE_LEVEL_9_2, "9_2", vs91, ps91},
-    {D3D_FEATURE_LEVEL_9_3, "9_3", vs93, ps93},
-    {D3D_FEATURE_LEVEL_10_0, "10_0", vs40, ps40},
-    {D3D_FEATURE_LEVEL_10_1, "10_1", vs41, ps41},
-    {D3D_FEATURE_LEVEL_11_0, "11_0", vs50, ps50},
-    {D3D_FEATURE_LEVEL_11_1, "11_1", vs50, ps50},
+    {D3D_FEATURE_LEVEL_9_1, "9_1", vs91, ps91, mirror_ps91, format_ps91},
+    {D3D_FEATURE_LEVEL_9_2, "9_2", vs91, ps91, mirror_ps91, format_ps91},
+    {D3D_FEATURE_LEVEL_9_3, "9_3", vs93, ps93, mirror_ps93, format_ps93},
+    {D3D_FEATURE_LEVEL_10_0, "10_0", vs40, ps40, mirror_ps40, format_ps40},
+    {D3D_FEATURE_LEVEL_10_1, "10_1", vs41, ps41, mirror_ps41, format_ps41},
+    {D3D_FEATURE_LEVEL_11_0, "11_0", vs50, ps50, mirror_ps50, format_ps50},
+    {D3D_FEATURE_LEVEL_11_1, "11_1", vs50, ps50, mirror_ps50, format_ps50},
 };
+
+#include "reference-controls.h"
+#include "stage-controls.h"
 
 HRESULT render(ID3D11Device* device, ID3D11DeviceContext* context, const Tier& tier)
 {
-    ComPtr<ID3D11VertexShader> vertex;
-    ComPtr<ID3D11PixelShader> pixel;
-    HRESULT hr = device->CreateVertexShader(tier.vertex.data, tier.vertex.length, nullptr, &vertex);
+    RefTarget target;
+    HRESULT hr = ref_target(device, DXGI_FORMAT_R8G8B8A8_UNORM, 1, target);
     if (FAILED(hr)) return hr;
-    hr = device->CreatePixelShader(tier.pixel.data, tier.pixel.length, nullptr, &pixel);
+    hr = prepare_reference_draw(device, context, tier, tier.pixel);
     if (FAILED(hr)) return hr;
-
-    const D3D11_INPUT_ELEMENT_DESC element = {
-        "POSITION", 0, DXGI_FORMAT_R32G32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0};
-    ComPtr<ID3D11InputLayout> layout;
-    hr = device->CreateInputLayout(&element, 1, tier.vertex.data, tier.vertex.length, &layout);
-    if (FAILED(hr)) return hr;
-
-    const float vertices[] = {-1, -1, -1, 3, 3, -1};
-    const D3D11_BUFFER_DESC buffer = {sizeof(vertices), D3D11_USAGE_IMMUTABLE, D3D11_BIND_VERTEX_BUFFER};
-    const D3D11_SUBRESOURCE_DATA data = {vertices};
-    ComPtr<ID3D11Buffer> vertex_buffer;
-    hr = device->CreateBuffer(&buffer, &data, &vertex_buffer);
-    if (FAILED(hr)) return hr;
-
-    D3D11_TEXTURE2D_DESC texture = {8, 8, 1, 1, DXGI_FORMAT_R8G8B8A8_UNORM, {1, 0},
-        D3D11_USAGE_DEFAULT, D3D11_BIND_RENDER_TARGET};
-    ComPtr<ID3D11Texture2D> target;
-    hr = device->CreateTexture2D(&texture, nullptr, &target);
-    if (FAILED(hr)) return hr;
-    ComPtr<ID3D11RenderTargetView> view;
-    hr = device->CreateRenderTargetView(target.Get(), nullptr, &view);
-    if (FAILED(hr)) return hr;
-    texture.Usage = D3D11_USAGE_STAGING;
-    texture.BindFlags = 0;
-    texture.CPUAccessFlags = D3D11_CPU_ACCESS_READ;
-    ComPtr<ID3D11Texture2D> readback;
-    hr = device->CreateTexture2D(&texture, nullptr, &readback);
-    if (FAILED(hr)) return hr;
-
-    D3D11_RASTERIZER_DESC raster = {};
-    raster.FillMode = D3D11_FILL_SOLID;
-    raster.CullMode = D3D11_CULL_NONE;
-    raster.DepthClipEnable = TRUE;
-    ComPtr<ID3D11RasterizerState> raster_state;
-    hr = device->CreateRasterizerState(&raster, &raster_state);
-    if (FAILED(hr)) return hr;
-
-    const UINT stride = 2 * sizeof(float), offset = 0;
-    const D3D11_VIEWPORT viewport = {0, 0, 8, 8, 0, 1};
-    const float background[] = {0, 1, 0, 1};
-    context->IASetInputLayout(layout.Get());
-    context->IASetVertexBuffers(0, 1, vertex_buffer.GetAddressOf(), &stride, &offset);
-    context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
-    context->VSSetShader(vertex.Get(), nullptr, 0);
-    context->PSSetShader(pixel.Get(), nullptr, 0);
-    context->RSSetState(raster_state.Get());
-    context->RSSetViewports(1, &viewport);
-    context->OMSetRenderTargets(1, view.GetAddressOf(), nullptr);
-    context->ClearRenderTargetView(view.Get(), background);
+    context->OMSetRenderTargets(1, target.view.GetAddressOf(), nullptr);
+    context->ClearRenderTargetView(target.view.Get(), green_clear);
     context->Draw(3, 0);
-    context->OMSetRenderTargets(0, nullptr, nullptr);
-    context->CopyResource(readback.Get(), target.Get());
-
-    D3D11_MAPPED_SUBRESOURCE mapped = {};
-    hr = context->Map(readback.Get(), 0, D3D11_MAP_READ, 0, &mapped);
-    if (FAILED(hr)) return hr;
-    const BYTE expected[] = {255, 0, 255, 255};
-    const auto* bytes = static_cast<const BYTE*>(mapped.pData);
-    bool matches = true;
-    for (UINT y = 0; y < 8; ++y) {
-        for (UINT x = 0; x < 8; ++x) {
-            matches &= std::memcmp(bytes + y * mapped.RowPitch + x * sizeof(expected),
-                expected, sizeof(expected)) == 0;
-        }
-    }
-    context->Unmap(readback.Get(), 0);
-    return matches ? S_OK : E_FAIL;
+    context->ClearState();
+    return read_reference(device, context, target.texture.Get(), 0, 8, 8, 4,
+        [](UINT, UINT) { return PixelBytes{magenta.data(), magenta.size()}; });
 }
 
 HRESULT dispatch(ID3D11Device* device, ID3D11DeviceContext* context, Bytecode code)
@@ -154,7 +98,7 @@ HRESULT dispatch(ID3D11Device* device, ID3D11DeviceContext* context, Bytecode co
     context->CSSetUnorderedAccessViews(0, 1, &unbound, nullptr);
     context->CopyResource(readback.Get(), output.Get());
     D3D11_MAPPED_SUBRESOURCE mapped = {};
-    hr = context->Map(readback.Get(), 0, D3D11_MAP_READ, 0, &mapped);
+    hr = map_reference(context, readback.Get(), mapped);
     if (FAILED(hr)) return hr;
     const UINT expected[] = {42, 43, 44, 45};
     const bool matches = std::memcmp(mapped.pData, expected, sizeof(expected)) == 0;
@@ -199,7 +143,7 @@ void probe_format(ID3D11Device* device, UINT format, Report report)
     }
 }
 
-bool probe_adapter(IDXGIAdapter* adapter, Report report)
+bool probe_adapter(IDXGIAdapter* adapter, Report report, bool& partial)
 {
     bool saw_hardware = false;
     bool passed = true;
@@ -214,6 +158,12 @@ bool probe_adapter(IDXGIAdapter* adapter, Report report)
         emit(report, "request|%s|%04x|%08x|%04x|%04x\n", tier.label, unsigned(tier.level),
             unsigned(hr), unsigned(returned), unsigned(actual));
         if (FAILED(hr)) {
+            const bool unavailable = hr == DXGI_ERROR_UNSUPPORTED ||
+                (tier.level == D3D_FEATURE_LEVEL_11_1 && hr == E_INVALIDARG);
+            partial |= unavailable;
+            passed &= unavailable;
+            emit(report, "observation|create_failure_class|%s\n",
+                unavailable ? "unavailable_or_runtime_limited" : "unexpected_error");
             if (tier.level == D3D_FEATURE_LEVEL_11_1 && hr == E_INVALIDARG) {
                 const D3D_FEATURE_LEVEL control = D3D_FEATURE_LEVEL_11_0;
                 const auto control_hr = D3D11CreateDevice(adapter, driver, nullptr, D3D11_CREATE_DEVICE_BGRA_SUPPORT,
@@ -265,6 +215,14 @@ bool probe_adapter(IDXGIAdapter* adapter, Report report)
             emit(report, "operation|dispatch_readback_4_words|%08x\n", unsigned(dispatch_hr));
             passed &= SUCCEEDED(dispatch_hr);
         }
+        passed &= reference_controls(device.Get(), context.Get(), tier, report);
+        if (tier.level >= D3D_FEATURE_LEVEL_10_0) {
+            const HRESULT stage_hr = stage_controls(device.Get(), context.Get(), tier.level, report);
+            emit(report, "operation|shader_stage_controls|%08x\n", unsigned(stage_hr));
+            passed &= stage_hr == S_OK;
+        }
+        context->ClearState();
+        passed &= device->GetDeviceRemovedReason() == S_OK;
         emit(report, "device_status|%08x\n", unsigned(device->GetDeviceRemovedReason()));
     }
     return saw_hardware && passed;
@@ -278,11 +236,14 @@ int run_probe(Report report)
     const auto architecture = "arm64";
 #elif defined(_M_ARM)
     const auto architecture = "arm";
+#elif defined(_M_IX86)
+    const auto architecture = "x86";
 #else
     const auto architecture = "x64";
 #endif
 #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)
-    emit(report, "schema|1|desktop|%s\n", architecture);
+    emit(report, "schema|2|desktop|%s\n", architecture);
+    bool partial = false;
     ComPtr<IDXGIFactory1> factory;
     const auto factory_hr = CreateDXGIFactory1(IID_PPV_ARGS(&factory));
     emit(report, "enumeration|%08x\n", unsigned(factory_hr));
@@ -301,16 +262,17 @@ int run_probe(Report report)
             if (desc.Flags & DXGI_ADAPTER_FLAG_SOFTWARE) continue;
             emit(report, "adapter_begin|%u\n", index);
             saw_adapter = true;
-            passed &= probe_adapter(adapter.Get(), report);
+            passed &= probe_adapter(adapter.Get(), report, partial);
         }
     }
     passed &= saw_adapter;
 #else
-    emit(report, "schema|1|appcontainer|%s\n", architecture);
-    const bool passed = probe_adapter(nullptr, report);
+    emit(report, "schema|2|appcontainer|%s\n", architecture);
+    bool partial = false;
+    const bool passed = probe_adapter(nullptr, report, partial);
 #endif
-    emit(report, "overall=%s\n", passed ? "PASS" : "FAIL");
-    return passed ? 0 : 1;
+    emit(report, "overall=%s\n", !passed ? "FAIL" : partial ? "PARTIAL" : "PASS");
+    return !passed ? 1 : partial ? 2 : 0;
 }
 
 #if WINAPI_FAMILY_PARTITION(WINAPI_PARTITION_DESKTOP)

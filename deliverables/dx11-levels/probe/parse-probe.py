@@ -11,9 +11,9 @@ def read_log(path):
     data = path.read_bytes()
     rows = data.decode("utf-8-sig").splitlines()
     tag, version, runtime, arch = rows[0].split("|")
-    if tag != "schema" or version != "1":
+    if tag != "schema" or version not in ("1", "2"):
         raise ValueError(f"{path}: unsupported log format")
-    results = {"runtime": runtime, "architecture": arch, "raw_sha256": hashlib.sha256(data).hexdigest(),
+    results = {"probe_schema": int(version), "runtime": runtime, "architecture": arch, "raw_sha256": hashlib.sha256(data).hexdigest(),
                "raw_log": path.name, "adapters": [], "overall_smoke": None}
     adapter = None
     test = None
@@ -46,7 +46,15 @@ def read_log(path):
             test["msaa_query_count"] += 1
         elif tag == "operation":
             name, status = fields
+            if name in test["checks"]:
+                raise ValueError(f"{path}: repeated operation {name!r}")
             test["checks"][name] = status
+        elif tag in ("observation", "stage") and version == "2":
+            name, *observation = fields
+            group = test.setdefault("observations" if tag == "observation" else "stages", {})
+            if name in group:
+                raise ValueError(f"{path}: repeated {tag} {name!r}")
+            group[name] = observation
         elif tag == "device_status":
             test["device_removed_reason"] = fields[0]
         elif tag == "11_1_invalidarg_control":
@@ -66,7 +74,7 @@ def read_log(path):
                 test["hardware_confirmed"] = True
             else:
                 test["hardware_confirmed"] = False
-    if results["overall_smoke"] not in ("PASS", "FAIL"):
+    if results["overall_smoke"] not in ("PASS", "PARTIAL", "FAIL"):
         raise ValueError(f"{path}: missing final result")
     return results
 

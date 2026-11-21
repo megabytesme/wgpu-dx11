@@ -1,6 +1,6 @@
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory)][ValidateSet('x64','arm','arm64')][string]$Architecture,
+    [Parameter(Mandatory)][ValidateSet('x64','x86','arm','arm64')][string]$Architecture,
     [Parameter(Mandatory)][string]$OutputDirectory,
     [string]$LogoDirectory,
     [ValidatePattern('^[a-fA-F0-9]{40}$')][string]$SigningThumbprint,
@@ -9,7 +9,7 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
-$uwp = $Architecture -ne 'x64'
+$uwp = $Architecture -in 'arm','arm64'
 if ($uwp -and (-not $LogoDirectory -or -not $SigningThumbprint)) {
     throw 'Supply the verified project development signer and project logo directory for AppContainer builds.'
 }
@@ -41,11 +41,30 @@ try {
         vs41 = 'vertex vs_4_1'; ps41 = 'pixel ps_4_1'; cs41 = 'compute cs_4_1'
         vs50 = 'vertex vs_5_0'; ps50 = 'pixel ps_5_0'; cs50 = 'compute cs_5_0'
     }
+    $pixelProfiles = @{
+        '91'='ps_4_0_level_9_1'; '93'='ps_4_0_level_9_3';
+        '40'='ps_4_0'; '41'='ps_4_1'; '50'='ps_5_0'
+    }
+    foreach ($suffix in $pixelProfiles.Keys) {
+        $shaders["mirror_ps$suffix"] = "sample_mirror_once $($pixelProfiles[$suffix]) reference.hlsl"
+        $shaders["format_ps$suffix"] = "sample_format $($pixelProfiles[$suffix]) reference.hlsl"
+    }
+    $shaders['logic_ps50'] = 'logic_source ps_5_0 reference.hlsl'
+    foreach ($model in '4_0','4_1','5_0') {
+        $suffix = $model.Replace('_','')
+        foreach ($entry in 'stage_vs','stage_vs_clip','stage_ps','stage_ps_clip','stage_gs') {
+            $stage = ($entry -split '_')[1]
+            $shaders["$entry$suffix"] = "$entry $($stage)_$model stages.hlsl"
+        }
+    }
+    $shaders['stage_hs50'] = 'stage_hs hs_5_0 stages.hlsl'
+    $shaders['stage_ds50'] = 'stage_ds ds_5_0 stages.hlsl'
     $header = foreach ($name in ($shaders.Keys | Sort-Object)) {
-        $entry, $profile = $shaders[$name] -split ' '
+        $entry, $profile, $source = $shaders[$name] -split ' '
+        if (-not $source) { $source = 'shaders.hlsl' }
         $shaderHeader = Join-Path $out "$name.h"
         Invoke-Checked "$sdkBin\fxc.exe" @('/nologo','/Ges','/WX','/E',$entry,'/T',$profile,
-            '/Vn',$name,'/Fh',$shaderHeader,"$PSScriptRoot\shaders.hlsl") | Out-Host
+            '/Vn',$name,'/Fh',$shaderHeader,"$PSScriptRoot\$source") | Out-Host
         "#include `"$name.h`""
     }
     $header | Set-Content -LiteralPath dxbc.h -Encoding Ascii
@@ -82,7 +101,7 @@ try {
 <?xml version="1.0" encoding="utf-8"?>
 <Package xmlns="http://schemas.microsoft.com/appx/manifest/foundation/windows10"
          xmlns:uap="http://schemas.microsoft.com/appx/manifest/uap/windows10" IgnorableNamespaces="uap">
-  <Identity Name="MCHorizonUWP.Dx11TierProbe" Publisher="$publisher" Version="1.0.0.0" ProcessorArchitecture="$Architecture"/>
+  <Identity Name="MCHorizonUWP.Dx11TierProbe" Publisher="$publisher" Version="1.0.0.1" ProcessorArchitecture="$Architecture"/>
   <Properties>
     <DisplayName>Horizon D3D11 tier probe</DisplayName>
     <PublisherDisplayName>Horizon test build</PublisherDisplayName>
