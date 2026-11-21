@@ -21,6 +21,43 @@ fn experimental_dx11_is_not_enabled_by_default() {
 }
 
 #[test]
+#[ignore = "requires exclusive physical GPU access and WGPU_DX11_FORCE_FEATURE_LEVEL=11_1"]
+fn tier_fl11_1_public_projection_stays_within_implemented_operations() {
+    use wgpu_hal::{api::Dx11, dx11::FeatureLevel};
+
+    let mut descriptor = InstanceDescriptor::new_without_display_handle();
+    descriptor.backends = Backends::DX11;
+    let instance = Instance::new(descriptor);
+    let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+    assert!(!adapters.is_empty(), "requires a physical FL11_1 adapter");
+    for adapter in adapters {
+        let hal = unsafe { adapter.as_hal::<Dx11>() }.expect("DX11 adapter");
+        assert_eq!(hal.feature_level(), FeatureLevel::L11_1);
+        assert!(!hal.is_software());
+        drop(hal);
+        assert_eq!(adapter.get_info().backend, Backend::Dx11);
+        assert!(!adapter
+            .features()
+            .contains(Features::VERTEX_WRITABLE_STORAGE));
+        assert!(!adapter
+            .get_downlevel_capabilities()
+            .flags
+            .contains(DownlevelFlags::COMPUTE_SHADERS));
+        assert_eq!(adapter.limits().max_storage_buffers_per_shader_stage, 0);
+        assert!(poll_ready(adapter.request_device(&DeviceDescriptor {
+            required_features: Features::VERTEX_WRITABLE_STORAGE,
+            required_limits: adapter.limits(),
+            ..Default::default()
+        }))
+        .is_err());
+        println!(
+            "exact FL11_1 with restricted public capabilities {:?}",
+            adapter.get_info()
+        );
+    }
+}
+
+#[test]
 fn public_dx11_empty_immediate_write_requires_feature_at_fl91() {
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
     let mut descriptor = InstanceDescriptor::new_without_display_handle();

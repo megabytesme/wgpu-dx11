@@ -3,6 +3,8 @@
 use alloc::{string::String, sync::Arc, vec::Vec};
 use raw_window_handle::{RawDisplayHandle, RawWindowHandle};
 
+use super::FeatureLevel;
+
 #[cfg(target_vendor = "uwp")]
 unsafe extern "C" {
     fn horizon_uwp_acquire_game_swapchain_panel() -> *mut core::ffi::c_void;
@@ -14,6 +16,23 @@ unsafe extern "C" {
 pub struct Instance;
 
 crate::impl_dyn_resource!(Instance);
+
+fn exact_level(
+    requested: Option<&std::ffi::OsStr>,
+    force_fl91: bool,
+) -> Result<Option<FeatureLevel>, &'static str> {
+    let Some(requested) = requested else {
+        return Ok(force_fl91.then_some(FeatureLevel::L9_1));
+    };
+    let level = requested
+        .to_str()
+        .and_then(FeatureLevel::from_selector)
+        .ok_or("invalid WGPU_DX11_FORCE_FEATURE_LEVEL value")?;
+    if force_fl91 && level != FeatureLevel::L9_1 {
+        return Err("WGPU_DX11_FORCE_FEATURE_LEVEL conflicts with WGPU_DX11_FORCE_FL9_1");
+    }
+    Ok(Some(level))
+}
 
 impl Instance {
     #[cfg_attr(not(target_vendor = "uwp"), allow(dead_code))]
@@ -76,18 +95,21 @@ impl crate::Instance for Instance {
         &self,
         _: Option<&super::Surface>,
     ) -> Vec<crate::ExposedAdapter<Self::A>> {
+        let force_fl91 = std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1");
+        let selector = std::env::var_os("WGPU_DX11_FORCE_FEATURE_LEVEL");
+        let exact = match exact_level(selector.as_deref(), force_fl91) {
+            Ok(exact) => exact,
+            Err(error) => {
+                log::warn!("D3D11 adapter selection failed: {error}");
+                return Vec::new();
+            }
+        };
         let adapters = match super::enumerate_native_adapters() {
             Ok(adapters) => adapters,
             Err(error) => {
                 log::warn!("D3D11 adapter enumeration failed: {error}");
                 return Vec::new();
             }
-        };
-        let force_fl91 = std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1");
-        let requested: &[super::FeatureLevel] = if force_fl91 {
-            &[super::FeatureLevel::L9_1]
-        } else {
-            &super::FeatureLevel::ALL_DESCENDING
         };
         adapters
             .into_iter()
@@ -97,23 +119,31 @@ impl crate::Instance for Instance {
                 }
                 let identity = adapter.identity().clone();
                 let driver_version = adapter.driver_version();
-                let native = match adapter.open_device(requested) {
+                let result = match exact {
+                    Some(level) => adapter.open_device_exact(level),
+                    None => adapter.open_device(&FeatureLevel::ALL_DESCENDING),
+                };
+                let native = match result {
                     Ok(native) => native,
                     Err(error) => {
                         log::debug!(
-                            "D3D11 adapter {:?} cannot create a supported device: {error}",
-                            identity.name
+                            "D3D11 adapter {:?} ({:04x}:{:04x}) could not create device (exact request {exact:?}): {error}",
+                            identity.name,
+                            identity.vendor_id,
+                            identity.device_id,
                         );
                         return None;
                     }
                 };
-                if force_fl91 && native.feature_level() != super::FeatureLevel::L9_1 {
-                    log::warn!(
-                        "D3D11 adapter {:?} returned {:?} for an explicit FL9_1 request",
+                if let Some(requested) = exact {
+                    log::info!(
+                        "D3D11 adapter {:?} ({:04x}:{:04x}) LUID {:?}: requested {requested:?}, selected {:?}",
                         identity.name,
+                        identity.vendor_id,
+                        identity.device_id,
+                        adapter.luid().ok().map(|luid| (luid.HighPart, luid.LowPart)),
                         native.feature_level()
                     );
-                    return None;
                 }
                 let Some(exposed) = super::Adapter::expose_native(
                     &identity,
@@ -139,6 +169,33 @@ mod tests {
     use crate::Instance as _;
     use core::ptr::NonNull;
     use raw_window_handle::{WinRtWindowHandle, XlibDisplayHandle};
+
+    #[test]
+    fn exact_selector_rejects_invalid_and_conflicting_values() {
+        use std::ffi::OsStr;
+
+        assert_eq!(exact_level(None, false), Ok(None));
+        assert_eq!(exact_level(None, true), Ok(Some(FeatureLevel::L9_1)));
+        for (value, level) in [
+            ("9_1", FeatureLevel::L9_1),
+            ("9_2", FeatureLevel::L9_2),
+            ("9_3", FeatureLevel::L9_3),
+            ("10_0", FeatureLevel::L10_0),
+            ("10_1", FeatureLevel::L10_1),
+            ("11_0", FeatureLevel::L11_0),
+            ("11_1", FeatureLevel::L11_1),
+        ] {
+            let value = Some(OsStr::new(value));
+            assert_eq!(exact_level(value, false), Ok(Some(level)));
+            assert_eq!(
+                exact_level(value, true).ok(),
+                (level == FeatureLevel::L9_1).then_some(Some(level))
+            );
+        }
+        for invalid in ["", "11.1", "12_0", "11_1,11_0", " 11_1"] {
+            assert!(exact_level(Some(OsStr::new(invalid)), false).is_err());
+        }
+    }
 
     #[test]
     fn instance_rejects_unsupported_handles_and_projects_only_fl91_hardware() {
@@ -169,7 +226,7 @@ mod tests {
                         crate::TextureFormatCapabilities::SAMPLED
                             | crate::TextureFormatCapabilities::COPY_DST
                     ));
-                    if adapter.adapter.feature_level() == crate::dx11::FeatureLevel::L9_1 {
+                    if adapter.adapter.feature_level() == FeatureLevel::L9_1 {
                         assert!(!rg16.contains(crate::TextureFormatCapabilities::SAMPLED_LINEAR));
                     }
                 }

@@ -1,6 +1,12 @@
 #![cfg(all(windows, feature = "dx11", feature = "wgsl"))]
 
-use std::{future::Future, sync::Arc, task::Wake, thread, time::Duration};
+use std::{
+    future::Future,
+    sync::Arc,
+    task::Wake,
+    thread,
+    time::{Duration, Instant},
+};
 use wgpu::*;
 
 struct ThreadWaker(thread::Thread);
@@ -66,9 +72,25 @@ fn public_dx11_textured_depth_tested_3d_scene_at_fl91() {
     assert_eq!(info.backend, Backend::Dx11);
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
+    let requested = std::env::var("WGPU_DX11_FORCE_FEATURE_LEVEL")
+        .ok()
+        .or_else(|| {
+            std::env::var_os("WGPU_DX11_FORCE_FL9_1")
+                .is_some_and(|v| v == "1")
+                .then(|| "9_1".to_owned())
+        });
+    let actual = {
+        let hal = unsafe { adapter.as_hal::<wgpu_hal::api::Dx11>() }.expect("DX11 adapter");
+        assert!(!hal.is_software());
+        format!("{:?}", hal.feature_level())
+    };
+    let actual = actual.strip_prefix('L').unwrap();
+    if let Some(ref requested) = requested {
+        assert_eq!(actual, requested);
+    }
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=textured perspective cube with D16 depth",
-        info.name, info.vendor, info.device, info.driver_info
+        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested={:?} actual=FL{actual} software=false; workload=textured perspective cube with D16 depth",
+        info.name, info.vendor, info.device, info.driver_info, requested
     );
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public DX11 FL9_1 textured 3D scene"),
@@ -513,6 +535,7 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
             },
         );
     }
+    let started = Instant::now();
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
@@ -528,6 +551,7 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         .recv_timeout(Duration::from_secs(10))
         .expect("FL9_1 scene readback callback")
         .expect("map FL9_1 scene readback");
+    let submit_to_mapped_us = started.elapsed().as_micros();
     let data = readback
         .slice(..)
         .get_mapped_range()
@@ -579,4 +603,5 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
     println!(
         "PASS: public FL9_1 perspective cube sampled a 2x2 face texture and used D16 depth; depth-tested opposite face orders matched all 1,024 pixels, while painter-order controls differed at {painter_order_differences} pixels; clear/red/green/blue/yellow={colors:?}"
     );
+    println!("Scene submit_to_mapped_us={submit_to_mapped_us}");
 }

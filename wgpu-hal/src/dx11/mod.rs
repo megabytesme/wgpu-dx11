@@ -10,6 +10,7 @@ mod capabilities;
 mod command;
 mod device;
 mod fence;
+mod fl11_1;
 mod hal_bind_group;
 mod hal_device;
 mod hal_encoder;
@@ -38,10 +39,12 @@ pub use api::{Api, Unavailable};
 pub use device::{
     enumerate_native_adapters, AdapterIdentity, FeatureLevel, NativeAdapter, NativeDevice,
 };
+pub use fl11_1::{Fl11_1Device, ShaderModel5Stage};
 pub use hal_device::Device;
 pub use hal_encoder::CommandEncoder;
 pub use hal_queue::Queue;
 pub use instance::Instance;
+pub use shader::ShaderCompileError;
 pub use surface::Surface;
 #[doc(hidden)]
 pub use swapchain::{CoreWindowFrame, CoreWindowSwapchain};

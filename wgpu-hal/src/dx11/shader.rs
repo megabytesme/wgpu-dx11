@@ -2,6 +2,8 @@
 use alloc::{ffi::CString, format, string::String, vec::Vec};
 #[cfg(not(target_vendor = "uwp"))]
 use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
+#[cfg(not(target_vendor = "uwp"))]
+use windows::Win32::Graphics::Direct3D::ID3DInclude;
 use windows::{
     core::PCSTR,
     Win32::{
@@ -9,8 +11,6 @@ use windows::{
         Graphics::Direct3D::{Fxc::D3DCOMPILE_ENABLE_STRICTNESS, ID3DBlob},
     },
 };
-#[cfg(not(target_vendor = "uwp"))]
-use windows::Win32::Graphics::Direct3D::ID3DInclude;
 
 /// Explicit shader targets supported by this diagnostic compiler seam.
 #[allow(dead_code)]
@@ -62,9 +62,11 @@ pub(super) struct Fl9ShaderInputOptions {
 /// The compiler HRESULT and any diagnostic text returned by FXC.
 #[allow(dead_code)]
 #[derive(Debug)]
-pub(crate) struct ShaderCompileError {
-    pub(crate) code: i32,
-    pub(crate) message: String,
+pub struct ShaderCompileError {
+    /// HRESULT from the compiler or loader.
+    pub code: i32,
+    /// Diagnostic text from the compiler or loader.
+    pub message: String,
 }
 
 fn blob_bytes(blob: &ID3DBlob) -> &[u8] {
@@ -142,6 +144,14 @@ pub(crate) fn compile_hlsl(
     entry: &str,
     profile: ShaderProfile,
 ) -> Result<Vec<u8>, ShaderCompileError> {
+    compile_hlsl_target(source, entry, profile.target())
+}
+
+pub(super) fn compile_hlsl_target(
+    source: &str,
+    entry: &str,
+    target: PCSTR,
+) -> Result<Vec<u8>, ShaderCompileError> {
     let entry = CString::new(entry).map_err(|_| ShaderCompileError {
         code: E_INVALIDARG.0,
         message: String::from("shader entry point contains a NUL byte"),
@@ -157,7 +167,7 @@ pub(crate) fn compile_hlsl(
             None,
             None::<&ID3DInclude>,
             PCSTR(entry.as_ptr().cast()),
-            profile.target(),
+            target,
             D3DCOMPILE_ENABLE_STRICTNESS,
             0,
             &mut code,
@@ -180,7 +190,7 @@ pub(crate) fn compile_hlsl(
                 core::ptr::null(),
                 core::ptr::null_mut(),
                 PCSTR(entry.as_ptr().cast()),
-                profile.target(),
+                target,
                 D3DCOMPILE_ENABLE_STRICTNESS,
                 0,
                 &mut code,

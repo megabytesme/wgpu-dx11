@@ -4,7 +4,7 @@ use parking_lot::{Mutex, MutexGuard};
 use windows::{
     core::{Error, Interface, Result},
     Win32::{
-        Foundation::{E_FAIL, E_INVALIDARG, HMODULE},
+        Foundation::{E_FAIL, E_INVALIDARG, HMODULE, LUID},
         Graphics::{
             Direct3D::{D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL},
             Direct3D11::{
@@ -71,6 +71,19 @@ impl FeatureLevel {
     pub const fn as_raw(self) -> u32 {
         self as u32
     }
+
+    pub(super) fn from_selector(value: &str) -> Option<Self> {
+        match value {
+            "9_1" => Some(Self::L9_1),
+            "9_2" => Some(Self::L9_2),
+            "9_3" => Some(Self::L9_3),
+            "10_0" => Some(Self::L10_0),
+            "10_1" => Some(Self::L10_1),
+            "11_0" => Some(Self::L11_0),
+            "11_1" => Some(Self::L11_1),
+            _ => None,
+        }
+    }
 }
 
 /// Stable descriptive fields for a DXGI adapter.
@@ -99,6 +112,11 @@ impl NativeAdapter {
         &self.identity
     }
 
+    /// Adapter LUID for correlating diagnostics within the current boot.
+    pub fn luid(&self) -> Result<LUID> {
+        Ok(unsafe { self.raw.GetDesc1()? }.AdapterLuid)
+    }
+
     /// Driver-package version when DXGI exposes it for this adapter.
     pub fn driver_version(&self) -> Option<String> {
         let version = unsafe { self.raw.CheckInterfaceSupport(&IDXGIDevice::IID) }.ok()? as u64;
@@ -117,6 +135,23 @@ impl NativeAdapter {
     /// not check wgpu features, limits, shaders, or presentation capabilities.
     pub fn open_device(&self, levels: &[FeatureLevel]) -> Result<NativeDevice> {
         self.open_device_inner(levels, false)
+    }
+
+    /// Request exactly one feature level on this physical adapter.
+    ///
+    /// Software adapters are rejected. The original device-creation HRESULT is
+    /// returned on failure, without retrying with another feature level.
+    pub fn open_device_exact(&self, level: FeatureLevel) -> Result<NativeDevice> {
+        if self.identity.software {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let device = self.open_device(&[level])?;
+        if device.feature_level() != level
+            || unsafe { device.raw.GetFeatureLevel() }.0 as u32 != level.as_raw()
+        {
+            return Err(Error::from_hresult(E_FAIL));
+        }
+        Ok(device)
     }
 
     #[cfg(test)]
@@ -164,9 +199,15 @@ impl NativeAdapter {
         };
         if let Err(error) = create_result {
             if error.code() == E_INVALIDARG
-                && requested.first() == Some(&D3D_FEATURE_LEVEL(FeatureLevel::L11_1.as_raw() as i32))
+                && requested.first()
+                    == Some(&D3D_FEATURE_LEVEL(FeatureLevel::L11_1.as_raw() as i32))
                 && requested.len() > 1
             {
+                log::debug!(
+                    "D3D11 adapter {:?} rejected the leading FL11_1 request with {}; retrying automatic selection without FL11_1",
+                    self.identity.name,
+                    error.code(),
+                );
                 device = None;
                 context = None;
                 selected = D3D_FEATURE_LEVEL::default();
