@@ -1,0 +1,336 @@
+{
+  "schema_version": 1,
+  "certification_status": "INCOMPLETE",
+  "baseline": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+  "candidate": "912fc25d497f872e744185a2564555647e4e2b46",
+  "devices": [
+    {
+      "device": "Ben-Desktop",
+      "adapter": "NVIDIA GeForce RTX 3090 Ti",
+      "dxgi_vendor_id": "0x10de",
+      "dxgi_device_id": "0x2203",
+      "software": false,
+      "windows": "10.0.26300.0",
+      "driver": "32.0.16.2101",
+      "native_results": [
+        {
+          "architecture": "x64",
+          "request": "0x9100",
+          "returned": "0x9100",
+          "hresult": "0x00000000",
+          "format_support": {
+            "R16G16B16A16_FLOAT": {
+              "hresult": "0x80004005",
+              "format_support": "0x00000000"
+            },
+            "R16G16B16A16_UNORM": {
+              "hresult": "0x80004005",
+              "format_support": "0x00000000"
+            },
+            "R16G16_FLOAT": {
+              "hresult": "0x80004005",
+              "format_support": "0x00000000"
+            },
+            "R16G16_UNORM": {
+              "hresult": "0x80004005",
+              "format_support": "0x00000000"
+            },
+            "R16G16_SNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x00021122"
+            },
+            "R32_FLOAT": {
+              "hresult": "0x00000000",
+              "format_support": "0x00000002"
+            },
+            "R16_UNORM": {
+              "hresult": "0x80004005",
+              "format_support": "0x00000000"
+            },
+            "A8_UNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x0002c320"
+            },
+            "R32G32B32A32_FLOAT": {
+              "hresult": "0x00000000",
+              "format_support": "0x00000002"
+            },
+            "R32_UINT": {
+              "hresult": "0x80004005",
+              "format_support": "0x00000000"
+            },
+            "R16_UINT": {
+              "hresult": "0x00000000",
+              "format_support": "0x00000004"
+            }
+          },
+          "samplers": [
+            "sampler name=clamp_2 hr=0x00000000 reported_max=2 reported_address=3",
+            "sampler name=clamp_16 hr=0x80070057 reported_max=0 reported_address=0",
+            "sampler name=clamp_17 hr=0x80070057 reported_max=0 reported_address=0",
+            "sampler name=mirror_once_2 hr=0x80070057 reported_max=0 reported_address=0",
+            "sampler name=mirror_once_16 hr=0x80070057 reported_max=0 reported_address=0"
+          ],
+          "volumes": [
+            "volume rgba8_width=256 height=1 depth=1 hr=0x00000000",
+            "volume rgba8_width=512 height=1 depth=1 hr=0x80070057",
+            "volume rgba8_width=1024 height=1 depth=1 hr=0x80070057"
+          ],
+          "queries": [
+            "query name=occlusion hr=0x80070057"
+          ]
+        },
+        {
+          "architecture": "x64",
+          "request": "0x9200",
+          "returned": "0x9200",
+          "hresult": "0x00000000",
+          "format_support": {
+            "R16G16B16A16_FLOAT": {
+              "hresult": "0x00000000",
+              "format_support": "0x002671e0"
+            },
+            "R16G16B16A16_UNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x002673e0"
+            },
+            "R16G16_FLOAT": {
+              "hresult": "0x00000000",
+              "format_support": "0x002671e0"
+            },
+            "R16G16_UNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x002673e0"
+            },
+            "R16G16_SNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x000213e2"
+            },
+            "R32_FLOAT": {
+              "hresult": "0x00000000",
+              "format_support": "0x002671e2"
+            },
+            "R16_UNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x000213e0"
+            },
+            "A8_UNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x0002c3e0"
+            },
+            "R32G32B32A32_FLOAT": {
+              "hresult": "0x00000000",
+              "format_support": "0x00264122"
+            },
+            "R32_UINT": {
+              "hresult": "0x00000000",
+              "format_support": "0x00000004"
+            },
+            "R16_UINT": {
+              "hresult": "0x00000000",
+              "format_support": "0x00000004"
+            }
+          },
+          "samplers": [
+            "sampler name=clamp_2 hr=0x00000000 reported_max=2 reported_address=3",
+            "sampler name=clamp_16 hr=0x00000000 reported_max=16 reported_address=3",
+            "sampler name=clamp_17 hr=0x80070057 reported_max=0 reported_address=0",
+            "sampler name=mirror_once_2 hr=0x00000000 reported_max=2 reported_address=5",
+            "sampler name=mirror_once_16 hr=0x00000000 reported_max=16 reported_address=5"
+          ],
+          "volumes": [
+            "volume rgba8_width=256 height=1 depth=1 hr=0x00000000",
+            "volume rgba8_width=512 height=1 depth=1 hr=0x80070057",
+            "volume rgba8_width=1024 height=1 depth=1 hr=0x80070057"
+          ],
+          "queries": [
+            "query name=occlusion hr=0x00000000"
+          ]
+        },
+        {
+          "architecture": "x86",
+          "request": "0x9100",
+          "returned": "0x9100",
+          "hresult": "0x00000000",
+          "format_support": {
+            "R16G16B16A16_FLOAT": {
+              "hresult": "0x80004005",
+              "format_support": "0x00000000"
+            },
+            "R16G16B16A16_UNORM": {
+              "hresult": "0x80004005",
+              "format_support": "0x00000000"
+            },
+            "R16G16_FLOAT": {
+              "hresult": "0x80004005",
+              "format_support": "0x00000000"
+            },
+            "R16G16_UNORM": {
+              "hresult": "0x80004005",
+              "format_support": "0x00000000"
+            },
+            "R16G16_SNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x00021122"
+            },
+            "R32_FLOAT": {
+              "hresult": "0x00000000",
+              "format_support": "0x00000002"
+            },
+            "R16_UNORM": {
+              "hresult": "0x80004005",
+              "format_support": "0x00000000"
+            },
+            "A8_UNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x0002c320"
+            },
+            "R32G32B32A32_FLOAT": {
+              "hresult": "0x00000000",
+              "format_support": "0x00000002"
+            },
+            "R32_UINT": {
+              "hresult": "0x80004005",
+              "format_support": "0x00000000"
+            },
+            "R16_UINT": {
+              "hresult": "0x00000000",
+              "format_support": "0x00000004"
+            }
+          },
+          "samplers": [
+            "sampler name=clamp_2 hr=0x00000000 reported_max=2 reported_address=3",
+            "sampler name=clamp_16 hr=0x80070057 reported_max=0 reported_address=0",
+            "sampler name=clamp_17 hr=0x80070057 reported_max=0 reported_address=0",
+            "sampler name=mirror_once_2 hr=0x80070057 reported_max=0 reported_address=0",
+            "sampler name=mirror_once_16 hr=0x80070057 reported_max=0 reported_address=0"
+          ],
+          "volumes": [
+            "volume rgba8_width=256 height=1 depth=1 hr=0x00000000",
+            "volume rgba8_width=512 height=1 depth=1 hr=0x80070057",
+            "volume rgba8_width=1024 height=1 depth=1 hr=0x80070057"
+          ],
+          "queries": [
+            "query name=occlusion hr=0x80070057"
+          ]
+        },
+        {
+          "architecture": "x86",
+          "request": "0x9200",
+          "returned": "0x9200",
+          "hresult": "0x00000000",
+          "format_support": {
+            "R16G16B16A16_FLOAT": {
+              "hresult": "0x00000000",
+              "format_support": "0x002671e0"
+            },
+            "R16G16B16A16_UNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x002673e0"
+            },
+            "R16G16_FLOAT": {
+              "hresult": "0x00000000",
+              "format_support": "0x002671e0"
+            },
+            "R16G16_UNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x002673e0"
+            },
+            "R16G16_SNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x000213e2"
+            },
+            "R32_FLOAT": {
+              "hresult": "0x00000000",
+              "format_support": "0x002671e2"
+            },
+            "R16_UNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x000213e0"
+            },
+            "A8_UNORM": {
+              "hresult": "0x00000000",
+              "format_support": "0x0002c3e0"
+            },
+            "R32G32B32A32_FLOAT": {
+              "hresult": "0x00000000",
+              "format_support": "0x00264122"
+            },
+            "R32_UINT": {
+              "hresult": "0x00000000",
+              "format_support": "0x00000004"
+            },
+            "R16_UINT": {
+              "hresult": "0x00000000",
+              "format_support": "0x00000004"
+            }
+          },
+          "samplers": [
+            "sampler name=clamp_2 hr=0x00000000 reported_max=2 reported_address=3",
+            "sampler name=clamp_16 hr=0x00000000 reported_max=16 reported_address=3",
+            "sampler name=clamp_17 hr=0x80070057 reported_max=0 reported_address=0",
+            "sampler name=mirror_once_2 hr=0x00000000 reported_max=2 reported_address=5",
+            "sampler name=mirror_once_16 hr=0x00000000 reported_max=16 reported_address=5"
+          ],
+          "volumes": [
+            "volume rgba8_width=256 height=1 depth=1 hr=0x00000000",
+            "volume rgba8_width=512 height=1 depth=1 hr=0x80070057",
+            "volume rgba8_width=1024 height=1 depth=1 hr=0x80070057"
+          ],
+          "queries": [
+            "query name=occlusion hr=0x00000000"
+          ]
+        }
+      ],
+      "native_scope": "Exact D3D11 device creation, format masks, descriptor allocation, width by 1 by 1 textures and query creation",
+      "public_tests": "tests.json"
+    },
+    {
+      "device": "Surface Pro X (Ben-Tablet)",
+      "architecture": "ARM64",
+      "adapter": "Qualcomm Adreno 680",
+      "dxgi_vendor_id": "0x4d4f4351",
+      "dxgi_device_id": "0x41333430",
+      "software": false,
+      "windows": "10.0.26320.0",
+      "driver": "27.20.2160.0",
+      "hardware_D3D11CreateDevice": [
+        {
+          "requested": "0x9200",
+          "returned": "0x9200",
+          "hresult": "0x00000000"
+        },
+        {
+          "requested": "0x9100",
+          "returned": "0x9100",
+          "hresult": "0x00000000"
+        }
+      ],
+      "public_tests": "C:\\Users\\ben\\AppData\\Local\\Temp\\fl92-nov21-arm64-candidate.log",
+      "two_sided_stencil": {
+        "pre_workaround": "FAIL, back-face pixel (4,0) red instead of black",
+        "candidate": "PASS, feature withheld and asymmetric stencil rejected in Core",
+        "remaining": "Correct two-sided stencil rendering on this adapter"
+      }
+    },
+    {
+      "device": "Lumia 950 XL",
+      "architecture": "ARM32",
+      "status": "BLOCKED",
+      "D3D11CreateDevice_FL9_2": "UNVERIFIED",
+      "portal": [
+        "Paired Portal preflight returned HTTP 503",
+        "Signed probe attempt timed out at /api/os/devicefamily before installation"
+      ],
+      "signed_probe": {
+        "path": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-lumia-arm-20261121-071547\\Fl92NativeProbe-arm.signed.appx",
+        "package_full_name": "MCHorizonUWP.Fl92NativeProbe_1.0.0.0_arm__4pd4jeb6snrqw",
+        "aumid": "MCHorizonUWP.Fl92NativeProbe_4pd4jeb6snrqw!App",
+        "sha256": "90b8b94cb29172a3d83a89fae85982d6c598d78efca984e22298088483bdf596",
+        "report": "LocalState/fl92-native-probe.txt",
+        "script": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-lumia-arm-20261121-071547\\run-on-lumia.ps1",
+        "deployed": false
+      }
+    }
+  ]
+}

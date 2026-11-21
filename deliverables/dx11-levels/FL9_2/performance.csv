@@ -1,0 +1,21 @@
+host,architecture,adapter,driver,requested_tier,actual_tier,run,indexed_draws_per_submission,warmups,timed_samples,median_ms,p95_ms,workload,timing_scope,source
+Ben-Desktop,x64,NVIDIA GeForce RTX 3090 Ti,32.0.16.2101,FL9_1,L9_1,1,1,5,25,0.3141,0.5174,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Desktop,x64,NVIDIA GeForce RTX 3090 Ti,32.0.16.2101,FL9_1,L9_1,1,128,5,25,0.9867,1.1645,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Desktop,x64,NVIDIA GeForce RTX 3090 Ti,32.0.16.2101,FL9_2,L9_2,1,1,5,25,0.4055,0.7971,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Desktop,x64,NVIDIA GeForce RTX 3090 Ti,32.0.16.2101,FL9_2,L9_2,1,128,5,25,1.8005,2.4990,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Desktop,x64,NVIDIA GeForce RTX 3090 Ti,32.0.16.2101,FL9_1,L9_1,2,1,5,25,0.2966,0.5335,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Desktop,x64,NVIDIA GeForce RTX 3090 Ti,32.0.16.2101,FL9_1,L9_1,2,128,5,25,1.0213,1.2447,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Desktop,x64,NVIDIA GeForce RTX 3090 Ti,32.0.16.2101,FL9_2,L9_2,2,1,5,25,0.2960,0.3300,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Desktop,x64,NVIDIA GeForce RTX 3090 Ti,32.0.16.2101,FL9_2,L9_2,2,128,5,25,1.0027,1.1898,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Desktop,x64,NVIDIA GeForce RTX 3090 Ti,32.0.16.2101,FL9_1,L9_1,3,1,5,25,0.2905,0.4044,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Desktop,x64,NVIDIA GeForce RTX 3090 Ti,32.0.16.2101,FL9_1,L9_1,3,128,5,25,1.0821,1.3679,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Desktop,x64,NVIDIA GeForce RTX 3090 Ti,32.0.16.2101,FL9_2,L9_2,3,1,5,25,0.3257,1.6267,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Desktop,x64,NVIDIA GeForce RTX 3090 Ti,32.0.16.2101,FL9_2,L9_2,3,128,5,25,0.9811,2.3829,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Tablet,ARM64,Qualcomm Adreno 680,27.20.2160.0,FL9_2,L9_2,1,1,5,25,1.8917,2.5311,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Tablet,ARM64,Qualcomm Adreno 680,27.20.2160.0,FL9_2,L9_2,1,128,5,25,4.4833,6.0387,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Tablet,ARM64,Qualcomm Adreno 680,27.20.2160.0,FL9_1,L9_1,1,1,5,25,2.1837,2.5322,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Tablet,ARM64,Qualcomm Adreno 680,27.20.2160.0,FL9_1,L9_1,1,128,5,25,4.6332,5.0637,32x32 textured cube with D16 depth,"command recording, submission, completion wait",pre-commit candidate snapshot
+Ben-Tablet,ARM64,Qualcomm Adreno 680,27.20.2160.0,FL9_2,L9_2,2,1,5,25,1.8259,2.0921,32x32 textured cube with D16 depth,"command recording, submission, completion wait",912fc25d497f872e744185a2564555647e4e2b46
+Ben-Tablet,ARM64,Qualcomm Adreno 680,27.20.2160.0,FL9_2,L9_2,2,128,5,25,4.2423,4.8224,32x32 textured cube with D16 depth,"command recording, submission, completion wait",912fc25d497f872e744185a2564555647e4e2b46
+Ben-Tablet,ARM64,Qualcomm Adreno 680,27.20.2160.0,FL9_1,L9_1,2,1,5,25,1.7218,1.9905,32x32 textured cube with D16 depth,"command recording, submission, completion wait",912fc25d497f872e744185a2564555647e4e2b46
+Ben-Tablet,ARM64,Qualcomm Adreno 680,27.20.2160.0,FL9_1,L9_1,2,128,5,25,3.2396,3.8539,32x32 textured cube with D16 depth,"command recording, submission, completion wait",912fc25d497f872e744185a2564555647e4e2b46

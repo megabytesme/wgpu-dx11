@@ -1,0 +1,280 @@
+{
+  "schema_version": 1,
+  "certification_status": "INCOMPLETE",
+  "baseline": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+  "candidate": "912fc25d497f872e744185a2564555647e4e2b46",
+  "builds": [
+    {
+      "host": "Ben-Desktop",
+      "source": "C:\\dev\\personal\\wgpu-dx11-FL92-Nov21",
+      "cargo_target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-nov21-fixture-target",
+      "command": "cargo test --locked --offline -p wgpu --no-default-features --features std,dx11,wgsl --test dx11_fl92 --test dx11_fl92_r16unorm --no-run",
+      "result": "PASS",
+      "architectures": [
+        "x64"
+      ]
+    },
+    {
+      "host": "Ben-Desktop",
+      "source": "C:\\dev\\personal\\wgpu-dx11-FL92-Nov21",
+      "cargo_target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\horizon-wgpu-fl92-cargo",
+      "command": "cargo test --locked --offline --target i686-pc-windows-msvc -p wgpu --no-default-features --features std,dx11,wgsl --test dx11_fl92 --test dx11_fl92_r16unorm --no-run",
+      "result": "PASS"
+    },
+    {
+      "host": "Ben-Tablet",
+      "source": "C:\\Users\\ben\\AppData\\Local\\Temp\\fl92-nov21-source-verification\\source",
+      "cargo_target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\fl92-nov21-source-verification\\target",
+      "source_archive_sha256": "f5a42a34fa61ad72c108b1a8ef1f93ead65715c8326e686e6e04c39f93cdc8f8",
+      "command": "cargo +stable test --locked --offline -p wgpu --no-default-features --features std,dx11,wgsl --test dx11_fl92 --test dx11_fl92_r16unorm --test dx11_fl91_scene --no-run",
+      "result": "PASS"
+    },
+    {
+      "host": "Ben-Desktop",
+      "source": "C:\\dev\\personal\\wgpu-dx11-FL92-Nov21",
+      "cargo_target_dir": "C:\\Users\\ben\\AppData\\Local\\Temp\\horizon-wgpu-fl92-uwp-check",
+      "command": "cargo +1.99.1 check -Zbuild-std=std,panic_abort --locked --offline --target <target> -p wgpu --no-default-features --features std,dx11,wgsl",
+      "targets": [
+        "x86_64-uwp-windows-msvc",
+        "aarch64-uwp-windows-msvc",
+        "thumbv7a-uwp-windows-msvc"
+      ],
+      "result": "PASS",
+      "scope": "Rust type-check only; AppContainer strict-link, deployment and render remain open"
+    }
+  ],
+  "source_checks": {
+    "clippy": {
+      "result": "PASS_WITH_WARNINGS",
+      "command": "cargo clippy --locked --offline -p wgpu -p wgpu-hal --no-default-features --features wgpu/std,wgpu/dx11-test-fixture --tests"
+    },
+    "format": {
+      "result": "BASELINE_DRIFT",
+      "command": "cargo fmt --all --check",
+      "scope": "Every candidate formatting finding falls in unchanged baseline code. The baseline reports the same locations plus one fixed test hunk."
+    },
+    "candidate_model_tests": {
+      "result": "PASS",
+      "tests": [
+        "feature_level_override_is_exact_and_rejects_conflicts",
+        "experimental_fl92_projection_exposes_only_implemented_deltas",
+        "r16_unorm_requires_experimental_fl92_and_a_positive_sampling_query"
+      ]
+    }
+  },
+  "pending_desktop_slot": "Final desktop focused reruns, full HAL regression, HWND and synthetic device-loss fixtures, and selected CTS repeatedly deferred by active FL9_1 and HDR desktop GPU locks.",
+  "fxc": {
+    "sdk": "10.0.26100.0",
+    "compiler_executable_architectures": [
+      "x64",
+      "x86"
+    ],
+    "passed_per_architecture": 8,
+    "scope": "compile-only target, instruction budget and unsupported operation checks",
+    "flags": "/Ges /O3 /T <profile> /E main /Fo <output> <source>"
+  },
+  "desktop_focused": [
+    {
+      "architecture": "x64",
+      "requested": "9_1",
+      "fixture": "dx11_fl92",
+      "source": "pre-commit candidate snapshot",
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\dx11_fl92-x64-9_1.log",
+      "status": "PASS",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "architecture": "x64",
+      "requested": "9_1",
+      "fixture": "dx11_fl92_r16unorm",
+      "source": "pre-commit candidate snapshot",
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\dx11_fl92_r16unorm-x64-9_1.log",
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "architecture": "x64",
+      "requested": "9_2",
+      "fixture": "dx11_fl92",
+      "source": "pre-commit candidate snapshot",
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\dx11_fl92-x64-9_2.log",
+      "status": "PASS",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "architecture": "x64",
+      "requested": "9_2",
+      "fixture": "dx11_fl92_r16unorm",
+      "source": "pre-commit candidate snapshot",
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\dx11_fl92_r16unorm-x64-9_2.log",
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "architecture": "x86",
+      "requested": "9_1",
+      "fixture": "dx11_fl92",
+      "source": "pre-commit candidate snapshot",
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\dx11_fl92-x86-9_1.log",
+      "status": "PASS",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "architecture": "x86",
+      "requested": "9_1",
+      "fixture": "dx11_fl92_r16unorm",
+      "source": "pre-commit candidate snapshot",
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\dx11_fl92_r16unorm-x86-9_1.log",
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "architecture": "x86",
+      "requested": "9_2",
+      "fixture": "dx11_fl92",
+      "source": "pre-commit candidate snapshot",
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\dx11_fl92-x86-9_2.log",
+      "status": "PASS",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "architecture": "x86",
+      "requested": "9_2",
+      "fixture": "dx11_fl92_r16unorm",
+      "source": "pre-commit candidate snapshot",
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\dx11_fl92_r16unorm-x86-9_2.log",
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "surface_pro_x_focused": [
+    {
+      "architecture": "ARM64",
+      "fixture": "dx11_fl92",
+      "requested": "9_2",
+      "status": "PASS",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "architecture": "ARM64",
+      "fixture": "dx11_fl92",
+      "requested": "9_1",
+      "status": "PASS",
+      "passed": 4,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "architecture": "ARM64",
+      "fixture": "dx11_fl92_r16unorm",
+      "requested": "9_2",
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "architecture": "ARM64",
+      "fixture": "dx11_fl92_r16unorm",
+      "requested": "9_1",
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "architecture": "ARM64",
+      "fixture": "dx11_fl91_scene",
+      "requested": "9_2",
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    },
+    {
+      "architecture": "ARM64",
+      "fixture": "dx11_fl91_scene",
+      "requested": "9_1",
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0
+    }
+  ],
+  "regression_and_surface": {
+    "hal_fl91": {
+      "status": "NOT_RUN",
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\candidate-hal-fl91.log"
+    },
+    "hidden_hwnd_fl92": {
+      "status": "NOT_RUN",
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\candidate-hwnd-fl92.log"
+    },
+    "synthetic_surface_fl91": {
+      "status": "NOT_RUN",
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\candidate-surface-errors-9_1.log"
+    },
+    "synthetic_surface_fl92": {
+      "status": "NOT_RUN",
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\candidate-surface-errors-9_2.log"
+    },
+    "automatic_projection": {
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\scene-x64-auto.log"
+    },
+    "legacy_force_fl91": {
+      "status": "PASS",
+      "passed": 1,
+      "failed": 0,
+      "ignored": 0,
+      "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\scene-x64-legacy.log"
+    }
+  },
+  "cts": {
+    "source_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+    "selectors": [
+      "webgpu:api,operation,command_buffer,basic:empty:*",
+      "webgpu:api,operation,rendering,basic:clear:*"
+    ],
+    "runs": [
+      {
+        "level": "9_1",
+        "status": "NOT_RUN",
+        "last_summary_lines": [],
+        "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\candidate-cts-9_1.log"
+      },
+      {
+        "level": "9_2",
+        "status": "NOT_RUN",
+        "last_summary_lines": [],
+        "log": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl92-native-probe-e7028bda899041809533e1d6e4f8f51d\\candidate-cts-9_2.log"
+      }
+    ]
+  },
+  "limits": [
+    "Targeted selected-device tests and source checks only",
+    "Certification requires independently accepted FL9_1 and a full candidate matrix",
+    "Synthetic device-removal injection and hidden-window presentation do not establish physical device loss or UWP lifecycle"
+  ]
+}
