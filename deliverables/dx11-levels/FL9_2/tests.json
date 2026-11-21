@@ -830,5 +830,152 @@
       "build_log": "E:/Temp/fl92-finish/build-x86-visible.log",
       "open": "The separate strict hidden HWND cases still fail because Present is occluded."
     }
+  },
+  "hwnd_and_volume_follow_up": {
+    "hwnd_fixture_commit": "a9c2beb9126e835c1b70aaae8a400c230a1370af",
+    "runtime_commit": "6b358a4359d695bd613efd017d0f23928ecc7927",
+    "build_host": "BEN-DESKTOP",
+    "working_directory": "C:/dev/personal/wgpu-dx11-FL92-Nov21",
+    "cargo_target_dir": "E:/Temp/fl92-finish/cargo",
+    "hwnd_build_logs": [
+      {
+        "log": "E:/Temp/fl92-finish/build-hwnd-transition-x86.log",
+        "log_sha256": "d0707199a5dd9a7d07612cd24884de0b85f4f01d9f27f8cdd57369c7d501a0d1"
+      },
+      {
+        "log": "E:/Temp/fl92-finish/build-hwnd-transition-x64.log",
+        "log_sha256": "e0ede852e24f5440818165db24e57bddbfaa49a13cccdbff648a45f20751ade7"
+      }
+    ],
+    "unorm16_volume_build_logs": [
+      {
+        "log": "E:/Temp/fl92-finish/build-unorm16-volume-x64.log",
+        "log_sha256": "827bdd3e2ec5847c125ccc0c0ac79a0c0af19130e51b95d16b3f0f666bc3e5bf"
+      },
+      {
+        "log": "E:/Temp/fl92-finish/build-unorm16-volume-x86.log",
+        "log_sha256": "f16c91d515288c7a72f0dff6a183bc0f0ccc28a34bafc793395e20b83adea75a"
+      }
+    ],
+    "hwnd_previous_x86_failure": {
+      "log": "E:/Temp/fl92-finish/x86-hidden-hwnd-retry.log",
+      "log_sha256": "70c214a640141ec1e205595fd0c968fedb7ba8bc69339ef6e56efdb471a249aa"
+    },
+    "hwnd_previous_x86_same_session_retry": {
+      "log": "E:/Temp/fl92-finish/hwnd-x86-before.log",
+      "log_sha256": "791dc62854b04cadc028c0eae6f68d7f18ebd01ccf9875fddb02a6a0bf40b4d1"
+    },
+    "hwnd_revised": [
+      {
+        "architecture": "x86",
+        "exact_level": "9_1",
+        "tests_passed": 2,
+        "queued_visible_presents_per_test": 3,
+        "log": "E:/Temp/fl92-finish/hwnd-x86-after-9_1.log",
+        "log_sha256": "58afd71d4c6ca39da710853f24068b74175fc79fe8fe2e7cf5432908a0a56a41"
+      },
+      {
+        "architecture": "x86",
+        "exact_level": "9_2",
+        "tests_passed": 1,
+        "queued_visible_presents_per_test": 3,
+        "log": "E:/Temp/fl92-finish/hwnd-x86-after-9_2.log",
+        "log_sha256": "a169f49a4a6297c6ad7c87461f3e8294c86d60e3674a60640c36e26504289aba"
+      },
+      {
+        "architecture": "x64",
+        "exact_level": "9_1",
+        "tests_passed": 2,
+        "queued_visible_presents_per_test": 3,
+        "log": "E:/Temp/fl92-finish/hwnd-x64-after-9_1.log",
+        "log_sha256": "3eeac364b33b49f15b0aea24b91de091130b07eaa2bc930fbf3b474187edfc26"
+      },
+      {
+        "architecture": "x64",
+        "exact_level": "9_2",
+        "tests_passed": 1,
+        "queued_visible_presents_per_test": 3,
+        "log": "E:/Temp/fl92-finish/hwnd-x64-after-9_2.log",
+        "log_sha256": "a169f49a4a6297c6ad7c87461f3e8294c86d60e3674a60640c36e26504289aba"
+      }
+    ],
+    "clippy_hwnd_hal": {
+      "log": "E:/Temp/fl92-finish/clippy-hwnd-transition-retry.log",
+      "log_sha256": "e92159a9083df55182825cbb9ee891e70388f487a32eca91cd43f7f7f3fe1a3d"
+    },
+    "clippy_current_hal": {
+      "log": "E:/Temp/fl92-finish/clippy-hwnd-volume-final.log",
+      "log_sha256": "56325096f86b505f9d72594cfc6c71868ae2cfe9761cab3e18140a3fa439b7f1"
+    },
+    "projection_controls": [
+      {
+        "log": "E:/Temp/fl92-finish/volume-projection-x64.log",
+        "log_sha256": "5a3300b38eab6d74a8e01ec615b4d3e2dcfb036562db8b15e393ea7b51d83b4a"
+      },
+      {
+        "log": "E:/Temp/fl92-finish/volume-projection-x86.log",
+        "log_sha256": "36268320262ba4a70ac3f147bad9845ded01b525d49c6877a4fdb081c10e02c7"
+      }
+    ],
+    "x86_full_fl9_1_hal": {
+      "runtime_commit": "6b358a4359d695bd613efd017d0f23928ecc7927",
+      "architecture": "x86",
+      "exact_level": "9_1",
+      "exit": 0,
+      "passed": 555,
+      "failed": 0,
+      "ignored": 0,
+      "hwnd_cases_queued_all_visible_presents": 2,
+      "log": "E:/Temp/fl92-finish/hwnd-x86-after-full-9_1.log",
+      "log_sha256": "8b11677c74511cd0f274a7c16835f8381c7929234429e63ca4dde72111fd6505"
+    },
+    "unorm16_public_arm64": {
+      "passed_fl9_1": 2,
+      "passed_fl9_2": 2,
+      "log": "E:/Temp/fl92-finish/surface-public-d3-arm64.txt",
+      "log_sha256": "fb0e7436cec244cb6f1c97811316059f9fe82cc9d37ca905a68d2a485c371261"
+    },
+    "unorm16_public_desktop": [
+      {
+        "architecture": "x64",
+        "exact_level": "9_2",
+        "exit": 0,
+        "executable": "E:/Temp/fl92-finish/cargo/debug/deps/dx11_fl92_r16unorm-ca18144cbc48c427.exe",
+        "executable_sha256": "32c1a3ca46b3bb56a01ac7b892dd5d2bea599b6f4965921071473dce20d2b8b5",
+        "log": "E:/Temp/fl92-finish/unorm16-volume-x64-9_2.log",
+        "log_sha256": "ecbe70885cd53419fa018e91a20cd59fb31d9437dbb043a00a0b5500488ecab1"
+      },
+      {
+        "architecture": "x64",
+        "exact_level": "9_1",
+        "exit": 0,
+        "executable": "E:/Temp/fl92-finish/cargo/debug/deps/dx11_fl92_r16unorm-ca18144cbc48c427.exe",
+        "executable_sha256": "32c1a3ca46b3bb56a01ac7b892dd5d2bea599b6f4965921071473dce20d2b8b5",
+        "log": "E:/Temp/fl92-finish/unorm16-volume-x64-9_1.log",
+        "log_sha256": "a055a30dd3e2db52a0693f80321d9fc15ee780d6d11a6adcd3f81960e2fda18b"
+      },
+      {
+        "architecture": "x86",
+        "exact_level": "9_2",
+        "exit": 0,
+        "executable": "E:/Temp/fl92-finish/cargo/i686-pc-windows-msvc/debug/deps/dx11_fl92_r16unorm-bdf66e2dd2f0d710.exe",
+        "executable_sha256": "10c188cdd1fafbef4aa5e460b64bc00c4d8c5d6121f29229be0ab72f2a5b5455",
+        "log": "E:/Temp/fl92-finish/unorm16-volume-x86-9_2.log",
+        "log_sha256": "2bdb87578cbc73da950c9ad2b9f81ae462880ab8c4c274610f387677f0835f2d"
+      },
+      {
+        "architecture": "x86",
+        "exact_level": "9_1",
+        "exit": 0,
+        "executable": "E:/Temp/fl92-finish/cargo/i686-pc-windows-msvc/debug/deps/dx11_fl92_r16unorm-bdf66e2dd2f0d710.exe",
+        "executable_sha256": "10c188cdd1fafbef4aa5e460b64bc00c4d8c5d6121f29229be0ab72f2a5b5455",
+        "log": "E:/Temp/fl92-finish/unorm16-volume-x86-9_1.log",
+        "log_sha256": "9960918576dbbab968f69f2184a8e344533dae264c4047835bbe40469d680bac"
+      }
+    ],
+    "clippy_public_test": {
+      "log": "E:/Temp/fl92-finish/clippy-unorm16-volume.log",
+      "log_sha256": "e1278fccd21bec0af259a49415773473d108ed6f385e26ac3f957614be9e9e00"
+    }
   }
 }

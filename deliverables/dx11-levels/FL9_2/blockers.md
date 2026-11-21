@@ -25,10 +25,12 @@ Required shader evidence on a physical FL9_2 device includes compiling WGSL thro
 
 - **Surface Pro X stencil.** Exact FL9_2 on the Adreno 680 driver
   `27.20.2160.0` produced a red pixel at (4, 0) on a back-facing region that
-  should have remained opaque black. The failure reproduced in the isolated
-  test. The direct-native control passed both winding conventions on RTX 3090 Ti.
-  The Surface Pro X SSH connection timed out, blocking the same-driver native
-  reproduction and verification of a workaround. The adapter-specific gate disables asymmetric stencil on
+  should have remained opaque black. Direct-native D3D11 confirmed the
+  same failure at exact FL9_2. All six symmetric controls passed, and all
+  four asymmetric cases lit 128 extra pixels. Per-primitive complementary
+  culling preserved the stencil result in an overlapping geometry control
+  under both winding conventions. A general HAL workaround remains open.
+  The adapter-specific gate disables asymmetric stencil on
   `4d4f4351:41333430`. Full FL9_2 still requires correct back-face behavior.
 - **Query replay failure.** The query result read has a five-second deadline.
   The existing cleanup fence can still wait indefinitely if a driver stops

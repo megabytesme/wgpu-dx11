@@ -400,5 +400,123 @@
       "deployed": false
     }
   },
-  "baseline_receipt_candidate": "912fc25d497f872e744185a2564555647e4e2b46"
+  "baseline_receipt_candidate": "912fc25d497f872e744185a2564555647e4e2b46",
+  "later_physical_follow_up": {
+    "runtime_commit": "6b358a4359d695bd613efd017d0f23928ecc7927",
+    "surface": {
+      "native_stencil": {
+        "status": "NATIVE_FAILURE_REPRODUCED",
+        "os_build": 26320,
+        "dxgi_id": "4d4f4351:41333430",
+        "driver": "27.20.2160.0",
+        "exact_native_level": "9_2",
+        "original_probe_source_commit": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+        "original_probe_binary_sha256": "d6bd2459dbe7f1c5fbf550a9cc451607f7849f0d50766894773d3011ebeaf486",
+        "original_10_cases": {
+          "log": "E:/Temp/fl92-finish/surface-native-stencil-arm64.txt",
+          "log_sha256": "341418e830d05892e4cdc009b58a78147cb4d3cd346a7c9254ee4c763b278e17",
+          "symmetric_passed": 6,
+          "asymmetric_failed": 4
+        },
+        "extended_probe_source_commit": "217a723cc6fff5ae50f55abe271ab7e0a6189f82",
+        "extended_probe_source_sha256": "eaf089af5b18340c03c762c9498384d1dba4515f7b29f87dadae61177050b62b",
+        "extended_probe_binary_sha256": "68f50397b46085a22cf08ecb7a94933009a191f0d0c0b879828c176fe68c3335",
+        "ordered_probe": {
+          "log": "E:/Temp/fl92-finish/surface-native-stencil-ordered-arm64.txt",
+          "log_sha256": "c443ed1df36052ea2b07dfb9267721ece8639f0c90f56d0526aae2917954cf4f",
+          "controls_passed": 10,
+          "asymmetric_failed": 4,
+          "pixels_mismatched_per_asymmetric_case": 128,
+          "ordered_stencil_value": 2,
+          "grouped_stencil_value": 4
+        },
+        "remaining": "Implement and verify general HAL ordering and pipeline state; asymmetric stencil is still withheld on Adreno."
+      },
+      "native_volume": {
+        "source_commit": "217a723cc6fff5ae50f55abe271ab7e0a6189f82",
+        "source_sha256": "72662fff5c89eab5d979fdc66ba64a2fc06c93ad80740d3492542cd16729b734",
+        "binary_sha256": "8cb32f71ec735565bc573017be590b2b467e6c34c61a41596b254f60246171c5",
+        "fl9_2": {
+          "formats": [
+            "RGBA8_UNORM",
+            "R16_UNORM"
+          ],
+          "successful_extent_on_each_axis": 256,
+          "rejected_extents_on_each_axis": [
+            512,
+            1024
+          ],
+          "readback_pixels": 384,
+          "rejected_allocations": 12
+        },
+        "fl9_1": {
+          "formats": [
+            "RGBA8_UNORM"
+          ],
+          "successful_extent_on_each_axis": 256,
+          "rejected_extents_on_each_axis": [
+            512,
+            1024
+          ],
+          "readback_pixels": 192,
+          "rejected_allocations": 6,
+          "r16_unorm_format_query": "E_FAIL"
+        },
+        "log": "C:/Users/ben/AppData/Local/Temp/wgpu-fl92-volume-native-6add49c141c7472c921d4638d93984a7/surface-arm64-volume.txt",
+        "log_sha256": "41b59fc28cde5f2229fc7ff0b921f4163c88e0375275de5949ef7fdd7ce192db"
+      },
+      "public_fl9_2_previous_runtime": {
+        "checkout": "abf47903e38b1a45e663f2180d395a24af442405",
+        "passed": 7,
+        "log": "E:/Temp/fl92-finish/surface-public-fl92-arm64.txt",
+        "log_sha256": "2c48940f8ea8a1d3c520bc21654238d3cdb0e16b72f4a2d4f14c92fad740fc92"
+      },
+      "public_unorm16_both_levels": {
+        "verified_against_runtime_source": "6b358a4359d695bd613efd017d0f23928ecc7927",
+        "passed_fl9_1": 2,
+        "passed_fl9_2": 2,
+        "linked_executable_sha256": "8a27323a34ec8cff0eea042295d73858746973dcd69c5f224b3ab81ab96e0c01",
+        "provenance": {
+          "log": "E:/Temp/fl92-finish/build-arm64-public-d3.log.provenance",
+          "log_sha256": "026ab412c987a4f6b4995d9f8358ee4ed60a19434ece6a12f1a14ac753debb77"
+        },
+        "log": "E:/Temp/fl92-finish/surface-public-d3-arm64.txt",
+        "log_sha256": "fb0e7436cec244cb6f1c97811316059f9fe82cc9d37ca905a68d2a485c371261"
+      }
+    },
+    "lumia": {
+      "status": "PASS_NATIVE_DEVICE_NEGOTIATION",
+      "architecture": "arm32",
+      "receipt_candidate": "6224078a56ea049d7f98f62d237b84db7d1b32ff",
+      "package_sha256": "90b8b94cb29172a3d83a89fae85982d6c598d78efca984e22298088483bdf596",
+      "package_identity": "MCHorizonUWP.Fl92NativeProbe_1.0.0.0_arm__4pd4jeb6snrqw",
+      "signature": "Valid",
+      "physical_adapter": {
+        "vendor": "4d4f4351",
+        "device": "46363432",
+        "flags": 0
+      },
+      "device_requests": [
+        {
+          "requested": "0x9100",
+          "hresult": "S_OK",
+          "returned": "0x9100",
+          "device_level": "0x9100"
+        },
+        {
+          "requested": "0x9200",
+          "hresult": "S_OK",
+          "returned": "0x9200",
+          "device_level": "0x9200"
+        }
+      ],
+      "log": "E:/Temp/fl92-finish/lumia-retry-20261121/run-20261121-212801-4460/fl92-native-probe.txt",
+      "log_sha256": "57e56de4c39ea973367f194dfe16830159bf690303033a66d7dbea347adbdf24",
+      "summary": {
+        "log": "E:/Temp/fl92-finish/lumia-retry-20261121/result-summary.json",
+        "log_sha256": "a6cff79533d0f6f1c354d369040133ba5fe2c672a9325f30eb7c0a34fa659fd4"
+      },
+      "remaining": "ARM32 HAL public rendering, UWP CoreWindow resize and visible present"
+    }
+  }
 }

@@ -118,8 +118,16 @@ strict fixture required a queued frame. The x64 FL9_1 suite passed all 557
 selected tests. See the per-run records in [tests.json](../deliverables/dx11-levels/FL9_2/tests.json).
 
 The x86 visible HWND control at exact FL9_1 presented all 30 requested
-textured, indexed, depth-tested frames. The two strict hidden HWND fixtures
-still require separate coverage.
+textured, indexed, depth-tested frames. The earlier x86 failures occurred
+when strict mode required DXGI to queue frames on a hidden HWND. The old
+fixture passed the follow-up retry, confirming that the failure is
+intermittent. The revised fixture checks the actual hidden Present result
+and pending-frame state independently, then shows the same HWND without
+activating it. Strict mode requires three queued Presents on the visible
+window, with the existing draw and resize readbacks. Both FL9_1 cases and
+the FL9_2 case passed on x64 and x86 at the exact requested tiers.
+The current x86 FL9_1 HAL run passed all 555 selected tests, including
+both revised HWND cases.
 
 The anisotropic minification fixture in
 `353d9dda4510a184bbeef559e36671453f1d6eea` creates samplers at 2, 4, 8
@@ -188,18 +196,44 @@ with `cl /nologo /W4 /WX /O2 stencil_native_probe.cpp /link d3d11.lib dxgi.lib d
 in an ARM64 Visual Studio Developer Command Prompt. Under the Surface lock,
 run it against the physical Adreno adapter. It records the exact level,
 both winding conventions, symmetric and culling controls, and depth-disabled
-and color-enabled cases. All ten controls passed on the desktop RTX at
-native FL9_2. The Surface SSH timeout leaves the direct Adreno reproduction
-and any workaround unverified.
+and color-enabled cases. All ten original cases passed on the desktop RTX
+at native FL9_2. On the Adreno 680 with driver `27.20.2160.0`, all six
+symmetric controls passed and all four asymmetric cases incorrectly lit
+128 extra pixels at exact native FL9_2. The failure reproduced with both
+front winding conventions and with depth disabled or color writes enabled.
+It occurs in a direct D3D11 program before wgpu state translation.
 
-The signed ARM32 native negotiation probe is
-`MCHorizonUWP.Fl92NativeProbe_1.0.0.0_arm__4pd4jeb6snrqw`. The paired
-Device Portal returned HTTP 503 and later timed out at device-family
-preflight. The package and deployment helper are listed in
-[hardware.json](../deliverables/dx11-levels/FL9_2/hardware.json). Once the
-paired Portal responds, acquire the Lumia lock and run the helper on
-Ben-Desktop in Windows PowerShell 5.1. It verifies the package hash,
-waits for registration, activates the app, then reads the fresh
-`LocalState/fl92-native-probe.txt` report. The FL9_2 entry needs a
-successful HRESULT and returned level `0x00009200`. Record the FL9_1
-control and the app's live DXGI identity with the result.
+The extended probe verifies per-primitive complementary culling with
+symmetric stencil state on that driver. Alternating front and back
+operations over overlapping geometry leaves stencil value two. Batching
+by face leaves value four. Any HAL workaround must preserve primitive and
+instance order and cover indexed topology, clipping, and pipeline state.
+The Adreno capability remains disabled while full runtime coverage is open.
+
+The signed ARM32 native negotiation probe
+`MCHorizonUWP.Fl92NativeProbe_1.0.0.0_arm__4pd4jeb6snrqw` ran on the Lumia
+through its paired Device Portal. The helper verified the signed package
+hash, activated the installed isolated probe, and read the fresh
+`LocalState/fl92-native-probe.txt` report. Both singleton requests returned
+`S_OK` with the requested device levels `0x9100` and `0x9200`. The
+physical adapter was `4d4f4351:46363432` with DXGI flags zero. The package
+verifies device negotiation. ARM32 HAL rendering and CoreWindow
+presentation still require coverage.
+
+The [standalone volume probe](../deliverables/dx11-levels/FL9_2/volume_native_probe.cpp)
+uses independent width, height, and depth tests. Build with
+`cl /nologo /W4 /WX /EHsc /MT /O2 volume_native_probe.cpp /link d3d11.lib dxgi.lib d3dcompiler.lib`
+and pass the exact tier and adapter index. On Adreno at exact FL9_2,
+RGBA8 and R16 UNORM passed padded writes, final-texel updates, and shader
+readback with 256 texels on each axis. Every corresponding 512 and 1024
+allocation returned `E_INVALIDARG`. Keep the projection at 256. The
+API-specific 512 entry and the resource table remain inconsistent.
+
+Commit `6b358a4359d695bd613efd017d0f23928ecc7927` extends the experimental
+sampled-upload contract to single-mip R16 UNORM volumes when the selected
+driver reports both 2D and 3D sampling support. The public fixture verified
+queue and encoder upload to the back slice, zero-initialized front slice,
+and linear interpolation between slices at exact FL9_2 on x64, x86, and
+ARM64. The exact FL9_1 controls rejected the capability on all three
+architectures. Volume mips, copy-source use, and other UNORM16 volume
+formats remain outside this projection.
