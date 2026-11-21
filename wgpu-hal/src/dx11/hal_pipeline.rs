@@ -3014,7 +3014,7 @@ impl RenderPipeline {
                 && (face.StencilFailOp != D3D11_STENCIL_OP_KEEP
                     || face.StencilDepthFailOp != D3D11_STENCIL_OP_KEEP
                     || face.StencilPassOp != D3D11_STENCIL_OP_KEEP);
-            Some(D3D11_DEPTH_STENCIL_DESC {
+            D3D11_DEPTH_STENCIL_DESC {
                 DepthEnable: true.into(),
                 DepthWriteMask: if state.depth_write_enabled.unwrap_or(false)
                     && !depth_never
@@ -3030,9 +3030,22 @@ impl RenderPipeline {
                 StencilWriteMask: stencil_write_mask,
                 FrontFace: face,
                 BackFace: face,
-            })
+            }
         } else {
-            None
+            // D3D11's null state enables depth testing. Some drivers still
+            // test against the previous pass's depth even after its view is
+            // unbound, so a pipeline without depth needs an explicit state.
+            let face = stencil_face(&wgt::StencilFaceState::IGNORE);
+            D3D11_DEPTH_STENCIL_DESC {
+                DepthEnable: false.into(),
+                DepthWriteMask: D3D11_DEPTH_WRITE_MASK_ZERO,
+                DepthFunc: D3D11_COMPARISON_ALWAYS,
+                StencilEnable: false.into(),
+                StencilReadMask: 0,
+                StencilWriteMask: 0,
+                FrontFace: face,
+                BackFace: face,
+            }
         };
         let mut required_uniform_sizes = [[0; super::hal_bind_group::MAX_UNIFORMS]; 2];
         for (stage, module, entry, visibility) in core::iter::once((
@@ -3443,14 +3456,12 @@ impl RenderPipeline {
                 .raw_device()
                 .CreateRasterizerState(&raster_desc, Some(&mut rasterizer))
                 .map_err(failure)?;
-            if let Some(depth_desc) = depth_desc {
-                owner
-                    .raw_device()
-                    .CreateDepthStencilState(&depth_desc, Some(&mut depth_state))
-                    .map_err(failure)?;
-                if depth_state.is_none() {
-                    return Err(invalid());
-                }
+            owner
+                .raw_device()
+                .CreateDepthStencilState(&depth_desc, Some(&mut depth_state))
+                .map_err(failure)?;
+            if depth_state.is_none() {
+                return Err(invalid());
             }
             if let Some(target_desc) = blend_desc {
                 if target_desc.BlendEnable.as_bool() || target_desc.RenderTargetWriteMask != 0x0f {
