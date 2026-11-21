@@ -85,14 +85,48 @@ CPU-side allocations. GPU peak memory remains unmeasured. See
 [raw benchmark rows](../deliverables/dx11-levels/FL9_3/benchmarks.csv) and
 [desktop test receipts](../deliverables/dx11-levels/FL9_3/tests.json).
 
+## Native indexed instancing and resource limits
+
+Exact opt-in FL9_3 can call DrawIndexedInstanced for complete, in-bounds indexed triangle
+lists with at least two instances. The shader must consume an instance-rate attribute
+and native slot zero must hold vertex-rate data. A second input layout gives the native
+instance streams a step rate of one. Replay switches back to the emulated layout after
+each native draw. Shaders using emulated vertex or instance indices, viewport remapping,
+strip restart, and draws outside the native limits retain ordered replay.
+[10Level9 DrawIndexedInstanced restrictions](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-context#id3d11devicecontextdrawindexedinstanced)
+
+The exact FL9_3 device probes creation of typed 3D textures and shader resource views
+on each axis for the public volume formats. It bounds the advertised limit and the HAL
+creation path by the observed common extent. A separate raw D3D11 probe on the
+RTX 3090 Ti created RGBA8 and RG32F textures and views at 256 on each axis. At 512,
+CreateTexture3D returned E_INVALIDARG on all three axes for both formats. The method
+table specifies 512, while the feature-level overview lists 256. The 512 result remains
+a scoped failure in the ledger.
+[10Level9 CreateTexture3D method](https://learn.microsoft.com/en-us/windows/win32/direct3d11/d3d11-graphics-reference-10level9-device#id3d11devicecreatetexture3d) · [Feature-level overview](https://learn.microsoft.com/en-us/windows/win32/direct3d11/overviews-direct3d-11-devices-downlevel-intro#direct3d-11-feature-support-feature-levels-12_1-through-9_1)
+
+The x64 and x86 readbacks cover both index widths, nonzero first instance, the raw
+index ceiling of 1,048,575, and fallback replay. The FL9_1 and FL9_2 controls execute
+the same fixtures with zero native instanced draws. Both architectures passed public
+half-float vertex input, native mip generation and RGBA16F blending. The native BC1
+cube fixture checks all six 4096-edge faces at the base and final mip, and rejects
+a rectangular cube, a five-face cube and a 4097 edge.
+
+The native RG32F test covers a 2D render target, a cube face, and volume and shader
+resource view creation on all three axes at 256. Separate RG32F volume transfer
+sequences reported DXGI_ERROR_DEVICE_REMOVED on both architectures. One sequence
+used a region update and copy into a 1x1x1 staging texture. The other initialized
+the volume at creation and used a whole-resource copy into a staging texture of
+the same extent. The receipts preserve both failures.
+[Instancing and resource receipts](../deliverables/dx11-levels/FL9_3/instancing-resources.json)
+
 ## Remaining certification work
 
 - Integrate onto the reviewed FL9_2 revision after FL9_1 and FL9_2 are certified.
   Replay all inherited cases on that cumulative source revision.
-- Verify full format, transfer, cube/volume boundary, shader-budget and sampler coverage.
-  Implement and verify native indexed instancing in the HAL and test first instance,
-  both index widths, slot rules and ordered fallback. The current public replay still
-  uses the inherited instancing path.
+- Expand format and transfer coverage, including shader sampling of sRGB BGRX8 and
+  the remaining RGBA16F, RG32F, RGBA32F and BGRA requirements. Check
+  shader budgets and sampler coverage. Exercise non-unit native instance step rates
+  and the remaining method restrictions as dedicated cases.
 - Verify dedicated native controls for arbitrary border color, step rates, annotated
   optional runtime capabilities, query results, context loss and resource lifetime.
 - Run CTS with an assertion of the observed native tier and audit every skip. Qualify

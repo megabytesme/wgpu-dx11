@@ -385,5 +385,8 @@
       "scope": "physical device loss and native-ceiling hardware",
       "reason": "focused desktop probes ran offscreen on a modern NVIDIA driver"
     }
+  ],
+  "follow_up_records": [
+    "instancing-resources.json"
   ]
 }

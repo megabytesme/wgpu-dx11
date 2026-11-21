@@ -1,0 +1,8 @@
+
+running 1 test
+test dx11::interop::fl93_resources::tier_fl9_3_native_rgba16_float_blend ... Exact FL9_3 on AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, luid: 84608, software: false }, driver Some("32.0.16.2101")
+RGBA16F additive blending matched half-float readback; support=0x26f3e2
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 564 filtered out; finished in 0.33s
+

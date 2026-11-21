@@ -1,0 +1,8 @@
+
+running 3 tests
+test dx11::capabilities::tests::feature_level_guarantees_are_specific_and_do_not_promote_backend ... ok
+test dx11::capabilities::tests::fragment_3d_texture_load_projection_requires_supported_volume_sampling ... ok
+test dx11::hal_pipeline::tests::vertex_slots_reserve_logical_streams_and_partition_overlaps ... ok
+
+test result: ok. 3 passed; 0 failed; 0 ignored; 0 measured; 562 filtered out; finished in 0.00s
+

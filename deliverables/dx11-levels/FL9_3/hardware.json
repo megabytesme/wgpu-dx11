@@ -54,5 +54,8 @@
   },
   "hardware_at_native_ceiling": {
     "candidate_status": "UNKNOWN"
-  }
+  },
+  "follow_up_records": [
+    "instancing-resources.json"
+  ]
 }

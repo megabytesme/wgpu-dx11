@@ -1,0 +1,484 @@
+{
+  "schema_version": 1,
+  "status": "INCOMPLETE",
+  "candidate_sha": "0992bd130c68149a4f81f3eaa5bb3b245d7e74a2",
+  "candidate_tree": "4e9049c8d133727ef46ddb3195192d52aa431f65",
+  "worktree": "C:\\dev\\personal\\wgpu-dx11-FL9_3-Nov21",
+  "build_directory": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target",
+  "environment": {
+    "CARGO_INCREMENTAL": "0",
+    "CARGO_PROFILE_TEST_DEBUG": "0",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "WGPU_DX11_REQUIRE_HARDWARE": "1"
+  },
+  "device": {
+    "host": "Ben-Desktop",
+    "adapter": "NVIDIA GeForce RTX 3090 Ti",
+    "pci": "10de:2203",
+    "driver": "32.0.16.2101",
+    "luid": "0000000000014a80",
+    "windows": "10.0.26300",
+    "software": false,
+    "fxc_dll_file_version": "10.0.26100.9818"
+  },
+  "builds": [
+    {
+      "architecture": "x64",
+      "scope": "hal",
+      "command": "cargo test --no-run --offline --locked -p wgpu-hal --no-default-features --features dx11 --lib",
+      "result": "PASS",
+      "log": {
+        "path": "evidence/instancing-resources/candidate-build-x64-hal.log",
+        "sha256": "26f56b94992d5c5bb9dd731d5ed29a329777cdaf3a552b52131502b477928c39"
+      }
+    },
+    {
+      "architecture": "x64",
+      "scope": "public",
+      "command": "cargo test --no-run --offline --locked -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl93 --test dx11_index_ranges",
+      "result": "PASS",
+      "log": {
+        "path": "evidence/instancing-resources/candidate-build-x64-public.log",
+        "sha256": "90c7f5910986df6d6b88bc06fc84b62a82c276b5d899190888bedc3893da7bd4"
+      }
+    },
+    {
+      "architecture": "x86",
+      "scope": "hal",
+      "command": "cargo test --no-run --offline --locked --target i686-pc-windows-msvc -p wgpu-hal --no-default-features --features dx11 --lib",
+      "result": "PASS",
+      "log": {
+        "path": "evidence/instancing-resources/candidate-build-x86-hal.log",
+        "sha256": "a95fca79095cb5b2a1e862da1a4ade67fd77775f214e78d1b22e250f7cd7be28"
+      }
+    },
+    {
+      "architecture": "x86",
+      "scope": "public",
+      "command": "cargo test --no-run --offline --locked --target i686-pc-windows-msvc -p wgpu --no-default-features --features dx11,wgsl,std --test dx11_fl93 --test dx11_index_ranges",
+      "result": "PASS",
+      "log": {
+        "path": "evidence/instancing-resources/candidate-build-x86-public.log",
+        "sha256": "84338aa57ed5eb1731fc8cc1d7f6db45052a57012f450fc074b4e989a0bc3bd6"
+      }
+    },
+    {
+      "architecture": "x64",
+      "scope": "CPU-only capability and slot checks",
+      "command": "wgpu_hal-11c787a006594105.exe feature_level_guarantees_are_specific_and_do_not_promote_backend fragment_3d_texture_load_projection_requires_supported_volume_sampling vertex_slots_reserve_logical_streams_and_partition_overlaps --test-threads=1",
+      "exe_sha256": "d00fb062f4e0158c14dc032e9401c9afaa8b5e3ef283731f5690794cd18a2e93",
+      "result": "PASS",
+      "log": {
+        "path": "evidence/instancing-resources/x64-projection-unit.log",
+        "sha256": "46cc7cfd0c9a9ed1519ed8a1afa423eb8e7862cd77eca812c896a469cee92aa0"
+      }
+    },
+    {
+      "architecture": "x86",
+      "scope": "CPU-only capability and slot checks",
+      "command": "wgpu_hal-e10f47953df99ab4.exe feature_level_guarantees_are_specific_and_do_not_promote_backend fragment_3d_texture_load_projection_requires_supported_volume_sampling vertex_slots_reserve_logical_streams_and_partition_overlaps --test-threads=1",
+      "exe_sha256": "dcdcd7eaae1f63ce159ca59fe082b123068f6c8b07cf9cf262653ea2d5b9cbdc",
+      "result": "PASS",
+      "log": {
+        "path": "evidence/instancing-resources/x86-projection-unit.log",
+        "sha256": "46cc7cfd0c9a9ed1519ed8a1afa423eb8e7862cd77eca812c896a469cee92aa0"
+      }
+    },
+    {
+      "architecture": "x64",
+      "scope": "lint",
+      "command": "cargo clippy --offline --locked -p wgpu-hal --no-default-features --features dx11 --tests",
+      "result": "PASS",
+      "log": {
+        "path": "evidence/instancing-resources/clippy-instancing-resources.log",
+        "sha256": "51447713c625d28ca6608e6bcf915326bd708bcfac6595f810b2bf2d72043828"
+      }
+    }
+  ],
+  "desktop_runs": [
+    {
+      "name": "instanced",
+      "architecture": "x64",
+      "log": "evidence/instancing-resources/x64-instanced.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe",
+      "arguments": [
+        "tier_fl9_3_native_indexed_instancing",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_3",
+      "force_legacy": null,
+      "exe_sha256": "d00fb062f4e0158c14dc032e9401c9afaa8b5e3ef283731f5690794cd18a2e93",
+      "log_sha256": "a4225e7c2c068fbfc8a57494ac1137f219eaf7d740ef27f77556469ec1e14431"
+    },
+    {
+      "name": "formats-and-profiles",
+      "architecture": "x64",
+      "log": "evidence/instancing-resources/x64-formats-and-profiles.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe",
+      "arguments": [
+        "tier_fl9_3_native_formats_and_shader_profiles",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_3",
+      "force_legacy": null,
+      "exe_sha256": "d00fb062f4e0158c14dc032e9401c9afaa8b5e3ef283731f5690794cd18a2e93",
+      "log_sha256": "92ff69a728adc52bbfd35fd72c4d7098a98f5eaec704819436f6b2cf0fa5f05b"
+    },
+    {
+      "name": "rg32f",
+      "architecture": "x64",
+      "log": "evidence/instancing-resources/x64-rg32f.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe",
+      "arguments": [
+        "tier_fl9_3_native_rg32_float_color_and_volume",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_3",
+      "force_legacy": null,
+      "exe_sha256": "d00fb062f4e0158c14dc032e9401c9afaa8b5e3ef283731f5690794cd18a2e93",
+      "log_sha256": "b434c376454df11eff41c19e8f9adc4b9b5f45b713d4c310ffc1411ff4e48e0c"
+    },
+    {
+      "name": "rgba16f-blend",
+      "architecture": "x64",
+      "log": "evidence/instancing-resources/x64-rgba16f-blend.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe",
+      "arguments": [
+        "tier_fl9_3_native_rgba16_float_blend",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_3",
+      "force_legacy": null,
+      "exe_sha256": "d00fb062f4e0158c14dc032e9401c9afaa8b5e3ef283731f5690794cd18a2e93",
+      "log_sha256": "fd39eaf91f71c21045416c463b586aafb326edaf32babfa09f40b446e7798830"
+    },
+    {
+      "name": "2d-cube",
+      "architecture": "x64",
+      "log": "evidence/instancing-resources/x64-2d-cube.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe",
+      "arguments": [
+        "tier_fl9_3_native_2d_and_cube_extent",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_3",
+      "force_legacy": null,
+      "exe_sha256": "d00fb062f4e0158c14dc032e9401c9afaa8b5e3ef283731f5690794cd18a2e93",
+      "log_sha256": "37401db5875e7063ea5ec744f68beaaad0c880623b30518c57371baefe689a80"
+    },
+    {
+      "name": "public",
+      "architecture": "x64",
+      "log": "evidence/instancing-resources/x64-public.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\debug\\deps\\dx11_fl93-be9831a806579f81.exe",
+      "arguments": [
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_3",
+      "force_legacy": null,
+      "exe_sha256": "49142c53034821b8f2e72724075580ec374041ef7020cc7e37ff734c773358f8",
+      "log_sha256": "b7b6ed96527e78fd25a7ea444cde5c2bc4b1134d35b78d6bf4e2a3366de15a9e"
+    },
+    {
+      "name": "fl92-streams",
+      "architecture": "x64",
+      "log": "evidence/instancing-resources/x64-fl92-streams.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe",
+      "arguments": [
+        "fl92_instance_rate_vertex_streams",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_2",
+      "force_legacy": null,
+      "exe_sha256": "d00fb062f4e0158c14dc032e9401c9afaa8b5e3ef283731f5690794cd18a2e93",
+      "log_sha256": "41f2e7d112a48558d8c24694ab0f77bfed81eb7597cdb36b7173b1e3e90ed4d2"
+    },
+    {
+      "name": "fl91-streams",
+      "architecture": "x64",
+      "log": "evidence/instancing-resources/x64-fl91-streams.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe",
+      "arguments": [
+        "fl91_instance_rate_vertex_streams",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": null,
+      "force_legacy": "1",
+      "exe_sha256": "d00fb062f4e0158c14dc032e9401c9afaa8b5e3ef283731f5690794cd18a2e93",
+      "log_sha256": "84e46f8bc81f22a870a698cf7c8cbfd6c3c85800e87d1fe6c600a997c4359b1e"
+    },
+    {
+      "name": "fl91-public-index",
+      "architecture": "x64",
+      "log": "evidence/instancing-resources/x64-fl91-public-index.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\debug\\deps\\dx11_index_ranges-9bf96daa91ff9775.exe",
+      "arguments": [
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": null,
+      "force_legacy": "1",
+      "exe_sha256": "25c24dc435e524da6132e641001cd3f10d95da6c95eecd088fc6f0e5583ea359",
+      "log_sha256": "788f36469c6f5569746f2d97182fa15caff85cfa12653c7b254f2fdeedc1daf3"
+    },
+    {
+      "name": "instanced",
+      "architecture": "x86",
+      "log": "evidence/instancing-resources/x86-instanced.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-e10f47953df99ab4.exe",
+      "arguments": [
+        "tier_fl9_3_native_indexed_instancing",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_3",
+      "force_legacy": null,
+      "exe_sha256": "dcdcd7eaae1f63ce159ca59fe082b123068f6c8b07cf9cf262653ea2d5b9cbdc",
+      "log_sha256": "53ae9de99820a4541b0d180d6843399643e2eb1007b97822428572e58d216f21"
+    },
+    {
+      "name": "formats-and-profiles",
+      "architecture": "x86",
+      "log": "evidence/instancing-resources/x86-formats-and-profiles.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-e10f47953df99ab4.exe",
+      "arguments": [
+        "tier_fl9_3_native_formats_and_shader_profiles",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_3",
+      "force_legacy": null,
+      "exe_sha256": "dcdcd7eaae1f63ce159ca59fe082b123068f6c8b07cf9cf262653ea2d5b9cbdc",
+      "log_sha256": "27205a59cc7efcd83e7d275f3c72379566cc765fd2353fe2d0fbafe67b1a427a"
+    },
+    {
+      "name": "rg32f",
+      "architecture": "x86",
+      "log": "evidence/instancing-resources/x86-rg32f.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-e10f47953df99ab4.exe",
+      "arguments": [
+        "tier_fl9_3_native_rg32_float_color_and_volume",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_3",
+      "force_legacy": null,
+      "exe_sha256": "dcdcd7eaae1f63ce159ca59fe082b123068f6c8b07cf9cf262653ea2d5b9cbdc",
+      "log_sha256": "74285f3b8ac8584ea6aaeff7a8ead84e0f20a744a2c16273720fff1515687c0d"
+    },
+    {
+      "name": "rgba16f-blend",
+      "architecture": "x86",
+      "log": "evidence/instancing-resources/x86-rgba16f-blend.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-e10f47953df99ab4.exe",
+      "arguments": [
+        "tier_fl9_3_native_rgba16_float_blend",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_3",
+      "force_legacy": null,
+      "exe_sha256": "dcdcd7eaae1f63ce159ca59fe082b123068f6c8b07cf9cf262653ea2d5b9cbdc",
+      "log_sha256": "5634fc32c479857ce4a9e49d14a06f756b827617dce86e88a4c808bd8a66b9f8"
+    },
+    {
+      "name": "2d-cube",
+      "architecture": "x86",
+      "log": "evidence/instancing-resources/x86-2d-cube.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-e10f47953df99ab4.exe",
+      "arguments": [
+        "tier_fl9_3_native_2d_and_cube_extent",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_3",
+      "force_legacy": null,
+      "exe_sha256": "dcdcd7eaae1f63ce159ca59fe082b123068f6c8b07cf9cf262653ea2d5b9cbdc",
+      "log_sha256": "37401db5875e7063ea5ec744f68beaaad0c880623b30518c57371baefe689a80"
+    },
+    {
+      "name": "public",
+      "architecture": "x86",
+      "log": "evidence/instancing-resources/x86-public.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_fl93-e212849726c52d8b.exe",
+      "arguments": [
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_3",
+      "force_legacy": null,
+      "exe_sha256": "018e396b16cd6ff20b2cee2e7ea2075479dca424f3163dc89adc69dc9cb5aa42",
+      "log_sha256": "4a4c1d08bd68e3ffee87184aa13d3a7bad675e1f923b587aead0a44a127171ef"
+    },
+    {
+      "name": "fl92-streams",
+      "architecture": "x86",
+      "log": "evidence/instancing-resources/x86-fl92-streams.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-e10f47953df99ab4.exe",
+      "arguments": [
+        "fl92_instance_rate_vertex_streams",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": "9_2",
+      "force_legacy": null,
+      "exe_sha256": "dcdcd7eaae1f63ce159ca59fe082b123068f6c8b07cf9cf262653ea2d5b9cbdc",
+      "log_sha256": "0bd478d7f4991d472fa3e45bc9d78e216cec8c6e10364b5e3f4933ddf6c0d5d1"
+    },
+    {
+      "name": "fl91-streams",
+      "architecture": "x86",
+      "log": "evidence/instancing-resources/x86-fl91-streams.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-e10f47953df99ab4.exe",
+      "arguments": [
+        "fl91_instance_rate_vertex_streams",
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": null,
+      "force_legacy": "1",
+      "exe_sha256": "dcdcd7eaae1f63ce159ca59fe082b123068f6c8b07cf9cf262653ea2d5b9cbdc",
+      "log_sha256": "1be99bf3cb6646148b098b396add356e129d2653f2ed25c5d7698d4e3ad8a6ac"
+    },
+    {
+      "name": "fl91-public-index",
+      "architecture": "x86",
+      "log": "evidence/instancing-resources/x86-fl91-public-index.log",
+      "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\i686-pc-windows-msvc\\debug\\deps\\dx11_index_ranges-fbba3881196b062f.exe",
+      "arguments": [
+        "--nocapture",
+        "--test-threads=1"
+      ],
+      "exit": 0,
+      "level": null,
+      "force_legacy": "1",
+      "exe_sha256": "ccbeec636959ce794afc89ec95a4a063315dc8d7641e124e793d00cbf4c9e308",
+      "log_sha256": "b9aa52553e24b27349db09a3675fc2a8ce9d49adc54a085131f3d8a607af750d"
+    }
+  ],
+  "independent_volume_diagnostic": {
+    "architecture": "x64",
+    "scope": "Exact raw D3D11 volume extent without wgpu, RGBA8 and RG32F on all axes",
+    "result": "FAIL_SCOPED",
+    "expected": "A 512-texel power-of-two axis per the 10Level9 CreateTexture3D method table",
+    "observed": "E_INVALIDARG for 512 on each axis. 256 and the matching default SRV succeeded on each axis.",
+    "command": "cl /nologo /W4 /EHsc volume-probe.cpp /Fevolume-probe.exe /link d3d11.lib dxgi.lib",
+    "source": {
+      "path": "evidence/instancing-resources/volume-probe.cpp",
+      "sha256": "4b61a088c18d5674a44c1d9a219cdcaa58075925d7b9136768ea1f5be2898d95"
+    },
+    "log": {
+      "path": "evidence/instancing-resources/volume-probe.log",
+      "sha256": "368ddd9aeebcecac5a26c85aacd7baa9957c7cf9d232c613983072cd121d439d"
+    },
+    "exe_sha256": "1b14fe4f0fd183e2771ae5cf2b0cfd72734f9fce4f267c044d7222f66981b46d"
+  },
+  "rg32f_volume_transfer_diagnostics": {
+    "regional": {
+      "candidate_tree": "b643413239b0b9a327760087f873087865b0d851",
+      "result": "FAIL_SCOPED",
+      "scope": "RG32F default-volume region update and copy to 1x1x1 staging resource",
+      "observed": "2D RTV readback and 256x1x1 volume creation passed. The regional transfer sequence returned DXGI_ERROR_DEVICE_REMOVED at readback.",
+      "runs": [
+        {
+          "name": "rg32f",
+          "architecture": "x64",
+          "log": "evidence/instancing-resources/x64-rg32f-regional.log",
+          "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe",
+          "arguments": [
+            "tier_fl9_3_native_rg32_float_color_and_volume",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "exit": 101,
+          "level": "9_3",
+          "force_legacy": null,
+          "exe_sha256": "449e1383dc07f39c2671cac1cfca4f8a2e4bae22b92c5df296d5f64a02d6a734",
+          "log_sha256": "d0e5efab1c1bccf9ea28efde3a22755fb21ee1ba35bd38ef63934d696b3916b9"
+        },
+        {
+          "name": "rg32f",
+          "architecture": "x86",
+          "log": "evidence/instancing-resources/x86-rg32f-regional.log",
+          "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-e10f47953df99ab4.exe",
+          "arguments": [
+            "tier_fl9_3_native_rg32_float_color_and_volume",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "exit": 101,
+          "level": "9_3",
+          "force_legacy": null,
+          "exe_sha256": "8ac7d22c8d2ca7e7bf4afe47541abf6a83f1ab7d9eda00dbcce87cb6787104ea",
+          "log_sha256": "0da969aaa8151f77f700d0fb3a78ae045447b8ef709de7733c66fee7e5356957"
+        }
+      ]
+    },
+    "whole-volume": {
+      "candidate_tree": "94f83477f211b8b6abea445aa81109f58ffedc33",
+      "result": "FAIL_SCOPED",
+      "scope": "RG32F initialized default volume with SRV, CopyResource into same-extent staging and map",
+      "observed": "The whole-volume transfer sequence reported DXGI_ERROR_DEVICE_REMOVED after prior 2D RTV readback passed.",
+      "runs": [
+        {
+          "name": "rg32f",
+          "architecture": "x64",
+          "log": "evidence/instancing-resources/x64-rg32f-whole-volume.log",
+          "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\debug\\deps\\wgpu_hal-11c787a006594105.exe",
+          "arguments": [
+            "tier_fl9_3_native_rg32_float_color_and_volume",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "exit": 101,
+          "level": "9_3",
+          "force_legacy": null,
+          "exe_sha256": "334d6089b5ace05c786cf4429351131d5bfdc136b36b7c0e5e9e21dcf63cf327",
+          "log_sha256": "6394b8b497b8ee02e69bc53d35fcc3459639e36803e99ffcd225bed3ca44eb83"
+        },
+        {
+          "name": "rg32f",
+          "architecture": "x86",
+          "log": "evidence/instancing-resources/x86-rg32f-whole-volume.log",
+          "command": "C:\\Users\\ben\\AppData\\Local\\Temp\\wgpu-fl93-instancing\\target\\i686-pc-windows-msvc\\debug\\deps\\wgpu_hal-e10f47953df99ab4.exe",
+          "arguments": [
+            "tier_fl9_3_native_rg32_float_color_and_volume",
+            "--nocapture",
+            "--test-threads=1"
+          ],
+          "exit": 101,
+          "level": "9_3",
+          "force_legacy": null,
+          "exe_sha256": "4890507a84aca18d50b62f695a9ce70e3980de32aff5fc9d1d28b04bc6d6d833",
+          "log_sha256": "1b99b902033ad44de23b189b6822c7970a64cb420d935f31c0582fbb65cef6ad"
+        }
+      ]
+    }
+  },
+  "scope": "Exact 9_3 and exact predecessor controls. The separate, previously failed FL9_2 shader-object negative case remains open."
+}

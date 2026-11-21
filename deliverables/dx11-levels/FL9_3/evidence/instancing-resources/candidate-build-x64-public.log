@@ -1,0 +1,16 @@
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL9_3-Nov21\wgpu-hal)
+warning: function `adjust_raw_limits` is never used
+   --> wgpu-hal\src\auxil\mod.rs:128:15
+    |
+128 | pub(crate) fn adjust_raw_limits(mut limits: wgt::Limits) -> wgt::Limits {
+    |               ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1 (C:\dev\personal\wgpu-dx11-FL9_3-Nov21\wgpu-core\platform-deps\windows-linux-android)
+   Compiling wgpu-core v30.0.1 (C:\dev\personal\wgpu-dx11-FL9_3-Nov21\wgpu-core)
+warning: `wgpu-hal` (lib) generated 1 warning
+   Compiling wgpu v30.0.1 (C:\dev\personal\wgpu-dx11-FL9_3-Nov21\wgpu)
+    Finished `test` profile [unoptimized] target(s) in 15.46s
+  Executable tests\dx11_fl93.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl93-instancing\target\debug\deps\dx11_fl93-be9831a806579f81.exe)
+  Executable tests\dx11_index_ranges.rs (C:\Users\ben\AppData\Local\Temp\wgpu-fl93-instancing\target\debug\deps\dx11_index_ranges-9bf96daa91ff9775.exe)

@@ -1,0 +1,14 @@
+
+running 1 test
+test dx11::hal_encoder::instance_stream_tests::fl92_instance_rate_vertex_streams ... Hardware: AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, luid: 84608, software: false }; requested and actual L9_2
+L9_2 run 0: native indexed instance calls=0
+L9_2 run 1: native indexed instance calls=0
+L9_2 run 2: native indexed instance calls=0
+L9_2 run 3: native indexed instance calls=0
+L9_2 run 4: native indexed instance calls=0
+L9_2 run 5: native indexed instance calls=0
+PASS: L9_2 instance streams, six full-image executions, max fixture index 70000
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 564 filtered out; finished in 0.38s
+

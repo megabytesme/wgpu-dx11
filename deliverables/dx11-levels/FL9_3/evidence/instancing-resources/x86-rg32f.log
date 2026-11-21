@@ -1,0 +1,14 @@
+
+running 1 test
+test dx11::interop::fl93_resources::tier_fl9_3_native_rg32_float_color_and_volume ... Exact FL9_3 on AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, luid: 84608, software: false }, driver Some("32.0.16.2101")
+RG32F native format flags: 0x2641e2
+RG32F 2D render target clear and readback matched
+RG32F 256x1x1 volume and SRV created
+RG32F 1x256x1 volume and SRV created
+RG32F 1x1x256 volume and SRV created
+Creating RG32F cube and SRV
+RG32F support=0x2641e2; RTV clear, 256 on all axes with SRVs, and cube-face SRV and copy matched
+ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 564 filtered out; finished in 0.32s
+

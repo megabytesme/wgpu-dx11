@@ -1,0 +1,15 @@
+
+running 1 test
+test dx11::interop::fl93_resources::tier_fl9_3_native_rg32_float_color_and_volume ... Exact FL9_3 on AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, luid: 84608, software: false }, driver Some("32.0.16.2101")
+RG32F native format flags: 0x2641e2
+RG32F 2D render target clear and readback matched
+Error: Error { code: HRESULT(0x887A0005), message: "The GPU device instance has been suspended. Use GetDeviceRemovedReason to determine the appropriate action." }
+FAILED
+
+failures:
+
+failures:
+    dx11::interop::fl93_resources::tier_fl9_3_native_rg32_float_color_and_volume
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 564 filtered out; finished in 0.30s
+
