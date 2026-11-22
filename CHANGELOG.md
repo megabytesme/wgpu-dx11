@@ -47,6 +47,7 @@ Bottom level categories:
 #### DX11
 
 - Allow Repeat and MirrorRepeat at FL9_1 when texture coordinates are proven bounded, including WGSL `select` with bounded coordinates in both arms.
+- Allow single-sample RGBA8 and BGRA8 sRGB blending at FL9_1 when the selected adapter passes a linear-space GPU readback probe for the exact format.
 
 #### General
 

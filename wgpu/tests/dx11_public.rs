@@ -9688,13 +9688,6 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
     assert_eq!(info.backend, Backend::Dx11);
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
-    let srgb_features = adapter.get_texture_format_features(TextureFormat::Rgba8UnormSrgb);
-    assert!(
-        !srgb_features
-            .flags
-            .contains(TextureFormatFeatureFlags::BLENDABLE),
-        "FL9_1 sRGB blending does not match wgpu linear-space semantics: {srgb_features:?}"
-    );
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
         info.name, info.vendor, info.device, info.driver, info.driver_info
@@ -9713,7 +9706,8 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
             "@vertex fn vs(@location(0) position: vec2f) -> @builtin(position) vec4f { return vec4f(position, 0.5, 1.0); }\n\
              @fragment fn blue() -> @location(0) vec4f { return vec4f(0.0, 0.0, 1.0, 1.0); }\n\
              @fragment fn blue_alpha() -> @location(0) vec4f { return vec4f(0.0, 0.0, 1.0, 0.25); }\n\
-             @fragment fn overlay() -> @location(0) vec4f { return vec4f(0.5, 0.0, 0.0, 0.5); }"
+             @fragment fn overlay() -> @location(0) vec4f { return vec4f(0.5, 0.0, 0.0, 0.5); }\n\
+             @fragment fn srgb_overlay() -> @location(0) vec4f { return vec4f(0.25, 0.0, 0.0, 0.5); }"
                 .into(),
         ),
     });
@@ -9746,10 +9740,9 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
         usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
         view_formats: &[],
     });
-    let target_view = target.create_view(&TextureViewDescriptor::default());
     let readback = device.create_buffer(&BufferDescriptor {
         label: Some("FL9_1 blend readback"),
-        size: 2 * 8 * 256,
+        size: 4 * 8 * 256,
         usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
         mapped_at_creation: false,
     });
@@ -9831,14 +9824,6 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
         ));
     });
     println!("PASS: public core rejected separate alpha equations before HAL");
-    expect_validation_error(&device, "FL9_1 sRGB target blending", || {
-        drop(render_pipeline(
-            "overlay",
-            Some(premultiplied_over),
-            TextureFormat::Rgba8UnormSrgb,
-        ));
-    });
-    println!("PASS: public core rejected FL9_1 sRGB blending before HAL");
     let base = render_pipeline("blue", None, TextureFormat::Rgba8Unorm);
     let overlay = render_pipeline(
         "overlay",
@@ -9866,94 +9851,102 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
         label: Some("FL9_1 public blend commands"),
     });
-    {
-        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("FL9_1 premultiplied blend pass"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: &target_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: Operations {
-                    load: LoadOp::Clear(Color::BLACK),
-                    store: StoreOp::Store,
-                },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        pass.set_pipeline(&base);
-        pass.draw(0..3, 0..1);
-        pass.set_pipeline(&overlay);
-        pass.draw(0..3, 0..1);
-    }
-    encoder.copy_texture_to_buffer(
-        TexelCopyTextureInfo {
-            texture: &target,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        TexelCopyBufferInfo {
-            buffer: &readback,
-            layout: TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(256),
-                rows_per_image: Some(8),
+    let extent = Extent3d {
+        width: 8,
+        height: 8,
+        depth_or_array_layers: 1,
+    };
+    let mut encode_case = |target: &Texture, pipelines: [&RenderPipeline; 2], offset| {
+        let view = target.create_view(&TextureViewDescriptor::default());
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                label: Some("FL9_1 public blend pass"),
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::BLACK),
+                        store: StoreOp::Store,
+                    },
+                })],
+                depth_stencil_attachment: None,
+                timestamp_writes: None,
+                occlusion_query_set: None,
+                multiview_mask: None,
+            });
+            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+            for pipeline in pipelines {
+                pass.set_pipeline(pipeline);
+                pass.draw(0..3, 0..1);
+            }
+        }
+        encoder.copy_texture_to_buffer(
+            TexelCopyTextureInfo {
+                texture: target,
+                mip_level: 0,
+                origin: Origin3d::ZERO,
+                aspect: TextureAspect::All,
             },
-        },
-        Extent3d {
-            width: 8,
-            height: 8,
-            depth_or_array_layers: 1,
-        },
-    );
-    {
-        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
-            label: Some("FL9_1 alpha-equivalent blend pass"),
-            color_attachments: &[Some(RenderPassColorAttachment {
-                view: &target_view,
-                depth_slice: None,
-                resolve_target: None,
-                ops: Operations {
-                    load: LoadOp::Clear(Color::BLACK),
-                    store: StoreOp::Store,
+            TexelCopyBufferInfo {
+                buffer: &readback,
+                layout: TexelCopyBufferLayout {
+                    offset,
+                    bytes_per_row: Some(256),
+                    rows_per_image: Some(8),
                 },
-            })],
-            depth_stencil_attachment: None,
-            timestamp_writes: None,
-            occlusion_query_set: None,
-            multiview_mask: None,
-        });
-        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
-        pass.set_pipeline(&alpha_equivalent_base);
-        pass.draw(0..3, 0..1);
-        pass.set_pipeline(&alpha_equivalent_overlay);
-        pass.draw(0..3, 0..1);
-    }
-    encoder.copy_texture_to_buffer(
-        TexelCopyTextureInfo {
-            texture: &target,
-            mip_level: 0,
-            origin: Origin3d::ZERO,
-            aspect: TextureAspect::All,
-        },
-        TexelCopyBufferInfo {
-            buffer: &readback,
-            layout: TexelCopyBufferLayout {
-                offset: 8 * 256,
-                bytes_per_row: Some(256),
-                rows_per_image: Some(8),
             },
-        },
-        Extent3d {
-            width: 8,
-            height: 8,
-            depth_or_array_layers: 1,
-        },
+            extent,
+        );
+    };
+    encode_case(&target, [&base, &overlay], 0);
+    encode_case(
+        &target,
+        [&alpha_equivalent_base, &alpha_equivalent_overlay],
+        8 * 256,
     );
+    let mut expected_images = vec![
+        (TextureFormat::Rgba8Unorm, 0, [128, 0, 128, 255]),
+        (TextureFormat::Rgba8Unorm, 8 * 256, [128, 0, 255, 128]),
+    ];
+    for (index, (format, expected)) in [
+        (TextureFormat::Rgba8UnormSrgb, [137, 0, 188, 159]),
+        (TextureFormat::Bgra8UnormSrgb, [188, 0, 137, 159]),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let format_features = adapter.get_texture_format_features(format);
+        if !format_features
+            .flags
+            .contains(TextureFormatFeatureFlags::BLENDABLE)
+        {
+            expect_validation_error(&device, "unproven FL9_1 sRGB blending", || {
+                drop(render_pipeline(
+                    "srgb_overlay",
+                    Some(premultiplied_over),
+                    format,
+                ));
+            });
+            println!("PASS: Core rejected blending for {format:?} without linear-space support");
+            continue;
+        }
+        let target = device.create_texture(&TextureDescriptor {
+            label: Some("FL9_1 probed sRGB blend target"),
+            size: extent,
+            mip_level_count: 1,
+            sample_count: 1,
+            dimension: TextureDimension::D2,
+            format,
+            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+            view_formats: &[],
+        });
+        let base = render_pipeline("blue_alpha", None, format);
+        let overlay = render_pipeline("srgb_overlay", Some(premultiplied_over), format);
+        let offset = (index + 2) * 8 * 256;
+        encode_case(&target, [&base, &overlay], offset as u64);
+        expected_images.push((format, offset, expected));
+    }
     let submission = queue.submit([encoder.finish()]);
     let (sender, receiver) = std::sync::mpsc::channel();
     readback
@@ -9971,7 +9964,9 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
         .expect("map public blend readback");
     {
         let data = readback.slice(..).get_mapped_range().expect("mapped data");
-        for (region_offset, expected) in [(0, [128, 0, 128, 255]), (8 * 256, [128, 0, 255, 128])] {
+        for (format, region_offset, expected) in expected_images {
+            let first = &data[region_offset..region_offset + 4];
+            println!("FL9_1 {format:?} blend first pixel {first:?}, expected {expected:?}");
             for y in 0..8 {
                 for x in 0..8 {
                     let offset = region_offset + y * 256 + x * 4;
@@ -9980,7 +9975,7 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
                     {
                         assert!(
                             observed.abs_diff(expected) <= 1,
-                            "blend pixel ({x}, {y}) channel {channel}: expected {expected}, observed {observed}"
+                            "{format:?} blend pixel ({x}, {y}) channel {channel}: expected {expected}, observed {observed}"
                         );
                     }
                 }

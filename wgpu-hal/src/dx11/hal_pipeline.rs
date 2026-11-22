@@ -2953,6 +2953,13 @@ impl RenderPipeline {
             .transpose()?;
         if let (Some(target), Some(blend_desc)) = (target, blend_desc) {
             if blend_desc.BlendEnable.as_bool() {
+                if !owner.selected_srgb_blend().matches_portable(
+                    owner.feature_level(),
+                    target.format,
+                    desc.multisample.count,
+                ) {
+                    return Err(invalid());
+                }
                 let format = match target.format {
                     wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
                     wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,

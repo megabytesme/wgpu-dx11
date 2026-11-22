@@ -24,6 +24,7 @@ mod instance;
 mod query;
 mod sampling;
 mod shader;
+mod srgb_blend;
 mod surface;
 mod swapchain;
 mod texture;
