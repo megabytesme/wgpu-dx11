@@ -32,6 +32,16 @@ Required shader evidence on a physical FL9_2 device includes compiling WGSL thro
   under both winding conventions. A general HAL workaround remains open.
   The adapter-specific gate disables asymmetric stencil on
   `4d4f4351:41333430`. Full FL9_2 still requires correct back-face behavior.
+  A subsequent exact-FL9_2 native differential on that adapter found that
+  front Replace/back Keep and front Invert/back Keep each incorrectly update
+  128 back-facing pixels; descriptor reversal with reversed front-face winding
+  passed these cases. Invert/Replace and Replace/Zero also passed the tested
+  initial-zero cases. Both x64 and x86 RTX controls passed all cases. This
+  state-pair-specific result does not establish a general descriptor or raster
+  permutation: comparison, failure branches, shader face orientation, culling,
+  topology, indexed and instanced draws remain unproven. The adapter gate
+  continues to withhold two-sided stencil. Raw logs, source and executable hashes are in the M02
+  coordination evidence `native-v3-receipt.json` and associated logs.
 - **Query replay failure.** The query result read has a five-second deadline.
   The existing cleanup fence can still wait indefinitely if a driver stops
   making progress without reporting device removal. A robust retirement path

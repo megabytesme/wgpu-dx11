@@ -246,6 +246,46 @@ int probe(ID3D11Device* device, ID3D11DeviceContext* context) {
         D3D11_COMPARISON_ALWAYS, 0xff);
     bool asymmetric_matches = run("asymmetric_ccw_front", asymmetric.Get(), ccw.Get(), true, false);
     asymmetric_matches &= run("asymmetric_cw_front", asymmetric.Get(), cw.Get(), false, true);
+    asymmetric_matches &= run("asymmetric_cull_back", asymmetric.Get(), cull_back_ccw.Get(), true, false);
+    asymmetric_matches &= run("asymmetric_cull_front", asymmetric.Get(), cull_front_ccw.Get(), false, false);
+    const auto reversed = stencil_state(device, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_REPLACE,
+        D3D11_COMPARISON_ALWAYS, 0xff);
+    asymmetric_matches &= run("reversed_ccw_front", reversed.Get(), ccw.Get(), false, true);
+    asymmetric_matches &= run("reversed_cw_front", reversed.Get(), cw.Get(), true, false);
+    asymmetric_matches &= run("reversed_cull_back", reversed.Get(), cull_back_ccw.Get(), false, false);
+    asymmetric_matches &= run("reversed_cull_front", reversed.Get(), cull_front_ccw.Get(), false, true);
+    const auto run_reference = [&](const char* name, ID3D11DepthStencilState* state,
+                                   ID3D11RasterizerState* raster, UINT reference,
+                                   bool left_red, bool right_red) {
+        begin(false);
+        context->OMSetDepthStencilState(state, stencil_reference);
+        context->RSSetState(raster);
+        context->RSSetScissorRects(1, &left);
+        context->Draw(3, 0);
+        context->RSSetScissorRects(1, &right);
+        context->Draw(3, 3);
+        return readback(name, reference, left_red, right_red);
+    };
+    const auto invert_replace = stencil_state(device, D3D11_STENCIL_OP_INVERT, D3D11_STENCIL_OP_REPLACE,
+        D3D11_COMPARISON_ALWAYS, 0xff);
+    const auto replace_invert = stencil_state(device, D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_INVERT,
+        D3D11_COMPARISON_ALWAYS, 0xff);
+    asymmetric_matches &= run_reference("invert_replace_ccw", invert_replace.Get(), ccw.Get(), 255, true, false);
+    asymmetric_matches &= run_reference("replace_invert_cw", replace_invert.Get(), cw.Get(), 255, true, false);
+    asymmetric_matches &= run_reference("invert_replace_ccw_one", invert_replace.Get(), ccw.Get(), 1, false, true);
+    asymmetric_matches &= run_reference("replace_invert_cw_one", replace_invert.Get(), cw.Get(), 1, false, true);
+    const auto invert_keep = stencil_state(device, D3D11_STENCIL_OP_INVERT, D3D11_STENCIL_OP_KEEP,
+        D3D11_COMPARISON_ALWAYS, 0xff);
+    const auto keep_invert = stencil_state(device, D3D11_STENCIL_OP_KEEP, D3D11_STENCIL_OP_INVERT,
+        D3D11_COMPARISON_ALWAYS, 0xff);
+    const auto replace_zero = stencil_state(device, D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_ZERO,
+        D3D11_COMPARISON_ALWAYS, 0xff);
+    const auto zero_replace = stencil_state(device, D3D11_STENCIL_OP_ZERO, D3D11_STENCIL_OP_REPLACE,
+        D3D11_COMPARISON_ALWAYS, 0xff);
+    asymmetric_matches &= run_reference("invert_keep_ccw", invert_keep.Get(), ccw.Get(), 255, true, false);
+    asymmetric_matches &= run_reference("keep_invert_cw", keep_invert.Get(), cw.Get(), 255, true, false);
+    asymmetric_matches &= run_reference("replace_zero_ccw", replace_zero.Get(), ccw.Get(), 1, true, false);
+    asymmetric_matches &= run_reference("zero_replace_cw", zero_replace.Get(), cw.Get(), 1, true, false);
     const auto replace_no_depth = stencil_state(device, D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_REPLACE,
         D3D11_COMPARISON_ALWAYS, 0xff, FALSE);
     const auto asymmetric_no_depth = stencil_state(device, D3D11_STENCIL_OP_REPLACE, D3D11_STENCIL_OP_KEEP,
