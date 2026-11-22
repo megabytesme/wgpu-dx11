@@ -233,6 +233,7 @@ pub(super) struct DriverCapabilities {
     pub bgra8: Query<u32>,
     pub rgba8_srgb: Query<u32>,
     pub bgra8_srgb: Query<u32>,
+    pub srgb_blend: super::srgb_blend::SelectedSrgbBlend,
     pub depth24_stencil8: Query<u32>,
     pub depth16_unorm: Query<u32>,
     pub depth24_stencil8_samples: SampleCountQueries,
@@ -638,10 +639,11 @@ pub(super) struct WgpuCapabilityProjection {
 
 impl Capabilities {
     fn blend_semantics_match_wgpu(&self, format: wgt::TextureFormat) -> bool {
-        !matches!(
-            format,
-            wgt::TextureFormat::Rgba8UnormSrgb | wgt::TextureFormat::Bgra8UnormSrgb
-        ) || self.hardware.srgb_blending_linear
+        self.hardware.srgb_blending_linear
+            || self
+                .driver
+                .srgb_blend
+                .matches_portable(self.hardware.level, format, 1)
     }
 
     pub fn wireframe_rasterizer_supported(&self) -> bool {
@@ -1391,6 +1393,7 @@ impl Capabilities {
                 bgra8: format(DXGI_FORMAT_B8G8R8A8_UNORM),
                 rgba8_srgb: format(DXGI_FORMAT_R8G8B8A8_UNORM_SRGB),
                 bgra8_srgb: format(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB),
+                srgb_blend: device.selected_srgb_blend(),
                 depth24_stencil8: format(DXGI_FORMAT_D24_UNORM_S8_UINT),
                 depth16_unorm: format(DXGI_FORMAT_D16_UNORM),
                 depth24_stencil8_samples: sample_counts(DXGI_FORMAT_D24_UNORM_S8_UINT),
@@ -2255,6 +2258,7 @@ mod tests {
                 bgra8: Query::Value(!(D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32)),
                 rgba8_srgb: Query::Value(!(D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32)),
                 bgra8_srgb: Query::Value(!(D3D11_FORMAT_SUPPORT_TEXTURE3D.0 as u32)),
+                srgb_blend: Default::default(),
                 depth24_stencil8: Query::Value(u32::MAX),
                 depth16_unorm: Query::Value(u32::MAX),
                 depth24_stencil8_samples: SampleCountQueries([Query::Value(0); 4]),
@@ -2755,6 +2759,28 @@ mod tests {
         assert!(model(FeatureLevel::L9_1)
             .texture_format_capabilities(wgt::TextureFormat::Rgba8Unorm)
             .contains(crate::TextureFormatCapabilities::COLOR_ATTACHMENT_BLEND));
+    }
+
+    #[test]
+    fn portable_srgb_blend_projection_requires_selected_format_and_native_blend_flag() {
+        use wgt::TextureFormat::{Bgra8UnormSrgb, Rgba8UnormSrgb};
+        let mut caps = model(FeatureLevel::L9_1);
+        caps.driver.srgb_blend.rgba8 = true;
+        assert!(caps
+            .texture_format_capabilities(Rgba8UnormSrgb)
+            .contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
+        assert!(!caps
+            .texture_format_capabilities(Bgra8UnormSrgb)
+            .contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
+
+        caps.driver.srgb_blend.bgra8 = true;
+        caps.driver.rgba8_srgb = Query::Value(!(D3D11_FORMAT_SUPPORT_BLENDABLE.0 as u32));
+        assert!(!caps
+            .texture_format_capabilities(Rgba8UnormSrgb)
+            .contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
+        assert!(caps
+            .texture_format_capabilities(Bgra8UnormSrgb)
+            .contains(FormatCaps::COLOR_ATTACHMENT_BLEND));
     }
 
     #[test]

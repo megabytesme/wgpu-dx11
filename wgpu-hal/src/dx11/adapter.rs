@@ -22,6 +22,7 @@ impl Adapter {
         native: Arc<super::NativeDevice>,
     ) -> Option<crate::ExposedAdapter<super::Api>> {
         let projection = super::capabilities::Capabilities::query(&native).wgpu_projection()?;
+        native.initialize_srgb_blend().ok()?;
         let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
         info.name = identity.name.clone();
         info.vendor = identity.vendor_id;
