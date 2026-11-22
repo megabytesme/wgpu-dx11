@@ -262,6 +262,10 @@ impl NativeDevice {
         self.portable_fl10 = true;
     }
 
+    pub(super) fn portable_fl10_enabled(&self) -> bool {
+        self.portable_fl10
+    }
+
     pub(super) fn color_attachment_limit(&self) -> usize {
         if self.portable_fl10 { crate::MAX_COLOR_ATTACHMENTS } else { 1 }
     }

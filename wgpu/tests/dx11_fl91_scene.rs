@@ -53,11 +53,10 @@ fn mapped_buffer(
     buffer
 }
 
-#[test]
-fn public_fl10_eight_color_targets_with_shared_blend_and_independent_masks() {
+fn exact_fl10_adapter() -> Option<Adapter> {
     if std::env::var_os("WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL").as_deref() != Some("10_0".as_ref())
     {
-        return;
+        return None;
     }
     let mut instance_desc = InstanceDescriptor::new_without_display_handle();
     instance_desc.backends = Backends::DX11;
@@ -70,6 +69,71 @@ fn public_fl10_eight_color_targets_with_shared_blend_and_independent_masks() {
     assert_eq!(native.feature_level().as_raw(), 0xa000);
     assert!(!native.is_software());
     drop(native);
+    Some(adapter)
+}
+
+#[test]
+fn public_fl10_buffer_size_boundary() {
+    let Some(adapter) = exact_fl10_adapter() else {
+        return;
+    };
+    let limits = adapter.limits();
+    let maximum = (128 << 20) - COPY_BUFFER_ALIGNMENT;
+    assert_eq!(limits.max_buffer_size, maximum);
+    let (device, _queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        required_limits: limits,
+        ..Default::default()
+    }))
+    .unwrap();
+    assert_eq!(device.limits().max_buffer_size, maximum);
+
+    let allocate = |size, usage| {
+        device.create_buffer(&BufferDescriptor {
+            label: None,
+            size,
+            usage,
+            mapped_at_creation: false,
+        })
+    };
+    for (size, usage) in [
+        (maximum - 1, BufferUsages::COPY_SRC),
+        (maximum, BufferUsages::COPY_SRC),
+        (maximum, BufferUsages::VERTEX),
+    ] {
+        let validation = device.push_error_scope(ErrorFilter::Validation);
+        let oom = device.push_error_scope(ErrorFilter::OutOfMemory);
+        let buffer = allocate(size, usage);
+        assert_eq!(buffer.size(), size);
+        for error in [poll_ready(oom.pop()), poll_ready(validation.pop())] {
+            assert!(error.is_none(), "{size} bytes with {usage:?}: {error:?}");
+        }
+        buffer.destroy();
+    }
+
+    let validation = device.push_error_scope(ErrorFilter::Validation);
+    drop(allocate(maximum + 1, BufferUsages::COPY_SRC));
+    let error = poll_ready(validation.pop()).expect("oversized buffer must fail validation");
+    assert!(
+        error
+            .to_string()
+            .contains("greater than the maximum buffer size"),
+        "{error}"
+    );
+    let info = adapter.get_info();
+    println!(
+        "{} ({:#06x}:{:#06x}) at FL10_0: allocated COPY_SRC and VERTEX buffers at {maximum} bytes, rejected {} bytes",
+        info.name,
+        info.vendor,
+        info.device,
+        maximum + 1
+    );
+}
+
+#[test]
+fn public_fl10_eight_color_targets_with_shared_blend_and_independent_masks() {
+    let Some(adapter) = exact_fl10_adapter() else {
+        return;
+    };
     let limits = adapter.limits();
     assert_eq!(limits.max_color_attachments, 8);
     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {

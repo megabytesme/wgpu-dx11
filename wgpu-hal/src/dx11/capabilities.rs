@@ -26,6 +26,8 @@ use windows::Win32::Graphics::{
 
 const FL9X_MAX_BUFFER_RESOURCE_SIZE: u64 = 128 << 20;
 const FL9X_MAX_BUFFER_SIZE: u64 = FL9X_MAX_BUFFER_RESOURCE_SIZE - wgt::COPY_BUFFER_ALIGNMENT;
+// D3D10_REQ_RESOURCE_SIZE_IN_MEGABYTES, leaving room for Core's vertex buffer padding.
+const FL10_0_MAX_BUFFER_SIZE: u64 = (128 << 20) - wgt::COPY_BUFFER_ALIGNMENT;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct HardwareGuarantees {
@@ -376,6 +378,7 @@ pub(super) struct BackendCapabilities {
     pub indexed_line_strips: bool,
     pub indexed_triangle_strips: bool,
     pub color_attachments: u32,
+    pub max_buffer_size: u64,
     pub index_u16: bool,
     pub index_u16_fl9_rewrite: bool,
     pub index_u32_ordered_fl9_windows: bool,
@@ -540,6 +543,7 @@ impl BackendCapabilities {
         indexed_line_strips: true,
         indexed_triangle_strips: true,
         color_attachments: 1,
+        max_buffer_size: u32::MAX as u64 - wgt::COPY_BUFFER_ALIGNMENT,
         index_u16: true,
         index_u16_fl9_rewrite: true,
         index_u32_ordered_fl9_windows: true,
@@ -904,7 +908,7 @@ impl Capabilities {
         limits.max_buffer_size = if self.hardware.level.as_raw() <= FeatureLevel::L9_3.as_raw() {
             FL9X_MAX_BUFFER_SIZE
         } else {
-            u64::from(u32::MAX) - wgt::COPY_BUFFER_ALIGNMENT
+            self.backend.max_buffer_size
         };
         limits.max_vertex_attributes = 16;
         limits.max_vertex_buffer_array_stride = 2048;
@@ -1419,6 +1423,11 @@ impl Capabilities {
             backend: BackendCapabilities {
                 alpha_to_coverage: device.supports_alpha_to_coverage(),
                 color_attachments: device.color_attachment_limit() as u32,
+                max_buffer_size: if device.portable_fl10_enabled() {
+                    FL10_0_MAX_BUFFER_SIZE
+                } else {
+                    BackendCapabilities::CURRENT.max_buffer_size
+                },
                 ..BackendCapabilities::CURRENT
             },
         }
