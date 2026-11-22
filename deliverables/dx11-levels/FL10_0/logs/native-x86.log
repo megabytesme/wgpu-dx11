@@ -1,0 +1,18 @@
+
+running 2 tests
+test exact_hardware_geometry_stream_output_draw_auto_and_mrt ... requested=0xa000 actual=0xa000 adapter=AdapterIdentity { name: "NVIDIA GeForce RTX 3090 Ti", vendor_id: 4318, device_id: 8707, software: false } LUID=00000000:00014a80 driver=Some("32.0.16.2101") CS4=true
+PASS: optional structured-buffer CS4 dispatch and 16 GPU words
+PASS: adjacency, three captured vertices, SO statistics, DrawAuto, 128 MRT pixels, occlusion 16/0
+PASS: WGSL SM4 loads, NPOT array mips, copied sRGB view, 3D slice, 16 pixels
+ok
+test fxc_emits_exact_sm4_profiles ... seed: disassembly reports vs_4_0
+capture: disassembly reports gs_4_0
+pixel: disassembly reports ps_4_0
+compute: disassembly reports cs_4_0
+ok
+
+test result: ok. 2 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.38s
+
+Candidate tree=7475312c57126aaf5715c0f492c683f10e1b4cfb
+Executable SHA256=1F8F5F64E1B73E99E1641510E43104B7145B94DC028E1CF5B1A6F09839703B5D
+Peak process working set observed while running (bytes)=45445120

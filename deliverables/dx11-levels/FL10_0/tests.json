@@ -1,0 +1,377 @@
+{
+  "state": "INCOMPLETE",
+  "source": {
+    "base_commit": "aa7b65c43ef008d0a92d20fcdf9f10fa0883f157",
+    "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb",
+    "patch_sha256": "06928792193d449819b48f637ec53333b5c86883a3103c1e3a5e50c8e050ba95",
+    "source_paths": [
+      "CHANGELOG.md",
+      "deno_webgpu/lib.rs",
+      "naga/src/back/hlsl/mod.rs",
+      "naga/src/back/hlsl/writer.rs",
+      "wgpu-core/src/command/bind.rs",
+      "wgpu-core/src/device/resource.rs",
+      "wgpu-hal/Cargo.toml",
+      "wgpu-hal/src/dx11/adapter.rs",
+      "wgpu-hal/src/dx11/capabilities.rs",
+      "wgpu-hal/src/dx11/command.rs",
+      "wgpu-hal/src/dx11/device.rs",
+      "wgpu-hal/src/dx11/fl10.rs",
+      "wgpu-hal/src/dx11/hal_device.rs",
+      "wgpu-hal/src/dx11/hal_encoder.rs",
+      "wgpu-hal/src/dx11/hal_pipeline.rs",
+      "wgpu-hal/src/dx11/hal_sampler.rs",
+      "wgpu-hal/src/dx11/hal_shader.rs",
+      "wgpu-hal/src/dx11/instance.rs",
+      "wgpu-hal/src/dx11/mod.rs",
+      "wgpu-hal/src/dx11/query.rs",
+      "wgpu-hal/src/dx11/sampling.rs",
+      "wgpu-hal/src/dx11/shader.rs",
+      "wgpu-hal/src/dx12/device.rs",
+      "wgpu-hal/src/dynamic/mod.rs",
+      "wgpu-hal/src/gles/adapter.rs",
+      "wgpu-hal/src/noop/mod.rs",
+      "wgpu-hal/tests/dx11/fl10_textures.rs",
+      "wgpu-hal/tests/dx11_fl10.rs",
+      "wgpu-types/src/limits.rs",
+      "wgpu/tests/dx11_fl91_scene.rs",
+      "wgpu/tests/dx11_public.rs"
+    ]
+  },
+  "worktree": "C:\\dev\\personal\\wgpu-dx11-FL10_0-Nov21",
+  "build_host": "Ben-Desktop",
+  "requirements_roadmap_commit": "126114a9fa069194e2bd63ac8e8d46c327a35d83",
+  "build_environment": {
+    "CARGO_TARGET_DIR": "E:/temp/wgpu-dx11-fl10_0-nov21-target",
+    "CARGO_PROFILE_DEV_DEBUG": "0",
+    "CARGO_INCREMENTAL": "0",
+    "rustc": "1.99.1",
+    "msvc": "14.44.35207"
+  },
+  "tests": [
+    {
+      "id": "native-x64",
+      "groups": [
+        "native",
+        "graphics",
+        "texture-array",
+        "compute",
+        "fxc"
+      ],
+      "command": "run-desktop.ps1 -Architecture x64 -NativeExecutable <dx11_fl10.exe>",
+      "build": "cargo +stable test --offline --locked -p wgpu-hal --no-default-features --features dx11 --test dx11_fl10 --no-run",
+      "result": "pass",
+      "evidence": {
+        "path": "logs/native-x64.log",
+        "sha256": "67f85f2d72e8cf1e74002d3816dc9f4d147f41f9c6ddb0414df16f5700ec77ad",
+        "executable_sha256": "b23626a0132c43d0211e8ef664f722071e1bf730a5a340239856e1199a23a02f",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "fxc-x64",
+      "command": "<dx11_fl10.exe> --exact fxc_emits_exact_sm4_profiles --nocapture",
+      "result": "pass",
+      "evidence": {
+        "path": "logs/fxc-x64.log",
+        "sha256": "b24c3214694ad7ee83cdc630553e9dfbd5282870712a109ba3e07c8c0033f3a4",
+        "executable_sha256": "b23626a0132c43d0211e8ef664f722071e1bf730a5a340239856e1199a23a02f",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "native-x86",
+      "groups": [
+        "native",
+        "graphics",
+        "texture-array",
+        "compute",
+        "fxc"
+      ],
+      "command": "run-desktop.ps1 -Architecture x86 -NativeExecutable <dx11_fl10.exe>",
+      "build": "cargo +stable test --offline --locked --target i686-pc-windows-msvc -p wgpu-hal --no-default-features --features dx11 --test dx11_fl10 --no-run",
+      "result": "pass",
+      "evidence": {
+        "path": "logs/native-x86.log",
+        "sha256": "7d2e16090b637df1100ff05d4f93ddf8eb91df9c513bf856bcc6dce3fe77985c",
+        "executable_sha256": "1f8f5f64e1b73e99e1641510e43104b7145b94dc028e1cf5b1a6f09839703b5d",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "fxc-x86",
+      "command": "<dx11_fl10.exe> --exact fxc_emits_exact_sm4_profiles --nocapture",
+      "result": "pass",
+      "evidence": {
+        "path": "logs/fxc-x86.log",
+        "sha256": "17c9076c85a4552622af02fe3a2d115c67cadd3a3329132801df96696ad55689",
+        "executable_sha256": "1f8f5f64e1b73e99e1641510e43104b7145b94dc028e1cf5b1a6f09839703b5d",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "typecheck-aarch64-uwp-windows-msvc",
+      "result": "pass",
+      "command": "cargo +1.99.1 check -Zbuild-std=std,panic_abort --offline --locked --lib --target aarch64-uwp-windows-msvc -p wgpu-hal --no-default-features --features dx11",
+      "environment": {
+        "RUSTC_BOOTSTRAP": "1"
+      },
+      "evidence": {
+        "path": "logs/check-aarch64-uwp-windows-msvc.log",
+        "sha256": "89ffe1a2267b708ff6669e663d0340d49ae2037bc996b3083fa97b2b53dd2ba2",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      },
+      "scope": "HAL typecheck only"
+    },
+    {
+      "id": "typecheck-thumbv7a-uwp-windows-msvc",
+      "result": "pass",
+      "command": "cargo +1.99.1 check -Zbuild-std=std,panic_abort --offline --locked --lib --target thumbv7a-uwp-windows-msvc -p wgpu-hal --no-default-features --features dx11",
+      "environment": {
+        "RUSTC_BOOTSTRAP": "1"
+      },
+      "evidence": {
+        "path": "logs/check-thumbv7a-uwp-windows-msvc.log",
+        "sha256": "6f53d76b398fdd7db26ab3093e20909cb053eb910fd1e19498f6d81007af9901",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      },
+      "scope": "HAL typecheck only"
+    },
+    {
+      "id": "public-fl10-mrt-x64",
+      "result": "pass",
+      "command": "run-desktop.ps1 -Architecture x64 -NativeExecutable <dx11_fl10.exe> -SceneExecutable <dx11_fl91_scene.exe>",
+      "evidence": {
+        "path": "logs/public-fl10-mrt-x64.log",
+        "sha256": "b27a646114655302c5ed1994babc177ecd38b614511cebb3ce2a63955eb13bfb",
+        "executable_sha256": "882d11b7a95c160c35d30d3824ab37725e966a77bd39b4f264111df4b1704e78",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "public-default-x64",
+      "result": "pass",
+      "command": "run-desktop.ps1 -Architecture x64 -NativeExecutable <dx11_fl10.exe> -SceneExecutable <dx11_fl91_scene.exe>",
+      "evidence": {
+        "path": "logs/public-default-x64.log",
+        "sha256": "b40676fe6d6a7cd9630ec4310c5c2039b6d63c81845d751829fb3b28a07ed634",
+        "executable_sha256": "882d11b7a95c160c35d30d3824ab37725e966a77bd39b4f264111df4b1704e78",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "public-unsupported-9_3-x64",
+      "result": "pass",
+      "command": "run-desktop.ps1 -Architecture x64 -NativeExecutable <dx11_fl10.exe> -SceneExecutable <dx11_fl91_scene.exe>",
+      "evidence": {
+        "path": "logs/public-unsupported-9_3-x64.log",
+        "sha256": "231c6b5ff33fee2e7b9a7e039e2b8ca496f1d26ccc7ede297d2db6ddd0f07524",
+        "executable_sha256": "882d11b7a95c160c35d30d3824ab37725e966a77bd39b4f264111df4b1704e78",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "public-unsupported-10_1-x64",
+      "result": "pass",
+      "command": "run-desktop.ps1 -Architecture x64 -NativeExecutable <dx11_fl10.exe> -SceneExecutable <dx11_fl91_scene.exe>",
+      "evidence": {
+        "path": "logs/public-unsupported-10_1-x64.log",
+        "sha256": "5d5c1e691869270e6a73d22958c2bdaab85f66d106ec3b1dabdeaacbdfbf4e82",
+        "executable_sha256": "882d11b7a95c160c35d30d3824ab37725e966a77bd39b4f264111df4b1704e78",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "build-dx11-public-x64",
+      "result": "pass",
+      "environment": {
+        "RUSTC_BOOTSTRAP": "dx11_public"
+      },
+      "command": "cargo +stable rustc --offline --locked -p wgpu --no-default-features --features std,dx11,wgsl --test dx11_public -- '-Zcrate-attr=recursion_limit=\"256\"'",
+      "evidence": {
+        "path": "logs/build-dx11-public.log",
+        "sha256": "1e966816c94f2e311af88711f18143e42ee2bb5a9929980b3cef9d66895a1f18",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "cts-strict-unit",
+      "command": "cargo +stable test --offline --locked -p deno_webgpu --features dx11 --lib",
+      "result": "pass",
+      "evidence": {
+        "path": "logs/cts-strict-unit.log",
+        "sha256": "092fd8bbf629c56232c185b0de2af0c3cbfa70763ddd42b477406cd5a73b1454",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "clippy-dx11-hal",
+      "command": "cargo +stable clippy --offline --locked -p wgpu-hal --no-default-features --features dx11 --tests",
+      "result": "pass",
+      "evidence": {
+        "path": "logs/clippy-current.log",
+        "sha256": "afc891183cfdc2d34e4b773c22c717398e33ba7a3ee6c8fb3241f954831fb76f",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "regression-9_1-x64",
+      "command": "<dx11_public.exe> --nocapture --test-threads=1",
+      "environment": {
+        "WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL": "9_1",
+        "WGPU_DX11_REQUIRE_HARDWARE": "1"
+      },
+      "result": "pass",
+      "counts": {
+        "passed": 177,
+        "failed": 0
+      },
+      "evidence": {
+        "path": "logs/regression-9_1-x64.log",
+        "sha256": "9dcf029e38bfbe2457b69dc3989e23a0b5a069387f74cd9b01322d5f29abc6a4",
+        "executable_sha256": "38c2260656d3f91fdda21b09df9aa433506dd2536d78de4f44eb36d0da33c2c8",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "regression-10_0-x64",
+      "command": "<dx11_public.exe> --nocapture --test-threads=1",
+      "environment": {
+        "WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL": "10_0",
+        "WGPU_DX11_REQUIRE_HARDWARE": "1"
+      },
+      "result": "pass",
+      "counts": {
+        "passed": 177,
+        "failed": 0
+      },
+      "evidence": {
+        "path": "logs/regression-10_0-x64.log",
+        "sha256": "68157cac11cc931b6ab27706f998fb5d495c9bab7090358d879bef7321e3d546",
+        "executable_sha256": "38c2260656d3f91fdda21b09df9aa433506dd2536d78de4f44eb36d0da33c2c8",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "scene-9_1-r1-x64",
+      "result": "pass",
+      "command": "run-desktop.ps1 -Architecture x64 -NativeExecutable <dx11_fl10.exe> -SceneExecutable <dx11_fl91_scene.exe>",
+      "evidence": {
+        "path": "logs/scene-9_1-r1-x64.log",
+        "sha256": "2c5fb238bbc7b59d519abe4ebc6baad03171fad3bd77b012a85fcd43c25e63ed",
+        "executable_sha256": "882d11b7a95c160c35d30d3824ab37725e966a77bd39b4f264111df4b1704e78",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "scene-9_1-r2-x64",
+      "result": "pass",
+      "command": "run-desktop.ps1 -Architecture x64 -NativeExecutable <dx11_fl10.exe> -SceneExecutable <dx11_fl91_scene.exe>",
+      "evidence": {
+        "path": "logs/scene-9_1-r2-x64.log",
+        "sha256": "031d0af2fbbfc9148c8d6bc5509558155cb5f80e92930bfb52ad1d8f9c73d140",
+        "executable_sha256": "882d11b7a95c160c35d30d3824ab37725e966a77bd39b4f264111df4b1704e78",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "scene-9_3-r1-x64",
+      "result": "unknown",
+      "command": "run-desktop.ps1 -Architecture x64 -NativeExecutable <dx11_fl10.exe> -SceneExecutable <dx11_fl91_scene.exe>",
+      "evidence": null
+    },
+    {
+      "id": "scene-9_3-r2-x64",
+      "result": "unknown",
+      "command": "run-desktop.ps1 -Architecture x64 -NativeExecutable <dx11_fl10.exe> -SceneExecutable <dx11_fl91_scene.exe>",
+      "evidence": null
+    },
+    {
+      "id": "scene-10_0-r1-x64",
+      "result": "pass",
+      "command": "run-desktop.ps1 -Architecture x64 -NativeExecutable <dx11_fl10.exe> -SceneExecutable <dx11_fl91_scene.exe>",
+      "evidence": {
+        "path": "logs/scene-10_0-r1-x64.log",
+        "sha256": "681de83733f8db05314fd449b2469688487793cb5d31404707be786ab461c51d",
+        "executable_sha256": "882d11b7a95c160c35d30d3824ab37725e966a77bd39b4f264111df4b1704e78",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "scene-10_0-r2-x64",
+      "result": "pass",
+      "command": "run-desktop.ps1 -Architecture x64 -NativeExecutable <dx11_fl10.exe> -SceneExecutable <dx11_fl91_scene.exe>",
+      "evidence": {
+        "path": "logs/scene-10_0-r2-x64.log",
+        "sha256": "0e0dccfe788727fbca594dc30d642657be404ac328ab2784991356dcdddc6dff",
+        "executable_sha256": "882d11b7a95c160c35d30d3824ab37725e966a77bd39b4f264111df4b1704e78",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "id": "cts-curated-0",
+      "result": "fail",
+      "scope": "Recorded selectors only",
+      "counts": {
+        "complete": 50,
+        "fail": 1,
+        "timeout": 0,
+        "curated_skip": 45
+      },
+      "cases": {
+        "Passed w/o warnings": 1176,
+        "Passed with warnings": 0,
+        "Skipped": 368,
+        "Failed": 2
+      },
+      "cases_from_incomplete_selectors": {},
+      "planned_selectors": 96,
+      "recorded_selectors": 96,
+      "selectors_with_exact_hardware_marker": 45,
+      "pinned_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "runner_sha256": "0e6be6a42ac8dc9cd5f76ae59249a7559c61e24403f3cd42682beee367888a02",
+      "evidence": {
+        "path": "logs/cts-curated-0.jsonl",
+        "sha256": "39e2497195fd98d1708ace4811f45c4d9acff0929b6c996c638c478ed1a60857"
+      }
+    },
+    {
+      "id": "cts-focused",
+      "result": "fail",
+      "scope": "Recorded selectors only",
+      "counts": {
+        "complete": 5,
+        "fail": 2,
+        "timeout": 0,
+        "curated_skip": 0
+      },
+      "cases": {
+        "Passed w/o warnings": 88,
+        "Passed with warnings": 0,
+        "Skipped": 0,
+        "Failed": 2
+      },
+      "cases_from_incomplete_selectors": {
+        "pass": 227,
+        "fail": 16
+      },
+      "planned_selectors": 7,
+      "recorded_selectors": 7,
+      "selectors_with_exact_hardware_marker": 7,
+      "pinned_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6",
+      "runner_sha256": "0e6be6a42ac8dc9cd5f76ae59249a7559c61e24403f3cd42682beee367888a02",
+      "evidence": {
+        "path": "logs/cts-focused.jsonl",
+        "sha256": "a82c27f369f7f6dd692feda90887373a81077f44378ec6cb702e25581cb3c490"
+      }
+    }
+  ],
+  "pending": [
+    "reviewed inherited gates and complete inherited rerun",
+    "full CTS",
+    "signed surfaces",
+    "physical device loss",
+    "HorizonUWP verification",
+    "independent review"
+  ]
+}

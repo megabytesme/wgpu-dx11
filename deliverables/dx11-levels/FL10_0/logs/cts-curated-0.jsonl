@@ -1,0 +1,97 @@
+{"candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb", "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6", "runner_sha256": "0e6be6a42ac8dc9cd5f76ae59249a7559c61e24403f3cd42682beee367888a02", "planned_selectors": 96}
+{"selector": "unittests:*", "exit": 0, "cases": {"Passed w/o warnings": 1031, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": false, "result": "complete"}
+{"selector": "webgpu:api,operation,adapter,requestAdapter:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,adapter,requestAdapter:requestAdapter_invalid_featureLevel:featureLevel=\" \"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": false, "result": "complete"}
+{"selector": "webgpu:api,operation,adapter,requestAdapter:requestAdapter_invalid_featureLevel:featureLevel=\"\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": false, "result": "complete"}
+{"selector": "webgpu:api,operation,adapter,requestAdapter:requestAdapter_invalid_featureLevel:featureLevel=\"compatability\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": false, "result": "complete"}
+{"selector": "webgpu:api,operation,adapter,requestAdapter:requestAdapter_invalid_featureLevel:featureLevel=\"cor\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": false, "result": "complete"}
+{"selector": "webgpu:api,operation,adapter,requestAdapter:requestAdapter_invalid_featureLevel:featureLevel=\"Core\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": false, "result": "complete"}
+{"selector": "webgpu:api,operation,buffers,createBindGroup:buffer_binding_resource:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,buffers,map:mapAsync,read,*", "exit": 0, "cases": {"Passed w/o warnings": 18, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,buffers,map:mapAsync,write,*", "exit": 0, "cases": {"Passed w/o warnings": 10, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,basic:empty:*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,copyBufferToBuffer:*", "exit": 0, "cases": {"Passed w/o warnings": 4, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"bgra8unorm\";dstFormat=\"bgra8unorm\";dimension=\"2d\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"bgra8unorm\";dstFormat=\"bgra8unorm-srgb\";dimension=\"2d\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"bgra8unorm-srgb\";dstFormat=\"bgra8unorm\";dimension=\"2d\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"bgra8unorm-srgb\";dstFormat=\"bgra8unorm-srgb\";dimension=\"2d\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"r8unorm\";dstFormat=\"r8unorm\";dimension=\"2d\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"rgba8unorm\";dstFormat=\"rgba8unorm\";dimension=\"2d\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"rgba8unorm\";dstFormat=\"rgba8unorm-srgb\";dimension=\"2d\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"rgba8unorm-srgb\";dstFormat=\"rgba8unorm\";dimension=\"2d\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:color_textures,non_compressed,non_array:srcFormat=\"rgba8unorm-srgb\";dstFormat=\"rgba8unorm-srgb\";dimension=\"2d\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format=\"depth16unorm\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format=\"depth24plus\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format=\"depth24plus-stencil8\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format=\"depth32float\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format=\"depth32float-stencil8\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,copyTextureToTexture:copy_depth_stencil:format=\"stencil8\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,image_copy:offsets_and_sizes:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"CopyB2T\";checkMethod=\"FullCopyT2B\";dimension=\"1d\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"CopyB2T\";checkMethod=\"FullCopyT2B\";dimension=\"2d\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"CopyB2T\";checkMethod=\"FullCopyT2B\";dimension=\"3d\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"WriteTexture\";checkMethod=\"FullCopyT2B\";dimension=\"1d\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"WriteTexture\";checkMethod=\"FullCopyT2B\";dimension=\"2d\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"WriteTexture\";checkMethod=\"FullCopyT2B\";dimension=\"3d\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"WriteTexture\";checkMethod=\"PartialCopyT2B\";dimension=\"1d\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"WriteTexture\";checkMethod=\"PartialCopyT2B\";dimension=\"2d\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,image_copy:undefined_params:initMethod=\"WriteTexture\";checkMethod=\"PartialCopyT2B\";dimension=\"3d\"", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,programmable,immediate:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,command_buffer,render,state_tracking:change_pipeline_before_and_after_vertex_buffer:*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_before_non_indexed_draw:*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,render,state_tracking:set_index_buffer_without_changing_buffer:*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,command_buffer,render,state_tracking:set_vertex_buffer_without_changing_buffer:*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,compute_pipeline,overrides:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,compute,basic:memcpy:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,device,lost:*", "exit": 0, "cases": {"Passed w/o warnings": 3, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,memory_sync,texture,readonly_depth_stencil:sampling_while_testing:format=\"depth16unorm\";*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,memory_sync,texture,readonly_depth_stencil:sampling_while_testing:format=\"depth24plus\";*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,memory_sync,texture,readonly_depth_stencil:sampling_while_testing:format=\"depth24plus-stencil8\";depthReadOnly=false;stencilReadOnly=false", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,memory_sync,texture,readonly_depth_stencil:sampling_while_testing:format=\"depth24plus-stencil8\";depthReadOnly=true;stencilReadOnly=true", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,memory_sync,texture,readonly_depth_stencil:sampling_while_testing:format=\"depth32float\";*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,memory_sync,texture,readonly_depth_stencil:sampling_while_testing:format=\"depth32float-stencil8\";depthReadOnly=false;stencilReadOnly=false", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,memory_sync,texture,readonly_depth_stencil:sampling_while_testing:format=\"depth32float-stencil8\";depthReadOnly=true;stencilReadOnly=true", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,memory_sync,texture,readonly_depth_stencil:sampling_while_testing:format=\"stencil8\";*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,render_pass,*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,render_pass,transient_attachment:increasing_attachments_count:*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,render_pipeline,overrides:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,render_pipeline,overrides:basic:*", "exit": 0, "cases": {"Passed w/o warnings": 2, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,render_pipeline,overrides:multi_entry_points:*", "exit": 0, "cases": {"Passed w/o warnings": 2, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,render_pipeline,overrides:precision:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,render_pipeline,overrides:shared_shader_module:*", "exit": 0, "cases": {"Passed w/o warnings": 2, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,render_pipeline,pipeline_output_targets:color,component_count,blend:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,rendering,basic:clear:*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,rendering,basic:fullscreen_quad:*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,rendering,color_target_state:blend_constant,setting:*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,rendering,color_target_state:blending,formats:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,rendering,color_target_state:blending,formats:format=\"bgra8unorm\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,rendering,color_target_state:blending,formats:format=\"r8unorm\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,rendering,color_target_state:blending,formats:format=\"rg8unorm\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,rendering,color_target_state:blending,formats:format=\"rgba8unorm\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,rendering,color_target_state:blending,GPUBlendComponent:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,rendering,depth:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,rendering,depth:depth_compare_func:format=\"depth16unorm\";*", "exit": 0, "cases": {"Passed w/o warnings": 24, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,rendering,depth:depth_compare_func:format=\"depth24plus\";*", "exit": 0, "cases": {"Passed w/o warnings": 24, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,rendering,draw:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,resource_init,buffer:copy_buffer_to_texture:*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,shader_module,compilation_info:*", "exit": 0, "cases": {"Passed w/o warnings": 16, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,uncapturederror:iff_uncaptured:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,uncapturederror:iff_uncaptured:useOnuncapturederror=false;errorType=\"validation\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,uncapturederror:iff_uncaptured:useOnuncapturederror=true;errorType=\"validation\"", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,vertex_state,correctness:array_stride_zero:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,vertex_state,correctness:non_zero_array_stride_and_attribute_offset:*", "result": "curated_skip"}
+{"selector": "webgpu:api,operation,vertex_state,correctness:setVertexBuffer_offset_and_attribute_offset:*", "result": "curated_skip"}
+{"selector": "webgpu:api,validation,buffer,create:createBuffer_invalid_and_oom,*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,validation,buffer,create:limit,*", "exit": 1, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 2}, "exact_hardware": true, "result": "fail"}
+{"selector": "webgpu:api,validation,buffer,create:size,*", "exit": 0, "cases": {"Passed w/o warnings": 2, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,validation,buffer,create:usage,*", "result": "curated_skip"}
+{"selector": "webgpu:api,validation,buffer,destroy:all_usages,*", "result": "curated_skip"}
+{"selector": "webgpu:api,validation,buffer,destroy:error_buffer,*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,validation,buffer,destroy:twice,*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,validation,buffer,destroy:while_mapped,*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,validation,capability_checks,features,clip_distances:*", "exit": 0, "cases": {"Passed w/o warnings": 0, "Passed with warnings": 0, "Skipped": 368, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,validation,capability_checks,limits,maxBindGroups:setBindGroup,*", "result": "curated_skip"}
+{"selector": "webgpu:api,validation,capability_checks,limits,maxBindingsPerBindGroup:validate,*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,validation,capability_checks,limits,maxBufferSize:*", "result": "curated_skip"}
+{"selector": "webgpu:api,validation,capability_checks,limits,maxComputeWorkgroupSizeX:validate,*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,validation,capability_checks,limits,maxComputeWorkgroupSizeY:validate,*", "exit": 0, "cases": {"Passed w/o warnings": 1, "Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}

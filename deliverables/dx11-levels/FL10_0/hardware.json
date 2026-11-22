@@ -1,0 +1,63 @@
+{
+  "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb",
+  "runs": [
+    {
+      "device": "Ben-Desktop RTX 3090 Ti",
+      "architecture": "x64",
+      "runtime": "Windows desktop process",
+      "driver": "32.0.16.2101",
+      "fxc": "10.0.26100.9818",
+      "vendor_id": "0x10de",
+      "device_id": "0x2203",
+      "requested_level": "0xa000",
+      "actual_level": "0xa000",
+      "adapter_luids": [
+        "00000000:00014a80"
+      ],
+      "optional_cs4": true,
+      "result": "pass",
+      "evidence": {
+        "path": "logs/native-x64.log",
+        "sha256": "67f85f2d72e8cf1e74002d3816dc9f4d147f41f9c6ddb0414df16f5700ec77ad",
+        "executable_sha256": "b23626a0132c43d0211e8ef664f722071e1bf730a5a340239856e1199a23a02f",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "device": "Ben-Desktop RTX 3090 Ti",
+      "architecture": "x86",
+      "runtime": "Windows desktop process",
+      "driver": "32.0.16.2101",
+      "fxc": "10.0.26100.9818",
+      "vendor_id": "0x10de",
+      "device_id": "0x2203",
+      "requested_level": "0xa000",
+      "actual_level": "0xa000",
+      "adapter_luids": [
+        "00000000:00014a80"
+      ],
+      "optional_cs4": true,
+      "result": "pass",
+      "evidence": {
+        "path": "logs/native-x86.log",
+        "sha256": "7d2e16090b637df1100ff05d4f93ddf8eb91df9c513bf856bcc6dce3fe77985c",
+        "executable_sha256": "1f8f5f64e1b73e99e1641510e43104b7145b94dc028e1cf5b1a6f09839703b5d",
+        "candidate_tree": "7475312c57126aaf5715c0f492c683f10e1b4cfb"
+      }
+    },
+    {
+      "device": "Surface Pro X Adreno 680",
+      "architecture": "ARM64",
+      "runtime": "signed AppContainer",
+      "result": "unknown",
+      "blocker": "TCP 22 on 192.168.1.227 did not respond from Ben-Desktop"
+    },
+    {
+      "device": "Lumia 950 XL",
+      "architecture": "ARM32",
+      "runtime": "signed AppContainer",
+      "result": "unknown",
+      "blocker": "TCP 443 responded, but the paired Device Portal read returned a WebException"
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{"candidate_tree": "97e9a0a54d8a3c7ab98831f6d631bd9980c685a4", "cts_revision": "3fdd32363410f2bd4e3e2f046980967e6abc27e6", "runner_sha256": "9254e71e0453da99f1d8eb785a5ea74715c5ca51f0b49b9b1d518e7bf68edcec", "planned_selectors": 6}
+{"selector": "webgpu:api,operation,rendering,basic:clear:*", "exit": 0, "cases": {"Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,rendering,basic:fullscreen_quad:*", "exit": 0, "cases": {"Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,rendering,color_target_state:blending,formats:format=\"rgba8unorm-srgb\"", "exit": 0, "cases": {"Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}
+{"selector": "webgpu:api,operation,render_pipeline,pipeline_output_targets:color,component_count,blend:*", "exit": 1, "cases": {"Passed with warnings": 0, "Skipped": 0, "Failed": 2}, "exact_hardware": true, "result": "fail"}
+{"selector": "webgpu:api,operation,command_buffer,queries,occlusionQuery:*", "exit": 3221226505, "cases": {}, "exact_hardware": true, "result": "fail"}
+{"selector": "webgpu:api,validation,encoding,queries,begin_end:occlusion_query,*", "exit": 0, "cases": {"Passed with warnings": 0, "Skipped": 0, "Failed": 0}, "exact_hardware": true, "result": "complete"}

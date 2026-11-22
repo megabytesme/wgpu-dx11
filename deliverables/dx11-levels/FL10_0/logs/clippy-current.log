@@ -1,0 +1,1013 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling thiserror v2.0.18
+   Compiling naga v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\naga)
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-hal)
+   Compiling quote v1.0.45
+   Compiling syn v2.0.118
+   Compiling thiserror-impl v2.0.18
+   Compiling windows-interface v0.59.3
+   Compiling windows-implement v0.60.2
+   Compiling zerocopy-derive v0.8.52
+   Compiling bytemuck_derive v1.10.2
+    Checking windows-core v0.62.2
+    Checking bytemuck v1.25.0
+    Checking windows-future v0.3.2
+    Checking windows-collections v0.3.2
+    Checking windows-numerics v0.3.1
+    Checking zerocopy v0.8.52
+    Checking naga-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\naga-types)
+    Checking wgpu-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-types)
+    Checking windows v0.62.2
+    Checking half v2.7.1
+warning: this `if` can be collapsed into the outer `match`
+    --> naga\src\back\hlsl\help.rs:1368:29
+     |
+1368 | / ...                   if format.single_component() {
+1369 | | ...                       let scalar: crate::Scalar = format.into();
+1370 | | ...                       if self.wrapped.insert(WrappedType::ImageLoadScalar(scalar)) {
+1371 | | ...                           self.write_loaded_scalar_to_storage_loaded_value(scalar)?;
+1372 | | ...                       }
+1373 | | ...                   }
+     | |_______________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_match
+     = note: `#[warn(clippy::collapsible_match)]` on by default
+help: collapse nested if block
+     |
+1367 ~                         }
+1368 ~                             if format.single_component() => {
+1369 |                                 let scalar: crate::Scalar = format.into();
+ ...
+1372 |                                 }
+1373 ~                             }
+     |
+
+warning: redundant reference in `write!` argument
+    --> naga\src\back\hlsl\writer.rs:3703:37
+     |
+3703 |             write!(self.out, " {}", &m.name)?;
+     |                                     ^^^^^^^ help: remove the redundant `&`: `m.name`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_borrows_in_formatting
+     = note: `#[warn(clippy::useless_borrows_in_formatting)]` on by default
+
+warning: redundant reference in `write!` argument
+    --> naga\src\back\hlsl\writer.rs:4293:17
+     |
+4293 |                 &self.names[&NameKey::GlobalVariable(handle)]
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: remove the redundant `&`: `self.names[&NameKey::GlobalVariable(handle)]`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_borrows_in_formatting
+
+warning: redundant reference in `write!` argument
+    --> naga\src\back\hlsl\writer.rs:4555:25
+     |
+4555 |                         &self.names[&NameKey::StructMember(handle, index as u32)]
+     |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: remove the redundant `&`: `self.names[&NameKey::StructMember(handle, index as u32)]`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_borrows_in_formatting
+
+warning: redundant reference in `write!` argument
+    --> naga\src\back\hlsl\writer.rs:4575:52
+     |
+4575 |                         write!(self.out, " {}_{}", &self.names[&field_name_key], i)?;
+     |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: remove the redundant `&`: `self.names[&field_name_key]`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_borrows_in_formatting
+
+warning: redundant reference in `write!` argument
+    --> naga\src\back\hlsl\writer.rs:4605:25
+     |
+4605 |                         &self.names[&NameKey::StructMember(handle, index as u32)]
+     |                         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: remove the redundant `&`: `self.names[&NameKey::StructMember(handle, index as u32)]`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_borrows_in_formatting
+
+warning: redundant reference in `write!` argument
+    --> naga\src\back\hlsl\writer.rs:5680:37
+     |
+5680 | ...                   &self.names[&NameKey::StructMember(ty, index)],
+     |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: remove the redundant `&`: `self.names[&NameKey::StructMember(ty, index)]`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_borrows_in_formatting
+
+warning: redundant reference in `write!` argument
+    --> naga\src\back\hlsl\writer.rs:7742:33
+     |
+7742 | ...                   &self.names[&NameKey::StructMember(ty, index)]
+     |                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: remove the redundant `&`: `self.names[&NameKey::StructMember(ty, index)]`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_borrows_in_formatting
+
+warning: this `if` can be collapsed into the outer `match`
+    --> naga\src\back\hlsl\writer.rs:8533:17
+     |
+8533 | /                 if format.single_component() {
+8534 | |                     wrapping_type = Some(Scalar::from(format));
+8535 | |                 }
+     | |_________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_match
+help: collapse nested if block
+     |
+8532 ~             }
+8533 ~                 if format.single_component() => {
+8534 |                     wrapping_type = Some(Scalar::from(format));
+8535 ~                 }
+     |
+
+warning: use of `Some(x).filter(|_| predicate)`
+    --> naga\src\front\glsl\functions.rs:1367:31
+     |
+1367 |               early_depth_test: Some(crate::EarlyDepthTest::Force)
+     |  _______________________________^
+1368 | |                 .filter(|_| self.meta.early_fragment_tests),
+     | |___________________________________________________________^
+     |
+     = note: this change will alter the order in which the condition and the value are evaluated
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#some_filter
+     = note: `#[warn(clippy::some_filter)]` on by default
+help: consider using `bool::then_some` instead
+     |
+1367 -             early_depth_test: Some(crate::EarlyDepthTest::Force)
+1368 -                 .filter(|_| self.meta.early_fragment_tests),
+1367 +             early_depth_test: self.meta.early_fragment_tests.then_some(crate::EarlyDepthTest::Force),
+     |
+
+warning: the variable `location` is used as a loop counter
+    --> naga\src\front\glsl\functions.rs:1436:17
+     |
+1436 |                 for index in 0..size.get() {
+     |                 ^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#explicit_counter_loop
+     = note: `#[warn(clippy::explicit_counter_loop)]` on by default
+help: consider using
+     |
+1436 ~                 for (location, index) in (match binding {
+1437 +                     crate::Binding::Location { location, .. } => location,
+1438 +                     crate::Binding::BuiltIn(_) => return Ok(()),
+1439 ~                 }..).zip((0..size.get())) {
+     |
+
+warning: useless use of `format!`
+    --> naga\src\front\wgsl\error.rs:1405:29
+     |
+1405 |                   notes: vec![format!(concat!(
+     |  _____________________________^
+1406 | |                     "Let Naga maintainers know that you ran into this at ",
+1407 | |                     "<https://github.com/gfx-rs/wgpu/issues/5320>, ",
+1408 | |                     "so they can prioritize it!"
+1409 | |                 ))],
+     | |__________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_format
+     = note: `#[warn(clippy::useless_format)]` on by default
+help: consider using `.to_string()`
+     |
+1405 ~                 notes: vec![concat!(
+1406 +                     "Let Naga maintainers know that you ran into this at ",
+1407 +                     "<https://github.com/gfx-rs/wgpu/issues/5320>, ",
+1408 +                     "so they can prioritize it!"
+1409 ~                 ).to_string()],
+     |
+
+warning: useless use of `format!`
+    --> naga\src\front\wgsl\error.rs:1502:29
+     |
+1502 |                 notes: vec![format!("must be F32")],
+     |                             ^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.to_string()`: `"must be F32".to_string()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_format
+
+warning: useless use of `format!`
+    --> naga\src\front\wgsl\error.rs:1507:29
+     |
+1507 |                 notes: vec![format!("must be a valid cooperative type")],
+     |                             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.to_string()`: `"must be a valid cooperative type".to_string()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_format
+
+warning: useless use of `format!`
+    --> naga\src\front\wgsl\error.rs:1512:29
+     |
+1512 |                 notes: vec![format!("must be F32")],
+     |                             ^^^^^^^^^^^^^^^^^^^^^^ help: consider using `.to_string()`: `"must be F32".to_string()`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_format
+
+warning: unneeded late initialization
+   --> naga\src\front\wgsl\lower\construction.rs:153:9
+    |
+153 |         let expr;
+    |         ^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_late_init
+    = note: `#[warn(clippy::needless_late_init)]` on by default
+help: move the declaration `expr` here and remove the assignments from the `match` arms
+    |
+153 ~         
+154 ~         let expr = match (components, constructor) {
+155 |             // Zero-value constructor with explicit type.
+...
+158 |             {
+159 ~                 crate::Expression::ZeroValue(result_ty)
+160 |             }
+...
+175 |                 );
+176 ~                 crate::Expression::ZeroValue(result_ty)
+177 |             }
+...
+193 |             ) => {
+194 ~                 crate::Expression::As {
+195 |                     expr: component,
+196 |                     kind: scalar.kind,
+197 |                     convert: Some(scalar.width),
+198 ~                 }
+199 |             }
+...
+215 |             ) if dst_size == src_size => {
+216 ~                 crate::Expression::As {
+217 |                     expr: component,
+218 |                     kind: dst_scalar.kind,
+219 |                     convert: Some(dst_scalar.width),
+220 ~                 }
+221 |             }
+...
+258 |             ) if dst_columns == src_columns && dst_rows == src_rows => {
+259 ~                 crate::Expression::As {
+260 |                     expr: component,
+261 |                     kind: dst_scalar.kind,
+262 |                     convert: Some(dst_scalar.width),
+263 ~                 }
+264 |             }
+...
+297 |             ) => {
+298 ~                 crate::Expression::Splat {
+299 |                     size,
+300 |                     value: component,
+301 ~                 }
+302 |             }
+...
+335 |                 )?;
+336 ~                 crate::Expression::Splat {
+337 |                     size,
+338 |                     value: component,
+339 ~                 }
+340 |             }
+...
+357 |                 let ty = ctx.ensure_type_exists(inner);
+358 ~                 crate::Expression::Compose { ty, components }
+359 |             }
+...
+366 |                 ctx.try_automatic_conversions_for_vector(&mut components, scalar, ty_span)?;
+367 ~                 crate::Expression::Compose { ty, components }
+368 |             }
+...
+406 |                 });
+407 ~                 crate::Expression::Compose { ty, components }
+408 |             }
+...
+443 |                 });
+444 ~                 crate::Expression::Compose { ty, components }
+445 |             }
+...
+478 |                 });
+479 ~                 crate::Expression::Compose { ty, components }
+480 |             }
+...
+499 |                 )?;
+500 ~                 crate::Expression::Compose { ty, components }
+501 |             }
+...
+551 |
+552 ~                 crate::Expression::Compose { ty, components }
+553 |             }
+...
+561 |                 ctx.try_automatic_conversions_slice(&mut components, &Tr::Handle(base), ty_span)?;
+562 ~                 crate::Expression::Compose { ty, components }
+563 |             }
+...
+581 |                 }
+582 ~                 crate::Expression::Compose { ty, components }
+583 |             }
+...
+618 |             _ => return Err(Box::new(Error::TypeNotConstructible(ty_span))),
+619 ~         };
+    |
+
+warning: unneeded late initialization
+   --> naga\src\front\wgsl\lower\mod.rs:773:9
+    |
+773 | /         match self.expr_type {
+774 | |             ExpressionContextType::Runtime(ref mut ctx)
+775 | |             | ExpressionContextType::Constant(Some(ref mut ctx)) => {
+776 | |                 resolve_ctx = proc::ResolveContext::with_locals(
+...   |
+789 | |         };
+    | |__________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_late_init
+help: move the declarations here and remove the assignments from the `match` arms
+    |
+770 ~         
+771 ~         
+772 ~         
+773 ~         let (resolve_ctx, typifier, expressions) = match self.expr_type {
+774 |             ExpressionContextType::Runtime(ref mut ctx)
+775 |             | ExpressionContextType::Constant(Some(ref mut ctx)) => {
+776 ~                 (proc::ResolveContext::with_locals(
+777 +                     self.module,
+778 +                     &ctx.function.local_variables,
+779 +                     &ctx.function.arguments,
+780 +                 ), &mut *ctx.typifier, &ctx.function.expressions)
+781 |             }
+782 |             ExpressionContextType::Constant(None) | ExpressionContextType::Override => {
+783 ~                 (proc::ResolveContext::with_locals(self.module, &empty_arena, &[]), self.const_typifier, &self.module.global_expressions)
+    |
+
+warning: unneeded late initialization
+    --> naga\src\front\wgsl\lower\mod.rs:1517:9
+     |
+1517 | /         match (init, explicit_ty) {
+1518 | |             (Some(init), Some(explicit_ty)) => {
+1519 | |                 let init = self.expression_for_abstract(init, ectx)?;
+1520 | |                 let ty_res = proc::TypeResolution::Handle(explicit_ty);
+...    |
+1558 | |             (None, None) => return Err(Box::new(Error::DeclMissingTypeAndInit(name.span))),
+1559 | |         }
+     | |_________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_late_init
+help: move the declarations here and remove the assignments from the `match` arms
+     |
+1515 ~         
+1516 ~         
+1517 ~         let (ty, initializer) = match (init, explicit_ty) {
+1518 |             (Some(init), Some(explicit_ty)) => {
+ ...
+1542 |                 }
+1543 ~                 (explicit_ty, Some(init))
+1544 |             }
+ ...
+1549 |                 }
+1550 ~                 (ectx.register_type(init)?, Some(init))
+1551 |             }
+1552 |             (None, Some(explicit_ty)) => {
+1553 ~                 (explicit_ty, None)
+1554 |             }
+1555 |             (None, None) => return Err(Box::new(Error::DeclMissingTypeAndInit(name.span))),
+1556 ~         };
+     |
+
+warning: unneeded late initialization
+    --> naga\src\front\wgsl\lower\mod.rs:4414:9
+     |
+4414 | /         match fun {
+4415 | |             Texture::Gather => {
+4416 | |                 level = ir::SampleLevel::Zero;
+4417 | |                 depth_ref = None;
+...    |
+4479 | |         };
+     | |__________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_late_init
+help: move the declarations here and remove the assignments from the `match` arms
+     |
+4412 ~         
+4413 ~         
+4414 ~         let (level, depth_ref) = match fun {
+4415 |             Texture::Gather => {
+4416 ~                 (ir::SampleLevel::Zero, None)
+4417 |             }
+ ...
+4420 |                     self.expression_with_leaf_scalar(args.next()?, ir::Scalar::F32, ctx)?;
+4421 ~                 (ir::SampleLevel::Zero, Some(reference))
+4422 |             }
+4423 |
+4424 |             Texture::Sample => {
+4425 ~                 (ir::SampleLevel::Auto, None)
+4426 |             }
+4427 |             Texture::SampleBias => {
+4428 |                 let bias = self.expression_with_leaf_scalar(args.next()?, ir::Scalar::F32, ctx)?;
+4429 ~                 (ir::SampleLevel::Bias(bias), None)
+4430 |             }
+ ...
+4433 |                     self.expression_with_leaf_scalar(args.next()?, ir::Scalar::F32, ctx)?;
+4434 ~                 (ir::SampleLevel::Auto, Some(reference))
+4435 |             }
+ ...
+4438 |                     self.expression_with_leaf_scalar(args.next()?, ir::Scalar::F32, ctx)?;
+4439 ~                 (ir::SampleLevel::Zero, Some(reference))
+4440 |             }
+ ...
+4443 |                 let y = self.expression_with_leaf_scalar(args.next()?, ir::Scalar::F32, ctx)?;
+4444 ~                 (ir::SampleLevel::Gradient { x, y }, None)
+4445 |             }
+ ...
+4464 |                 };
+4465 ~                 (ir::SampleLevel::Exact(exact), None)
+4466 |             }
+4467 |             Texture::SampleBaseClampToEdge => {
+4468 ~                 (crate::SampleLevel::Zero, None)
+     |
+
+warning: this `if` can be collapsed into the outer `match`
+    --> naga\src\front\wgsl\parse\mod.rs:2164:33
+     |
+2164 | / ...                   if incoming_payload.value.is_none() {
+2165 | | ...                       return Err(Box::new(Error::MissingIncomingPayload(
+2166 | | ...                           shader_stage_error_span,
+2167 | | ...                       )));
+2168 | | ...                   }
+     | |_______________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_match
+help: collapse nested if block
+     |
+2163 ~                             ShaderStage::AnyHit | ShaderStage::ClosestHit | ShaderStage::Miss
+2164 ~                                 if incoming_payload.value.is_none() => {
+2165 |                                     return Err(Box::new(Error::MissingIncomingPayload(
+2166 |                                         shader_stage_error_span,
+2167 |                                     )));
+2168 ~                                 }
+     |
+
+warning: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> naga\src\proc\constant_evaluator.rs:3680:30
+     |
+3680 |                         .zip(accept_components.clone().into_iter())
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> C:\Users\ben\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\iter\traits\iterator.rs:632:12
+     |
+ 632 |         U: IntoIterator,
+     |            ^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_conversion
+     = note: `#[warn(clippy::useless_conversion)]` on by default
+help: consider removing the `.into_iter()`
+     |
+3680 -                         .zip(accept_components.clone().into_iter())
+3680 +                         .zip(accept_components.clone())
+     |
+
+warning: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+    --> naga\src\proc\constant_evaluator.rs:3681:30
+     |
+3681 |                         .zip(condition_components.into_iter())
+     |                              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+    --> C:\Users\ben\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\iter\traits\iterator.rs:632:12
+     |
+ 632 |         U: IntoIterator,
+     |            ^^^^^^^^^^^^
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_conversion
+help: consider removing the `.into_iter()`
+     |
+3681 -                         .zip(condition_components.into_iter())
+3681 +                         .zip(condition_components)
+     |
+
+warning: this `if` can be collapsed into the outer `match`
+   --> naga\src\proc\index.rs:267:21
+    |
+267 | /                     if policies.image_load == BoundsCheckPolicy::ReadZeroSkipWrite {
+268 | |                         guarded_indices.insert(coordinate);
+269 | |                         if let Some(array_index) = array_index {
+270 | |                             guarded_indices.insert(array_index);
+...   |
+278 | |                     }
+    | |_____________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_match
+help: collapse nested if block
+    |
+266 ~                 }
+267 ~                     if policies.image_load == BoundsCheckPolicy::ReadZeroSkipWrite => {
+268 |                         guarded_indices.insert(coordinate);
+...
+277 |                         }
+278 ~                     }
+    |
+
+warning: unneeded late initialization
+   --> naga\src\proc\type_methods.rs:554:9
+    |
+554 | /         match (self, goal) {
+555 | |             (&Ti::Scalar(expr), &Ti::Scalar(goal)) => {
+556 | |                 expr_scalar = expr;
+557 | |                 goal_scalar = goal;
+...   |
+603 | |             _ => return None,
+604 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_late_init
+help: move the declarations here and remove the assignments from the `match` arms
+    |
+552 ~         
+553 ~         
+554 ~         let (expr_scalar, goal_scalar) = match (self, goal) {
+555 |             (&Ti::Scalar(expr), &Ti::Scalar(goal)) => {
+556 ~                 (expr, goal)
+557 |             }
+...
+567 |             ) if expr_size == goal_size => {
+568 ~                 (expr, goal)
+569 |             }
+...
+581 |             ) if expr_rows == goal_rows && expr_columns == goal_columns => {
+582 ~                 (expr, goal)
+583 |             }
+...
+600 |             _ => return None,
+601 ~         };
+    |
+
+warning: this `if` can be collapsed into the outer `match`
+   --> naga\src\valid\function.rs:750:17
+    |
+750 | /                 if !context.local_expr_kind.is_const(index) {
+751 | |                     return Err(SubgroupError::InvalidInvocationIdExprType(index)
+752 | |                         .with_span_handle(index, context.expressions)
+753 | |                         .into_other());
+754 | |                 }
+    | |_________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_match
+help: collapse nested if block
+    |
+749 ~             crate::GatherMode::Broadcast(index) | crate::GatherMode::QuadBroadcast(index)
+750 ~                 if !context.local_expr_kind.is_const(index) => {
+751 |                     return Err(SubgroupError::InvalidInvocationIdExprType(index)
+752 |                         .with_span_handle(index, context.expressions)
+753 |                         .into_other());
+754 ~                 }
+    |
+
+warning: this `if` can be collapsed into the outer `match`
+   --> naga\src\valid\interface.rs:656:25
+    |
+656 | /                         if !self.capabilities.contains(Capabilities::MESH_SHADER) {
+657 | |                             return Err(VaryingError::UnsupportedCapability(
+658 | |                                 Capabilities::MESH_SHADER,
+659 | |                             ));
+660 | |                         }
+    | |_________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_match
+help: collapse nested if block
+    |
+655 ~                     | Bi::Primitives
+656 ~                         if !self.capabilities.contains(Capabilities::MESH_SHADER) => {
+657 |                             return Err(VaryingError::UnsupportedCapability(
+658 |                                 Capabilities::MESH_SHADER,
+659 |                             ));
+660 ~                         }
+    |
+
+warning: this `if` can be collapsed into the outer `match`
+    --> naga\src\valid\interface.rs:1052:29
+     |
+1052 | / ...                   if !self
+1053 | | ...                       .capabilities
+1054 | | ...                       .contains(Capabilities::STORAGE_TEXTURE_16BIT_NORM_FORMATS)
+...    |
+1058 | | ...                       ));
+1059 | | ...                   }
+     | |_______________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_match
+help: collapse nested if block
+     |
+1051 ~                         }
+1052 |                             if !self
+1053 |                                 .capabilities
+1054 |                                 .contains(Capabilities::STORAGE_TEXTURE_16BIT_NORM_FORMATS)
+1055 ~                             => {
+1056 |                                 return Err(GlobalVariableError::UnsupportedCapability(
+1057 |                                     Capabilities::STORAGE_TEXTURE_16BIT_NORM_FORMATS,
+1058 |                                 ));
+1059 ~                             }
+     |
+
+warning: `naga` (lib) generated 27 warnings (run `cargo clippy --fix --lib -p naga -- ` to apply 25 suggestions)
+    Checking wgpu-naga-bridge v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-naga-bridge)
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\hal_queue.rs:452:56
+    |
+452 |                 super::super::hal_device::device_error(windows::core::Error::from_hresult(code)),
+    |                                                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: the lint level is defined here
+   --> wgpu-hal\src\lib.rs:238:5
+    |
+238 |     unused_qualifications
+    |     ^^^^^^^^^^^^^^^^^^^^^
+help: remove the unnecessary path segments
+    |
+452 -                 super::super::hal_device::device_error(windows::core::Error::from_hresult(code)),
+452 +                 super::super::hal_device::device_error(Error::from_hresult(code)),
+    |
+
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\hal_queue.rs:457:52
+    |
+457 |             super::super::hal_device::device_error(windows::core::Error::from_hresult(
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+457 -             super::super::hal_device::device_error(windows::core::Error::from_hresult(
+457 +             super::super::hal_device::device_error(Error::from_hresult(
+    |
+
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\hal_queue.rs:463:52
+    |
+463 |             super::super::hal_device::device_error(windows::core::Error::from_hresult(E_FAIL)),
+    |                                                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+463 -             super::super::hal_device::device_error(windows::core::Error::from_hresult(E_FAIL)),
+463 +             super::super::hal_device::device_error(Error::from_hresult(E_FAIL)),
+    |
+
+warning: unnecessary qualification
+   --> wgpu-hal\src\dx11\hal_queue.rs:469:71
+    |
+469 |     fn dynamic_queue_submits_copy_batches_and_signals_real_fence() -> windows::core::Result<()> {
+    |                                                                       ^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+help: remove the unnecessary path segments
+    |
+469 -     fn dynamic_queue_submits_copy_batches_and_signals_real_fence() -> windows::core::Result<()> {
+469 +     fn dynamic_queue_submits_copy_batches_and_signals_real_fence() -> Result<()> {
+    |
+
+warning: unnecessary qualification
+    --> wgpu-hal\src\dx11\hal_shader.rs:6198:13
+     |
+6198 |             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+help: remove the unnecessary path segments
+     |
+6198 -             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+6198 +             translate_naga_with_viewport_and_fl9_inputs(
+     |
+
+warning: unnecessary qualification
+    --> wgpu-hal\src\dx11\hal_shader.rs:6314:13
+     |
+6314 |             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+help: remove the unnecessary path segments
+     |
+6314 -             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+6314 +             translate_naga_with_viewport_and_fl9_inputs(
+     |
+
+warning: unnecessary qualification
+    --> wgpu-hal\src\dx11\hal_shader.rs:6550:13
+     |
+6550 |             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+     |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+     |
+help: remove the unnecessary path segments
+     |
+6550 -             super::super::shader::translate_naga_with_viewport_and_fl9_inputs(
+6550 +             translate_naga_with_viewport_and_fl9_inputs(
+     |
+
+warning: function `adjust_raw_limits` is never used
+   --> wgpu-hal\src\auxil\mod.rs:128:15
+    |
+128 | pub(crate) fn adjust_raw_limits(mut limits: wgt::Limits) -> wgt::Limits {
+    |               ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: you seem to be trying to use `match` to destructure a single infallible pattern
+  --> wgpu-hal\src\dx11\adapter.rs:83:9
+   |
+83 | /         let native = match &self.inner {
+84 | |             AdapterInner::Native(native) => native,
+85 | |             #[cfg(feature = "dx11-test-fixture")]
+86 | |             AdapterInner::Fixture(native) => native,
+87 | |         };
+   | |__________^ help: consider using `let`: `let AdapterInner::Native(native) = &self.inner;`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#infallible_destructuring_match
+   = note: `#[warn(clippy::infallible_destructuring_match)]` on by default
+
+warning: this function has too many arguments (8/7)
+   --> wgpu-hal\src\dx11\hal_index.rs:219:5
+    |
+219 | /     fn try_native_u32_bounds(
+220 | |         &self,
+221 | |         context: &ID3D11DeviceContext,
+222 | |         first: u32,
+...   |
+227 | |         vertex_index_none: bool,
+228 | |     ) -> Result<NativeU32Outcome> {
+    | |_________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+    = note: `#[warn(clippy::too_many_arguments)]` on by default
+
+warning: this function has too many arguments (9/7)
+    --> wgpu-hal\src\dx11\hal_index.rs:1615:5
+     |
+1615 | /     pub(super) fn draw(
+1616 | |         &self,
+1617 | |         context: &ID3D11DeviceContext,
+1618 | |         first: u32,
+...    |
+1624 | |         vertex_index: Option<&(u32, ID3D11Buffer)>,
+1625 | |     ) -> Result<()> {
+     | |___________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+    --> wgpu-hal\src\dx11\hal_index.rs:2174:1
+     |
+2174 | / fn draw_indexed_triangle_batch(
+2175 | |     context: &ID3D11DeviceContext,
+2176 | |     vertices: &[(u32, ID3D11Buffer, u32, u64, u32, u32)],
+2177 | |     indices: &[u32],
+...    |
+2182 | |     vertex_index: Option<&(u32, ID3D11Buffer)>,
+2183 | | ) -> Result<()> {
+     | |_______________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+   --> wgpu-hal\src\dx11\hal_pipeline.rs:597:5
+    |
+597 | /     fn new(
+598 | |         owner: &NativeDevice,
+599 | |         binding: naga::ResourceBinding,
+600 | |         additional_bindings: alloc::vec::Vec<naga::ResourceBinding>,
+...   |
+605 | |         has_implicit_sample: bool,
+606 | |     ) -> Result<Self, crate::PipelineError> {
+    | |___________________________________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: used import from `std` instead of `core`
+   --> wgpu-hal\src\dx11\hal_queue.rs:7:17
+    |
+  7 | use std::time::{Duration, Instant};
+    |                 ^^^^^^^^
+    |
+    = help: consider importing the item from `core`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#std_instead_of_core
+note: the lint level is defined here
+   --> wgpu-hal\src\lib.rs:233:5
+    |
+233 |     clippy::std_instead_of_core,
+    |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+warning: called `unwrap` on `source_size` after checking its variant with `is_none`
+   --> wgpu-hal\src\dx11\hal_transfer.rs:881:25
+    |
+875 |                     || source_size.is_none()
+    |                        --------------------- the check is happening here
+...
+881 |                         source_size.unwrap(),
+    |                         ^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: try using `match`
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#unnecessary_unwrap
+    = note: `#[warn(clippy::unnecessary_unwrap)]` on by default
+
+warning: this function has too many arguments (9/7)
+   --> wgpu-hal\src\dx11\hal_transfer.rs:902:1
+    |
+902 | / fn write_packed_rows(
+903 | |     context: &ID3D11DeviceContext,
+904 | |     destination: &ID3D11Buffer,
+905 | |     destination_shadow: Option<&BufferCpuShadow>,
+...   |
+911 | |     source_pitch: u32,
+912 | | ) -> Result<()> {
+    | |_______________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: this `if` statement can be collapsed
+   --> wgpu-hal\src\dx11\shader.rs:277:9
+    |
+277 | /         if input.SystemValueType == D3D_NAME_POSITION {
+278 | |             if position.replace(input.ReadWriteMask).is_some() || input.SemanticIndex != 0 {
+279 | |                 return Ok(false);
+280 | |             }
+281 | |         }
+    | |_________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#collapsible_if
+    = note: `#[warn(clippy::collapsible_if)]` on by default
+help: collapse nested if block
+    |
+277 ~         if input.SystemValueType == D3D_NAME_POSITION
+278 ~             && (position.replace(input.ReadWriteMask).is_some() || input.SemanticIndex != 0) {
+279 |                 return Ok(false);
+280 ~             }
+    |
+
+warning: this function has too many arguments (9/7)
+   --> wgpu-hal\src\dx11\texture.rs:459:5
+    |
+459 | /     pub(super) fn copy_region_from(
+460 | |         &self,
+461 | |         source: &Self,
+462 | |         src_mip: u32,
+...   |
+468 | |         extent: [u32; 2],
+469 | |     ) -> Result<()> {
+    | |___________________^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: this function has too many arguments (8/7)
+    --> wgpu-hal\src\dx11\texture.rs:1955:5
+     |
+1955 | /     pub(super) fn create_hal_view(
+1956 | |         &self,
+1957 | |         texture: &NativeTexture,
+1958 | |         resource: bool,
+...    |
+1963 | |         mip_range: (u32, u32),
+1964 | |     ) -> Result<NativeTextureView> {
+     | |__________________________________^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#too_many_arguments
+
+warning: `wgpu-hal` (lib) generated 12 warnings (run `cargo clippy --fix --lib -p wgpu-hal -- ` to apply 2 suggestions)
+warning: use of deprecated method `core::sync::atomic::Atomic::<u64>::fetch_update`: renamed to `try_update` for consistency
+   --> wgpu-hal\src\dx11\hal_queue.rs:144:18
+    |
+144 |                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |polls| {
+    |                  ^^^^^^^^^^^^
+    |
+    = note: `#[warn(deprecated)]` on by default
+help: replace the use of the deprecated method
+    |
+144 -                 .fetch_update(Ordering::AcqRel, Ordering::Acquire, |polls| {
+144 +                 .try_update(Ordering::AcqRel, Ordering::Acquire, |polls| {
+    |
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1755:57
+     |
+1755 |                 .flush_mapped_ranges(staging.as_ref(), &[0..64])
+     |                                                         ^-----^
+     |                                                          |
+     |                                                          help: if you wanted an array of len 64, try: `0; 64`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#single_range_in_vec_init
+     = note: `#[warn(clippy::single_range_in_vec_init)]` on by default
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1884:56
+     |
+1884 |                 .flush_mapped_ranges(source.as_ref(), &[12..20])
+     |                                                        ^------^
+     |                                                         |
+     |                                                         help: if you wanted an array of len 20, try: `12; 20`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#single_range_in_vec_init
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1890:59
+     |
+1890 |                 .invalidate_mapped_ranges(dest.as_ref(), &[8..24])
+     |                                                           ^-----^
+     |                                                            |
+     |                                                            help: if you wanted an array of len 24, try: `8; 24`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#single_range_in_vec_init
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1905:56
+     |
+1905 |                 .flush_mapped_ranges(source.as_ref(), &[12..20])
+     |                                                        ^------^
+     |                                                         |
+     |                                                         help: if you wanted an array of len 20, try: `12; 20`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#single_range_in_vec_init
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1911:59
+     |
+1911 |                 .invalidate_mapped_ranges(dest.as_ref(), &[12..20])
+     |                                                           ^------^
+     |                                                            |
+     |                                                            help: if you wanted an array of len 20, try: `12; 20`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#single_range_in_vec_init
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1922:56
+     |
+1922 |                 .flush_mapped_ranges(source.as_ref(), &[0..32])
+     |                                                        ^-----^
+     |                                                         |
+     |                                                         help: if you wanted an array of len 32, try: `0; 32`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#single_range_in_vec_init
+
+warning: an array of `Range` that is only one element
+    --> wgpu-hal\src\dx11\hal_device.rs:1928:59
+     |
+1928 |                 .invalidate_mapped_ranges(dest.as_ref(), &[0..32])
+     |                                                           ^-----^
+     |                                                            |
+     |                                                            help: if you wanted an array of len 32, try: `0; 32`
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#single_range_in_vec_init
+
+warning: explicit call to `.into_iter()` in function argument accepting `IntoIterator`
+   --> wgpu-hal\src\dx11\..\..\tests\dx11\sampled_mips.rs:893:18
+    |
+893 |             .zip(expected_cases.into_iter())
+    |                  ^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+note: this parameter accepts any `IntoIterator`, so you don't need to call `.into_iter()`
+   --> C:\Users\ben\.rustup\toolchains\stable-x86_64-pc-windows-msvc\lib/rustlib/src/rust\library\core\src\iter\traits\iterator.rs:632:12
+    |
+632 |         U: IntoIterator,
+    |            ^^^^^^^^^^^^
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#useless_conversion
+    = note: `#[warn(clippy::useless_conversion)]` on by default
+help: consider removing the `.into_iter()`
+    |
+893 -             .zip(expected_cases.into_iter())
+893 +             .zip(expected_cases)
+    |
+
+warning: used import from `std` instead of `core`
+  --> wgpu-hal\src\dx11\hal_queue.rs:35:36
+   |
+35 |     force_idle_query_pending_once: std::sync::atomic::AtomicBool,
+   |                                    ^^^ help: consider importing the item from `core`: `core`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#std_instead_of_core
+
+warning: used import from `std` instead of `core`
+  --> wgpu-hal\src\dx11\hal_queue.rs:51:44
+   |
+51 |             force_idle_query_pending_once: std::sync::atomic::AtomicBool::new(false),
+   |                                            ^^^ help: consider importing the item from `core`: `core`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#std_instead_of_core
+
+warning: items after a test module
+   --> wgpu-hal\src\dx11\swapchain.rs:614:1
+    |
+614 | mod tests {
+    | ^^^^^^^^^
+...
+665 | impl Drop for CoreWindowFrame {
+    | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    |
+    = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#items_after_test_module
+    = note: `#[warn(clippy::items_after_test_module)]` on by default
+    = help: move the items to before the test module was defined
+
+warning: the loop variable `row` is used to index `rows`
+    --> wgpu-hal\src\dx11\texture.rs:3010:20
+     |
+3010 |         for row in 0..3usize {
+     |                    ^^^^^^^^^
+     |
+     = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_range_loop
+     = note: `#[warn(clippy::needless_range_loop)]` on by default
+help: consider using an iterator and enumerate()
+     |
+3010 -         for row in 0..3usize {
+3010 +         for (row, <item>) in rows.iter().enumerate() {
+     |
+
+warning: this expression creates a reference which is immediately dereferenced by the compiler
+  --> wgpu-hal\src\dx11\..\..\tests\dx11\fl9_texel_load.rs:56:47
+   |
+56 |     let module = naga::front::wgsl::parse_str(&wgsl).map_err(|e| format!("{e:?}"))?;
+   |                                               ^^^^^ help: change this to: `wgsl`
+   |
+   = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.99.0/index.html#needless_borrow
+   = note: `#[warn(clippy::needless_borrow)]` on by default
+
+warning: `wgpu-hal` (lib test) generated 33 warnings (12 duplicates) (run `cargo clippy --fix --lib -p wgpu-hal --tests -- ` to apply 13 suggestions)
+    Finished `dev` profile [unoptimized] target(s) in 32.84s
+Candidate tree=7475312c57126aaf5715c0f492c683f10e1b4cfb
+Exit code=0

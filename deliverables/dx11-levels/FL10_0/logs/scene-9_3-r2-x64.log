@@ -1,0 +1,20 @@
+
+running 1 test
+test public_dx11_textured_depth_tested_3d_scene_at_fl91 ... Hardware: name="NVIDIA GeForce RTX 3090 Ti" vendor=0x10de device=0x2203 driver="FL9_1 (hardware L9_3); physical DXGI adapter; driver version 32.0.16.2101; requested level 0x9300; actual level 0x9300" projection=FL9_1 actual=L9_3 software=false; workload=textured perspective cube with D16 depth
+FAILED
+
+failures:
+
+failures:
+    public_dx11_textured_depth_tested_3d_scene_at_fl91
+
+test result: FAILED. 0 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.66s
+
+
+thread 'public_dx11_textured_depth_tested_3d_scene_at_fl91' (94160) panicked at wgpu\tests\dx11_fl91_scene.rs:50:10:
+map scene buffer: MapRangeError("Validation Error\n\nCaused by:\n  Buffer with 'FL9_1 scene transform' label is invalid\n")
+note: run with `RUST_BACKTRACE=1` environment variable to display a backtrace
+
+Candidate tree=0df2aa77eb8393c1c07f8153a12803f8a6bd67bb
+Executable SHA256=7FC5CB5836E41AD18FB8824BCD0929E172E5A345066ED53BBC0BA7C9B1DFAB6D
+Peak process working set observed while running (bytes)=51609600

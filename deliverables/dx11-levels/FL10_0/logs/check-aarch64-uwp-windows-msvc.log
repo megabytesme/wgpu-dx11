@@ -1,0 +1,34 @@
+   Compiling proc-macro2 v1.0.106
+   Compiling naga v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\naga)
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-hal)
+   Compiling quote v1.0.45
+   Compiling syn v2.0.118
+   Compiling windows-interface v0.59.3
+   Compiling thiserror-impl v2.0.18
+   Compiling windows-implement v0.60.2
+   Compiling zerocopy-derive v0.8.52
+   Compiling bytemuck_derive v1.10.2
+    Checking windows-core v0.62.2
+    Checking bytemuck v1.25.0
+    Checking thiserror v2.0.18
+    Checking zerocopy v0.8.52
+    Checking naga-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\naga-types)
+    Checking wgpu-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-types)
+    Checking windows-collections v0.3.2
+    Checking windows-future v0.3.2
+    Checking windows-numerics v0.3.1
+    Checking windows v0.62.2
+    Checking half v2.7.1
+    Checking wgpu-naga-bridge v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-naga-bridge)
+warning: function `adjust_raw_limits` is never used
+   --> wgpu-hal\src\auxil\mod.rs:128:15
+    |
+128 | pub(crate) fn adjust_raw_limits(mut limits: wgt::Limits) -> wgt::Limits {
+    |               ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `wgpu-hal` (lib) generated 1 warning
+    Finished `dev` profile [unoptimized] target(s) in 20.10s
+Candidate tree=7475312c57126aaf5715c0f492c683f10e1b4cfb
+Exit code=0

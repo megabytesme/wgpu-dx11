@@ -1,0 +1,54 @@
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-hal)
+   Compiling wgpu-core v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-core)
+   Compiling wgpu v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu)
+   Compiling naga-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\naga-types)
+   Compiling windows v0.62.2
+   Compiling wgpu-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-types)
+   Compiling naga v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\naga)
+   Compiling wgpu-naga-bridge v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-naga-bridge)
+warning: function `adjust_raw_limits` is never used
+   --> wgpu-hal\src\auxil\mod.rs:128:15
+    |
+128 | pub(crate) fn adjust_raw_limits(mut limits: wgt::Limits) -> wgt::Limits {
+    |               ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-core\platform-deps\windows-linux-android)
+warning: `wgpu-hal` (lib) generated 1 warning
+warning: this lint expectation is unfulfilled
+  --> wgpu-core\src\lock\ranked.rs:83:34
+   |
+83 |     #[cfg_attr(not(miri), expect(unused))] // but `Drop` has important side effects
+   |                                  ^^^^^^
+   |
+   = note: `#[warn(unfulfilled_lint_expectations)]` on by default
+
+warning: `wgpu-core` (lib) generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 1m 22s
+  Executable tests\dx11_fl91_scene.rs (E:/temp/wgpu-dx11-fl10_0-nov21-target\debug\deps\dx11_fl91_scene-aba019b4364c580e.exe)
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-hal)
+warning: function `adjust_raw_limits` is never used
+   --> wgpu-hal\src\auxil\mod.rs:128:15
+    |
+128 | pub(crate) fn adjust_raw_limits(mut limits: wgt::Limits) -> wgt::Limits {
+    |               ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `wgpu-hal` (lib) generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 34.94s
+  Executable tests\dx11_fl10.rs (E:/temp/wgpu-dx11-fl10_0-nov21-target\debug\deps\dx11_fl10-840a7b9362eb05be.exe)
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-hal)
+warning: function `adjust_raw_limits` is never used
+   --> wgpu-hal\src\auxil\mod.rs:128:15
+    |
+128 | pub(crate) fn adjust_raw_limits(mut limits: wgt::Limits) -> wgt::Limits {
+    |               ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+warning: `wgpu-hal` (lib) generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 28.20s
+  Executable tests\dx11_fl10.rs (E:/temp/wgpu-dx11-fl10_0-nov21-target\i686-pc-windows-msvc\debug\deps\dx11_fl10-e6da71cfda9ccf21.exe)
+Candidate tree=97e9a0a54d8a3c7ab98831f6d631bd9980c685a4

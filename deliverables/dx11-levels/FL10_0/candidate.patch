@@ -1,0 +1,3908 @@
+diff --git a/CHANGELOG.md b/CHANGELOG.md
+index fe395f6590e93c780985822e731848cd630497b1..50112d3d12a28b35c8e00c2c61c07d2dde93049a 100644
+--- a/CHANGELOG.md
++++ b/CHANGELOG.md
+@@ -54,6 +54,9 @@ Bottom level categories:
+ 
+ #### Hal
+ 
++- Add exact native FL10_0 selection for D3D11 development and an experimental native SM4 geometry and stream-output interface.
++- Add eight portable color attachments with shared blending, alpha-to-coverage, and occlusion queries on opt-in D3D11 FL10_0. Preserve finite sampler LOD limits during D3D11 mip substitution.
++
+ - Accept alpha-equivalent color and alpha blend equations in the opt-in FL9_1 D3D11 backend without enabling separate-alpha blending.
+ - Emulate the direct single-mip fragment `textureSampleGrad` subset in the opt-in FL9_1 D3D11 backend.
+ - Extend the opt-in FL9_1 D3D11 literal-zero texture-sampling subset to support bounded helper coordinate arithmetic and validate render-bundle view compatibility.
+diff --git a/deno_webgpu/lib.rs b/deno_webgpu/lib.rs
+index c0c7882b31ec2556466792899977d1e593593ffc..2a719c3a483750e5b32c68986a5eaa4b1acb9a30 100644
+--- a/deno_webgpu/lib.rs
++++ b/deno_webgpu/lib.rs
+@@ -91,13 +91,29 @@ fn has_verified_dx11_fl91_marker(info: &wgpu_types::AdapterInfo) -> bool {
+ 
+ fn dx11_hardware_identity_issue(
+   info: &wgpu_types::AdapterInfo,
++  exact_fl10: bool,
+ ) -> Option<&'static str> {
++  let verified = if exact_fl10 {
++    info
++      .driver_info
++      .starts_with("FL9_1 (hardware L10_0); physical DXGI adapter;")
++      && info
++        .driver_info
++        .split("; ")
++        .any(|field| field == "requested level 0xa000")
++      && info
++        .driver_info
++        .split("; ")
++        .any(|field| field == "actual level 0xa000")
++  } else {
++    has_verified_dx11_fl91_marker(info)
++  };
+   if info.backend != wgpu_types::Backend::Dx11 {
+     Some("selected adapter is not DX11")
+   } else if info.device_type == wgpu_types::DeviceType::Cpu {
+     Some("selected adapter is software")
+-  } else if !has_verified_dx11_fl91_marker(info) {
+-    Some("selected adapter lacks the verified FL9_1 D3D11 marker")
++  } else if !verified {
++    Some("selected adapter lacks the requested exact D3D11 hardware marker")
+   } else {
+     None
+   }
+@@ -315,9 +331,11 @@ impl GPU {
+ 
+     if strict_dx11 {
+       let info = instance.adapter_get_info(id);
+-      let fl91_marker = has_verified_dx11_fl91_marker(&info);
++      let exact_fl10 = std::env::var_os("WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL")
++        .is_some_and(|level| level == "10_0");
++      let issue = dx11_hardware_identity_issue(&info, exact_fl10);
+       eprintln!(
+-        "D3D11 strict hardware selection: backend={:?} name={:?} vendor={:#06x} device={:#06x} device_type={:?} driver={:?} driver_info={:?} verified_FL9_1_marker={fl91_marker}",
++        "D3D11 strict hardware selection: backend={:?} name={:?} vendor={:#06x} device={:#06x} device_type={:?} driver={:?} driver_info={:?} verified_exact_hardware={}",
+         info.backend,
+         info.name,
+         info.vendor,
+@@ -325,8 +343,9 @@ impl GPU {
+         info.device_type,
+         info.driver,
+         info.driver_info,
++        issue.is_none(),
+       );
+-      if let Some(issue) = dx11_hardware_identity_issue(&info) {
++      if let Some(issue) = issue {
+         instance.adapter_drop(id);
+         return Err(JsErrorBox::type_error(format!(
+           "strict D3D11 hardware request rejected adapter: {issue}"
+@@ -444,27 +463,36 @@ mod backend_selection_tests {
+     let mut info = AdapterInfo::new(DeviceType::Other, Backend::Dx11);
+     info.driver_info =
+       String::from("FL9_1; physical DXGI adapter; driver version 32.0.16.2101");
+-    assert_eq!(dx11_hardware_identity_issue(&info), None);
++    assert_eq!(dx11_hardware_identity_issue(&info, false), None);
+ 
+     info.backend = Backend::Dx12;
+     assert_eq!(
+-      dx11_hardware_identity_issue(&info),
++      dx11_hardware_identity_issue(&info, false),
+       Some("selected adapter is not DX11")
+     );
+     info.backend = Backend::Dx11;
+ 
+     info.device_type = DeviceType::Cpu;
+     assert_eq!(
+-      dx11_hardware_identity_issue(&info),
++      dx11_hardware_identity_issue(&info, false),
+       Some("selected adapter is software")
+     );
+     info.device_type = DeviceType::Other;
+ 
+     info.driver_info.clear();
+     assert_eq!(
+-      dx11_hardware_identity_issue(&info),
+-      Some("selected adapter lacks the verified FL9_1 D3D11 marker")
++      dx11_hardware_identity_issue(&info, false),
++      Some("selected adapter lacks the requested exact D3D11 hardware marker")
++    );
++    info.driver_info = String::from(
++      "FL9_1 (hardware L10_0); physical DXGI adapter; requested level 0xa000; actual level 0xa000",
+     );
++    assert_eq!(dx11_hardware_identity_issue(&info, true), None);
++    assert!(dx11_hardware_identity_issue(&info, false).is_some());
++    info.driver_info = info
++      .driver_info
++      .replace("actual level 0xa000", "actual level 0x9100");
++    assert!(dx11_hardware_identity_issue(&info, true).is_some());
+   }
+ }
+ 
+diff --git a/naga/src/back/hlsl/mod.rs b/naga/src/back/hlsl/mod.rs
+index 4c07336a99eecb089c96318c4b79cd66d94ae1df..81926131ed3d53d884c1fcc8f415f33d3fc49d54 100644
+--- a/naga/src/back/hlsl/mod.rs
++++ b/naga/src/back/hlsl/mod.rs
+@@ -267,11 +267,14 @@ pub enum ShaderModel {
+     V6_7,
+     V6_8,
+     V6_9,
++    // Appended to preserve existing serialized variant indices.
++    V4_0 = -1,
+ }
+ 
+ impl ShaderModel {
+     pub const fn to_str(self) -> &'static str {
+         match self {
++            Self::V4_0 => "4_0",
+             Self::V5_0 => "5_0",
+             Self::V5_1 => "5_1",
+             Self::V6_0 => "6_0",
+@@ -604,6 +607,9 @@ pub struct Options {
+     /// WebGPU instance index in its second register for every emulated draw.
+     pub fl9_instance_index_input: bool,
+ 
++    /// Omit a fragment position input proved unread by the caller.
++    pub fl9_omit_unused_fragment_position: bool,
++
+     /// Map the selected vertex entry point's `vertex_index` input to a
+     /// backend-provided `NAGA_VERTEX_INDEX` input semantic.
+     pub fl9_vertex_index_input: bool,
+@@ -686,6 +692,7 @@ impl Default for Options {
+             fl9_texture_sample_compare_offset_proof: None,
+             fl9_viewport_transform: None,
+             fl9_instance_index_input: false,
++            fl9_omit_unused_fragment_position: false,
+             fl9_vertex_index_input: false,
+             fl9_vertex_index_vector_indexing: false,
+             fl9_uniform_index_arguments: Vec::new(),
+diff --git a/naga/src/back/hlsl/writer.rs b/naga/src/back/hlsl/writer.rs
+index e6f28d3ecc236a0478cc125298f98954c1f0b699..c7153a882c33b55699851a396c8eaae181cfd120 100644
+--- a/naga/src/back/hlsl/writer.rs
++++ b/naga/src/back/hlsl/writer.rs
+@@ -3667,6 +3667,15 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
+             if is_subgroup_builtin_binding(&m.binding) {
+                 continue;
+             }
++            if self.options.fl9_omit_unused_fragment_position
++                && shader_stage == (ShaderStage::Fragment, Io::Input)
++                && matches!(
++                    m.binding,
++                    Some(crate::Binding::BuiltIn(crate::BuiltIn::Position { .. }))
++                )
++            {
++                continue;
++            }
+             if shader_stage == (ShaderStage::Vertex, Io::Input)
+                 && self.options.fl9_instance_index_input
+                 && matches!(
+@@ -3914,6 +3923,12 @@ impl<'a, W: fmt::Write> super::Writer<'a, W> {
+         fake_member: &EpStructMember,
+     ) -> BackendResult {
+         match fake_member.binding {
++            Some(crate::Binding::BuiltIn(crate::BuiltIn::Position { .. }))
++                if ep.stage == ShaderStage::Fragment
++                    && self.options.fl9_omit_unused_fragment_position =>
++            {
++                write!(self.out, "float4(0.0, 0.0, 0.0, 0.0)")?
++            }
+             Some(crate::Binding::BuiltIn(crate::BuiltIn::InstanceIndex))
+                 if self.options.fl9_instance_index_input =>
+             {
+diff --git a/wgpu-core/src/command/bind.rs b/wgpu-core/src/command/bind.rs
+index 83e6b4974544a06e3d56b21c9889a39068813fe4..9a0bde44cd633ab32a4f13e9565004b6d2ee2cb1 100644
+--- a/wgpu-core/src/command/bind.rs
++++ b/wgpu-core/src/command/bind.rs
+@@ -354,14 +354,7 @@ fn sampler_mip_pair_compatible(
+ }
+ 
+ fn sampler_supports_explicit_lod(level: u32, compatibility: hal::SamplerMipCompatibility) -> bool {
+-    match compatibility {
+-        hal::SamplerMipCompatibility::Unrestricted => true,
+-        hal::SamplerMipCompatibility::RaisedMaximum {
+-            original,
+-            anisotropic,
+-        } => !anisotropic && original >= level as f32,
+-        hal::SamplerMipCompatibility::SingleMip => false,
+-    }
++    compatibility.supports_fixed_mip(level)
+ }
+ 
+ fn fl9_texture_sample_level_view_compatible(
+@@ -924,9 +917,11 @@ impl Binder {
+                                 })
+                             })
+                 }) {
+-                    return Err(DrawError::IncompatibleTextureSampleLevelSampler {
+-                        group: pair.sampler_group,
+-                        binding: pair.sampler_binding,
++                    return Err(DrawError::IncompatibleSamplerMipRange {
++                        texture_group: pair.texture_group,
++                        texture_binding: pair.texture_binding,
++                        sampler_group: pair.sampler_group,
++                        sampler_binding: pair.sampler_binding,
+                     });
+                 }
+             }
+diff --git a/wgpu-core/src/device/resource.rs b/wgpu-core/src/device/resource.rs
+index c7944574dc873f2c0fc8a68e37cbab136c4da06b..2c5ed40f4c5ceb1677b7bb24293c8f59fc3a926e 100644
+--- a/wgpu-core/src/device/resource.rs
++++ b/wgpu-core/src/device/resource.rs
+@@ -5373,13 +5373,14 @@ impl Device {
+             }) {
+                 self.require_downlevel_flags(wgt::DownlevelFlags::SEPARATE_ALPHA_BLEND)?;
+             }
+-            if !cts.is_empty() && {
+-                let first = &cts[0];
+-                cts[1..]
+-                    .iter()
+-                    .any(|ct| ct.write_mask != first.write_mask || ct.blend != first.blend)
+-            } {
+-                self.require_downlevel_flags(wgt::DownlevelFlags::INDEPENDENT_BLEND)?;
++            if let Some((first, others)) = cts.split_first() {
++                let independent_masks = self.downlevel.limits.independent_color_write_masks;
++                if others.iter().any(|ct| {
++                    ct.blend != first.blend
++                        || (!independent_masks && ct.write_mask != first.write_mask)
++                }) {
++                    self.require_downlevel_flags(wgt::DownlevelFlags::INDEPENDENT_BLEND)?;
++                }
+             }
+         }
+ 
+diff --git a/wgpu-hal/Cargo.toml b/wgpu-hal/Cargo.toml
+index e3f51b4552e1876721f60658f23ad47589a781c8..bae7dd11c11d0fb0c23440916643b7df8bbc3735 100644
+--- a/wgpu-hal/Cargo.toml
++++ b/wgpu-hal/Cargo.toml
+@@ -137,6 +137,7 @@ gles = [
+ ## Enables the experimental FL9_1 D3D11 HAL and restricted public rendering
+ ## backend on Windows.
+ dx11 = [
++    "dep:arrayvec",
+     "dep:parking_lot",
+     "windows/UI_Core",
+     "naga/hlsl-out",
+diff --git a/wgpu-hal/src/dx11/adapter.rs b/wgpu-hal/src/dx11/adapter.rs
+index 9cf1d437d2004246e1adbce35325d709b27317f3..3434bf07fb961af293bb2980526204e131ce08f4 100644
+--- a/wgpu-hal/src/dx11/adapter.rs
++++ b/wgpu-hal/src/dx11/adapter.rs
+@@ -20,6 +20,7 @@ impl Adapter {
+         identity: &super::AdapterIdentity,
+         driver_version: Option<&str>,
+         native: Arc<super::NativeDevice>,
++        requested: Option<super::FeatureLevel>,
+     ) -> Option<crate::ExposedAdapter<super::Api>> {
+         let projection = super::capabilities::Capabilities::query(&native).wgpu_projection()?;
+         let mut info = wgt::AdapterInfo::new(wgt::DeviceType::Other, wgt::Backend::Dx11);
+@@ -41,6 +42,18 @@ impl Adapter {
+                 alloc::format!("{level_tag}; physical DXGI adapter; driver version unavailable")
+             }
+         };
++        if let Some(requested) = requested {
++            use core::fmt::Write as _;
++            let _ = write!(
++                info.driver_info,
++                "; requested level {:#06x}; actual level {:#06x}",
++                requested.as_raw(),
++                level.as_raw()
++            );
++        }
++        if native.color_attachment_limit() > 1 {
++            info.driver_info.push_str("; experimental FL10_0 MRT and occlusion");
++        }
+ 
+         Some(crate::ExposedAdapter {
+             adapter: Self {
+diff --git a/wgpu-hal/src/dx11/capabilities.rs b/wgpu-hal/src/dx11/capabilities.rs
+index 8ca122e83254a467b24fe96be615acd645073aae..bc85eb5c76aa5b1cd35400a61146cc8dcb272ee6 100644
+--- a/wgpu-hal/src/dx11/capabilities.rs
++++ b/wgpu-hal/src/dx11/capabilities.rs
+@@ -908,14 +908,19 @@ impl Capabilities {
+         };
+         limits.max_vertex_attributes = 16;
+         limits.max_vertex_buffer_array_stride = 2048;
+-        // FL9_1 compiled pixel shaders accept eight inputs total, including SV_Position.
+-        limits.max_inter_stage_shader_variables = 7;
++        limits.max_inter_stage_shader_variables = 8;
+         limits.max_color_attachments = self.backend.color_attachments;
+-        limits.max_color_attachment_bytes_per_sample = 8;
++        limits.max_color_attachment_bytes_per_sample = 8 * self.backend.color_attachments;
+         limits.max_buffers_and_acceleration_structures_per_shader_stage =
+             self.backend.vertex_buffers + uniform_buffers_per_stage;
+ 
+         let mut flags = wgt::DownlevelFlags::empty();
++        if self.backend.color_attachments > 1 && self.hardware.separate_alpha_blend {
++            flags |= wgt::DownlevelFlags::SEPARATE_ALPHA_BLEND;
++        }
++        if self.backend.color_attachments > 1 {
++            flags |= wgt::DownlevelFlags::OCCLUSION_QUERY;
++        }
+         if self.backend.uniform_binding_sizes_unaligned_16 {
+             flags |= wgt::DownlevelFlags::BUFFER_BINDINGS_NOT_16_BYTE_ALIGNED;
+         }
+@@ -940,6 +945,7 @@ impl Capabilities {
+             shader_model: wgt::ShaderModel::Sm2,
+             limits: wgt::DownlevelLimits {
+                 empty_binding_visibility: false,
++                independent_color_write_masks: self.backend.color_attachments > 1,
+                 texture_1d: false,
+                 texture_3d: texture_3d_sampling,
+                 texture_3d_usage_mask: if texture_3d_sampling {
+@@ -1410,7 +1416,11 @@ impl Capabilities {
+                 rgba4444_unorm: format(DXGI_FORMAT_B4G4R4A4_UNORM),
+                 vertex_input_formats,
+             },
+-            backend: BackendCapabilities::CURRENT,
++            backend: BackendCapabilities {
++                alpha_to_coverage: device.supports_alpha_to_coverage(),
++                color_attachments: device.color_attachment_limit() as u32,
++                ..BackendCapabilities::CURRENT
++            },
+         }
+     }
+ 
+diff --git a/wgpu-hal/src/dx11/command.rs b/wgpu-hal/src/dx11/command.rs
+index ee1c66c967d0fc2b669a7d6583f66896a3471cf1..107334a90ebbfb9f5f499c872fc5fb7668563a83 100644
+--- a/wgpu-hal/src/dx11/command.rs
++++ b/wgpu-hal/src/dx11/command.rs
+@@ -13,6 +13,7 @@ use alloc::{
+     sync::{Arc, Weak},
+     vec::Vec,
+ };
++use arrayvec::ArrayVec;
+ use windows::{
+     core::{Error, Interface, Result},
+     Win32::{
+@@ -201,6 +202,8 @@ pub(super) enum NativeCommand {
+     Copy(NativeBufferCopy),
+     ClearBuffer(NativeBufferClear),
+     WriteTimestamp(ID3D11Asynchronous),
++    BeginOcclusion(ID3D11Asynchronous),
++    EndOcclusion,
+     CopyQueryResults {
+         queries: Vec<ID3D11Asynchronous>,
+         buffer: ID3D11Buffer,
+@@ -218,8 +221,7 @@ pub(super) enum NativeCommand {
+     #[cfg(feature = "dx11-test-fixture")]
+     InjectedDeviceRemoval,
+     BeginRender {
+-        target: Option<RenderTarget>,
+-        clear: Option<[f32; 4]>,
++        colors: ArrayVec<Option<(RenderTarget, Option<[f32; 4]>)>, { crate::MAX_COLOR_ATTACHMENTS }>,
+         depth: Option<DepthAttachment>,
+         viewport_buffer: ID3D11Buffer,
+         width: u32,
+@@ -401,7 +403,7 @@ pub(super) enum NativeCommand {
+         instance_bindings: InstanceBindings,
+     },
+     EndRender {
+-        resolve: Option<ResolveOperation>,
++        resolves: ArrayVec<ResolveOperation, { crate::MAX_COLOR_ATTACHMENTS }>,
+     },
+ }
+ 
+@@ -604,18 +606,19 @@ impl CommandBuffer {
+         retained: &mut Vec<Arc<ID3D11RenderTargetView>>,
+     ) -> Result<()> {
+         for command in &self.commands {
+-            if let NativeCommand::BeginRender {
+-                target: Some(RenderTarget::Surface(target)),
+-                ..
+-            } = command
+-            {
+-                let target = target
+-                    .upgrade()
+-                    .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
+-                retained
+-                    .try_reserve(1)
+-                    .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+-                retained.push(target);
++            if let NativeCommand::BeginRender { colors, .. } = command {
++                for (target, _) in colors.iter().flatten() {
++                    let RenderTarget::Surface(target) = target else {
++                        continue;
++                    };
++                    let target = target
++                        .upgrade()
++                        .ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
++                    retained
++                        .try_reserve(1)
++                        .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
++                    retained.push(target);
++                }
+             }
+         }
+         Ok(())
+@@ -623,12 +626,25 @@ impl CommandBuffer {
+ 
+     /// The caller must hold the owning device's immediate-context mutex.
+     pub(super) fn replay(&self, context: &ID3D11DeviceContext) -> Result<()> {
++        struct ActiveOcclusion<'a> {
++            context: &'a ID3D11DeviceContext,
++            query: Option<&'a ID3D11Asynchronous>,
++        }
++        impl Drop for ActiveOcclusion<'_> {
++            fn drop(&mut self) {
++                if let Some(query) = self.query.take() {
++                    unsafe { self.context.End(query) };
++                }
++            }
++        }
++        let mut occlusion = ActiveOcclusion { context, query: None };
+         let mut active_depth_state = None;
+         let mut active_blend_state = None;
+         let mut active_sample_mask = u32::MAX;
+         let mut blend_constant = [0.0; 4];
+         let mut stencil_reference = 0;
+         let mut active_vertex_index_slot = None;
++        let mut active_color_slots = 0;
+         for command in &self.commands {
+             unsafe {
+                 match command {
+@@ -662,6 +678,17 @@ impl CommandBuffer {
+                         }
+                     }
+                     NativeCommand::WriteTimestamp(query) => context.End(query),
++                    NativeCommand::BeginOcclusion(query) => {
++                        if occlusion.query.is_some() {
++                            return Err(Error::from_hresult(E_INVALIDARG));
++                        }
++                        context.Begin(query);
++                        occlusion.query = Some(query);
++                    }
++                    NativeCommand::EndOcclusion => {
++                        let query = occlusion.query.take().ok_or_else(|| Error::from_hresult(E_INVALIDARG))?;
++                        context.End(query);
++                    }
+                     NativeCommand::CopyQueryResults {
+                         queries,
+                         buffer,
+@@ -721,14 +748,21 @@ impl CommandBuffer {
+                         ));
+                     }
+                     NativeCommand::BeginRender {
+-                        target,
+-                        clear,
++                        colors,
+                         depth,
+                         viewport_buffer,
+                         width,
+                         height,
+                     } => {
+-                        let target = target.as_ref().map(RenderTarget::resolve).transpose()?;
++                        let targets = colors
++                            .iter()
++                            .map(|attachment| {
++                                attachment
++                                    .as_ref()
++                                    .map(|(target, _)| target.resolve())
++                                    .transpose()
++                            })
++                            .collect::<Result<ArrayVec<_, { crate::MAX_COLOR_ATTACHMENTS }>>>()?;
+                         active_depth_state = None;
+                         active_blend_state = None;
+                         active_sample_mask = u32::MAX;
+@@ -736,17 +770,11 @@ impl CommandBuffer {
+                         stencil_reference = 0;
+                         context.ClearState();
+                         active_vertex_index_slot = None;
+-                        if let Some(target) = &target {
+-                            context.OMSetRenderTargets(
+-                                Some(&[Some(target.clone())]),
+-                                depth.as_ref().map(|attachment| &attachment.view),
+-                            );
+-                        } else {
+-                            context.OMSetRenderTargets(
+-                                None,
+-                                depth.as_ref().map(|attachment| &attachment.view),
+-                            );
+-                        }
++                        active_color_slots = targets.len();
++                        context.OMSetRenderTargets(
++                            (!targets.is_empty()).then_some(targets.as_slice()),
++                            depth.as_ref().map(|attachment| &attachment.view),
++                        );
+                         context.OMSetBlendState(None, None, u32::MAX);
+                         context.OMSetDepthStencilState(None, stencil_reference);
+                         let identity: [f32; 4] = [1., 1., 0., 0.];
+@@ -777,8 +805,10 @@ impl CommandBuffer {
+                             right: *width as i32,
+                             bottom: *height as i32,
+                         }]));
+-                        if let (Some(target), Some(color)) = (&target, clear) {
+-                            context.ClearRenderTargetView(target, color);
++                        for (target, attachment) in targets.iter().zip(colors) {
++                            if let (Some(target), Some((_, Some(clear)))) = (target, attachment) {
++                                context.ClearRenderTargetView(target, clear);
++                            }
+                         }
+                         if let Some(attachment) = depth {
+                             let mut flags = 0;
+@@ -865,9 +895,10 @@ impl CommandBuffer {
+                         source_box,
+                     } => uniform.execute(context, *vertex_slot, *fragment_slot, source_box)?,
+                     NativeCommand::RefreshSampledTextures { textures } => {
+-                        let mut targets = [None];
++                        let mut targets = [const { None }; crate::MAX_COLOR_ATTACHMENTS];
+                         let mut depth = None;
+-                        context.OMGetRenderTargets(Some(&mut targets), Some(&mut depth));
++                        let targets = &mut targets[..active_color_slots];
++                        context.OMGetRenderTargets(Some(targets), Some(&mut depth));
+                         context.OMSetRenderTargets(None, None);
+                         context.PSSetShaderResources(
+                             0,
+@@ -877,11 +908,10 @@ impl CommandBuffer {
+                             texture.execute(context);
+                         }
+                         context.OMSetRenderTargets(
+-                            if targets[0].is_some() {
+-                                Some(&targets)
+-                            } else {
+-                                None
+-                            },
++                            targets
++                                .iter()
++                                .rposition(Option::is_some)
++                                .map(|last| &targets[..=last]),
+                             depth.as_ref(),
+                         );
+                     }
+@@ -1621,9 +1651,9 @@ impl CommandBuffer {
+                         context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLESTRIP);
+                         result?;
+                     }
+-                    NativeCommand::EndRender { resolve } => {
++                    NativeCommand::EndRender { resolves } => {
+                         context.ClearState();
+-                        if let Some(resolve) = resolve {
++                        for resolve in resolves {
+                             context.ResolveSubresource(
+                                 &resolve.destination,
+                                 resolve.destination_subresource,
+diff --git a/wgpu-hal/src/dx11/device.rs b/wgpu-hal/src/dx11/device.rs
+index 4803d4b7a2dbc5c11cd1644c4c1ae34dbdead177..776f076c2ed552042bf7321de231bcb59a5ca95b 100644
+--- a/wgpu-hal/src/dx11/device.rs
++++ b/wgpu-hal/src/dx11/device.rs
+@@ -4,7 +4,7 @@ use parking_lot::{Mutex, MutexGuard};
+ use windows::{
+     core::{Error, Interface, Result},
+     Win32::{
+-        Foundation::{E_FAIL, E_INVALIDARG, HMODULE},
++        Foundation::{E_FAIL, E_INVALIDARG, HMODULE, LUID},
+         Graphics::{
+             Direct3D::{D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL},
+             Direct3D11::{
+@@ -99,6 +99,11 @@ impl NativeAdapter {
+         &self.identity
+     }
+ 
++    /// Adapter identifier unique within the current Windows session.
++    pub fn luid(&self) -> Result<LUID> {
++        Ok(unsafe { self.raw.GetDesc1()? }.AdapterLuid)
++    }
++
+     /// Driver-package version when DXGI exposes it for this adapter.
+     pub fn driver_version(&self) -> Option<String> {
+         let version = unsafe { self.raw.CheckInterfaceSupport(&IDXGIDevice::IID) }.ok()? as u64;
+@@ -193,6 +198,9 @@ impl NativeAdapter {
+             .find(|level| level.as_raw() == selected.0 as u32)
+             .ok_or_else(|| Error::from_hresult(E_FAIL))?;
+         let raw = device.ok_or_else(|| Error::from_hresult(E_FAIL))?;
++        if unsafe { raw.GetFeatureLevel() } != selected {
++            return Err(Error::from_hresult(E_FAIL));
++        }
+         let immediate = context.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+         let idle_query = {
+             let desc = D3D11_QUERY_DESC {
+@@ -216,6 +224,7 @@ impl NativeAdapter {
+             immediate: Mutex::new(immediate),
+             idle_query: Mutex::new(Some(idle_query)),
+             level,
++            portable_fl10: false,
+             timestamp_frequency,
+             debug_info_queue,
+             #[cfg(any(test, feature = "dx11-test-fixture"))]
+@@ -235,6 +244,7 @@ pub struct NativeDevice {
+     immediate: Mutex<ID3D11DeviceContext>,
+     pub(super) idle_query: Mutex<Option<ID3D11Asynchronous>>,
+     level: FeatureLevel,
++    portable_fl10: bool,
+     timestamp_frequency: Option<u64>,
+     #[cfg_attr(not(test), allow(dead_code))]
+     debug_info_queue: Option<ID3D11InfoQueue>,
+@@ -247,6 +257,23 @@ pub struct NativeDevice {
+ }
+ 
+ impl NativeDevice {
++    pub(super) fn enable_portable_fl10(&mut self) {
++        debug_assert_eq!(self.level, FeatureLevel::L10_0);
++        self.portable_fl10 = true;
++    }
++
++    pub(super) fn color_attachment_limit(&self) -> usize {
++        if self.portable_fl10 { crate::MAX_COLOR_ATTACHMENTS } else { 1 }
++    }
++
++    pub(super) fn supports_portable_occlusion(&self) -> bool {
++        self.portable_fl10
++    }
++
++    pub(super) fn supports_alpha_to_coverage(&self) -> bool {
++        self.portable_fl10
++    }
++
+     #[cfg(test)]
+     pub(super) fn clear_debug_messages(&self) {
+         if let Some(queue) = &self.debug_info_queue {
+diff --git a/wgpu-hal/src/dx11/fl10.rs b/wgpu-hal/src/dx11/fl10.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..8211ef9af8483431594e92d362417854f2a7913a
+--- /dev/null
++++ b/wgpu-hal/src/dx11/fl10.rs
+@@ -0,0 +1,254 @@
++//! Experimental native D3D11 FL10_0 operations on an isolated hardware device.
++//!
++//! This interface owns its device and command stream independently of portable wgpu.
++
++use alloc::{string::String, vec::Vec};
++use core::{ffi::CStr, mem::size_of};
++use windows::{
++    Win32::{
++        Foundation::{E_FAIL, E_INVALIDARG, LUID},
++        Graphics::Direct3D11::{
++            D3D11_FEATURE_D3D10_X_HARDWARE_OPTIONS, D3D11_FEATURE_DATA_D3D10_X_HARDWARE_OPTIONS,
++            D3D11_SO_DECLARATION_ENTRY, ID3D11Device, ID3D11DeviceContext, ID3D11GeometryShader,
++        },
++    },
++    core::{Error, PCSTR, Result},
++};
++
++use super::{FeatureLevel, NativeAdapter, NativeDevice};
++
++/// Exact FXC Shader Model 4.0 target for a native FL10_0 stage.
++#[derive(Clone, Copy, Debug, Eq, PartialEq)]
++pub enum ShaderStage {
++    /// Vertex shader, `vs_4_0`.
++    Vertex,
++    /// Geometry shader, `gs_4_0`.
++    Geometry,
++    /// Pixel shader, `ps_4_0`.
++    Pixel,
++    /// Compute shader, `cs_4_0`. Execution requires the optional CS4 capability.
++    Compute,
++}
++
++/// FXC failure with the compiler's HRESULT and diagnostic text.
++#[derive(Debug)]
++pub struct CompileError {
++    /// Compiler HRESULT.
++    pub code: i32,
++    /// Diagnostic text, when available.
++    pub message: String,
++}
++
++/// Compile an HLSL entry point to the stage's exact Shader Model 4.0 DXBC target.
++pub fn compile_hlsl(
++    source: &str,
++    entry: &str,
++    stage: ShaderStage,
++) -> core::result::Result<Vec<u8>, CompileError> {
++    let target = match stage {
++        ShaderStage::Vertex => c"vs_4_0",
++        ShaderStage::Geometry => c"gs_4_0",
++        ShaderStage::Pixel => c"ps_4_0",
++        ShaderStage::Compute => c"cs_4_0",
++    };
++    super::shader::compile_hlsl_target(source, entry, PCSTR(target.as_ptr().cast())).map_err(
++        |error| CompileError {
++            code: error.code,
++            message: error.message,
++        },
++    )
++}
++
++/// Failure to translate or compile a native WGSL graphics entry point.
++#[derive(Debug)]
++pub enum GraphicsCompileError {
++    /// Only Naga vertex and fragment stages use this path.
++    UnsupportedStage,
++    /// The HLSL writer rejected the entry point or its module.
++    Translate(naga::back::hlsl::Error),
++    /// The HLSL writer could not assign an entry point name.
++    EntryPoint(naga::back::hlsl::EntryPointError),
++    /// The HLSL writer did not return a name for the selected entry point.
++    MissingEntryPoint,
++    /// FXC rejected the generated code for Shader Model 4.0.
++    Compile(CompileError),
++}
++
++/// Translate one validated Naga graphics entry point and compile it for FL10_0.
++///
++/// The caller supplies the native register mapping and owns pipeline validation,
++/// including the binding types and stage interfaces.
++pub fn compile_graphics_entry(
++    module: &naga::Module,
++    info: &naga::valid::ModuleInfo,
++    stage: naga::ShaderStage,
++    entry: &str,
++    binding_map: naga::back::hlsl::BindingMap,
++) -> core::result::Result<Vec<u8>, GraphicsCompileError> {
++    use naga::back::hlsl;
++
++    let target = match stage {
++        naga::ShaderStage::Vertex => ShaderStage::Vertex,
++        naga::ShaderStage::Fragment => ShaderStage::Pixel,
++        _ => return Err(GraphicsCompileError::UnsupportedStage),
++    };
++    let options = hlsl::Options {
++        shader_model: hlsl::ShaderModel::V4_0,
++        binding_map,
++        fake_missing_bindings: false,
++        direct_sampler_bindings: true,
++        ..Default::default()
++    };
++    let pipeline = hlsl::PipelineOptions {
++        entry_point: Some((stage, entry.into())),
++    };
++    let mut source = String::new();
++    let reflection = hlsl::Writer::new(&mut source, &options, &pipeline)
++        .write(module, info, None)
++        .map_err(GraphicsCompileError::Translate)?;
++    let name = reflection
++        .entry_point_names
++        .into_iter()
++        .next()
++        .ok_or(GraphicsCompileError::MissingEntryPoint)?
++        .map_err(GraphicsCompileError::EntryPoint)?;
++    compile_hlsl(&source, &name, target).map_err(GraphicsCompileError::Compile)
++}
++
++/// An exclusively owned hardware device created at exactly FL10_0.
++#[derive(Debug)]
++pub struct Device {
++    native: NativeDevice,
++    adapter_luid: LUID,
++}
++
++/// Components of one output semantic captured from the single SM4.0 stream.
++#[derive(Clone, Copy, Debug)]
++pub struct StreamOutputElement<'a> {
++    /// Name in the shader output signature. `None` reserves unwritten space.
++    pub semantic: Option<&'a CStr>,
++    /// Index in the shader output signature.
++    pub semantic_index: u32,
++    /// First scalar component to capture.
++    pub start_component: u8,
++    /// Number of scalar components to capture.
++    pub component_count: u8,
++    /// Stream-output buffer slot.
++    pub output_slot: u8,
++}
++
++impl Device {
++    /// Request only FL10_0 on the selected hardware adapter.
++    pub fn open(adapter: &NativeAdapter) -> Result<Self> {
++        if adapter.identity().software {
++            return Err(Error::from_hresult(E_INVALIDARG));
++        }
++        Ok(Self {
++            native: adapter.open_device(&[FeatureLevel::L10_0])?,
++            adapter_luid: adapter.luid()?,
++        })
++    }
++
++    /// Return the feature level confirmed by the D3D runtime.
++    pub fn feature_level(&self) -> FeatureLevel {
++        self.native.feature_level()
++    }
++
++    /// Identify the DXGI adapter for this Windows session.
++    pub fn adapter_luid(&self) -> LUID {
++        self.adapter_luid
++    }
++
++    /// Create a native geometry shader from compiled DXBC.
++    pub fn create_geometry_shader(&self, dxbc: &[u8]) -> Result<ID3D11GeometryShader> {
++        let mut shader = None;
++        unsafe {
++            self.native
++                .raw_device()
++                .CreateGeometryShader(dxbc, None, Some(&mut shader))?
++        };
++        shader.ok_or_else(|| Error::from_hresult(E_FAIL))
++    }
++
++    /// Create a shader that captures SM4.0 stage output to buffers.
++    ///
++    /// Pass geometry DXBC, or vertex DXBC for capture without a geometry program.
++    /// The native runtime validates semantics, component ranges and byte strides.
++    /// Stream zero is forwarded to rasterization when render targets are bound.
++    pub fn create_stream_output_shader(
++        &self,
++        dxbc: &[u8],
++        outputs: &[StreamOutputElement<'_>],
++        strides: &[u32],
++    ) -> Result<ID3D11GeometryShader> {
++        let outputs: Vec<_> = outputs
++            .iter()
++            .map(|output| D3D11_SO_DECLARATION_ENTRY {
++                Stream: 0,
++                SemanticName: output
++                    .semantic
++                    .map_or(PCSTR::null(), |name| PCSTR(name.as_ptr().cast())),
++                SemanticIndex: output.semantic_index,
++                StartComponent: output.start_component,
++                ComponentCount: output.component_count,
++                OutputSlot: output.output_slot,
++            })
++            .collect();
++        let mut shader = None;
++        unsafe {
++            self.native
++                .raw_device()
++                .CreateGeometryShaderWithStreamOutput(
++                    dxbc,
++                    Some(&outputs),
++                    Some(strides),
++                    0,
++                    None,
++                    Some(&mut shader),
++                )?;
++        }
++        shader.ok_or_else(|| Error::from_hresult(E_FAIL))
++    }
++
++    /// Query whether this FL10_0 driver implements restricted CS4 compute and raw/structured buffers.
++    pub fn supports_compute(&self) -> Result<bool> {
++        let mut options = D3D11_FEATURE_DATA_D3D10_X_HARDWARE_OPTIONS::default();
++        unsafe {
++            self.native.raw_device().CheckFeatureSupport(
++                D3D11_FEATURE_D3D10_X_HARDWARE_OPTIONS,
++                core::ptr::from_mut(&mut options).cast(),
++                size_of::<D3D11_FEATURE_DATA_D3D10_X_HARDWARE_OPTIONS>() as u32,
++            )?;
++        }
++        Ok(options
++            .ComputeShaders_Plus_RawAndStructuredBuffers_Via_Shader_4_x
++            .as_bool())
++    }
++
++    /// Perform a batch of native operations with exclusive access to the immediate context.
++    ///
++    /// Commands are ordered across calls. Pipeline bindings are cleared at the end of
++    /// each call, including during unwinding. GPU completion requires explicit synchronization.
++    ///
++    /// # Safety
++    ///
++    /// All operations must obey the native D3D11 contracts. Use only resources
++    /// created on this device. Do not retain the device or context interfaces,
++    /// leave resources mapped, or re-enter this method from the callback.
++    pub unsafe fn with_context<T>(
++        &self,
++        operation: impl FnOnce(&ID3D11Device, &ID3D11DeviceContext) -> T,
++    ) -> T {
++        let context = self.native.immediate_context();
++        let _reset = ClearStateOnDrop(&context);
++        operation(self.native.raw_device(), &context)
++    }
++}
++
++struct ClearStateOnDrop<'a>(&'a ID3D11DeviceContext);
++
++impl Drop for ClearStateOnDrop<'_> {
++    fn drop(&mut self) {
++        unsafe { self.0.ClearState() };
++    }
++}
+diff --git a/wgpu-hal/src/dx11/hal_device.rs b/wgpu-hal/src/dx11/hal_device.rs
+index c9010aa247e6443769c9189475a79cd32fe1d531..402c4031ad164a72760c7fb8f23e3fdbf4a457db 100644
+--- a/wgpu-hal/src/dx11/hal_device.rs
++++ b/wgpu-hal/src/dx11/hal_device.rs
+@@ -1167,10 +1167,7 @@ impl crate::Device for Device {
+         &self,
+         desc: &wgt::QuerySetDescriptor<Label>,
+     ) -> Result<<Self::A as Api>::QuerySet, DeviceError> {
+-        if !matches!(desc.ty, wgt::QueryType::Timestamp) {
+-            return Err(DeviceError::Unexpected);
+-        }
+-        super::query::QuerySet::new(&self.native, desc.count).map_err(device_error)
++        super::query::QuerySet::new(&self.native, desc.ty, desc.count).map_err(device_error)
+     }
+ 
+     unsafe fn destroy_query_set(&self, set: <Self::A as Api>::QuerySet) {
+diff --git a/wgpu-hal/src/dx11/hal_encoder.rs b/wgpu-hal/src/dx11/hal_encoder.rs
+index bae29f1137185f228366edb13f2fce95ef003dc4..2798903ae97224ae47910f1e361582f428592846 100644
+--- a/wgpu-hal/src/dx11/hal_encoder.rs
++++ b/wgpu-hal/src/dx11/hal_encoder.rs
+@@ -14,6 +14,7 @@ use crate::*;
+ use alloc::sync::Arc;
+ #[allow(unused_imports)]
+ use alloc::{boxed::Box, vec::Vec};
++use arrayvec::ArrayVec;
+ #[allow(unused_imports)]
+ use core::{
+     num::{NonZeroU32, NonZeroU64},
+@@ -35,15 +36,22 @@ pub struct CommandEncoder {
+ }
+ #[derive(Debug)]
+ struct RenderState {
+-    format: Option<wgt::TextureFormat>,
++    formats: [Option<wgt::TextureFormat>; MAX_COLOR_ATTACHMENTS],
+     depth_format: Option<wgt::TextureFormat>,
+     depth_stencil_read_only: bool,
+     extent: [u32; 2],
+     sample_count: u32,
+-    target: Option<windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView>,
+-    resolve: Option<ResolveOperation>,
++    targets: ArrayVec<
++        (
++            windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView,
++            u32,
++        ),
++        MAX_COLOR_ATTACHMENTS,
++    >,
++    resolves: ArrayVec<ResolveOperation, MAX_COLOR_ATTACHMENTS>,
++    occlusion_set: Option<windows::Win32::Graphics::Direct3D11::ID3D11Asynchronous>,
++    active_occlusion: Option<u32>,
+     end_timestamp: Option<windows::Win32::Graphics::Direct3D11::ID3D11Asynchronous>,
+-    target_mip: Option<u32>,
+     pipeline: bool,
+     active_plan: Option<Arc<super::hal_bind_group::BindingPlan>>,
+     last_layout: Option<Arc<super::hal_bind_group::BindingPlan>>,
+@@ -553,6 +561,95 @@ impl RenderState {
+     }
+ }
+ 
++type PreparedColorAttachment = (
++    windows::Win32::Graphics::Direct3D11::ID3D11RenderTargetView,
++    wgt::TextureFormat,
++    Option<[f32; 4]>,
++    Option<ResolveOperation>,
++);
++
++impl CommandEncoder {
++    fn prepare_color_attachment(
++        &self,
++        color: &ColorAttachment<'_, super::texture::NativeTextureView>,
++        extent: [u32; 2],
++        sample_count: u32,
++    ) -> Result<PreparedColorAttachment, DeviceError> {
++        use windows::Win32::Graphics::Dxgi::Common::*;
++        let color_usage = wgt::TextureUses::COLOR_TARGET;
++        let valid_usage =
++            |usage| usage == color_usage || usage == color_usage | wgt::TextureUses::TRANSIENT;
++        if color.depth_slice.is_some() || !valid_usage(color.target.usage) {
++            return Err(DeviceError::Unexpected);
++        }
++        let (target, format, size) = self
++            .device
++            .render_target_view(color.target.view)
++            .map_err(super::hal_device::device_error)?;
++        if size != extent
++            || self
++                .device
++                .render_target_sample_count(color.target.view)
++                .map_err(super::hal_device::device_error)?
++                != sample_count
++        {
++            return Err(DeviceError::Unexpected);
++        }
++        let clear = attachment_needs_clear(color.ops)
++            .ok_or(DeviceError::Unexpected)?
++            .then_some([
++                color.clear_value.r as f32,
++                color.clear_value.g as f32,
++                color.clear_value.b as f32,
++                color.clear_value.a as f32,
++            ]);
++        let resolve = if let Some(attachment) = &color.resolve_target {
++            let native_format = match format {
++                wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
++                wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
++                wgt::TextureFormat::Rgb5g6b5Unorm => DXGI_FORMAT_B5G6R5_UNORM,
++                _ => return Err(DeviceError::Unexpected),
++            };
++            let (view, resolve_format, resolve_size) = self
++                .device
++                .render_target_view(attachment.view)
++                .map_err(super::hal_device::device_error)?;
++            if sample_count <= 1
++                || !self
++                    .device
++                    .color_multisample_resolve_supported(native_format, sample_count)
++                || self
++                    .device
++                    .render_target_sample_count(attachment.view)
++                    .map_err(super::hal_device::device_error)?
++                    != 1
++                || !valid_usage(attachment.usage)
++                || format != resolve_format
++                || resolve_size != extent
++            {
++                return Err(DeviceError::Unexpected);
++            }
++            let source =
++                unsafe { target.GetResource() }.map_err(super::hal_device::device_error)?;
++            let destination =
++                unsafe { view.GetResource() }.map_err(super::hal_device::device_error)?;
++            if source.as_raw() == destination.as_raw() {
++                return Err(DeviceError::Unexpected);
++            }
++            Some(ResolveOperation {
++                source,
++                destination,
++                source_subresource: color.target.view.mip_base(),
++                destination_subresource: attachment.view.mip_base(),
++                format: native_format,
++            })
++        } else {
++            None
++        };
++        Ok((target, format, clear, resolve))
++    }
++}
++
+ fn attachment_needs_clear(ops: AttachmentOps) -> Option<bool> {
+     if !ops.difference(AttachmentOps::all()).is_empty() {
+         return None;
+@@ -622,6 +719,7 @@ impl CommandEncoder {
+         DeviceError,
+     > {
+         if !set.belongs_to(&self.device)
++            || !matches!(set.kind(), wgt::QueryType::Timestamp)
+             || (beginning_index.is_none() && end_index.is_none())
+             || (beginning_index.is_some() && beginning_index == end_index)
+         {
+@@ -1032,7 +1130,7 @@ impl crate::CommandEncoder for CommandEncoder {
+             };
+             resources.uniforms.push(binding);
+         }
+-        if let Some(target) = &render.target {
++        for (target, mip) in &render.targets {
+             let Ok(target) = (unsafe { target.GetResource() }) else {
+                 self.reject();
+                 return;
+@@ -1047,9 +1145,7 @@ impl crate::CommandEncoder for CommandEncoder {
+                     return;
+                 };
+                 if sampled.as_raw() == target.as_raw()
+-                    && !render.target_mip.is_some_and(|target_mip| {
+-                        disjoint_sample(texture.mip_base, texture.mip_count, target_mip)
+-                    })
++                    && !disjoint_sample(texture.mip_base, texture.mip_count, *mip)
+                 {
+                     self.reject();
+                     return;
+@@ -1089,15 +1185,45 @@ impl crate::CommandEncoder for CommandEncoder {
+     unsafe fn end_debug_marker(&mut self) {}
+ 
+     unsafe fn begin_query(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
+-        self.reject()
++        let Some(render) = &mut self.render else {
++            self.reject();
++            return;
++        };
++        if !set.belongs_to(&self.device)
++            || !matches!(set.kind(), wgt::QueryType::Occlusion)
++            || render.occlusion_set.is_none()
++            || render.occlusion_set != set.query(0)
++            || render.active_occlusion.is_some()
++        {
++            self.reject();
++            return;
++        }
++        let Some(query) = set.query(index) else {
++            self.reject();
++            return;
++        };
++        render.active_occlusion = Some(index);
++        self.record(NativeCommand::BeginOcclusion(query));
+     }
+ 
+     unsafe fn end_query(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
+-        self.reject()
++        let Some(render) = &mut self.render else {
++            self.reject();
++            return;
++        };
++        if !set.belongs_to(&self.device)
++            || render.active_occlusion != Some(index)
++            || render.occlusion_set != set.query(0)
++        {
++            self.reject();
++            return;
++        }
++        render.active_occlusion = None;
++        self.record(NativeCommand::EndOcclusion);
+     }
+ 
+     unsafe fn write_timestamp(&mut self, set: &<Self::A as Api>::QuerySet, index: u32) {
+-        if !set.belongs_to(&self.device) {
++        if !set.belongs_to(&self.device) || !matches!(set.kind(), wgt::QueryType::Timestamp) {
+             self.reject();
+             return;
+         }
+@@ -1178,44 +1304,12 @@ impl crate::CommandEncoder for CommandEncoder {
+             },
+             None => (None, None),
+         };
+-        let color = match desc.color_attachments {
+-            [] | [None] => None,
+-            [Some(color)] => Some(color),
+-            _ => {
+-                self.reject();
+-                return Err(DeviceError::Unexpected);
+-            }
+-        };
+-        let clear = if let Some(color) = color {
+-            match attachment_needs_clear(color.ops) {
+-                Some(true) => Some([
+-                    color.clear_value.r as f32,
+-                    color.clear_value.g as f32,
+-                    color.clear_value.b as f32,
+-                    color.clear_value.a as f32,
+-                ]),
+-                Some(false) => None,
+-                None => {
+-                    self.reject();
+-                    return Err(DeviceError::Unexpected);
+-                }
+-            }
+-        } else {
+-            None
+-        };
+         if self.recording.is_none()
+             || self.render.is_some()
+             || self.compute
+             || !matches!(desc.sample_count, 1 | 2 | 4 | 8 | 16)
+             || desc.multiview_mask.is_some()
+-            || desc.occlusion_query_set.is_some()
+-            || color.is_some_and(|color| {
+-                color.depth_slice.is_some()
+-                    || (color.target.usage != wgt::TextureUses::COLOR_TARGET
+-                        && color.target.usage
+-                            != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
+-            })
+-            || (desc.sample_count == 1 && color.is_some_and(|color| color.resolve_target.is_some()))
++            || desc.color_attachments.len() > self.device.color_attachment_limit()
+             || desc.extent.width == 0
+             || desc.extent.height == 0
+             || desc.extent.width > i32::MAX as u32
+@@ -1226,33 +1320,50 @@ impl crate::CommandEncoder for CommandEncoder {
+             return Err(DeviceError::Unexpected);
+         }
+         let extent = [desc.extent.width, desc.extent.height];
+-        let (target, format) = if let Some(color) = color {
+-            let (target, format, size) = match self.device.render_target_view(color.target.view) {
+-                Ok(info) => info,
+-                Err(_) => {
+-                    self.reject();
+-                    return Err(DeviceError::Unexpected);
+-                }
+-            };
+-            if size != extent {
++        let mut colors = ArrayVec::new();
++        let mut targets = ArrayVec::new();
++        let mut resolves = ArrayVec::new();
++        let mut formats = [None; MAX_COLOR_ATTACHMENTS];
++        let occlusion_set = if let Some(set) = desc.occlusion_query_set {
++            if !set.belongs_to(&self.device) || !matches!(set.kind(), wgt::QueryType::Occlusion) {
+                 self.reject();
+                 return Err(DeviceError::Unexpected);
+             }
+-            (Some(target), Some(format))
++            set.query(0)
+         } else {
+-            (None, None)
++            None
+         };
+-        let target_sample_count = if let Some(color) = color {
+-            match self.device.render_target_sample_count(color.target.view) {
+-                Ok(sample_count) if sample_count == desc.sample_count => sample_count,
+-                _ => {
+-                    self.reject();
+-                    return Err(DeviceError::Unexpected);
+-                }
++        let mut bytes_per_pixel = None;
++        for (slot, color) in desc.color_attachments.iter().enumerate() {
++            let Some(color) = color else {
++                colors.push(None);
++                continue;
++            };
++            let (target, format, clear, resolve) =
++                match self.prepare_color_attachment(color, extent, desc.sample_count) {
++                    Ok(attachment) => attachment,
++                    Err(error) => {
++                        self.failure = Some(error.clone());
++                        return Err(error);
++                    }
++                };
++            let byte_count = format.block_copy_size(None);
++            if bytes_per_pixel.is_some() && byte_count != bytes_per_pixel {
++                self.reject();
++                return Err(DeviceError::Unexpected);
+             }
+-        } else {
+-            1
+-        };
++            bytes_per_pixel = byte_count;
++            formats[slot] = Some(format);
++            targets.push((target.clone(), color.target.view.mip_base()));
++            let recorded = match color.target.view.recorded_surface_target() {
++                Some(weak) => RenderTarget::Surface(weak),
++                None => RenderTarget::Owned(target),
++            };
++            colors.push(Some((recorded, clear)));
++            if let Some(resolve) = resolve {
++                resolves.push(resolve);
++            }
++        }
+         let depth = if let Some(attachment) = &desc.depth_stencil_attachment {
+             let (view, format, size, sample_count) = match self
+                 .device
+@@ -1315,89 +1426,10 @@ impl crate::CommandEncoder for CommandEncoder {
+         } else {
+             None
+         };
+-        if target.is_none() && depth.is_none() {
++        if targets.is_empty() && depth.is_none() {
+             self.reject();
+             return Err(DeviceError::Unexpected);
+         }
+-        let resolve = if let Some(attachment) =
+-            color.and_then(|color| color.resolve_target.as_ref())
+-        {
+-            let Some(source_view) = target.as_ref() else {
+-                self.reject();
+-                return Err(DeviceError::Unexpected);
+-            };
+-            let (resolve_view, resolve_format, resolve_size) =
+-                match self.device.render_target_view(attachment.view) {
+-                    Ok(info) => info,
+-                    Err(_) => {
+-                        self.reject();
+-                        return Err(DeviceError::Unexpected);
+-                    }
+-                };
+-            let resolve_samples = match self.device.render_target_sample_count(attachment.view) {
+-                Ok(sample_count) => sample_count,
+-                Err(_) => {
+-                    self.reject();
+-                    return Err(DeviceError::Unexpected);
+-                }
+-            };
+-            let native_resolve_format = match resolve_format {
+-                wgt::TextureFormat::Rgba8Unorm => {
+-                    windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM
+-                }
+-                wgt::TextureFormat::Bgra8Unorm => {
+-                    windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B8G8R8A8_UNORM
+-                }
+-                wgt::TextureFormat::Rgb5g6b5Unorm => {
+-                    windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_B5G6R5_UNORM
+-                }
+-                _ => {
+-                    self.reject();
+-                    return Err(DeviceError::Unexpected);
+-                }
+-            };
+-            if target_sample_count <= 1
+-                || !self
+-                    .device
+-                    .color_multisample_resolve_supported(native_resolve_format, target_sample_count)
+-                || resolve_samples != 1
+-                || (attachment.usage != wgt::TextureUses::COLOR_TARGET
+-                    && attachment.usage
+-                        != (wgt::TextureUses::COLOR_TARGET | wgt::TextureUses::TRANSIENT))
+-                || format != Some(resolve_format)
+-                || resolve_size != extent
+-            {
+-                self.reject();
+-                return Err(DeviceError::Unexpected);
+-            }
+-            let source = match unsafe { source_view.GetResource() } {
+-                Ok(resource) => resource,
+-                Err(error) => {
+-                    self.reject();
+-                    return Err(super::hal_device::device_error(error));
+-                }
+-            };
+-            let destination = match unsafe { resolve_view.GetResource() } {
+-                Ok(resource) => resource,
+-                Err(error) => {
+-                    self.reject();
+-                    return Err(super::hal_device::device_error(error));
+-                }
+-            };
+-            if source.as_raw() == destination.as_raw() {
+-                self.reject();
+-                return Err(DeviceError::Unexpected);
+-            }
+-            Some(ResolveOperation {
+-                source,
+-                destination,
+-                source_subresource: color.map(|color| color.target.view.mip_base()).unwrap_or(0),
+-                destination_subresource: attachment.view.mip_base(),
+-                format: native_resolve_format,
+-            })
+-        } else {
+-            None
+-        };
+         let viewport_buffer = match self.viewport_buffer() {
+             Ok(buffer) => buffer,
+             Err(error) => {
+@@ -1406,17 +1438,18 @@ impl crate::CommandEncoder for CommandEncoder {
+             }
+         };
+         self.render = Some(RenderState {
+-            format,
++            formats,
+             depth_format: depth.as_ref().map(|depth| depth.format),
+             depth_stencil_read_only: desc.depth_stencil_attachment.as_ref().is_some_and(
+                 |attachment| attachment.target.usage == wgt::TextureUses::DEPTH_STENCIL_READ,
+             ),
+             extent,
+             sample_count: desc.sample_count,
+-            target: target.clone(),
+-            resolve,
++            targets,
++            resolves,
++            occlusion_set,
++            active_occlusion: None,
+             end_timestamp,
+-            target_mip: color.map(|color| color.target.view.mip_base()),
+             pipeline: false,
+             active_plan: None,
+             last_layout: None,
+@@ -1441,18 +1474,11 @@ impl crate::CommandEncoder for CommandEncoder {
+             viewport_remap: false,
+             vertex_shaders: None,
+         });
+-        let target = target.map(|target| {
+-            match color.and_then(|color| color.target.view.recorded_surface_target()) {
+-                Some(weak) => RenderTarget::Surface(weak),
+-                None => RenderTarget::Owned(target),
+-            }
+-        });
+         if let Some(query) = begin_timestamp {
+             self.record(NativeCommand::WriteTimestamp(query));
+         }
+         self.record(NativeCommand::BeginRender {
+-            target,
+-            clear,
++            colors,
+             depth,
+             viewport_buffer,
+             width: extent[0],
+@@ -1469,8 +1495,12 @@ impl crate::CommandEncoder for CommandEncoder {
+             self.reject();
+             return;
+         };
++        if render.active_occlusion.is_some() {
++            self.reject();
++            return;
++        }
+         self.record(NativeCommand::EndRender {
+-            resolve: render.resolve,
++            resolves: render.resolves,
+         });
+         if let Some(query) = render.end_timestamp {
+             self.record(NativeCommand::WriteTimestamp(query));
+@@ -1483,7 +1513,7 @@ impl crate::CommandEncoder for CommandEncoder {
+             return;
+         };
+         if !Arc::ptr_eq(&pipeline.owner, &self.device)
+-            || pipeline.target_format != render.format
++            || pipeline.target_formats != render.formats
+             || pipeline.sample_count != render.sample_count
+             || pipeline.depth_format != render.depth_format
+             || (render.depth_stencil_read_only && (pipeline.depth_write || pipeline.stencil_write))
+@@ -5956,7 +5986,8 @@ mod uniform_tests {
+     }
+ 
+     #[test]
+-    fn default_dx11_adapter_unlocks_high_resolution_and_fast_indexed_draws() -> windows::core::Result<()> {
++    fn default_dx11_adapter_unlocks_high_resolution_and_fast_indexed_draws(
++    ) -> windows::core::Result<()> {
+         use crate::Instance as _;
+         if std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1") {
+             return Ok(());
+@@ -5967,7 +5998,11 @@ mod uniform_tests {
+             return Ok(());
+         };
+         assert!(exposed.info.driver_info.contains("FL9_1"));
+-        assert!(!exposed.info.driver_info.to_ascii_lowercase().contains("software"));
++        assert!(!exposed
++            .info
++            .driver_info
++            .to_ascii_lowercase()
++            .contains("software"));
+         let level = exposed.adapter.feature_level();
+         let expected_max =
+             super::super::capabilities::HardwareGuarantees::for_level(level).texture_2d_dimension;
+diff --git a/wgpu-hal/src/dx11/hal_pipeline.rs b/wgpu-hal/src/dx11/hal_pipeline.rs
+index 31e8ff371fafed9261cb3bd7b44ed0c6bfa3df78..73813d3415e83089df18f53200d1decbd3f233fc 100644
+--- a/wgpu-hal/src/dx11/hal_pipeline.rs
++++ b/wgpu-hal/src/dx11/hal_pipeline.rs
+@@ -693,7 +693,7 @@ pub struct RenderPipeline {
+     pub(super) stencil_write: bool,
+     pub(super) sample_mask: u32,
+     pub(super) sample_count: u32,
+-    pub(super) target_format: Option<wgt::TextureFormat>,
++    pub(super) target_formats: [Option<wgt::TextureFormat>; crate::MAX_COLOR_ATTACHMENTS],
+     pub(super) bindings: Arc<super::hal_bind_group::BindingPlan>,
+     pub(super) sampling_pairs: Arc<alloc::vec::Vec<super::sampling::SamplingPair>>,
+     pub(super) texel_load: Option<TexelLoadPipeline>,
+@@ -2429,7 +2429,10 @@ mod tests {
+         desc.multisample.count = 16;
+         assert!(unsafe { device.create_render_pipeline(&desc) }.is_err());
+         assert!(Arc::ptr_eq(&pipeline.owner, &native));
+-        assert_eq!(pipeline.target_format, Some(wgt::TextureFormat::Rgba8Unorm));
++        assert_eq!(
++            pipeline.target_formats,
++            core::array::from_fn(|slot| (slot == 0).then_some(wgt::TextureFormat::Rgba8Unorm))
++        );
+         let target = native.create_rgba_render_target(8, 8)?;
+         let vertices: [f32; 6] = [-1., -1., 3., -1., -1., 3.];
+         let buffer = unsafe {
+@@ -2867,16 +2870,27 @@ impl RenderPipeline {
+                 "D3D11 FL9 vertex_index does not support this primitive topology".into(),
+             ));
+         }
+-        let target = match desc.color_targets {
+-            [Some(target)] => Some(target),
+-            [] | [None] => None,
+-            _ => return Err(invalid()),
+-        };
+-        if (target.is_some() && fragment.is_none())
+-            || (target.is_none() && desc.depth_stencil.is_none())
++        if desc.color_targets.len() > owner.color_attachment_limit() {
++            return Err(invalid());
++        }
++        let mut target_formats = [None; crate::MAX_COLOR_ATTACHMENTS];
++        for (format, target) in target_formats.iter_mut().zip(desc.color_targets) {
++            *format = target.as_ref().map(|target| target.format);
++        }
++        let mut targets = desc.color_targets.iter().flatten();
++        let first_target = targets.next();
++        let alpha_to_coverage = desc.multisample.alpha_to_coverage_enabled;
++        if (first_target.is_some() && fragment.is_none())
++            || (first_target.is_none() && desc.depth_stencil.is_none())
++            || first_target.is_some_and(|first| {
++                targets.any(|target| {
++                    target.blend != first.blend
++                })
++            })
+         {
+             return Err(invalid());
+         }
++        let targets = || desc.color_targets.iter().flatten();
+         if !Arc::ptr_eq(owner, &desc.layout.owner)
+             || !vertex_stage.module.belongs_to(owner)
+             || fragment.is_some_and(|stage| !stage.module.belongs_to(owner))
+@@ -2889,7 +2903,10 @@ impl RenderPipeline {
+                 ..desc.primitive
+             }) != wgt::PrimitiveState::default()
+             || !matches!(desc.multisample.count, 1 | 2 | 4 | 8 | 16)
+-            || desc.multisample.alpha_to_coverage_enabled
++            || (alpha_to_coverage
++                && (!owner.supports_alpha_to_coverage()
++                    || desc.multisample.count == 1
++                    || target_formats[0].is_none()))
+             || desc.multiview_mask.is_some()
+             || desc.cache.is_some()
+             || vertex_buffers.iter().flatten().any(|buffer| {
+@@ -2898,7 +2915,7 @@ impl RenderPipeline {
+                     || buffer.attributes.is_empty()
+                     || buffer.attributes.len() > 16
+             })
+-            || target.is_some_and(|target| {
++            || targets().any(|target| {
+                 !matches!(
+                     target.format,
+                     wgt::TextureFormat::Rgba8Unorm
+@@ -2910,7 +2927,7 @@ impl RenderPipeline {
+                         | wgt::TextureFormat::Rgb5g6b5Unorm
+                 )
+             })
+-            || target.is_some_and(|target| color_write_mask(target.write_mask).is_none())
++            || targets().any(|target| color_write_mask(target.write_mask).is_none())
+         {
+             return Err(invalid());
+         }
+@@ -2920,8 +2937,8 @@ impl RenderPipeline {
+             return Err(invalid());
+         }
+         if desc.multisample.count > 1
+-            && ((target.is_none() && desc.depth_stencil.is_none())
+-                || target.is_some_and(|target| {
++            && ((first_target.is_none() && desc.depth_stencil.is_none())
++                || targets().any(|target| {
+                     super::capabilities::Capabilities::query(owner)
+                         .check_private_texture_2d(
+                             target.format,
+@@ -2941,18 +2958,32 @@ impl RenderPipeline {
+         {
+             return Err(invalid());
+         }
+-        let mut blend_desc = target
++        let mut blend_desc = first_target
+             .map(|target| {
+-                blend_target_desc(
+-                    target.blend,
+-                    target.write_mask,
+-                    owner.separate_alpha_supported(),
+-                )
+-                .ok_or_else(invalid)
++                let mask = targets().fold(wgt::ColorWrites::empty(), |mask, target| {
++                    mask | target.write_mask
++                });
++                let common =
++                    blend_target_desc(target.blend, mask, owner.separate_alpha_supported())
++                        .ok_or_else(invalid)?;
++                let mut blend = native_blend_desc(common);
++                blend.AlphaToCoverageEnable = alpha_to_coverage.into();
++                if desc.color_targets.len() > 1 {
++                    blend.IndependentBlendEnable = true.into();
++                    blend.RenderTarget.fill(common);
++                    for (slot, native) in blend.RenderTarget.iter_mut().enumerate() {
++                        native.RenderTargetWriteMask = desc
++                            .color_targets
++                            .get(slot)
++                            .and_then(Option::as_ref)
++                            .map_or(0, |target| target.write_mask.bits() as u8);
++                    }
++                }
++                Ok::<_, crate::PipelineError>(blend)
+             })
+             .transpose()?;
+-        if let (Some(target), Some(blend_desc)) = (target, blend_desc) {
+-            if blend_desc.BlendEnable.as_bool() {
++        if blend_desc.is_some_and(|blend| blend.RenderTarget[0].BlendEnable.as_bool()) {
++            for target in targets().filter(|target| !target.write_mask.is_empty()) {
+                 let format = match target.format {
+                     wgt::TextureFormat::Rgba8Unorm => DXGI_FORMAT_R8G8B8A8_UNORM,
+                     wgt::TextureFormat::Bgra8Unorm => DXGI_FORMAT_B8G8R8A8_UNORM,
+@@ -3000,7 +3031,9 @@ impl RenderPipeline {
+             let emulate_never_with_stencil = suppress_draws && stencil_enable;
+             if suppress_draws {
+                 if let Some(blend_desc) = blend_desc.as_mut() {
+-                    blend_desc.RenderTargetWriteMask = 0;
++                    for target in &mut blend_desc.RenderTarget {
++                        target.RenderTargetWriteMask = 0;
++                    }
+                 }
+             }
+             let comparison = if emulate_never_with_stencil {
+@@ -3211,7 +3244,9 @@ impl RenderPipeline {
+             Err(crate::PipelineError::Linkage(_, _)) => None,
+             Err(error) => return Err(error),
+         };
++        let sm4_fragment = desc.color_targets.len() > 1;
+         let texel_load_binding = fragment
++            .filter(|_| !sm4_fragment)
+             .map(|fragment| {
+                 fragment
+                     .module
+@@ -3261,13 +3296,21 @@ impl RenderPipeline {
+             ));
+         }
+         let pixel_code = if let Some(fragment) = fragment {
+-            fragment
++            if sm4_fragment {
++                fragment.module.compile_sm4_fragment(
++                    fragment.entry_point,
++                    &fragment_bindings,
++                    fragment.constants,
++                )?
++            } else {
++                fragment
+                 .module
+                 .compile_fragment_with_synthetic_output_if_needed(
+                     fragment.entry_point,
+                     &fragment_bindings,
+                     fragment.constants,
+                 )?
++            }
+         } else {
+             super::shader::compile_hlsl(
+                 "float4 main() : SV_Target { return float4(0, 0, 0, 0); }",
+@@ -3463,9 +3506,13 @@ impl RenderPipeline {
+             if depth_state.is_none() {
+                 return Err(invalid());
+             }
+-            if let Some(target_desc) = blend_desc {
+-                if target_desc.BlendEnable.as_bool() || target_desc.RenderTargetWriteMask != 0x0f {
+-                    let desc = native_blend_desc(target_desc);
++            if let Some(desc) = blend_desc {
++                let target = desc.RenderTarget[0];
++                if desc.IndependentBlendEnable.as_bool()
++                    || desc.AlphaToCoverageEnable.as_bool()
++                    || target.BlendEnable.as_bool()
++                    || target.RenderTargetWriteMask != 0x0f
++                {
+                     owner
+                         .raw_device()
+                         .CreateBlendState(&desc, Some(&mut blend))
+@@ -3497,7 +3544,7 @@ impl RenderPipeline {
+                 desc.multisample.count,
+             ),
+             sample_count: desc.multisample.count,
+-            target_format: target.map(|target| target.format),
++            target_formats,
+             bindings: desc.layout.bindings.clone(),
+             sampling_pairs: Arc::new(sampling_pairs),
+             texel_load,
+diff --git a/wgpu-hal/src/dx11/hal_sampler.rs b/wgpu-hal/src/dx11/hal_sampler.rs
+index d3c641fd246ae47a8ff30e6cbe8858f187e6d0cb..ba59764037c379f71df538c1378f2a14fce6df78 100644
+--- a/wgpu-hal/src/dx11/hal_sampler.rs
++++ b/wgpu-hal/src/dx11/hal_sampler.rs
+@@ -180,6 +180,8 @@ fn sampler_lod(
+             original: desc.lod_clamp.end,
+             anisotropic: desc.anisotropy_clamp > 1,
+         }
++    } else if desc.lod_clamp.end != f32::MAX {
++        super::sampling::SamplerLod::NativeMaximum(desc.lod_clamp.end)
+     } else {
+         super::sampling::SamplerLod::Unrestricted
+     }
+diff --git a/wgpu-hal/src/dx11/hal_shader.rs b/wgpu-hal/src/dx11/hal_shader.rs
+index 2284f5b622dce78de06765cefa8b327605b9662d..4e60a7adabdc4a4065e93ee2347ab5a212791b8a 100644
+--- a/wgpu-hal/src/dx11/hal_shader.rs
++++ b/wgpu-hal/src/dx11/hal_shader.rs
+@@ -1,10 +1,10 @@
+ //! Owned Naga shader modules for the private D3D11 HAL.
+ #[cfg(test)]
+-use super::shader::{compile_naga_with_bindings, translate_naga_with_viewport_and_fl9_inputs};
++use super::shader::translate_naga_with_viewport_and_fl9_inputs;
+ use super::{
+     device::NativeDevice,
+     shader::{
+-        compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices, shader_binding_kind,
++        compile_naga_with_bindings, compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices, shader_binding_kind,
+         Fl9ShaderInputOptions, NagaCompileError, ShaderBinding, ShaderBindingKind, ShaderProfile,
+     },
+ };
+@@ -15318,6 +15318,25 @@ impl ShaderModule {
+         )
+     }
+ 
++    pub(super) fn compile_sm4_fragment(
++        &self,
++        entry: &str,
++        bindings: &[ShaderBinding],
++        constants: &naga::back::PipelineConstants,
++    ) -> Result<Vec<u8>, crate::PipelineError> {
++        let stage = naga::ShaderStage::Fragment;
++        let visibility = wgt::ShaderStages::FRAGMENT;
++        let (module, info) = naga::back::pipeline_constants::process_overrides(
++            &self.shader.module,
++            &self.shader.info,
++            Some((stage, entry)),
++            constants,
++        )
++        .map_err(|error| crate::PipelineError::PipelineConstants(visibility, error.to_string()))?;
++        compile_naga_with_bindings(&module, &info, stage, entry, ShaderProfile::Pixel4_0, bindings)
++            .map_err(|error| crate::PipelineError::Linkage(visibility, alloc::format!("{error:?}")))
++    }
++
+     pub(super) fn compile_with_viewport_and_constants(
+         &self,
+         stage: naga::ShaderStage,
+diff --git a/wgpu-hal/src/dx11/instance.rs b/wgpu-hal/src/dx11/instance.rs
+index 70efdd0ef360c9e3972ba9f315ae8c9325882b20..52d5959fdd31c1b3dfb0019562ed67e4f8fd4996 100644
+--- a/wgpu-hal/src/dx11/instance.rs
++++ b/wgpu-hal/src/dx11/instance.rs
+@@ -15,6 +15,24 @@ pub struct Instance;
+ 
+ crate::impl_dyn_resource!(Instance);
+ 
++fn requested_feature_level(
++    experimental: Option<&std::ffi::OsStr>,
++    force_fl91: bool,
++) -> Result<Option<super::FeatureLevel>, &'static str> {
++    use super::FeatureLevel;
++
++    let level = match experimental {
++        None => return Ok(force_fl91.then_some(FeatureLevel::L9_1)),
++        Some(value) if value == "9_1" => FeatureLevel::L9_1,
++        Some(value) if value == "10_0" => FeatureLevel::L10_0,
++        Some(_) => return Err("unsupported WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL"),
++    };
++    if force_fl91 && level != FeatureLevel::L9_1 {
++        return Err("WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL conflicts with WGPU_DX11_FORCE_FL9_1");
++    }
++    Ok(Some(level))
++}
++
+ impl Instance {
+     #[cfg_attr(not(target_vendor = "uwp"), allow(dead_code))]
+     pub unsafe fn create_surface_from_swap_chain_panel(
+@@ -76,6 +94,15 @@ impl crate::Instance for Instance {
+         &self,
+         _: Option<&super::Surface>,
+     ) -> Vec<crate::ExposedAdapter<Self::A>> {
++        let force_fl91 = std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1");
++        let experimental = std::env::var_os("WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL");
++        let exact = match requested_feature_level(experimental.as_deref(), force_fl91) {
++            Ok(level) => level,
++            Err(error) => {
++                log::warn!("D3D11 adapter enumeration rejected: {error}");
++                return Vec::new();
++            }
++        };
+         let adapters = match super::enumerate_native_adapters() {
+             Ok(adapters) => adapters,
+             Err(error) => {
+@@ -83,12 +110,10 @@ impl crate::Instance for Instance {
+                 return Vec::new();
+             }
+         };
+-        let force_fl91 = std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1");
+-        let requested: &[super::FeatureLevel] = if force_fl91 {
+-            &[super::FeatureLevel::L9_1]
+-        } else {
+-            &super::FeatureLevel::ALL_DESCENDING
+-        };
++        let requested = exact.as_ref().map_or(
++            super::FeatureLevel::ALL_DESCENDING.as_slice(),
++            core::slice::from_ref,
++        );
+         adapters
+             .into_iter()
+             .filter_map(|adapter| {
+@@ -97,28 +122,24 @@ impl crate::Instance for Instance {
+                 }
+                 let identity = adapter.identity().clone();
+                 let driver_version = adapter.driver_version();
+-                let native = match adapter.open_device(requested) {
++                let mut native = match adapter.open_device(requested) {
+                     Ok(native) => native,
+                     Err(error) => {
+                         log::debug!(
+-                            "D3D11 adapter {:?} cannot create a supported device: {error}",
++                            "D3D11 adapter {:?} cannot create a device for {requested:?}: {error}",
+                             identity.name
+                         );
+                         return None;
+                     }
+                 };
+-                if force_fl91 && native.feature_level() != super::FeatureLevel::L9_1 {
+-                    log::warn!(
+-                        "D3D11 adapter {:?} returned {:?} for an explicit FL9_1 request",
+-                        identity.name,
+-                        native.feature_level()
+-                    );
+-                    return None;
++                if exact == Some(super::FeatureLevel::L10_0) {
++                    native.enable_portable_fl10();
+                 }
+                 let Some(exposed) = super::Adapter::expose_native(
+                     &identity,
+                     driver_version.as_deref(),
+                     Arc::new(native),
++                    exact,
+                 ) else {
+                     log::debug!(
+                         "D3D11 adapter {:?} has no implemented FL9_1 capability projection",
+@@ -140,6 +161,28 @@ mod tests {
+     use core::ptr::NonNull;
+     use raw_window_handle::{WinRtWindowHandle, XlibDisplayHandle};
+ 
++    #[test]
++    fn exact_level_selection_rejects_typos_and_conflicting_legacy_override() {
++        use super::super::FeatureLevel;
++        use std::ffi::OsStr;
++
++        assert_eq!(requested_feature_level(None, false), Ok(None));
++        assert_eq!(
++            requested_feature_level(None, true),
++            Ok(Some(FeatureLevel::L9_1))
++        );
++        for (name, level) in [("9_1", FeatureLevel::L9_1), ("10_0", FeatureLevel::L10_0)] {
++            assert_eq!(
++                requested_feature_level(Some(OsStr::new(name)), false),
++                Ok(Some(level))
++            );
++        }
++        for name in ["", "9_2", "9_3", "10.0", "10_1", "WARP"] {
++            assert!(requested_feature_level(Some(OsStr::new(name)), false).is_err());
++        }
++        assert!(requested_feature_level(Some(OsStr::new("10_0")), true).is_err());
++    }
++
+     #[test]
+     fn instance_rejects_unsupported_handles_and_projects_only_fl91_hardware() {
+         let instance = Instance;
+diff --git a/wgpu-hal/src/dx11/mod.rs b/wgpu-hal/src/dx11/mod.rs
+index c56015cf7776c4f088c6cb9deb56b670a51a8a49..a1f8c5811b5019479301f74ac65fbd1b2eae26e9 100644
+--- a/wgpu-hal/src/dx11/mod.rs
++++ b/wgpu-hal/src/dx11/mod.rs
+@@ -10,6 +10,7 @@ mod capabilities;
+ mod command;
+ mod device;
+ mod fence;
++pub mod fl10;
+ mod hal_bind_group;
+ mod hal_device;
+ mod hal_encoder;
+diff --git a/wgpu-hal/src/dx11/query.rs b/wgpu-hal/src/dx11/query.rs
+index 20048dd98059444bbfbb01f7893ba31e6a119693..352d30258f3703b7651410bfdd3ceee16e8f36bf 100644
+--- a/wgpu-hal/src/dx11/query.rs
++++ b/wgpu-hal/src/dx11/query.rs
+@@ -7,8 +7,8 @@ use windows::{
+         Foundation::{E_FAIL, E_INVALIDARG, E_OUTOFMEMORY, S_FALSE, S_OK},
+         Graphics::Direct3D11::{
+             ID3D11Asynchronous, ID3D11Device, ID3D11DeviceContext, D3D11_ASYNC_GETDATA_DONOTFLUSH,
+-            D3D11_QUERY_DATA_TIMESTAMP_DISJOINT, D3D11_QUERY_DESC, D3D11_QUERY_TIMESTAMP,
+-            D3D11_QUERY_TIMESTAMP_DISJOINT,
++            D3D11_QUERY_DATA_TIMESTAMP_DISJOINT, D3D11_QUERY_DESC, D3D11_QUERY_OCCLUSION,
++            D3D11_QUERY_TIMESTAMP, D3D11_QUERY_TIMESTAMP_DISJOINT,
+         },
+         System::{SystemInformation::GetTickCount64, Threading::Sleep},
+     },
+@@ -17,23 +17,30 @@ use windows::{
+ #[derive(Debug)]
+ pub struct QuerySet {
+     owner: ID3D11Device,
++    kind: wgt::QueryType,
+     queries: Vec<ID3D11Asynchronous>,
+ }
+ 
+ impl QuerySet {
+-    pub(super) fn new(device: &NativeDevice, count: u32) -> Result<Self> {
+-        if count == 0
+-            || count > wgt::QUERY_SET_MAX_QUERIES
+-            || device.timestamp_frequency().is_none()
+-        {
++    pub(super) fn new(device: &NativeDevice, kind: wgt::QueryType, count: u32) -> Result<Self> {
++        if count == 0 || count > wgt::QUERY_SET_MAX_QUERIES {
+             return Err(Error::from_hresult(E_INVALIDARG));
+         }
++        let native_kind = match kind {
++            wgt::QueryType::Timestamp if device.timestamp_frequency().is_some() => {
++                D3D11_QUERY_TIMESTAMP
++            }
++            wgt::QueryType::Occlusion if device.supports_portable_occlusion() => {
++                D3D11_QUERY_OCCLUSION
++            }
++            _ => return Err(Error::from_hresult(E_INVALIDARG)),
++        };
+         let mut queries = Vec::new();
+         queries
+             .try_reserve_exact(count as usize)
+             .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+         let desc = D3D11_QUERY_DESC {
+-            Query: D3D11_QUERY_TIMESTAMP,
++            Query: native_kind,
+             MiscFlags: 0,
+         };
+         for _ in 0..count {
+@@ -47,6 +54,7 @@ impl QuerySet {
+         }
+         Ok(Self {
+             owner: device.raw_device().clone(),
++            kind,
+             queries,
+         })
+     }
+@@ -59,6 +67,10 @@ impl QuerySet {
+         self.queries.get(index as usize).cloned()
+     }
+ 
++    pub(super) fn kind(&self) -> wgt::QueryType {
++        self.kind
++    }
++
+     pub(super) fn contains_range(&self, range: &core::ops::Range<u32>) -> bool {
+         range.start <= range.end && range.end as usize <= self.queries.len()
+     }
+diff --git a/wgpu-hal/src/dx11/sampling.rs b/wgpu-hal/src/dx11/sampling.rs
+index 4f573e8d34f1cb0e06c0d8bf22100a1daa720482..14434861a72220087f6a38a062eb003b9c5a444c 100644
+--- a/wgpu-hal/src/dx11/sampling.rs
++++ b/wgpu-hal/src/dx11/sampling.rs
+@@ -27,17 +27,6 @@ pub(super) struct TextureInfo {
+ 
+ pub(super) type SamplerLod = crate::SamplerMipCompatibility;
+ 
+-fn sampler_supports_explicit_lod(level: u32, lod: SamplerLod) -> bool {
+-    match lod {
+-        SamplerLod::Unrestricted => true,
+-        SamplerLod::RaisedMaximum {
+-            original,
+-            anisotropic,
+-        } => !anisotropic && original >= level as f32,
+-        SamplerLod::SingleMip => false,
+-    }
+-}
+-
+ #[derive(Clone, Debug, Default)]
+ pub(super) struct SamplingResources {
+     pub textures: Vec<TextureInfo>,
+@@ -170,7 +159,7 @@ pub(super) fn compatible(
+                     || (mip_level < texture.mip_levels
+                         && texture.sample_level_mip_views_available
+                         && lod_min_clamp_zero
+-                        && (mip_level == 0 || sampler_supports_explicit_lod(mip_level, lod)))
++                        && (mip_level == 0 || lod.supports_fixed_mip(mip_level)))
+             })
+             && texture.mip_levels
+                 <= texture.size[0]
+diff --git a/wgpu-hal/src/dx11/shader.rs b/wgpu-hal/src/dx11/shader.rs
+index d541a040072654d10c8f47ce71605f83a336e9f4..e0baf16fe98b94fc7b04aa9d69e5284ba7378eb4 100644
+--- a/wgpu-hal/src/dx11/shader.rs
++++ b/wgpu-hal/src/dx11/shader.rs
+@@ -1,12 +1,15 @@
+ //! In-memory FXC shader compilation. WGSL lowering is not implemented here.
+ use alloc::{ffi::CString, format, string::String, vec::Vec};
+ #[cfg(not(target_vendor = "uwp"))]
+-use windows::Win32::Graphics::Direct3D::Fxc::D3DCompile;
++use windows::Win32::Graphics::Direct3D::Fxc::{D3DCompile, D3DReflect};
+ use windows::{
+-    core::PCSTR,
++    core::{Interface, PCSTR},
+     Win32::{
+         Foundation::E_INVALIDARG,
+-        Graphics::Direct3D::{Fxc::D3DCOMPILE_ENABLE_STRICTNESS, ID3DBlob},
++        Graphics::{
++            Direct3D::{Fxc::D3DCOMPILE_ENABLE_STRICTNESS, ID3DBlob, D3D_NAME_POSITION},
++            Direct3D11::{ID3D11ShaderReflection, D3D11_SHADER_DESC, D3D11_SIGNATURE_PARAMETER_DESC},
++        },
+     },
+ };
+ #[cfg(not(target_vendor = "uwp"))]
+@@ -19,6 +22,7 @@ pub(crate) enum ShaderProfile {
+     VertexLevel9_1,
+     PixelLevel9_1,
+     PixelLevel9_3,
++    Pixel4_0,
+     Pixel4_1,
+     Vertex5_0,
+     Pixel5_0,
+@@ -31,6 +35,7 @@ impl ShaderProfile {
+             Self::VertexLevel9_1 => PCSTR(c"vs_4_0_level_9_1".as_ptr().cast()),
+             Self::PixelLevel9_1 => PCSTR(c"ps_4_0_level_9_1".as_ptr().cast()),
+             Self::PixelLevel9_3 => PCSTR(c"ps_4_0_level_9_3".as_ptr().cast()),
++            Self::Pixel4_0 => PCSTR(c"ps_4_0".as_ptr().cast()),
+             Self::Pixel4_1 => PCSTR(c"ps_4_1".as_ptr().cast()),
+             Self::Vertex5_0 => PCSTR(c"vs_5_0".as_ptr().cast()),
+             Self::Pixel5_0 => PCSTR(c"ps_5_0".as_ptr().cast()),
+@@ -45,6 +50,7 @@ pub(super) struct Fl9ShaderInputOptions {
+     pub instance_index_input: bool,
+     pub vertex_index_input: bool,
+     pub vertex_index_vector_indexing: bool,
++    pub omit_unused_fragment_position: bool,
+     pub texel_load_binding: Option<naga::ResourceBinding>,
+     pub additional_texel_load_bindings: [Option<naga::ResourceBinding>; 7],
+     pub texel_load_coordinate_conversion: Option<naga::Handle<naga::Expression>>,
+@@ -93,14 +99,14 @@ type D3DCompileFn = unsafe extern "system" fn(
+ ) -> windows::core::HRESULT;
+ 
+ #[cfg(target_vendor = "uwp")]
+-fn dynamic_d3d_compile() -> Option<D3DCompileFn> {
+-    static D3D_COMPILE: std::sync::OnceLock<Option<D3DCompileFn>> = std::sync::OnceLock::new();
+-    *D3D_COMPILE.get_or_init(|| {
+-        #[link(name = "WindowsApp")]
+-        unsafe extern "system" {
+-            fn LoadPackagedLibrary(filename: *const u16, reserved: u32) -> isize;
+-            fn GetProcAddress(module: isize, proc_name: *const u8) -> *const core::ffi::c_void;
+-        }
++fn dynamic_d3d_compiler_symbol(name: &core::ffi::CStr) -> *const core::ffi::c_void {
++    #[link(name = "WindowsApp")]
++    unsafe extern "system" {
++        fn LoadPackagedLibrary(filename: *const u16, reserved: u32) -> isize;
++        fn GetProcAddress(module: isize, proc_name: *const u8) -> *const core::ffi::c_void;
++    }
++    static MODULE: std::sync::OnceLock<isize> = std::sync::OnceLock::new();
++    let module = *MODULE.get_or_init(|| {
+         #[cfg_attr(
+             not(target_arch = "x86"),
+             link(name = "kernel32.dll", kind = "raw-dylib", modifiers = "+verbatim")
+@@ -122,15 +128,13 @@ fn dynamic_d3d_compile() -> Option<D3DCompileFn> {
+         if module == 0 {
+             module = unsafe { LoadLibraryExW(name.as_ptr(), 0, 0) };
+         }
+-        if module == 0 {
+-            return None;
+-        }
+-        let symbol = unsafe { GetProcAddress(module, c"D3DCompile".as_ptr().cast()) };
+-        if symbol.is_null() {
+-            return None;
+-        }
+-        Some(unsafe { core::mem::transmute::<*const core::ffi::c_void, D3DCompileFn>(symbol) })
+-    })
++        module
++    });
++    if module == 0 {
++        core::ptr::null()
++    } else {
++        unsafe { GetProcAddress(module, name.as_ptr().cast()) }
++    }
+ }
+ 
+ /// Compile HLSL in memory to DXBC without file access or include handlers.
+@@ -141,6 +145,14 @@ pub(crate) fn compile_hlsl(
+     source: &str,
+     entry: &str,
+     profile: ShaderProfile,
++) -> Result<Vec<u8>, ShaderCompileError> {
++    compile_hlsl_target(source, entry, profile.target())
++}
++
++pub(super) fn compile_hlsl_target(
++    source: &str,
++    entry: &str,
++    target: PCSTR,
+ ) -> Result<Vec<u8>, ShaderCompileError> {
+     let entry = CString::new(entry).map_err(|_| ShaderCompileError {
+         code: E_INVALIDARG.0,
+@@ -157,7 +169,7 @@ pub(crate) fn compile_hlsl(
+             None,
+             None::<&ID3DInclude>,
+             PCSTR(entry.as_ptr().cast()),
+-            profile.target(),
++            target,
+             D3DCOMPILE_ENABLE_STRICTNESS,
+             0,
+             &mut code,
+@@ -166,12 +178,15 @@ pub(crate) fn compile_hlsl(
+     };
+     #[cfg(target_vendor = "uwp")]
+     let result = {
+-        let Some(d3d_compile) = dynamic_d3d_compile() else {
++        let symbol = dynamic_d3d_compiler_symbol(c"D3DCompile");
++        if symbol.is_null() {
+             return Err(ShaderCompileError {
+                 code: windows::Win32::Foundation::E_NOTIMPL.0,
+                 message: String::from("d3dcompiler_47.dll is unavailable in this UWP environment"),
+             });
+-        };
++        }
++        let d3d_compile =
++            unsafe { core::mem::transmute::<*const core::ffi::c_void, D3DCompileFn>(symbol) };
+         unsafe {
+             d3d_compile(
+                 source.as_ptr().cast(),
+@@ -180,7 +195,7 @@ pub(crate) fn compile_hlsl(
+                 core::ptr::null(),
+                 core::ptr::null_mut(),
+                 PCSTR(entry.as_ptr().cast()),
+-                profile.target(),
++                target,
+                 D3DCOMPILE_ENABLE_STRICTNESS,
+                 0,
+                 &mut code,
+@@ -217,6 +232,57 @@ pub(crate) fn compile_hlsl(
+     Ok(bytes.to_vec())
+ }
+ 
++fn unused_fragment_position(bytecode: &[u8]) -> windows::core::Result<bool> {
++    let mut reflector = core::ptr::null_mut();
++    #[cfg(target_vendor = "uwp")]
++    let reflect = {
++        type Reflect = unsafe extern "system" fn(
++            *const core::ffi::c_void,
++            usize,
++            *const windows::core::GUID,
++            *mut *mut core::ffi::c_void,
++        ) -> windows::core::HRESULT;
++        let symbol = dynamic_d3d_compiler_symbol(c"D3DReflect");
++        if symbol.is_null() {
++            return Err(windows::core::Error::from_hresult(
++                windows::Win32::Foundation::E_NOTIMPL,
++            ));
++        }
++        unsafe { core::mem::transmute::<*const core::ffi::c_void, Reflect>(symbol) }
++    };
++    #[cfg(not(target_vendor = "uwp"))]
++    let reflect = D3DReflect;
++
++    let result = unsafe {
++        reflect(
++            bytecode.as_ptr().cast(),
++            bytecode.len(),
++            &ID3D11ShaderReflection::IID,
++            &mut reflector,
++        )
++    };
++    #[cfg(target_vendor = "uwp")]
++    let result = result.ok();
++    result?;
++    if reflector.is_null() {
++        return Ok(false);
++    }
++    let reflector = unsafe { ID3D11ShaderReflection::from_raw(reflector) };
++    let mut desc = D3D11_SHADER_DESC::default();
++    unsafe { reflector.GetDesc(&mut desc)? };
++    let mut position = None;
++    for index in 0..desc.InputParameters {
++        let mut input = D3D11_SIGNATURE_PARAMETER_DESC::default();
++        unsafe { reflector.GetInputParameterDesc(index, &mut input)? };
++        if input.SystemValueType == D3D_NAME_POSITION {
++            if position.replace(input.ReadWriteMask).is_some() || input.SemanticIndex != 0 {
++                return Ok(false);
++            }
++        }
++    }
++    Ok(position == Some(0))
++}
++
+ /// Narrow Naga-to-DXBC errors. Only explicitly mapped bindings are supported.
+ #[allow(dead_code)]
+ #[derive(Debug)]
+@@ -421,6 +487,34 @@ pub(super) fn compile_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+         input_options,
+         uniform_index_arguments,
+     )?;
++    let error = match compile_hlsl(&source, &name, profile) {
++        Ok(bytecode) => return Ok(bytecode),
++        Err(error) => error,
++    };
++    // FXC counts a declared SV_Position against the eight level-9 input slots
++    // even when the shader never reads it. Reflect the optimized code from the
++    // same source to prove that removing it cannot change a live input.
++    if !matches!(profile, ShaderProfile::PixelLevel9_1)
++        || !error.message.contains("X4506")
++        || !compile_hlsl(&source, &name, ShaderProfile::Pixel4_0)
++            .ok()
++            .is_some_and(|code| unused_fragment_position(&code).unwrap_or(false))
++    {
++        return Err(NagaCompileError::Compilation(error));
++    }
++    let (source, name) = translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
++        module,
++        info,
++        stage,
++        entry,
++        profile,
++        bindings,
++        Fl9ShaderInputOptions {
++            omit_unused_fragment_position: true,
++            ..input_options
++        },
++        uniform_index_arguments,
++    )?;
+     compile_hlsl(&source, &name, profile).map_err(NagaCompileError::Compilation)
+ }
+ 
+@@ -462,6 +556,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+         ShaderProfile::VertexLevel9_1 | ShaderProfile::Vertex5_0 => naga::ShaderStage::Vertex,
+         ShaderProfile::PixelLevel9_1
+         | ShaderProfile::PixelLevel9_3
++        | ShaderProfile::Pixel4_0
+         | ShaderProfile::Pixel4_1
+         | ShaderProfile::Pixel5_0 => naga::ShaderStage::Fragment,
+         ShaderProfile::Compute5_0 => naga::ShaderStage::Compute,
+@@ -568,7 +663,11 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+         ShaderProfile::VertexLevel9_1 | ShaderProfile::PixelLevel9_1 | ShaderProfile::PixelLevel9_3
+     );
+     let mut options = hlsl::Options {
+-        shader_model: hlsl::ShaderModel::V5_0,
++        shader_model: if matches!(profile, ShaderProfile::Pixel4_0) {
++            hlsl::ShaderModel::V4_0
++        } else {
++            hlsl::ShaderModel::V5_0
++        },
+         fake_missing_bindings: false,
+         direct_sampler_bindings: true,
+         fl9_viewport_transform: if input_options.viewport_transform
+@@ -580,6 +679,7 @@ fn translate_naga_with_viewport_and_fl9_inputs_and_uniform_indices(
+         },
+         fl9_instance_index_input: input_options.instance_index_input
+             && stage == naga::ShaderStage::Vertex,
++        fl9_omit_unused_fragment_position: input_options.omit_unused_fragment_position,
+         fl9_vertex_index_input: input_options.vertex_index_input
+             && stage == naga::ShaderStage::Vertex,
+         fl9_vertex_index_vector_indexing: input_options.vertex_index_vector_indexing
+@@ -1701,6 +1801,30 @@ mod tests {
+         assert!(matches!(error, NagaCompileError::Compilation(_)));
+     }
+ 
++    #[test]
++    fn fragment_position_reflection_distinguishes_live_components() {
++        for (body, unused) in [
++            ("return input.color;", true),
++            ("return input.color + alias.position.w;", false),
++            (
++                "if (input.color.x > 0.5) return read_position(alias); return input.color;",
++                false,
++            ),
++            ("return ddx(alias.position.x) + input.color;", false),
++        ] {
++            let source = format!(
++                "struct Input {{ float4 position : SV_Position; float4 color : TEXCOORD0; }};
++                 float4 read_position(Input arg) {{ return arg.position; }}
++                 float4 main(Input input) : SV_Target {{
++                     Input alias = input;
++                     {body}
++                 }}"
++            );
++            let code = compile_hlsl(&source, "main", ShaderProfile::Pixel4_0).unwrap();
++            assert_eq!(unused_fragment_position(&code).unwrap(), unused, "{body}");
++        }
++    }
++
+     #[test]
+     fn fl91_fragment_front_facing_is_rejected_by_fxc() {
+         let module = naga::front::wgsl::parse_str(
+diff --git a/wgpu-hal/src/dx12/device.rs b/wgpu-hal/src/dx12/device.rs
+index a48cb7501eec49a6e04150150dc6a4098012c398..2949727f9bd6937c2468e05c92b6cf3253a3ad31 100644
+--- a/wgpu-hal/src/dx12/device.rs
++++ b/wgpu-hal/src/dx12/device.rs
+@@ -1516,6 +1516,7 @@ impl crate::Device for super::Device {
+                 fl9_texture_sample_compare_offset_proof: None,
+                 fl9_viewport_transform: None,
+                 fl9_instance_index_input: false,
++                fl9_omit_unused_fragment_position: false,
+                 fl9_vertex_index_input: false,
+                 fl9_vertex_index_vector_indexing: false,
+                 fl9_uniform_index_arguments: Vec::new(),
+diff --git a/wgpu-hal/src/dynamic/mod.rs b/wgpu-hal/src/dynamic/mod.rs
+index ff39aa2016a67500b4b8eae54ac22301a71f2069..2355c383a5b5226a811e7318f19e399e49f95f79 100644
+--- a/wgpu-hal/src/dynamic/mod.rs
++++ b/wgpu-hal/src/dynamic/mod.rs
+@@ -118,6 +118,8 @@ pub trait DynRayTracingPipeline: DynResource + fmt::Debug {}
+ pub enum SamplerMipCompatibility {
+     /// The sampler translation is compatible with any nonempty mip range.
+     Unrestricted,
++    /// The native maximum is retained, including for multi-mip views.
++    NativeMaximum(f32),
+     /// The sampler translation is compatible only with a one-mip view.
+     SingleMip,
+     /// The native maximum was raised; multi-mip views require the original
+@@ -132,7 +134,7 @@ impl SamplerMipCompatibility {
+             return false;
+         }
+         match self {
+-            Self::Unrestricted => true,
++            Self::Unrestricted | Self::NativeMaximum(_) => true,
+             Self::SingleMip => mip_levels == 1,
+             Self::RaisedMaximum {
+                 original,
+@@ -140,6 +142,16 @@ impl SamplerMipCompatibility {
+             } => mip_levels == 1 || (!anisotropic && original >= (mip_levels - 1) as f32),
+         }
+     }
++
++    /// Checks whether an exact mip can be substituted without defeating the sampler's LOD clamp.
++    pub fn supports_fixed_mip(self, level: u32) -> bool {
++        match self {
++            Self::Unrestricted => true,
++            Self::NativeMaximum(maximum) => maximum >= level as f32,
++            Self::RaisedMaximum { original, anisotropic } => !anisotropic && original >= level as f32,
++            Self::SingleMip => false,
++        }
++    }
+ }
+ 
+ pub trait DynSampler: DynResource + fmt::Debug {
+diff --git a/wgpu-hal/src/gles/adapter.rs b/wgpu-hal/src/gles/adapter.rs
+index 7b98289e1e2d30ff0bbc8cc9b907275b01475bfe..337f2a84cdb310bb19461df36b7e4ed91b4fd7e4 100644
+--- a/wgpu-hal/src/gles/adapter.rs
++++ b/wgpu-hal/src/gles/adapter.rs
+@@ -1057,6 +1057,7 @@ impl super::Adapter {
+             texture_sample_bias_requires_compatible_sampler: false,
+             fragment_uniform_array_indexing: false,
+             fragment_derivatives: true,
++            independent_color_write_masks: false,
+             runtime_integer_shader_operations: true,
+             matrix_inverse: true,
+             matrix_inverse_4x4_vertex: false,
+diff --git a/wgpu-hal/src/noop/mod.rs b/wgpu-hal/src/noop/mod.rs
+index 627b624370e4e238400ec3fa46eb4a2bc65b3b51..1e7a27997dd8a93bbe7206e97d498791045a52c7 100644
+--- a/wgpu-hal/src/noop/mod.rs
++++ b/wgpu-hal/src/noop/mod.rs
+@@ -278,6 +278,7 @@ pub const CAPABILITIES: crate::Capabilities = {
+                 fragment_texture_sample_compare_offset_2d_single_mip: false,
+                 texture_sample_bias_requires_compatible_sampler: false,
+                 fragment_derivatives: true,
++                independent_color_write_masks: false,
+                 vertex_format_mask: wgt::DownlevelLimits::webgpu_vertex_format_mask(),
+             },
+             shader_model: wgt::ShaderModel::Sm5,
+diff --git a/wgpu-hal/tests/dx11/fl10_textures.rs b/wgpu-hal/tests/dx11/fl10_textures.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..989aa7aed6e4d0e98cbd2fc23577972d4b550612
+--- /dev/null
++++ b/wgpu-hal/tests/dx11/fl10_textures.rs
+@@ -0,0 +1,232 @@
++use wgpu_hal::dx11::fl10;
++use windows::Win32::Graphics::{
++    Direct3D::{D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, D3D11_SRV_DIMENSION_TEXTURE2DARRAY},
++    Direct3D11::*,
++    Dxgi::Common::*,
++};
++
++const WGSL: &str = "
++@vertex fn vs(@builtin(vertex_index) id: u32) -> @builtin(position) vec4f {
++    let x = f32((id & 2u) << 1u) - 1.0;
++    let y = f32((id & 1u) << 2u) - 1.0;
++    return vec4f(x, y, 0.0, 1.0);
++}
++
++@group(0) @binding(0) var layers: texture_2d_array<f32>;
++@group(0) @binding(1) var volume: texture_3d<f32>;
++
++@fragment fn ps() -> @location(0) u32 {
++    let mip = textureLoad(layers, vec2i(0, 0), 0, 2);
++    let voxel = textureLoad(volume, vec3i(0, 0, 1), 0);
++    return u32(round(255.0 * mip.r))
++         | (u32(round(255.0 * mip.g)) << 8)
++         | (u32(round(255.0 * voxel.b)) << 16);
++}
++";
++
++pub(super) fn exercise(native: &fl10::Device) {
++    let module = naga::front::wgsl::parse_str(WGSL).unwrap();
++    let info = naga::valid::Validator::new(
++        naga::valid::ValidationFlags::all(),
++        naga::valid::Capabilities::empty(),
++    )
++    .validate(&module)
++    .unwrap();
++
++    let vs_code = fl10::compile_graphics_entry(
++        &module,
++        &info,
++        naga::ShaderStage::Vertex,
++        "vs",
++        Default::default(),
++    )
++    .unwrap();
++    assert!(
++        fl10::compile_graphics_entry(
++            &module,
++            &info,
++            naga::ShaderStage::Fragment,
++            "ps",
++            Default::default(),
++        )
++        .is_err()
++    );
++    let registers = (0..2)
++        .map(|binding| {
++            (
++                naga::ResourceBinding { group: 0, binding },
++                naga::back::hlsl::BindTarget {
++                    register: binding,
++                    ..Default::default()
++                },
++            )
++        })
++        .collect();
++    let ps_code =
++        fl10::compile_graphics_entry(&module, &info, naga::ShaderStage::Fragment, "ps", registers)
++            .unwrap();
++
++    unsafe {
++        let (array, volume) = native
++            .with_context(|device, context| (array_view(device, context), volume_view(device)));
++        native.with_context(|device, context| {
++            draw_and_read(device, context, &vs_code, &ps_code, array, volume);
++        });
++    }
++}
++
++unsafe fn array_view(
++    device: &ID3D11Device,
++    context: &ID3D11DeviceContext,
++) -> ID3D11ShaderResourceView {
++    unsafe {
++        let desc = D3D11_TEXTURE2D_DESC {
++            Width: 5,
++            Height: 3,
++            MipLevels: 3,
++            ArraySize: 2,
++            Format: DXGI_FORMAT_R8G8B8A8_TYPELESS,
++            SampleDesc: DXGI_SAMPLE_DESC {
++                Count: 1,
++                Quality: 0,
++            },
++            Usage: D3D11_USAGE_DEFAULT,
++            BindFlags: (D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE).0 as u32,
++            MiscFlags: D3D11_RESOURCE_MISC_GENERATE_MIPS.0 as u32,
++            ..Default::default()
++        };
++        let mut source = None;
++        let mut copy = None;
++        device
++            .CreateTexture2D(&desc, None, Some(&mut source))
++            .unwrap();
++        device
++            .CreateTexture2D(&desc, None, Some(&mut copy))
++            .unwrap();
++        let (source, copy) = (source.unwrap(), copy.unwrap());
++
++        for (subresource, value) in [(0, [0_u8, 0, 255, 255]), (3, [128_u8, 255, 0, 255])] {
++            let data = [value; 15];
++            context.UpdateSubresource(&source, subresource, None, data.as_ptr().cast(), 20, 0);
++        }
++        let mut srv_desc = D3D11_SHADER_RESOURCE_VIEW_DESC {
++            Format: DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
++            ViewDimension: D3D11_SRV_DIMENSION_TEXTURE2DARRAY,
++            Anonymous: D3D11_SHADER_RESOURCE_VIEW_DESC_0 {
++                Texture2DArray: D3D11_TEX2D_ARRAY_SRV {
++                    MostDetailedMip: 0,
++                    MipLevels: 3,
++                    FirstArraySlice: 0,
++                    ArraySize: 2,
++                },
++            },
++        };
++        let mut mip_view = None;
++        device
++            .CreateShaderResourceView(&source, Some(&srv_desc), Some(&mut mip_view))
++            .unwrap();
++        context.GenerateMips(mip_view.as_ref().unwrap());
++        context.CopyResource(&copy, &source);
++
++        srv_desc.Anonymous.Texture2DArray.FirstArraySlice = 1;
++        srv_desc.Anonymous.Texture2DArray.ArraySize = 1;
++        let mut view = None;
++        device
++            .CreateShaderResourceView(&copy, Some(&srv_desc), Some(&mut view))
++            .unwrap();
++        srv_desc.Format = DXGI_FORMAT_R16G16_FLOAT;
++        assert!(
++            device
++                .CreateShaderResourceView(&copy, Some(&srv_desc), None)
++                .is_err()
++        );
++        view.unwrap()
++    }
++}
++
++unsafe fn volume_view(device: &ID3D11Device) -> ID3D11ShaderResourceView {
++    unsafe {
++        let mut texture = None;
++        let data = [[[0_u8, 0, 0, 255]; 4], [[0_u8, 0, 173, 255]; 4]];
++        let init = D3D11_SUBRESOURCE_DATA {
++            pSysMem: data.as_ptr().cast(),
++            SysMemPitch: 8,
++            SysMemSlicePitch: 16,
++        };
++        device
++            .CreateTexture3D(
++                &D3D11_TEXTURE3D_DESC {
++                    Width: 2,
++                    Height: 2,
++                    Depth: 2,
++                    MipLevels: 1,
++                    Format: DXGI_FORMAT_R8G8B8A8_UNORM,
++                    Usage: D3D11_USAGE_IMMUTABLE,
++                    BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
++                    ..Default::default()
++                },
++                Some(&init),
++                Some(&mut texture),
++            )
++            .unwrap();
++        let mut view = None;
++        device
++            .CreateShaderResourceView(texture.as_ref().unwrap(), None, Some(&mut view))
++            .unwrap();
++        view.unwrap()
++    }
++}
++
++unsafe fn draw_and_read(
++    device: &ID3D11Device,
++    context: &ID3D11DeviceContext,
++    vs_code: &[u8],
++    ps_code: &[u8],
++    array: ID3D11ShaderResourceView,
++    volume: ID3D11ShaderResourceView,
++) {
++    unsafe {
++        let color = super::target(device, false);
++        let staging = super::target(device, true);
++        let mut rtv = None;
++        device
++            .CreateRenderTargetView(&color, None, Some(&mut rtv))
++            .unwrap();
++        context.ClearRenderTargetView(rtv.as_ref().unwrap(), &[0.0; 4]);
++        let mut vs = None;
++        device
++            .CreateVertexShader(vs_code, None, Some(&mut vs))
++            .unwrap();
++        let mut ps = None;
++        device
++            .CreatePixelShader(ps_code, None, Some(&mut ps))
++            .unwrap();
++        context.VSSetShader(vs.as_ref(), None);
++        context.PSSetShader(ps.as_ref(), None);
++        context.PSSetShaderResources(0, Some(&[Some(array), Some(volume)]));
++        context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
++        context.RSSetViewports(Some(&[D3D11_VIEWPORT {
++            Width: 4.0,
++            Height: 4.0,
++            MaxDepth: 1.0,
++            ..Default::default()
++        }]));
++        context.OMSetRenderTargets(Some(&[rtv]), None::<&ID3D11DepthStencilView>);
++        context.Draw(3, 0);
++        context.OMSetRenderTargets(None, None::<&ID3D11DepthStencilView>);
++        context.CopyResource(&staging, &color);
++        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
++        context
++            .Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
++            .unwrap();
++        let pixels = core::array::from_fn::<_, 4, _>(|y| {
++            *mapped
++                .pData
++                .cast::<u8>()
++                .add(y * mapped.RowPitch as usize)
++                .cast::<[u32; 4]>()
++        });
++        context.Unmap(&staging, 0);
++        assert_eq!(pixels, [[0x00adff37; 4]; 4]);
++    }
++}
+diff --git a/wgpu-hal/tests/dx11_fl10.rs b/wgpu-hal/tests/dx11_fl10.rs
+new file mode 100644
+index 0000000000000000000000000000000000000000..78ef26e91a317903e3886879cf3596febb6c8c08
+--- /dev/null
++++ b/wgpu-hal/tests/dx11_fl10.rs
+@@ -0,0 +1,534 @@
++#![cfg(all(windows, feature = "dx11", not(target_vendor = "uwp")))]
++
++#[path = "dx11/fl10_textures.rs"]
++mod textures;
++
++use std::time::{Duration, Instant};
++use wgpu_hal::dx11::{self, FeatureLevel, fl10};
++use windows::{
++    Win32::{
++        Foundation::{S_FALSE, S_OK},
++        Graphics::{
++            Direct3D::{
++                D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST, D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ,
++                Fxc::D3DDisassemble,
++            },
++            Direct3D11::*,
++            Dxgi::Common::{
++                DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R32_UINT,
++                DXGI_FORMAT_R32G32B32A32_FLOAT, DXGI_FORMAT_UNKNOWN, DXGI_SAMPLE_DESC,
++            },
++        },
++    },
++    core::{Interface, PCSTR},
++};
++
++const SHADERS: &str = r"
++struct Vertex {
++    float4 position : SV_POSITION;
++};
++
++Vertex seed(uint id : SV_VertexID) {
++    Vertex v;
++    if (id == 0) v.position = float4(-1, -1, 0, 1);
++    else if (id == 2) v.position = float4(-1, 3, 0, 1);
++    else if (id == 4) v.position = float4(3, -1, 0, 1);
++    else v.position = float4(-10, -10, 0, 1);
++    return v;
++}
++
++[maxvertexcount(3)]
++void capture(triangleadj Vertex input[6], inout TriangleStream<Vertex> stream) {
++    stream.Append(input[0]);
++    stream.Append(input[2]);
++    stream.Append(input[4]);
++    stream.RestartStrip();
++}
++
++Vertex replay(float4 position : POSITION) {
++    Vertex v;
++    v.position = position;
++    return v;
++}
++
++struct Outputs {
++    uint a : SV_Target0;
++    uint b : SV_Target1;
++    uint c : SV_Target2;
++    uint d : SV_Target3;
++    uint e : SV_Target4;
++    uint f : SV_Target5;
++    uint g : SV_Target6;
++    uint h : SV_Target7;
++};
++
++Outputs pixel(Vertex v) {
++    uint n = uint(v.position.x) + 4 * uint(v.position.y);
++    Outputs o = { n+1, n+17, n+33, n+49, n+65, n+81, n+97, n+113 };
++    return o;
++}
++
++RWStructuredBuffer<uint> result : register(u0);
++[numthreads(4, 1, 1)]
++void compute(uint3 id : SV_DispatchThreadID) {
++    result[id.x] = 3 * id.x + 7;
++}
++";
++
++fn shader(entry: &str, stage: fl10::ShaderStage) -> Vec<u8> {
++    fl10::compile_hlsl(SHADERS, entry, stage).unwrap()
++}
++
++#[test]
++fn fxc_emits_exact_sm4_profiles() {
++    use fl10::ShaderStage::*;
++
++    for (entry, stage, profile) in [
++        ("seed", Vertex, "vs_4_0"),
++        ("capture", Geometry, "gs_4_0"),
++        ("pixel", Pixel, "ps_4_0"),
++        ("compute", Compute, "cs_4_0"),
++    ] {
++        let code = shader(entry, stage);
++        let disassembly =
++            unsafe { D3DDisassemble(code.as_ptr().cast(), code.len(), 0, PCSTR::null()).unwrap() };
++        let disassembly = unsafe {
++            std::slice::from_raw_parts(
++                disassembly.GetBufferPointer().cast::<u8>(),
++                disassembly.GetBufferSize(),
++            )
++        };
++        let listing = std::str::from_utf8(disassembly).unwrap();
++        assert!(
++            listing.lines().any(|line| line.trim() == profile),
++            "{listing}"
++        );
++        println!("{entry}: disassembly reports {profile}");
++    }
++    assert!(fl10::compile_hlsl(SHADERS, "missing", Vertex).is_err());
++    assert!(fl10::compile_hlsl(
++        "RWTexture2D<uint> dst : register(u0); [numthreads(1,1,1)] void main() { dst[uint2(0,0)] = 1; }",
++        "main",
++        Compute,
++    ).is_err());
++    let error =
++        fl10::compile_hlsl("[numthreads(1,1,1)] void main() { }", "ma\0in", Compute).unwrap_err();
++    assert_eq!(error.code, windows::Win32::Foundation::E_INVALIDARG.0);
++}
++
++#[test]
++fn exact_hardware_geometry_stream_output_draw_auto_and_mrt() {
++    use fl10::ShaderStage::*;
++
++    let adapters = dx11::enumerate_native_adapters().unwrap();
++    let mut tested = 0;
++    for adapter in adapters {
++        if adapter.identity().software {
++            assert!(fl10::Device::open(&adapter).is_err());
++            continue;
++        }
++        let device = match fl10::Device::open(&adapter) {
++            Ok(device) => device,
++            Err(error) => {
++                println!(
++                    "SKIP: {:?} cannot open exact FL10_0: {error}",
++                    adapter.identity()
++                );
++                continue;
++            }
++        };
++        tested += 1;
++        let luid = device.adapter_luid();
++        assert_eq!(device.feature_level(), FeatureLevel::L10_0);
++        let compute = device.supports_compute().expect("CS4 capability query");
++        println!(
++            "requested=0xa000 actual={:#06x} adapter={:?} LUID={:08x}:{:08x} driver={:?} CS4={}",
++            device.feature_level().as_raw(),
++            adapter.identity(),
++            luid.HighPart as u32,
++            luid.LowPart,
++            adapter.driver_version(),
++            compute,
++        );
++        let seed = shader("seed", Vertex);
++        let capture = shader("capture", Geometry);
++        let replay = shader("replay", Vertex);
++        let pixel = shader("pixel", Pixel);
++        device.create_geometry_shader(&capture).unwrap();
++        let mut declaration = fl10::StreamOutputElement {
++            semantic: Some(c"INVALID"),
++            semantic_index: 0,
++            start_component: 0,
++            component_count: 4,
++            output_slot: 0,
++        };
++        assert!(
++            device
++                .create_stream_output_shader(&capture, &[declaration], &[16])
++                .is_err()
++        );
++        declaration.semantic = Some(c"SV_POSITION");
++        let capture = device
++            .create_stream_output_shader(&capture, &[declaration], &[16])
++            .unwrap();
++        unsafe {
++            device.with_context(|raw, context| {
++                exercise_geometry(raw, context, &seed, &capture, &replay, &pixel);
++            });
++            if compute {
++                let code = shader("compute", Compute);
++                device.with_context(|raw, context| exercise_compute(raw, context, &code));
++                println!("PASS: optional structured-buffer CS4 dispatch and 16 GPU words");
++            } else {
++                println!("UNSUPPORTED: optional CS4 on this adapter");
++            }
++        }
++        println!(
++            "PASS: adjacency, three captured vertices, SO statistics, DrawAuto, 128 MRT pixels, occlusion 16/0"
++        );
++        textures::exercise(&device);
++        println!("PASS: WGSL SM4 loads, NPOT array mips, copied sRGB view, 3D slice, 16 pixels");
++    }
++    assert!(
++        tested != 0
++            || std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").as_deref() != Some("1".as_ref()),
++        "no physical adapter created an exact FL10_0 device"
++    );
++}
++
++unsafe fn exercise_compute(device: &ID3D11Device, context: &ID3D11DeviceContext, code: &[u8]) {
++    unsafe {
++        let mut shader = None;
++        device
++            .CreateComputeShader(code, None, Some(&mut shader))
++            .unwrap();
++        let mut storage = None;
++        device
++            .CreateBuffer(
++                &D3D11_BUFFER_DESC {
++                    ByteWidth: 64,
++                    Usage: D3D11_USAGE_DEFAULT,
++                    BindFlags: D3D11_BIND_UNORDERED_ACCESS.0 as u32,
++                    MiscFlags: D3D11_RESOURCE_MISC_BUFFER_STRUCTURED.0 as u32,
++                    StructureByteStride: 4,
++                    ..Default::default()
++                },
++                None,
++                Some(&mut storage),
++            )
++            .unwrap();
++        let storage = storage.unwrap();
++
++        let mut view = None;
++        device
++            .CreateUnorderedAccessView(
++                &storage,
++                Some(&D3D11_UNORDERED_ACCESS_VIEW_DESC {
++                    Format: DXGI_FORMAT_UNKNOWN,
++                    ViewDimension: D3D11_UAV_DIMENSION_BUFFER,
++                    Anonymous: D3D11_UNORDERED_ACCESS_VIEW_DESC_0 {
++                        Buffer: D3D11_BUFFER_UAV {
++                            FirstElement: 0,
++                            NumElements: 16,
++                            Flags: 0,
++                        },
++                    },
++                }),
++                Some(&mut view),
++            )
++            .unwrap();
++        context.CSSetShader(shader.as_ref(), None);
++        context.CSSetUnorderedAccessViews(0, 1, Some(&view), None);
++        context.Dispatch(4, 1, 1);
++        context.CSSetUnorderedAccessViews(0, 1, Some(&None), None);
++
++        let staging = buffer(
++            device,
++            64,
++            D3D11_USAGE_STAGING,
++            0,
++            D3D11_CPU_ACCESS_READ.0 as u32,
++        );
++        context.CopyResource(&staging, &storage);
++        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
++        context
++            .Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
++            .unwrap();
++        let words = *mapped.pData.cast::<[u32; 16]>();
++        context.Unmap(&staging, 0);
++        assert_eq!(words, core::array::from_fn(|i| 3 * i as u32 + 7));
++    }
++}
++
++unsafe fn exercise_geometry(
++    device: &ID3D11Device,
++    context: &ID3D11DeviceContext,
++    seed: &[u8],
++    capture: &ID3D11GeometryShader,
++    replay: &[u8],
++    pixel: &[u8],
++) {
++    unsafe {
++        let mut vs_seed = None;
++        device
++            .CreateVertexShader(seed, None, Some(&mut vs_seed))
++            .unwrap();
++        let mut vs_replay = None;
++        device
++            .CreateVertexShader(replay, None, Some(&mut vs_replay))
++            .unwrap();
++        let mut ps = None;
++        device
++            .CreatePixelShader(pixel, None, Some(&mut ps))
++            .unwrap();
++        let stream = buffer(
++            device,
++            48,
++            D3D11_USAGE_DEFAULT,
++            (D3D11_BIND_STREAM_OUTPUT | D3D11_BIND_VERTEX_BUFFER).0 as u32,
++            0,
++        );
++        let stream_readback = buffer(
++            device,
++            48,
++            D3D11_USAGE_STAGING,
++            0,
++            D3D11_CPU_ACCESS_READ.0 as u32,
++        );
++
++        let query = new_query(device, D3D11_QUERY_SO_STATISTICS);
++        context.Begin(&query);
++        context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST_ADJ);
++        context.VSSetShader(vs_seed.as_ref(), None);
++        context.GSSetShader(capture, None);
++        context.SOSetTargets(1, Some(&Some(stream.clone())), Some(&0));
++        context.Draw(6, 0);
++        context.SOSetTargets(0, None, None);
++        context.End(&query);
++        context.CopyResource(&stream_readback, &stream);
++
++        let mut layout = None;
++        device
++            .CreateInputLayout(
++                &[D3D11_INPUT_ELEMENT_DESC {
++                    SemanticName: PCSTR(c"POSITION".as_ptr().cast()),
++                    Format: DXGI_FORMAT_R32G32B32A32_FLOAT,
++                    InputSlotClass: D3D11_INPUT_PER_VERTEX_DATA,
++                    ..Default::default()
++                }],
++                replay,
++                Some(&mut layout),
++            )
++            .unwrap();
++        let targets: Vec<_> = (0..8).map(|_| target(device, false)).collect();
++        let mut views = Vec::new();
++        for texture in &targets {
++            let mut view = None;
++            device
++                .CreateRenderTargetView(texture, None, Some(&mut view))
++                .unwrap();
++            context.ClearRenderTargetView(view.as_ref().unwrap(), &[0.0; 4]);
++            views.push(view);
++        }
++        let staging = target(device, true);
++        context.GSSetShader(None::<&ID3D11GeometryShader>, None);
++        context.IASetInputLayout(layout.as_ref());
++        context.IASetVertexBuffers(0, 1, Some(&Some(stream)), Some(&16), Some(&0));
++        context.IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
++        context.VSSetShader(vs_replay.as_ref(), None);
++        context.PSSetShader(ps.as_ref(), None);
++        context.RSSetViewports(Some(&[D3D11_VIEWPORT {
++            Width: 4.0,
++            Height: 4.0,
++            MaxDepth: 1.0,
++            ..Default::default()
++        }]));
++        let depth = depth_view(device);
++        context.ClearDepthStencilView(&depth, (D3D11_CLEAR_DEPTH | D3D11_CLEAR_STENCIL).0, 1.0, 0);
++        context.OMSetRenderTargets(Some(&views), &depth);
++        let visible = new_query(device, D3D11_QUERY_OCCLUSION);
++        let hidden = new_query(device, D3D11_QUERY_OCCLUSION);
++        context.Begin(&visible);
++        context.DrawAuto();
++        context.End(&visible);
++        context.Begin(&hidden);
++        context.DrawAuto();
++        context.End(&hidden);
++        context.OMSetRenderTargets(None, None::<&ID3D11DepthStencilView>);
++        context.Flush();
++
++        let stats: D3D11_QUERY_DATA_SO_STATISTICS = query_data(device, context, &query);
++        assert_eq!(stats.NumPrimitivesWritten, 1);
++        assert_eq!(stats.PrimitivesStorageNeeded, 1);
++        assert_eq!(query_data::<u64>(device, context, &visible), 16);
++        assert_eq!(query_data::<u64>(device, context, &hidden), 0);
++        let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
++        context
++            .Map(&stream_readback, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
++            .unwrap();
++        let vertices = *mapped.pData.cast::<[[f32; 4]; 3]>();
++        context.Unmap(&stream_readback, 0);
++        assert_eq!(
++            vertices,
++            [
++                [-1.0, -1.0, 0.0, 1.0],
++                [-1.0, 3.0, 0.0, 1.0],
++                [3.0, -1.0, 0.0, 1.0],
++            ]
++        );
++
++        for (i, texture) in targets.iter().enumerate() {
++            context.CopyResource(&staging, texture);
++            context
++                .Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))
++                .unwrap();
++            let mut pixels = [[0; 4]; 4];
++            for (y, row) in pixels.iter_mut().enumerate() {
++                *row = *mapped
++                    .pData
++                    .cast::<u8>()
++                    .add(y * mapped.RowPitch as usize)
++                    .cast();
++            }
++            context.Unmap(&staging, 0);
++            for (y, row) in pixels.iter().enumerate() {
++                for (x, value) in row.iter().enumerate() {
++                    assert_eq!(
++                        *value,
++                        (i * 16 + y * 4 + x + 1) as u32,
++                        "target {i}, ({x},{y})"
++                    );
++                }
++            }
++        }
++    }
++}
++
++unsafe fn depth_view(device: &ID3D11Device) -> ID3D11DepthStencilView {
++    let mut texture = None;
++    let mut view = None;
++    unsafe {
++        device
++            .CreateTexture2D(
++                &D3D11_TEXTURE2D_DESC {
++                    Width: 4,
++                    Height: 4,
++                    MipLevels: 1,
++                    ArraySize: 1,
++                    Format: DXGI_FORMAT_D24_UNORM_S8_UINT,
++                    SampleDesc: DXGI_SAMPLE_DESC {
++                        Count: 1,
++                        Quality: 0,
++                    },
++                    Usage: D3D11_USAGE_DEFAULT,
++                    BindFlags: D3D11_BIND_DEPTH_STENCIL.0 as u32,
++                    ..Default::default()
++                },
++                None,
++                Some(&mut texture),
++            )
++            .unwrap();
++        device
++            .CreateDepthStencilView(texture.as_ref().unwrap(), None, Some(&mut view))
++            .unwrap();
++    }
++    view.unwrap()
++}
++
++unsafe fn new_query(device: &ID3D11Device, kind: D3D11_QUERY) -> ID3D11Asynchronous {
++    let mut query = None;
++    unsafe {
++        device
++            .CreateQuery(
++                &D3D11_QUERY_DESC {
++                    Query: kind,
++                    MiscFlags: 0,
++                },
++                Some(&mut query),
++            )
++            .unwrap();
++    }
++    query.unwrap().cast().unwrap()
++}
++
++unsafe fn buffer(
++    device: &ID3D11Device,
++    size: u32,
++    usage: D3D11_USAGE,
++    bind: u32,
++    cpu_access: u32,
++) -> ID3D11Buffer {
++    let mut buffer = None;
++    unsafe {
++        device
++            .CreateBuffer(
++                &D3D11_BUFFER_DESC {
++                    ByteWidth: size,
++                    Usage: usage,
++                    BindFlags: bind,
++                    CPUAccessFlags: cpu_access,
++                    ..Default::default()
++                },
++                None,
++                Some(&mut buffer),
++            )
++            .unwrap()
++    };
++    buffer.unwrap()
++}
++
++unsafe fn target(device: &ID3D11Device, staging: bool) -> ID3D11Texture2D {
++    let mut texture = None;
++    let mut desc = D3D11_TEXTURE2D_DESC {
++        Width: 4,
++        Height: 4,
++        MipLevels: 1,
++        ArraySize: 1,
++        Format: DXGI_FORMAT_R32_UINT,
++        SampleDesc: DXGI_SAMPLE_DESC {
++            Count: 1,
++            Quality: 0,
++        },
++        Usage: D3D11_USAGE_DEFAULT,
++        BindFlags: D3D11_BIND_RENDER_TARGET.0 as u32,
++        ..Default::default()
++    };
++    if staging {
++        desc.Usage = D3D11_USAGE_STAGING;
++        desc.BindFlags = 0;
++        desc.CPUAccessFlags = D3D11_CPU_ACCESS_READ.0 as u32;
++    }
++    unsafe {
++        device
++            .CreateTexture2D(&desc, None, Some(&mut texture))
++            .unwrap()
++    };
++    texture.unwrap()
++}
++
++unsafe fn query_data<T: Default>(
++    device: &ID3D11Device,
++    context: &ID3D11DeviceContext,
++    query: &ID3D11Asynchronous,
++) -> T {
++    let deadline = Instant::now() + Duration::from_secs(5);
++    let mut data = T::default();
++    loop {
++        let result = unsafe {
++            (context.vtable().GetData)(
++                context.as_raw(),
++                query.as_raw(),
++                (&mut data as *mut T).cast(),
++                size_of::<T>() as u32,
++                D3D11_ASYNC_GETDATA_DONOTFLUSH.0 as u32,
++            )
++        };
++        if result == S_OK {
++            return data;
++        }
++        assert_eq!(result, S_FALSE, "native query failed");
++        unsafe { device.GetDeviceRemovedReason().unwrap() };
++        assert!(Instant::now() < deadline, "native query timed out");
++        std::thread::yield_now();
++    }
++}
+diff --git a/wgpu-types/src/limits.rs b/wgpu-types/src/limits.rs
+index 04c89df92d02c3fe37129cccd4db4c81055df0ac..306832b547aaa924fcf8ad93aa468ee64d7bb84f 100644
+--- a/wgpu-types/src/limits.rs
++++ b/wgpu-types/src/limits.rs
+@@ -1550,6 +1550,9 @@ pub struct DownlevelLimits {
+     /// Whether fragment shaders may use derivatives or explicit texture gradients.
+     #[cfg_attr(feature = "serde", serde(default = "default_true"))]
+     pub fragment_derivatives: bool,
++    /// Allows per-target color write masks with a shared blend equation.
++    #[cfg_attr(feature = "serde", serde(default))]
++    pub independent_color_write_masks: bool,
+     /// Bit mask of vertex formats supported by the adapter.
+     ///
+     /// Bit `n` corresponds to the discriminant of [`VertexFormat`] with value `n`. This lets
+@@ -1727,6 +1730,7 @@ impl Default for DownlevelLimits {
+             fragment_texture_sample_compare_offset_2d_single_mip: false,
+             texture_sample_bias_requires_compatible_sampler: false,
+             fragment_derivatives: true,
++            independent_color_write_masks: false,
+             vertex_format_mask: Self::webgpu_vertex_format_mask(),
+         }
+     }
+@@ -2045,6 +2049,7 @@ impl DownlevelLimits {
+             && (!self.texture_sample_bias_requires_compatible_sampler
+                 || required.texture_sample_bias_requires_compatible_sampler)
+             && (!required.fragment_derivatives || self.fragment_derivatives)
++            && (!required.independent_color_write_masks || self.independent_color_write_masks)
+             && self.vertex_format_mask & required.vertex_format_mask == required.vertex_format_mask
+     }
+ }
+diff --git a/wgpu/tests/dx11_fl91_scene.rs b/wgpu/tests/dx11_fl91_scene.rs
+index 7e65aee119439c8816225c613683115500a03706..53d1b602a073cfdfbbd2e9c602c612b72e4554a1 100644
+--- a/wgpu/tests/dx11_fl91_scene.rs
++++ b/wgpu/tests/dx11_fl91_scene.rs
+@@ -1,6 +1,12 @@
+ #![cfg(all(windows, feature = "dx11", feature = "wgsl"))]
+ 
+-use std::{future::Future, sync::Arc, task::Wake, thread, time::Duration};
++use std::{
++    future::Future,
++    sync::Arc,
++    task::Wake,
++    thread,
++    time::{Duration, Instant},
++};
+ use wgpu::*;
+ 
+ struct ThreadWaker(thread::Thread);
+@@ -47,6 +53,234 @@ fn mapped_buffer(
+     buffer
+ }
+ 
++#[test]
++fn public_fl10_eight_color_targets_with_shared_blend_and_independent_masks() {
++    if std::env::var_os("WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL").as_deref() != Some("10_0".as_ref())
++    {
++        return;
++    }
++    let mut instance_desc = InstanceDescriptor::new_without_display_handle();
++    instance_desc.backends = Backends::DX11;
++    let instance = Instance::new(instance_desc);
++    let adapter = poll_ready(instance.enumerate_adapters(Backends::DX11))
++        .into_iter()
++        .next()
++        .expect("exact FL10_0 hardware");
++    let native = unsafe { adapter.as_hal::<wgpu_hal::api::Dx11>() }.unwrap();
++    assert_eq!(native.feature_level().as_raw(), 0xa000);
++    assert!(!native.is_software());
++    drop(native);
++    let limits = adapter.limits();
++    assert_eq!(limits.max_color_attachments, 8);
++    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
++        required_limits: limits,
++        ..Default::default()
++    }))
++    .unwrap();
++    let shader = device.create_shader_module(ShaderModuleDescriptor {
++        label: None,
++        source: ShaderSource::Wgsl(
++            r"
++@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f {
++    return vec4f(p, 0.0, 1.0);
++}
++struct ColorOut {
++    @location(0) a: vec4f,
++    @location(1) b: vec4f,
++    @location(2) c: vec4f,
++    @location(3) d: vec4f,
++    @location(4) e: vec4f,
++    @location(5) f: vec4f,
++    @location(6) g: vec4f,
++    @location(7) h: vec4f,
++}
++@fragment fn ps() -> ColorOut {
++    return ColorOut(vec4f(.125), vec4f(.25), vec4f(.375), vec4f(.45),
++                    vec4f(.625), vec4f(.75), vec4f(.875), vec4f(1.0));
++}"
++            .into(),
++        ),
++    });
++    let format = TextureFormat::Rgba8Unorm;
++    let masks = [
++        ColorWrites::RED,
++        ColorWrites::GREEN,
++        ColorWrites::BLUE,
++        ColorWrites::ALPHA,
++    ];
++    let targets = core::array::from_fn::<_, 8, _>(|i| {
++        Some(ColorTargetState {
++            format,
++            blend: Some(BlendState {
++                color: BlendComponent {
++                    src_factor: BlendFactor::One,
++                    dst_factor: BlendFactor::One,
++                    operation: BlendOperation::Add,
++                },
++                alpha: BlendComponent::REPLACE,
++            }),
++            write_mask: masks[i % 4],
++        })
++    });
++    let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
++        label: Some("FL10_0 eight color targets"),
++        layout: None,
++        vertex: VertexState {
++            module: &shader,
++            entry_point: Some("vs"),
++            compilation_options: Default::default(),
++            buffers: &[Some(VertexBufferLayout {
++                array_stride: 8,
++                step_mode: VertexStepMode::Vertex,
++                attributes: &[VertexAttribute {
++                    format: VertexFormat::Float32x2,
++                    offset: 0,
++                    shader_location: 0,
++                }],
++            })],
++        },
++        primitive: Default::default(),
++        depth_stencil: None,
++        multisample: Default::default(),
++        fragment: Some(FragmentState {
++            module: &shader,
++            entry_point: Some("ps"),
++            compilation_options: Default::default(),
++            targets: &targets,
++        }),
++        multiview_mask: None,
++        cache: None,
++    });
++    let vertex_bytes: Vec<u8> = [-1.0_f32, -1.0, 3.0, -1.0, -1.0, 3.0]
++        .into_iter()
++        .flat_map(f32::to_ne_bytes)
++        .collect();
++    let vertices = mapped_buffer(&device, "MRT vertices", &vertex_bytes, BufferUsages::VERTEX);
++    let size = Extent3d {
++        width: 4,
++        height: 4,
++        depth_or_array_layers: 1,
++    };
++    let images = core::array::from_fn::<_, 8, _>(|_| {
++        device.create_texture(&TextureDescriptor {
++            label: None,
++            size,
++            dimension: TextureDimension::D2,
++            format,
++            mip_level_count: 1,
++            sample_count: 1,
++            usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
++            view_formats: &[],
++        })
++    });
++    let views = images
++        .each_ref()
++        .map(|image| image.create_view(&Default::default()));
++    let colors = views.each_ref().map(|view| {
++        Some(RenderPassColorAttachment {
++            view,
++            depth_slice: None,
++            resolve_target: None,
++            ops: Operations {
++                load: LoadOp::Clear(Color {
++                    r: 0.0625,
++                    g: 0.0625,
++                    b: 0.0625,
++                    a: 0.0625,
++                }),
++                store: StoreOp::Store,
++            },
++        })
++    });
++    let staging = device.create_buffer(&BufferDescriptor {
++        label: None,
++        size: 8 * 4 * 256 + 16,
++        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
++        mapped_at_creation: false,
++    });
++    assert!(adapter
++        .get_downlevel_capabilities()
++        .flags
++        .contains(DownlevelFlags::OCCLUSION_QUERY));
++    let queries = device.create_query_set(&QuerySetDescriptor {
++        label: None,
++        ty: QueryType::Occlusion,
++        count: 2,
++    });
++    let resolved = device.create_buffer(&BufferDescriptor {
++        label: None,
++        size: 16,
++        usage: BufferUsages::QUERY_RESOLVE | BufferUsages::COPY_SRC,
++        mapped_at_creation: false,
++    });
++    let mut encoder = device.create_command_encoder(&Default::default());
++    {
++        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
++            color_attachments: &colors,
++            occlusion_query_set: Some(&queries),
++            ..Default::default()
++        });
++        pass.set_pipeline(&pipeline);
++        pass.set_vertex_buffer(0, vertices.slice(..));
++        pass.begin_occlusion_query(0);
++        pass.draw(0..3, 0..1);
++        pass.end_occlusion_query();
++    }
++    encoder.resolve_query_set(&queries, 0..2, &resolved, 0);
++    encoder.copy_buffer_to_buffer(&resolved, 0, &staging, 8 * 1024, 16);
++    for (i, image) in images.iter().enumerate() {
++        encoder.copy_texture_to_buffer(
++            image.as_image_copy(),
++            TexelCopyBufferInfo {
++                buffer: &staging,
++                layout: TexelCopyBufferLayout {
++                    offset: i as u64 * 1024,
++                    bytes_per_row: Some(256),
++                    rows_per_image: None,
++                },
++            },
++            size,
++        );
++    }
++    let index = queue.submit([encoder.finish()]);
++    let (send, recv) = std::sync::mpsc::channel();
++    staging
++        .slice(..)
++        .map_async(MapMode::Read, move |result| send.send(result).unwrap());
++    device
++        .poll(PollType::Wait {
++            submission_index: Some(index),
++            timeout: Some(Duration::from_secs(10)),
++        })
++        .unwrap();
++    recv.recv_timeout(Duration::from_secs(10)).unwrap().unwrap();
++    let data = staging.get_mapped_range(..).unwrap();
++    for (i, expected) in [48, 80, 112, 115, 175, 207, 239, 255]
++        .into_iter()
++        .enumerate()
++    {
++        let mut pixel = [16; 4];
++        pixel[i % 4] = expected;
++        for y in 0..4 {
++            for x in 0..4 {
++                let offset = i * 1024 + y * 256 + x * 4;
++                assert_eq!(
++                    &data[offset..offset + 4],
++                    &pixel,
++                    "target {i} pixel ({x}, {y})"
++                );
++            }
++        }
++    }
++    let query_bytes = &data[8 * 1024..];
++    let counts: Vec<_> = query_bytes
++        .chunks_exact(8)
++        .map(|bytes| u64::from_ne_bytes(bytes.try_into().unwrap()))
++        .collect();
++    assert_eq!(counts, [16, 0]);
++    println!("PASS: public eight SM4 render targets with independent masks, shared blending, and occlusion resolve 16/0");
++}
++
+ #[test]
+ fn public_dx11_textured_depth_tested_3d_scene_at_fl91() {
+     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|value| value == "1");
+@@ -55,19 +289,28 @@ fn public_dx11_textured_depth_tested_3d_scene_at_fl91() {
+     let instance = Instance::new(descriptor);
+     let adapters = poll_ready(instance.enumerate_adapters(Backends::DX11));
+     let Some(adapter) = adapters.into_iter().next() else {
+-        assert!(
+-            !required,
+-            "strict mode requires a physical FL9_1 D3D11 adapter"
+-        );
+-        println!("SKIP: public D3D11 enumeration found no physical FL9_1 adapter");
++        assert!(!required, "strict mode requires a physical D3D11 adapter");
++        println!("SKIP: public D3D11 enumeration found no physical adapter");
+         return;
+     };
+     let info = adapter.get_info();
+     assert_eq!(info.backend, Backend::Dx11);
+-    assert!(info.driver_info.contains("FL9_1"), "{info:?}");
++    assert!(info.driver_info.starts_with("FL9_1"), "{info:?}");
+     assert!(info.driver_info.contains("physical"), "{info:?}");
++    let native = unsafe { adapter.as_hal::<wgpu_hal::api::Dx11>() }.unwrap();
++    assert!(!native.is_software());
++    let level = native.feature_level();
++    match std::env::var("WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL").as_deref() {
++        Ok("9_1") => assert_eq!(level.as_raw(), 0x9100),
++        Ok("10_0") => assert_eq!(level.as_raw(), 0xa000),
++        _ if std::env::var_os("WGPU_DX11_FORCE_FL9_1").is_some_and(|v| v == "1") => {
++            assert_eq!(level.as_raw(), 0x9100);
++        }
++        _ => {}
++    }
++    drop(native);
+     println!(
+-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; workload=textured perspective cube with D16 depth",
++        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} projection=FL9_1 actual={level:?} software=false; workload=textured perspective cube with D16 depth",
+         info.name, info.vendor, info.device, info.driver_info
+     );
+     let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+@@ -436,6 +679,54 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
+         mapped_at_creation: false,
+     });
+ 
++    let record_scene = |encoder: &mut CommandEncoder, index_buffer: &Buffer, use_depth, draws| {
++        let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
++            label: Some(if use_depth {
++                "FL9_1 textured cube depth pass"
++            } else {
++                "FL9_1 textured cube painter-order control pass"
++            }),
++            color_attachments: &[Some(RenderPassColorAttachment {
++                view: &color_view,
++                depth_slice: None,
++                resolve_target: None,
++                ops: Operations {
++                    load: LoadOp::Clear(Color::BLACK),
++                    store: StoreOp::Store,
++                },
++            })],
++            depth_stencil_attachment: use_depth.then_some(RenderPassDepthStencilAttachment {
++                view: &depth_view,
++                depth_ops: Some(Operations {
++                    load: LoadOp::Clear(1.0),
++                    store: StoreOp::Store,
++                }),
++                stencil_ops: None,
++            }),
++            timestamp_writes: None,
++            occlusion_query_set: None,
++            multiview_mask: None,
++        });
++        pass.set_pipeline(if use_depth {
++            &pipeline
++        } else {
++            &painter_pipeline
++        });
++        pass.set_bind_group(
++            0,
++            if use_depth {
++                &bind_group
++            } else {
++                &painter_bind_group
++            },
++            &[],
++        );
++        pass.set_vertex_buffer(0, vertex_buffer.slice(..));
++        pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
++        for _ in 0..draws {
++            pass.draw_indexed(0..36, 0, 0..1);
++        }
++    };
+     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+         label: Some("FL9_1 render scene in opposite primitive orders"),
+     });
+@@ -445,52 +736,7 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
+         (2 * 32 * 256, &forward_indices, false),
+         (3 * 32 * 256, &reverse_indices, false),
+     ] {
+-        {
+-            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+-                label: Some(if use_depth {
+-                    "FL9_1 textured cube depth pass"
+-                } else {
+-                    "FL9_1 textured cube painter-order control pass"
+-                }),
+-                color_attachments: &[Some(RenderPassColorAttachment {
+-                    view: &color_view,
+-                    depth_slice: None,
+-                    resolve_target: None,
+-                    ops: Operations {
+-                        load: LoadOp::Clear(Color::BLACK),
+-                        store: StoreOp::Store,
+-                    },
+-                })],
+-                depth_stencil_attachment: use_depth.then_some(RenderPassDepthStencilAttachment {
+-                    view: &depth_view,
+-                    depth_ops: Some(Operations {
+-                        load: LoadOp::Clear(1.0),
+-                        store: StoreOp::Store,
+-                    }),
+-                    stencil_ops: None,
+-                }),
+-                timestamp_writes: None,
+-                occlusion_query_set: None,
+-                multiview_mask: None,
+-            });
+-            pass.set_pipeline(if use_depth {
+-                &pipeline
+-            } else {
+-                &painter_pipeline
+-            });
+-            pass.set_bind_group(
+-                0,
+-                if use_depth {
+-                    &bind_group
+-                } else {
+-                    &painter_bind_group
+-                },
+-                &[],
+-            );
+-            pass.set_vertex_buffer(0, vertex_buffer.slice(..));
+-            pass.set_index_buffer(index_buffer.slice(..), IndexFormat::Uint16);
+-            pass.draw_indexed(0..36, 0, 0..1);
+-        }
++        record_scene(&mut encoder, index_buffer, use_depth, 1);
+         encoder.copy_texture_to_buffer(
+             TexelCopyTextureInfo {
+                 texture: &color_texture,
+@@ -579,4 +825,35 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
+     println!(
+         "PASS: public FL9_1 perspective cube sampled a 2x2 face texture and used D16 depth; depth-tested opposite face orders matched all 1,024 pixels, while painter-order controls differed at {painter_order_differences} pixels; clear/red/green/blue/yellow={colors:?}"
+     );
++
++    if std::env::var_os("WGPU_DX11_SCENE_BENCH").is_some_and(|value| value == "1") {
++        const WARMUPS: usize = 5;
++        const SAMPLES: usize = 25;
++        for draws in [1, 128] {
++            let mut timings = Vec::with_capacity(SAMPLES);
++            for index in 0..(WARMUPS + SAMPLES) {
++                let start = Instant::now();
++                let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
++                    label: Some("D3D11 benchmark scene"),
++                });
++                record_scene(&mut encoder, &forward_indices, true, draws);
++                let submission = queue.submit([encoder.finish()]);
++                device
++                    .poll(PollType::Wait {
++                        submission_index: Some(submission),
++                        timeout: Some(Duration::from_secs(10)),
++                    })
++                    .expect("wait for D3D11 benchmark submission");
++                if index >= WARMUPS {
++                    timings.push(start.elapsed().as_secs_f64() * 1000.0);
++                }
++            }
++            timings.sort_by(f64::total_cmp);
++            println!(
++                "BENCHMARK projection=FL9_1 actual={level:?} draws={draws} warmups={WARMUPS} samples={SAMPLES} median_ms={:.4} p95_ms={:.4}",
++                timings[SAMPLES / 2],
++                timings[(SAMPLES * 95).div_ceil(100) - 1],
++            );
++        }
++    }
+ }
+diff --git a/wgpu/tests/dx11_public.rs b/wgpu/tests/dx11_public.rs
+index 2a652bb89ccb4cca0acaa418b69418aaccca3b44..31713c53aa2905d9c4e1be1e5a07575708439ce2 100644
+--- a/wgpu/tests/dx11_public.rs
++++ b/wgpu/tests/dx11_public.rs
+@@ -1009,6 +1009,12 @@ fn public_dx11_nonzero_group_sparse_uniform_renders_at_fl91() {
+     );
+ }
+ 
++fn exact_native_level(adapter: &Adapter) -> u32 {
++    let native = unsafe { adapter.as_hal::<wgpu::hal::api::Dx11>() }.expect("DX11 adapter");
++    assert!(!native.is_software());
++    native.feature_level().as_raw()
++}
++
+ fn expect_validation_error(device: &Device, label: &str, operation: impl FnOnce()) {
+     let scope = device.push_error_scope(ErrorFilter::Validation);
+     operation();
+@@ -6566,7 +6572,7 @@ fn public_dx11_byte_aligned_vertex_attribute_offset_at_fl91() {
+         label: Some("byte-aligned vertex attribute offset shader"),
+         source: ShaderSource::Wgsl(
+             "@vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f { return vec4f(p * 2.0 - vec2f(1.0), 0.0, 1.0); }\n\
+-             @fragment fn fs() -> @location(0) vec4f { return vec4f(0.125, 0.5, 0.875, 1.0); }"
++             @fragment fn fs() -> @location(0) vec4f { return vec4f(0.125, 0.625, 0.875, 1.0); }"
+                 .into(),
+         ),
+     });
+@@ -6764,14 +6770,14 @@ fn public_dx11_byte_aligned_vertex_attribute_offset_at_fl91() {
+                 let offset = y * 256 + x * 4;
+                 assert_eq!(
+                     &pixels[offset..offset + 4],
+-                    &[32, 128, 223, 255],
++                    &[32, 159, 223, 255],
+                     "byte-aligned vertex input pixel ({x}, {y})"
+                 );
+             }
+         }
+     }
+     readback.unmap();
+-    println!("PASS: FL9_1 Unorm8x2 at byte offset 2 rendered the full target; 64/64 pixels matched [32, 128, 223, 255]");
++    println!("PASS: FL9_1 Unorm8x2 at byte offset 2 rendered the full target; 64/64 pixels matched [32, 159, 223, 255]");
+ }
+ 
+ #[test]
+@@ -9688,13 +9694,14 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
+     assert_eq!(info.backend, Backend::Dx11);
+     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+     assert!(info.driver_info.contains("physical"), "{info:?}");
+-    let srgb_features = adapter.get_texture_format_features(TextureFormat::Rgba8UnormSrgb);
+-    assert!(
+-        !srgb_features
+-            .flags
+-            .contains(TextureFormatFeatureFlags::BLENDABLE),
+-        "FL9_1 sRGB blending does not match wgpu linear-space semantics: {srgb_features:?}"
+-    );
++    let srgb_supported = adapter.get_texture_format_features(TextureFormat::Rgba8UnormSrgb)
++        .flags.contains(TextureFormatFeatureFlags::BLENDABLE);
++    if exact_native_level(&adapter) <= 0x9300 {
++        assert!(!srgb_supported, "FL9.x hardware blends sRGB targets in sRGB space");
++    }
++    let separate_alpha = adapter.get_downlevel_capabilities().flags
++        .contains(DownlevelFlags::SEPARATE_ALPHA_BLEND);
++    let format = if srgb_supported { TextureFormat::Rgba8UnormSrgb } else { TextureFormat::Rgba8Unorm };
+     println!(
+         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false",
+         info.name, info.vendor, info.device, info.driver, info.driver_info
+@@ -9742,7 +9749,7 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
+         mip_level_count: 1,
+         sample_count: 1,
+         dimension: TextureDimension::D2,
+-        format: TextureFormat::Rgba8Unorm,
++        format,
+         usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+         view_formats: &[],
+     });
+@@ -9816,34 +9823,24 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
+         ));
+     });
+     println!("PASS: public core rejected source-alpha-saturated blending before HAL");
+-    expect_validation_error(&device, "separate alpha blend equations", || {
+-        drop(render_pipeline(
+-            "overlay",
+-            Some(BlendState {
++    if !separate_alpha {
++        expect_validation_error(&device, "separate alpha blend equations", || {
++            drop(render_pipeline("overlay", Some(BlendState {
+                 color: component,
+-                alpha: BlendComponent {
+-                    src_factor: BlendFactor::One,
+-                    dst_factor: BlendFactor::Zero,
+-                    operation: BlendOperation::Add,
+-                },
+-            }),
+-            TextureFormat::Rgba8Unorm,
+-        ));
+-    });
+-    println!("PASS: public core rejected separate alpha equations before HAL");
+-    expect_validation_error(&device, "FL9_1 sRGB target blending", || {
+-        drop(render_pipeline(
+-            "overlay",
+-            Some(premultiplied_over),
+-            TextureFormat::Rgba8UnormSrgb,
+-        ));
+-    });
+-    println!("PASS: public core rejected FL9_1 sRGB blending before HAL");
+-    let base = render_pipeline("blue", None, TextureFormat::Rgba8Unorm);
++                alpha: BlendComponent::REPLACE,
++            }), TextureFormat::Rgba8Unorm));
++        });
++    }
++    if !srgb_supported {
++        expect_validation_error(&device, "sRGB target blending", || {
++            drop(render_pipeline("overlay", Some(premultiplied_over), TextureFormat::Rgba8UnormSrgb));
++        });
++    }
++    let base = render_pipeline("blue", None, format);
+     let overlay = render_pipeline(
+         "overlay",
+         Some(premultiplied_over),
+-        TextureFormat::Rgba8Unorm,
++        format,
+     );
+     let alpha_equivalent_blend = BlendState {
+         color: BlendComponent {
+@@ -9857,11 +9854,11 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
+             operation: BlendOperation::Add,
+         },
+     };
+-    let alpha_equivalent_base = render_pipeline("blue_alpha", None, TextureFormat::Rgba8Unorm);
++    let alpha_equivalent_base = render_pipeline("blue_alpha", None, format);
+     let alpha_equivalent_overlay = render_pipeline(
+         "overlay",
+         Some(alpha_equivalent_blend),
+-        TextureFormat::Rgba8Unorm,
++        format,
+     );
+     let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor {
+         label: Some("FL9_1 public blend commands"),
+@@ -9971,7 +9968,8 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
+         .expect("map public blend readback");
+     {
+         let data = readback.slice(..).get_mapped_range().expect("mapped data");
+-        for (region_offset, expected) in [(0, [128, 0, 128, 255]), (8 * 256, [128, 0, 255, 128])] {
++        let half = if srgb_supported { 188 } else { 128 };
++        for (region_offset, expected) in [(0, [half, 0, half, 255]), (8 * 256, [half, 0, 255, 128])] {
+             for y in 0..8 {
+                 for x in 0..8 {
+                     let offset = region_offset + y * 256 + x * 4;
+@@ -9988,7 +9986,7 @@ fn public_dx11_blending_and_downlevel_rejections_at_fl91() {
+         }
+     }
+     readback.unmap();
+-    println!("PASS: public FL9_1 premultiplied blend matched [128, 0, 128, 255], and alpha-equivalent inverse-color blend matched [128, 0, 255, 128], all 64 pixels each");
++    println!("PASS: public premultiplied and alpha-equivalent blends matched all pixels in {format:?}");
+ }
+ 
+ #[test]
+@@ -10355,7 +10353,12 @@ fn public_dx11_texture_dimension_2d_boundary_at_fl91() {
+     assert_eq!(info.backend, Backend::Dx11);
+     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+     let limits = adapter.limits();
+-    assert_eq!(limits.max_texture_dimension_2d, 2048);
++    assert_eq!(limits.max_texture_dimension_2d, match exact_native_level(&adapter) {
++        0x9100 | 0x9200 => 2048,
++        0x9300 => 4096,
++        0xa000 | 0xa100 => 8192,
++        _ => 16384,
++    });
+     let max_texture_dimension_2d = limits.max_texture_dimension_2d;
+     println!(
+         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false; max_texture_dimension_2d={}",
+@@ -16150,9 +16153,9 @@ fn public_dx11_rg16_snorm_mip_copy_and_readback_at_fl91() {
+         println!("SKIP: selected FL9_1 device did not query Rg16Snorm mip support");
+         return;
+     }
+-    assert!(!features
+-        .flags
+-        .contains(TextureFormatFeatureFlags::FILTERABLE));
++    if exact_native_level(&adapter) == 0x9100 {
++        assert!(!features.flags.contains(TextureFormatFeatureFlags::FILTERABLE));
++    }
+     assert!(adapter
+         .features()
+         .contains(Features::TEXTURE_FORMAT_16BIT_NORM));
+@@ -25095,9 +25098,15 @@ fn public_dx11_enforces_query_type_feature_gates_at_fl91() {
+     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
+     assert!(info.driver_info.contains("physical"), "{info:?}");
+     let downlevel = adapter.get_downlevel_capabilities();
+-    assert!(!downlevel.flags.contains(DownlevelFlags::OCCLUSION_QUERY));
++    let occlusion = downlevel.flags.contains(DownlevelFlags::OCCLUSION_QUERY);
++    assert_eq!(
++        occlusion,
++        exact_native_level(&adapter) == 0xa000
++            && std::env::var_os("WGPU_DX11_EXPERIMENTAL_FEATURE_LEVEL")
++                .is_some_and(|level| level == "10_0")
++    );
+     println!(
+-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} requested=FL9_1 actual=FL9_1 software=false occlusion_queries=false",
++        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver_info={:?} occlusion_queries={occlusion}",
+         info.name, info.vendor, info.device, info.driver_info
+     );
+     let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+@@ -25107,18 +25116,16 @@ fn public_dx11_enforces_query_type_feature_gates_at_fl91() {
+         ..Default::default()
+     }))
+     .expect("request the selected FL9_1 device");
+-    expect_validation_error_containing(
+-        &device,
+-        "FL9_1 occlusion query set",
+-        "OCCLUSION_QUERY",
+-        || {
+-            drop(device.create_query_set(&QuerySetDescriptor {
+-                label: Some("unsupported FL9_1 occlusion queries"),
+-                ty: QueryType::Occlusion,
+-                count: 1,
+-            }));
+-        },
+-    );
++    if !occlusion {
++        expect_validation_error_containing(
++            &device,
++            "occlusion query set",
++            "OCCLUSION_QUERY",
++            || drop(device.create_query_set(&QuerySetDescriptor {
++                label: None, ty: QueryType::Occlusion, count: 1,
++            })),
++        );
++    }
+     expect_validation_error_containing(
+         &device,
+         "FL9_1 timestamp query set without requested feature",
+@@ -25144,7 +25151,7 @@ fn public_dx11_enforces_query_type_feature_gates_at_fl91() {
+         },
+     );
+     println!(
+-        "PASS: public core requires explicit timestamp features and rejects occlusion and pipeline-statistics query sets; the separate strict timestamp test verifies execution"
++        "PASS: public core requires explicit timestamp features, gates occlusion, and rejects pipeline-statistics query sets"
+     );
+ }
+ 
+@@ -33772,11 +33779,11 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
+         .collect::<Vec<_>>()
+         .join(", ");
+     let positive_values = (0..8)
+-        .map(|_| "vec4f(0.03125, 0.015625, 0.0078125, 0.125)")
++        .map(|i| format!("vec4f({}.0, {}.0, 1.0, 8.0) / 512.0", i + 1, 8 - i))
+         .collect::<Vec<_>>()
+         .join(", ");
+     let positive_sum = (0..8)
+-        .map(|location| format!("input.value{location}"))
++        .map(|location| format!("input.value{location} * {}.0", location + 1))
+         .collect::<Vec<_>>()
+         .join(" + ");
+     let positive_shader = device.create_shader_module(ShaderModuleDescriptor {
+@@ -33784,7 +33791,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
+         source: ShaderSource::Wgsl(
+             format!(
+                 "struct VertexOut {{ @builtin(position) position: vec4f, {positive_fields} }}\n\
+-                 struct FragmentIn {{ {positive_fields} }}\n\
++                 struct FragmentIn {{ @builtin(position) position: vec4f, {positive_fields} }}\n\
+                  @vertex fn vs(@location(0) position: vec2f) -> VertexOut {{\n\
+                      return VertexOut(vec4f(position, 0.5, 1.0), {positive_values});\n\
+                  }}\n\
+@@ -33939,7 +33946,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
+                 let offset = y * 256 + x * 4;
+                 assert_eq!(
+                     &pixels[offset..offset + 4],
+-                    [64, 32, 16, 255],
++                    [102, 60, 18, 143],
+                     "eight varying output pixel ({x}, {y})"
+                 );
+             }
+@@ -33956,7 +33963,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
+         .collect::<Vec<_>>()
+         .join(", ");
+     let over_limit_sum = (0..9)
+-        .map(|location| format!("input.value{location}"))
++        .map(|location| format!("input.value{location} * {}.0", location + 1))
+         .collect::<Vec<_>>()
+         .join(" + ");
+     let over_limit_wgsl = format!(
+@@ -34002,7 +34009,7 @@ fn public_dx11_inter_stage_varying_limit_at_fl91() {
+         },
+     );
+     println!(
+-        "PASS: eight matched vec4 varyings at locations 0–7 rendered [64, 32, 16, 255] in 64/64 pixels; Core rejected location 8 against max_inter_stage_shader_variables before HAL"
++        "PASS: eight matched vec4 varyings at locations 0–7 rendered [102, 60, 18, 143] in 64/64 pixels; Core rejected location 8 against max_inter_stage_shader_variables before HAL"
+     );
+ }
+ 
+@@ -34035,7 +34042,13 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
+         .get_downlevel_capabilities()
+         .limits
+         .max_texture_repeat_per_primitive;
+-    assert_eq!(max_repeat, 128);
++    let level = exact_native_level(&adapter);
++    assert_eq!(max_repeat, match level {
++        0x9100 => 128,
++        0x9200 => 2048,
++        0x9300 | 0xa000 | 0xa100 => 8192,
++        _ => 16384,
++    });
+     println!(
+         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; max_texture_repeat_per_primitive={max_repeat}",
+         info.name, info.vendor, info.device, info.driver_info
+@@ -34052,19 +34065,14 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
+         ("repeat", AddressMode::Repeat),
+         ("mirror repeat", AddressMode::MirrorRepeat),
+     ] {
++        let sampler = SamplerDescriptor {
++            address_mode_u: address_mode,
++            ..Default::default()
++        };
+         expect_validation_error_containing(&device, name, "TextureRepeatLimitExceeded", || {
+-            drop(device.create_sampler(&SamplerDescriptor {
+-                address_mode_u: address_mode,
+-                mag_filter: FilterMode::Nearest,
+-                min_filter: FilterMode::Nearest,
+-                mipmap_filter: MipmapFilterMode::Nearest,
+-                ..Default::default()
+-            }));
++            drop(device.create_sampler(&sampler));
+         });
+     }
+-    println!(
+-        "PASS: public Core rejected repeat and mirror-repeat sampler creation using the projected FL9_1 limit before HAL"
+-    );
+ }
+ 
+ #[test]
+@@ -36783,7 +36791,12 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
+     let downlevel = adapter.get_downlevel_capabilities();
+     assert!(downlevel.flags.contains(DownlevelFlags::CUBE_TEXTURES));
+     assert!(!downlevel.flags.contains(DownlevelFlags::TEXTURE_2D_ARRAYS));
+-    assert_eq!(downlevel.limits.max_texture_cube_dimension, 512);
++    assert_eq!(downlevel.limits.max_texture_cube_dimension, match exact_native_level(&adapter) {
++        0x9100 | 0x9200 => 512,
++        0x9300 => 4096,
++        0xa000 | 0xa100 => 8192,
++        _ => 16384,
++    });
+     assert_eq!(downlevel.limits.max_texture_to_buffer_copy_layers, 6);
+     assert!(downlevel
+         .limits
+@@ -36852,8 +36865,9 @@ fn public_dx11_cube_texture_sampling_at_fl91() {
+     expect_validation_error(&device, "NPOT cube texture", || {
+         let _ = device.create_texture(&cube_descriptor(6, 6, 1));
+     });
+-    expect_validation_error(&device, "oversized FL9_1 cube texture", || {
+-        let _ = device.create_texture(&cube_descriptor(1024, 1024, 1));
++    let oversized = downlevel.limits.max_texture_cube_dimension * 2;
++    expect_validation_error(&device, "oversized cube texture", || {
++        let _ = device.create_texture(&cube_descriptor(oversized, oversized, 1));
+     });
+     if !cube_mips_supported {
+         expect_validation_error(&device, "unsupported mipmapped FL9_1 cube texture", || {
+@@ -37568,7 +37582,11 @@ fn public_dx11_texture_3d_upload_and_sampling_at_fl91() {
+         println!("SKIP: selected FL9_1 device did not report 3D texture support");
+         return;
+     }
+-    assert_eq!(adapter.limits().max_texture_dimension_3d, 256);
++    assert_eq!(adapter.limits().max_texture_dimension_3d, match exact_native_level(&adapter) {
++        0x9100 => 256,
++        0x9200 | 0x9300 => 512,
++        _ => 2048,
++    });
+     println!(
+         "FL9_1 3D volume mip support: {}",
+         downlevel.limits.texture_3d_mipmaps

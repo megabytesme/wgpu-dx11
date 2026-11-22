@@ -1,0 +1,12 @@
+
+running 1 test
+seed: disassembly reports vs_4_0
+capture: disassembly reports gs_4_0
+pixel: disassembly reports ps_4_0
+compute: disassembly reports cs_4_0
+test fxc_emits_exact_sm4_profiles ... ok
+
+test result: ok. 1 passed; 0 failed; 0 ignored; 0 measured; 1 filtered out; finished in 0.01s
+
+Candidate tree=7475312c57126aaf5715c0f492c683f10e1b4cfb
+Executable SHA256=1F8F5F64E1B73E99E1641510E43104B7145B94DC028E1CF5B1A6F09839703B5D

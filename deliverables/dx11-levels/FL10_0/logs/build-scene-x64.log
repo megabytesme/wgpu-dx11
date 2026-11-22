@@ -1,0 +1,32 @@
+    Blocking waiting for file lock on build directory
+   Compiling naga v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\naga)
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-hal)
+   Compiling wgpu-core v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-core)
+   Compiling wgpu v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu)
+   Compiling naga-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\naga-types)
+   Compiling windows v0.62.2
+   Compiling wgpu-types v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-types)
+   Compiling wgpu-naga-bridge v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-naga-bridge)
+warning: function `adjust_raw_limits` is never used
+   --> wgpu-hal\src\auxil\mod.rs:128:15
+    |
+128 | pub(crate) fn adjust_raw_limits(mut limits: wgt::Limits) -> wgt::Limits {
+    |               ^^^^^^^^^^^^^^^^^
+    |
+    = note: `#[warn(dead_code)]` (part of `#[warn(unused)]`) on by default
+
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-core\platform-deps\windows-linux-android)
+warning: `wgpu-hal` (lib) generated 1 warning
+warning: this lint expectation is unfulfilled
+  --> wgpu-core\src\lock\ranked.rs:83:34
+   |
+83 |     #[cfg_attr(not(miri), expect(unused))] // but `Drop` has important side effects
+   |                                  ^^^^^^
+   |
+   = note: `#[warn(unfulfilled_lint_expectations)]` on by default
+
+warning: `wgpu-core` (lib) generated 1 warning
+    Finished `test` profile [unoptimized] target(s) in 43.82s
+  Executable tests\dx11_fl91_scene.rs (E:/temp/wgpu-dx11-fl10_0-nov21-target\debug\deps\dx11_fl91_scene-aba019b4364c580e.exe)
+Candidate tree=7475312c57126aaf5715c0f492c683f10e1b4cfb
+Exit code=0

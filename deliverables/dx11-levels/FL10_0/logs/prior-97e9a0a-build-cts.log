@@ -1,0 +1,21 @@
+   Compiling wgpu-hal v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-hal)
+   Compiling wgpu-core v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-core)
+   Compiling wgpu-core-deps-windows-linux-android v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\wgpu-core\platform-deps\windows-linux-android)
+warning: this lint expectation is unfulfilled
+  --> wgpu-core\src\lock\ranked.rs:83:34
+   |
+83 |     #[cfg_attr(not(miri), expect(unused))] // but `Drop` has important side effects
+   |                                  ^^^^^^
+   |
+   = note: `#[warn(unfulfilled_lint_expectations)]` on by default
+
+   Compiling deno_webgpu v0.181.0 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\deno_webgpu)
+warning: `wgpu-core` (lib) generated 1 warning
+   Compiling cts_runner v30.0.1 (C:\dev\personal\wgpu-dx11-FL10_0-Nov21\cts_runner)
+warning: linker stdout: LINK : warning LNK4098: defaultlib 'libcmt.lib' conflicts with use of other libs; use /NODEFAULTLIB:library
+  |
+  = note: `#[warn(linker_messages)]` on by default
+
+warning: `cts_runner` (bin "cts_runner") generated 1 warning
+    Finished `dev` profile [unoptimized] target(s) in 2m 03s
+Candidate tree=97e9a0a54d8a3c7ab98831f6d631bd9980c685a4
