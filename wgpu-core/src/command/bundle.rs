@@ -1718,6 +1718,7 @@ impl State {
                 .check_fl9_texture_sample_bias_offset_views(pipeline.as_ref())?;
             self.binder
                 .check_fl9_texture_sample_compare_offset_views(pipeline.as_ref())?;
+            self.binder.check_bounded_repeat(pipeline.as_ref())?;
             self.binder.check_npot_sampling(pipeline.as_ref())?;
             self.binder.check_sampler_mip_ranges(pipeline.as_ref())?;
             self.binder

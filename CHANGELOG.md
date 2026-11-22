@@ -44,6 +44,10 @@ Bottom level categories:
 
 ### Added/New Features
 
+#### DX11
+
+- Allow Repeat and MirrorRepeat at FL9_1 when texture coordinates are proven bounded, including WGSL `select` with bounded coordinates in both arms.
+
 #### General
 
 - Treat blend factors with identical alpha-channel projections as coupled on downlevel adapters.

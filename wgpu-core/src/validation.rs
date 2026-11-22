@@ -335,6 +335,7 @@ struct EntryPoint {
     #[allow(unused)]
     spec_constants: Vec<SpecializationConstant>,
     sampling_pairs: FastHashSet<(naga::Handle<Resource>, naga::Handle<Resource>)>,
+    unproven_repeat_samplers: Vec<naga::ResourceBinding>,
     texture_sample_biases: Vec<TextureSampleBias>,
     fragment_derivatives_used: bool,
     fl9_texture_sample_grad_single_mip_pairs: Option<Vec<TextureSampleGradSingleMipPair>>,
@@ -464,6 +465,117 @@ fn collect_call_arguments(
             _ => {}
         }
     }
+}
+
+// Prove the coordinate without changing native filtering or mip selection.
+fn fl9_repeat_coordinate_bounded(
+    module: &naga::Module,
+    expressions: &naga::Arena<naga::Expression>,
+    coordinate: naga::Handle<naga::Expression>,
+    depth: u8,
+) -> bool {
+    if depth == 0 {
+        return false;
+    }
+    let bounded =
+        |expression| fl9_repeat_coordinate_bounded(module, expressions, expression, depth - 1);
+    match expressions[coordinate] {
+        // Keep both coordinates in an interval narrower than 128 periods.
+        naga::Expression::Literal(naga::Literal::F32(value)) => (-63.0..=63.0).contains(&value),
+        naga::Expression::ZeroValue(_) => true,
+        naga::Expression::Compose { ref components, .. } if components.len() == 2 => {
+            components.iter().copied().all(bounded)
+        }
+        naga::Expression::Splat {
+            size: naga::VectorSize::Bi,
+            value,
+        } => bounded(value),
+        naga::Expression::Unary {
+            op: naga::UnaryOperator::Negate,
+            expr,
+        } => bounded(expr),
+        naga::Expression::Select { accept, reject, .. } => bounded(accept) && bounded(reject),
+        naga::Expression::Constant(constant) => fl9_repeat_coordinate_bounded(
+            module,
+            &module.global_expressions,
+            module.constants[constant].init,
+            depth - 1,
+        ),
+        _ => false,
+    }
+}
+
+fn unproven_repeat_samplers(
+    module: &naga::Module,
+    entry: &naga::EntryPoint,
+    info: &naga::valid::FunctionInfo,
+) -> Vec<naga::ResourceBinding> {
+    let reflected: FastHashSet<_> = info.sampling_set.iter().map(|pair| pair.sampler).collect();
+    let mut seen = FastHashSet::default();
+    let mut unproven = FastHashSet::default();
+    let mut functions = Vec::new();
+    let mut visited = FastHashSet::default();
+    let mut function = &entry.function;
+    loop {
+        for (_, expression) in function.expressions.iter() {
+            let naga::Expression::ImageSample {
+                image,
+                sampler,
+                coordinate,
+                gather,
+                array_index,
+                offset,
+                depth_ref,
+                level,
+                ..
+            } = *expression
+            else {
+                continue;
+            };
+            let naga::Expression::GlobalVariable(sampler) = function.expressions[sampler] else {
+                // A sampler passed through a helper argument or indexed binding cannot
+                // be matched to one reflected binding with this proof.
+                return reflected
+                    .iter()
+                    .filter_map(|&sampler| module.global_variables[sampler].binding)
+                    .collect();
+            };
+            seen.insert(sampler);
+            let direct_2d = matches!(
+                function.expressions[image],
+                naga::Expression::GlobalVariable(image)
+                    if matches!(module.types[module.global_variables[image].ty].inner,
+                        naga::TypeInner::Image {
+                            dim: naga::ImageDimension::D2,
+                            arrayed: false,
+                            class: naga::ImageClass::Sampled { kind: naga::ScalarKind::Float, multi: false },
+                        }
+                    )
+            );
+            if !direct_2d
+                || gather.is_some()
+                || array_index.is_some()
+                || offset.is_some()
+                || depth_ref.is_some()
+                || matches!(level, naga::SampleLevel::Gradient { .. })
+                || !fl9_repeat_coordinate_bounded(module, &function.expressions, coordinate, 16)
+            {
+                unproven.insert(sampler);
+            }
+        }
+        collect_called_functions(&function.body, &mut functions);
+        let Some(next) =
+            core::iter::from_fn(|| functions.pop()).find(|&handle| visited.insert(handle))
+        else {
+            break;
+        };
+        function = &module.functions[next];
+    }
+    reflected
+        .into_iter()
+        .filter(|sampler| !seen.contains(sampler) || unproven.contains(sampler))
+        .filter_map(|sampler| module.global_variables[sampler].binding)
+        .collect()
 }
 
 fn collect_called_functions(
@@ -9458,10 +9570,20 @@ impl Interface {
         list.push(varying);
     }
 
+    #[cfg(test)]
     pub fn new(
         module: &naga::Module,
         module_info: &naga::valid::ModuleInfo,
         limits: wgt::Limits,
+    ) -> Self {
+        Self::new_with_bounded_repeat(module, module_info, limits, false)
+    }
+
+    pub fn new_with_bounded_repeat(
+        module: &naga::Module,
+        module_info: &naga::valid::ModuleInfo,
+        limits: wgt::Limits,
+        bounded_repeat: bool,
     ) -> Self {
         let mut resources = naga::Arena::new();
         let mut resource_mapping = FastHashMap::default();
@@ -9779,6 +9901,12 @@ impl Interface {
                 ep.sampling_pairs
                     .insert((resource_mapping[&key.image], resource_mapping[&key.sampler]));
             }
+            if bounded_repeat
+                && entry_point.stage == naga::ShaderStage::Fragment
+                && !info.sampling_set.is_empty()
+            {
+                ep.unproven_repeat_samplers = unproven_repeat_samplers(module, entry_point, info);
+            }
             ep.dual_source_blending = info.dual_source_blending;
             ep.workgroup_size = entry_point.workgroup_size;
             ep.immediate_slots_required = info.immediate_slots_used;
@@ -9892,6 +10020,17 @@ impl Interface {
             && (entry_point.unsupported_dynamic_uniform_array_indexing
                 || (requests_checks
                     && entry_point.unsupported_checked_dynamic_access_with_uniform)))
+    }
+
+    pub(crate) fn unproven_repeat_samplers_used(
+        &self,
+        entry_point_name: &str,
+    ) -> Result<Vec<naga::ResourceBinding>, StageError> {
+        let key = (naga::ShaderStage::Fragment, entry_point_name.to_string());
+        let Some(entry_point) = self.entry_points.get(&key) else {
+            return Err(StageError::MissingEntryPoint(entry_point_name.to_string()));
+        };
+        Ok(entry_point.unproven_repeat_samplers.clone())
     }
 
     pub(crate) fn sampling_pairs_used(
@@ -11361,6 +11500,87 @@ mod tests {
         assert!(interface
             .sampled_textures_used(naga::ShaderStage::Vertex, "missing")
             .is_err());
+    }
+
+    #[test]
+    fn fl9_repeat_proof_uses_selected_entry_and_reflected_sampler() {
+        let module = naga::front::wgsl::parse_str(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(1) @binding(1) var bounded_sampler: sampler;
+            @group(2) @binding(2) var dynamic_sampler: sampler;
+            const UV = vec2f(-1.625, 0.125);
+            fn known() -> vec4f {
+                return textureSample(image, bounded_sampler, UV);
+            }
+            fn unknown(s: sampler) -> vec4f {
+                return textureSample(image, s, UV);
+            }
+            @fragment fn isolated() -> @location(0) vec4f {
+                return known();
+            }
+            @fragment fn mixed(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return known() + textureSample(image, dynamic_sampler, uv);
+            }
+            @fragment fn selected(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let coordinate = select(vec2f(-63.0), vec2f(63.0), uv >= vec2f(0.5));
+                return textureSample(image, bounded_sampler, coordinate);
+            }
+            @fragment fn selected_unproven(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let coordinate = select(uv, UV, uv.x >= 0.5);
+                return textureSample(image, bounded_sampler, coordinate);
+            }
+            @fragment fn selected_out_of_range(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let coordinate = select(UV, vec2f(64.0), uv.x >= 0.5);
+                return textureSample(image, bounded_sampler, coordinate);
+            }
+            @fragment fn aliased_sampler() -> @location(0) vec4f {
+                return unknown(bounded_sampler);
+            }
+            @fragment fn offset() -> @location(0) vec4f {
+                return textureSample(image, bounded_sampler, UV, vec2i(1, 0));
+            }
+            @fragment fn gradient() -> @location(0) vec4f {
+                return textureSampleGrad(image, bounded_sampler, UV, vec2f(32.0), vec2f(32.0));
+            }
+            @fragment fn large() -> @location(0) vec4f {
+                return textureSample(image, bounded_sampler, vec2f(128.0));
+            }
+        "#,
+        )
+        .unwrap();
+        let info = naga::valid::Validator::new(
+            naga::valid::ValidationFlags::all(),
+            naga::valid::Capabilities::empty(),
+        )
+        .validate(&module)
+        .unwrap();
+        let interface =
+            Interface::new_with_bounded_repeat(&module, &info, wgt::Limits::defaults(), true);
+        let get = |entry| interface.unproven_repeat_samplers_used(entry).unwrap();
+        assert!(get("isolated").is_empty());
+        assert!(get("selected").is_empty());
+        assert_eq!(
+            get("mixed"),
+            [naga::ResourceBinding {
+                group: 2,
+                binding: 2
+            }]
+        );
+        let bounded = naga::ResourceBinding {
+            group: 1,
+            binding: 1,
+        };
+        for entry in [
+            "aliased_sampler",
+            "offset",
+            "gradient",
+            "large",
+            "selected_unproven",
+            "selected_out_of_range",
+        ] {
+            assert_eq!(get(entry), [bounded], "{entry}");
+        }
     }
 
     #[test]

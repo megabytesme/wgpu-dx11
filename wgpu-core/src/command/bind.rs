@@ -3,7 +3,9 @@ use alloc::{boxed::Box, sync::Arc, vec::Vec};
 use thiserror::Error;
 
 use crate::{
-    binding_model::{BindGroup, LateMinBufferBindingSizeMismatch, PipelineLayout},
+    binding_model::{
+        BindGroup, LateMinBufferBindingSizeMismatch, PipelineLayout, SamplerAddressing,
+    },
     command::draw::DrawError,
     pipeline::LateSizedBufferGroup,
     pipeline::RenderPipeline,
@@ -332,8 +334,8 @@ impl EntryPayload {
     }
 }
 
-fn npot_sampler_pair_compatible(texture_npot: &[bool], sampler_uses_repeat: &[bool]) -> bool {
-    !texture_npot.iter().any(|&npot| npot) || !sampler_uses_repeat.iter().any(|&repeat| repeat)
+fn npot_sampler_pair_compatible(texture_npot: &[bool], addressing: &[SamplerAddressing]) -> bool {
+    !texture_npot.contains(&true) || !addressing.contains(&SamplerAddressing::Repeat)
 }
 
 fn sample_bias_sampler_compatible(sampler_compatibility: &[bool]) -> bool {
@@ -558,6 +560,31 @@ impl Binder {
         })
     }
 
+    pub(super) fn check_bounded_repeat(&self, pipeline: &RenderPipeline) -> Result<(), DrawError> {
+        for &naga::ResourceBinding { group, binding } in &pipeline.unproven_repeat_samplers {
+            let addressing = self
+                .list_valid()
+                .find_map(|(index, bind_group, _)| (index == group as usize).then_some(bind_group))
+                .and_then(|bind_group| bind_group.sampler_addressing.get(&binding))
+                .ok_or(DrawError::MissingSamplingBindingMetadata { group, binding })?;
+            if addressing
+                .iter()
+                .any(|&mode| mode != SamplerAddressing::NonPeriodic)
+            {
+                return Err(DrawError::UnprovenTextureRepeat {
+                    group,
+                    binding,
+                    maximum: pipeline
+                        .device
+                        .downlevel
+                        .limits
+                        .max_texture_repeat_per_primitive,
+                });
+            }
+        }
+        Ok(())
+    }
+
     pub(super) fn check_npot_sampling(&self, pipeline: &RenderPipeline) -> Result<(), DrawError> {
         if pipeline
             .device
@@ -594,15 +621,15 @@ impl Binder {
                     group: pair.texture_group,
                     binding: pair.texture_binding,
                 })?;
-            let sampler_uses_repeat = sampler_group
-                .sampler_uses_repeat
+            let addressing = sampler_group
+                .sampler_addressing
                 .get(&pair.sampler_binding)
                 .ok_or(DrawError::MissingSamplingBindingMetadata {
                     group: pair.sampler_group,
                     binding: pair.sampler_binding,
                 })?;
 
-            if !npot_sampler_pair_compatible(texture_npot, sampler_uses_repeat) {
+            if !npot_sampler_pair_compatible(texture_npot, addressing) {
                 return Err(DrawError::NpotTextureWithRepeatSampler {
                     texture_group: pair.texture_group,
                     texture_binding: pair.texture_binding,
@@ -1113,12 +1140,20 @@ mod tests {
 
     #[test]
     fn npot_repeat_validation_uses_the_bound_relationship() {
-        assert!(npot_sampler_pair_compatible(&[false], &[true]));
-        assert!(npot_sampler_pair_compatible(&[true], &[false]));
-        assert!(!npot_sampler_pair_compatible(&[true], &[true]));
+        use crate::binding_model::SamplerAddressing;
+        use wgt::AddressMode::{ClampToEdge, MirrorRepeat, Repeat};
+
+        let clamp = SamplerAddressing::from_modes(&[ClampToEdge; 3]);
+        let mirror = SamplerAddressing::from_modes(&[MirrorRepeat, ClampToEdge, ClampToEdge]);
+        let wrap = SamplerAddressing::from_modes(&[MirrorRepeat, ClampToEdge, Repeat]);
+        assert_eq!(clamp, SamplerAddressing::NonPeriodic);
+        assert_eq!(mirror, SamplerAddressing::MirrorRepeat);
+        assert!(npot_sampler_pair_compatible(&[false], &[wrap]));
+        assert!(npot_sampler_pair_compatible(&[true], &[clamp, mirror]));
+        assert!(!npot_sampler_pair_compatible(&[true], &[wrap]));
         assert!(!npot_sampler_pair_compatible(
             &[false, true],
-            &[false, true]
+            &[mirror, wrap]
         ));
     }
 

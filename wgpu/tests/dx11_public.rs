@@ -34031,16 +34031,14 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
     assert_eq!(info.backend, Backend::Dx11);
     assert!(info.driver_info.contains("FL9_1"), "{info:?}");
     assert!(info.driver_info.contains("physical"), "{info:?}");
-    let max_repeat = adapter
-        .get_downlevel_capabilities()
-        .limits
-        .max_texture_repeat_per_primitive;
+    let downlevel = adapter.get_downlevel_capabilities();
+    let max_repeat = downlevel.limits.max_texture_repeat_per_primitive;
     assert_eq!(max_repeat, 128);
     println!(
         "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} requested=FL9_1 actual=FL9_1 software=false; max_texture_repeat_per_primitive={max_repeat}",
         info.name, info.vendor, info.device, info.driver_info
     );
-    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
         label: Some("public D3D11 FL9_1 repeat sampler validation"),
         required_features: Features::empty(),
         required_limits: adapter.limits(),
@@ -34048,23 +34046,451 @@ fn public_dx11_repeat_sampler_limit_at_fl91() {
     }))
     .expect("request a device within the public FL9_1 projection");
 
-    for (name, address_mode) in [
-        ("repeat", AddressMode::Repeat),
-        ("mirror repeat", AddressMode::MirrorRepeat),
-    ] {
-        expect_validation_error_containing(&device, name, "TextureRepeatLimitExceeded", || {
-            drop(device.create_sampler(&SamplerDescriptor {
-                address_mode_u: address_mode,
-                mag_filter: FilterMode::Nearest,
-                min_filter: FilterMode::Nearest,
-                mipmap_filter: MipmapFilterMode::Nearest,
-                ..Default::default()
-            }));
-        });
-    }
-    println!(
-        "PASS: public Core rejected repeat and mirror-repeat sampler creation using the projected FL9_1 limit before HAL"
+    let shader = device.create_shader_module(ShaderModuleDescriptor {
+        label: Some("FL9_1 repeat proof shader"),
+        source: ShaderSource::Wgsl(
+            r#"
+            @group(0) @binding(0) var image: texture_2d<f32>;
+            @group(0) @binding(1) var samp: sampler;
+            struct Vertex {
+                @builtin(position) pos: vec4f,
+                @location(0) uv: vec2f,
+            }
+            @vertex fn vs(@location(0) xy: vec2f) -> Vertex {
+                return Vertex(vec4f(xy, 0.5, 1.0), xy);
+            }
+            @fragment fn bounded() -> @location(0) vec4f {
+                return textureSample(image, samp, vec2f(1.625, 0.125));
+            }
+            @fragment fn edge() -> @location(0) vec4f {
+                return textureSample(image, samp, vec2f(1.0, 0.125));
+            }
+            @fragment fn dynamic(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSample(image, samp, uv);
+            }
+            @fragment fn large() -> @location(0) vec4f {
+                return textureSample(image, samp, vec2f(129.0, 0.125));
+            }
+            @fragment fn repeat_seam() -> @location(0) vec4f {
+                return textureSample(image, samp, vec2f(1.0, 0.5));
+            }
+            @fragment fn folded_repeat_seam() -> @location(0) vec4f {
+                return textureSample(image, samp, vec2f(fract(1.0), 0.5));
+            }
+            @fragment fn repeat_lod(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let coordinate = select(vec2f(63.0 / 64.0, 0.5), vec2f(65.0 / 64.0, 0.5), uv.x >= 0.0);
+                return textureSample(image, samp, coordinate);
+            }
+            @fragment fn folded_repeat_lod(@location(0) uv: vec2f) -> @location(0) vec4f {
+                return textureSample(image, samp, vec2f(fract(1.0 + uv.x / 32.0), 0.5));
+            }
+            @fragment fn mirror_lod(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let coordinate = select(vec2f(15.0 / 16.0, 0.5), vec2f(17.0 / 16.0, 0.5), uv.x >= 0.0);
+                return textureSample(image, samp, coordinate);
+            }
+            @fragment fn folded_mirror_lod(@location(0) uv: vec2f) -> @location(0) vec4f {
+                let u = 1.0 + uv.x / 8.0;
+                let folded = 1.0 - abs(2.0 * fract(0.5 * u) - 1.0);
+                return textureSample(image, samp, vec2f(folded, 0.5));
+            }
+        "#
+            .into(),
+        ),
+    });
+    let group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: None,
+        entries: &[
+            BindGroupLayoutEntry {
+                binding: 0,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Texture {
+                    sample_type: TextureSampleType::Float { filterable: true },
+                    view_dimension: TextureViewDimension::D2,
+                    multisampled: false,
+                },
+                count: None,
+            },
+            BindGroupLayoutEntry {
+                binding: 1,
+                visibility: ShaderStages::FRAGMENT,
+                ty: BindingType::Sampler(SamplerBindingType::Filtering),
+                count: None,
+            },
+        ],
+    });
+    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        label: None,
+        bind_group_layouts: &[Some(&group_layout)],
+        immediate_size: 0,
+    });
+    let format = TextureFormat::Rgba8Unorm;
+    let make_pipeline = |entry| {
+        device.create_render_pipeline(&RenderPipelineDescriptor {
+            label: Some(entry),
+            layout: Some(&layout),
+            vertex: VertexState {
+                module: &shader,
+                entry_point: Some("vs"),
+                compilation_options: PipelineCompilationOptions::default(),
+                buffers: &[Some(VertexBufferLayout {
+                    array_stride: 8,
+                    step_mode: VertexStepMode::Vertex,
+                    attributes: &vertex_attr_array![0 => Float32x2],
+                })],
+            },
+            primitive: PrimitiveState::default(),
+            depth_stencil: None,
+            multisample: MultisampleState::default(),
+            fragment: Some(FragmentState {
+                module: &shader,
+                entry_point: Some(entry),
+                compilation_options: PipelineCompilationOptions::default(),
+                targets: &[Some(format.into())],
+            }),
+            multiview_mask: None,
+            cache: None,
+        })
+    };
+    let bounded = make_pipeline("bounded");
+    let edge = make_pipeline("edge");
+    let dynamic = make_pipeline("dynamic");
+    let large = make_pipeline("large");
+    let size = Extent3d {
+        width: 4,
+        height: 1,
+        depth_or_array_layers: 1,
+    };
+    let texture_desc = TextureDescriptor {
+        label: None,
+        size,
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D2,
+        format,
+        usage: TextureUsages::TEXTURE_BINDING | TextureUsages::COPY_DST,
+        view_formats: &[],
+    };
+    let source = device.create_texture(&texture_desc);
+    queue.write_texture(
+        source.as_image_copy(),
+        &[0, 0, 0, 255, 23, 0, 0, 255, 81, 0, 0, 255, 255, 0, 0, 255],
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(16),
+            rows_per_image: Some(1),
+        },
+        size,
     );
+    let target_size = Extent3d {
+        width: 2,
+        height: 2,
+        depth_or_array_layers: 1,
+    };
+    let target = device.create_texture(&TextureDescriptor {
+        size: target_size,
+        usage: TextureUsages::RENDER_ATTACHMENT | TextureUsages::COPY_SRC,
+        ..texture_desc
+    });
+    let src_view = source.create_view(&TextureViewDescriptor::default());
+    let dst_view = target.create_view(&TextureViewDescriptor::default());
+    let vertex = device.create_buffer_init(&util::BufferInitDescriptor {
+        label: None,
+        contents: bytemuck::cast_slice(&[-1.0f32, -1.0, -1.0, 3.0, 3.0, -1.0]),
+        usage: BufferUsages::VERTEX,
+    });
+    let row_pitch = COPY_BYTES_PER_ROW_ALIGNMENT;
+    let map = device.create_buffer(&BufferDescriptor {
+        label: None,
+        size: u64::from(row_pitch * target_size.height),
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+        mapped_at_creation: false,
+    });
+    let make_group = |src_view: &TextureView, mode, filter| {
+        let sampler = device.create_sampler(&SamplerDescriptor {
+            address_mode_u: mode,
+            min_filter: filter,
+            mag_filter: filter,
+            ..Default::default()
+        });
+        device.create_bind_group(&BindGroupDescriptor {
+            label: None,
+            layout: &group_layout,
+            entries: &[
+                BindGroupEntry {
+                    binding: 0,
+                    resource: BindingResource::TextureView(src_view),
+                },
+                BindGroupEntry {
+                    binding: 1,
+                    resource: BindingResource::Sampler(&sampler),
+                },
+            ],
+        })
+    };
+    let encode = |pipeline: &RenderPipeline, group: &BindGroup, bundle: Option<&RenderBundle>| {
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+        {
+            let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                color_attachments: &[Some(RenderPassColorAttachment {
+                    view: &dst_view,
+                    depth_slice: None,
+                    resolve_target: None,
+                    ops: Operations {
+                        load: LoadOp::Clear(Color::WHITE),
+                        store: StoreOp::Store,
+                    },
+                })],
+                ..Default::default()
+            });
+            if let Some(bundle) = bundle {
+                pass.execute_bundles([bundle]);
+            } else {
+                pass.set_pipeline(pipeline);
+                pass.set_bind_group(0, group, &[]);
+                pass.set_vertex_buffer(0, vertex.slice(..));
+                pass.draw(0..3, 0..1);
+            }
+        }
+        encoder.copy_texture_to_buffer(
+            target.as_image_copy(),
+            TexelCopyBufferInfo {
+                buffer: &map,
+                layout: TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(row_pitch),
+                    rows_per_image: Some(target_size.height),
+                },
+            },
+            target_size,
+        );
+        encoder.finish()
+    };
+    let read_pixels = |commands| {
+        let submission = queue.submit([commands]);
+        let (sender, receiver) = std::sync::mpsc::channel();
+        map.slice(..)
+            .map_async(MapMode::Read, move |result| sender.send(result).unwrap());
+        device
+            .poll(PollType::Wait {
+                submission_index: Some(submission),
+                timeout: Some(Duration::from_secs(10)),
+            })
+            .unwrap();
+        receiver
+            .recv_timeout(Duration::from_secs(10))
+            .unwrap()
+            .unwrap();
+        let pixels: [[u8; 4]; 4] = {
+            let view = map.slice(..).get_mapped_range().unwrap();
+            core::array::from_fn(|index| {
+                let offset = index / 2 * row_pitch as usize + index % 2 * 4;
+                view[offset..offset + 4].try_into().unwrap()
+            })
+        };
+        map.unmap();
+        pixels
+    };
+    let check_pixel = |commands, mode, filter, expected: u8| {
+        let pixels = read_pixels(commands);
+        for pixel in pixels {
+            assert!(
+                pixel[0].abs_diff(expected) <= 1,
+                "{mode:?} {filter:?}: {pixel:?}"
+            );
+            assert_eq!(&pixel[1..], &[0, 0, 255]);
+        }
+        println!("PASS: bounded {mode:?} {filter:?} GPU pixels {pixels:?}");
+    };
+    for (mode, nearest, linear) in [
+        (AddressMode::Repeat, 81u8, 128u8),
+        (AddressMode::MirrorRepeat, 23, 255),
+    ] {
+        for (pipeline, filter, expected) in [
+            (&bounded, FilterMode::Nearest, nearest),
+            (&edge, FilterMode::Linear, linear),
+        ] {
+            let group = make_group(&src_view, mode, filter);
+            check_pixel(encode(pipeline, &group, None), mode, filter, expected);
+        }
+
+        let group = make_group(&src_view, mode, FilterMode::Nearest);
+        let encode_bundle = |pipeline| {
+            let mut bundle = device.create_render_bundle_encoder(&RenderBundleEncoderDescriptor {
+                label: None,
+                color_formats: &[Some(format)],
+                depth_stencil: None,
+                sample_count: 1,
+                multiview: None,
+            });
+            bundle.set_pipeline(pipeline);
+            bundle.set_bind_group(0, &group, &[]);
+            bundle.set_vertex_buffer(0, vertex.slice(..));
+            bundle.draw(0..3, 0..1);
+            bundle.finish(&RenderBundleDescriptor::default())
+        };
+        let bundle = encode_bundle(&bounded);
+        check_pixel(
+            encode(&bounded, &group, Some(&bundle)),
+            mode,
+            FilterMode::Nearest,
+            nearest,
+        );
+        println!("PASS: bounded {mode:?} render-bundle replay");
+        for pipeline in [&dynamic, &large] {
+            expect_validation_error_containing(
+                &device,
+                "unproven texture repeat draw",
+                "UnprovenTextureRepeat",
+                || {
+                    drop(encode(pipeline, &group, None));
+                },
+            );
+        }
+        let error = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            drop(encode_bundle(&dynamic));
+        }))
+        .expect_err("the native render-bundle API must reject an unproven repeat draw");
+        let message = error
+            .downcast_ref::<String>()
+            .map(String::as_str)
+            .or_else(|| error.downcast_ref::<&str>().copied())
+            .expect("render-bundle validation message");
+        assert!(
+            message.contains("without a proven coordinate bound"),
+            "{message}"
+        );
+        println!("PASS: Core rejected an unproven {mode:?} render-bundle draw");
+    }
+
+    let npot_size = Extent3d { width: 3, ..size };
+    let npot = device.create_texture(&TextureDescriptor {
+        size: npot_size,
+        ..texture_desc
+    });
+    queue.write_texture(
+        npot.as_image_copy(),
+        &[0, 0, 0, 255, 47, 0, 0, 255, 255, 0, 0, 255],
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: Some(12),
+            rows_per_image: Some(1),
+        },
+        npot_size,
+    );
+    let npot_view = npot.create_view(&TextureViewDescriptor::default());
+    let mirror = AddressMode::MirrorRepeat;
+    let nearest = FilterMode::Nearest;
+    let mirrored_npot = make_group(&npot_view, mirror, nearest);
+    let wrapped_npot = make_group(&npot_view, AddressMode::Repeat, nearest);
+    // Mirror folds U=1.625 to 0.375, selecting the middle texel of the 3-wide image.
+    check_pixel(encode(&bounded, &mirrored_npot, None), mirror, nearest, 47);
+    if downlevel.limits.unrestricted_npot_texture_sampling {
+        check_pixel(
+            encode(&bounded, &wrapped_npot, None),
+            AddressMode::Repeat,
+            nearest,
+            47,
+        );
+        println!("SKIP: conditional NPOT WRAP rejection requires a restricted device");
+    } else {
+        expect_validation_error_containing(
+            &device,
+            "conditional NPOT with bounded WRAP",
+            "NpotTextureWithRepeatSampler",
+            || drop(encode(&bounded, &wrapped_npot, None)),
+        );
+    }
+
+    let large_size = Extent3d {
+        width: 16,
+        height: 16,
+        ..size
+    };
+    let seam_source = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 linear repeat seam"),
+        size: large_size,
+        ..texture_desc
+    });
+    let red = [255, 0, 0, 255];
+    let green = [0, 255, 0, 255];
+    let blue = [0, 0, 255, 255];
+    let magenta = [255, 0, 255, 255];
+    let mut row = [[0, 0, 0, 255]; 16];
+    row[0] = red;
+    row[15] = blue;
+    let upload = |texture: &Texture, level, extent: Extent3d, data: &[[u8; 4]]| {
+        queue.write_texture(
+            TexelCopyTextureInfo {
+                mip_level: level,
+                ..texture.as_image_copy()
+            },
+            bytemuck::cast_slice(data),
+            TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: Some(extent.width * 4),
+                rows_per_image: Some(extent.height),
+            },
+            extent,
+        );
+    };
+    upload(&seam_source, 0, large_size, &row.repeat(16));
+    let mip_source = device.create_texture(&TextureDescriptor {
+        label: Some("FL9_1 distinct mip colors"),
+        size: large_size,
+        mip_level_count: 5,
+        ..texture_desc
+    });
+    for (level, color) in [red, green, blue, [255, 255, 0, 255], magenta]
+        .into_iter()
+        .enumerate()
+    {
+        let edge = large_size.width >> level;
+        let mip_size = Extent3d {
+            width: edge,
+            height: edge,
+            ..large_size
+        };
+        upload(
+            &mip_source,
+            level as u32,
+            mip_size,
+            &vec![color; (edge * edge) as usize],
+        );
+    }
+    let seam_view = seam_source.create_view(&TextureViewDescriptor::default());
+    let mip_view = mip_source.create_view(&TextureViewDescriptor::default());
+    let clamp = AddressMode::ClampToEdge;
+    let repeat = AddressMode::Repeat;
+    let linear = FilterMode::Linear;
+    for (entry, view, mode, filter, expected, tolerance) in [
+        (
+            "repeat_seam",
+            &seam_view,
+            repeat,
+            linear,
+            [128, 0, 128, 255],
+            2,
+        ),
+        ("folded_repeat_seam", &seam_view, clamp, linear, red, 0),
+        ("repeat_lod", &mip_view, repeat, nearest, red, 0),
+        ("folded_repeat_lod", &mip_view, clamp, nearest, magenta, 0),
+        ("mirror_lod", &mip_view, mirror, nearest, green, 0),
+        ("folded_mirror_lod", &mip_view, clamp, nearest, red, 0),
+    ] {
+        let pipeline = make_pipeline(entry);
+        let group = make_group(view, mode, filter);
+        let pixels = read_pixels(encode(&pipeline, &group, None));
+        for pixel in pixels {
+            assert!(
+                pixel
+                    .into_iter()
+                    .zip(expected)
+                    .all(|(actual, expected)| actual.abs_diff(expected) <= tolerance),
+                "{entry}: expected {expected:?}, got {pixel:?}"
+            );
+        }
+        println!("PASS: {entry} GPU pixels {pixels:?}");
+    }
 }
 
 #[test]
