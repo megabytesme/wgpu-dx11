@@ -61,6 +61,54 @@ fn exact_selector() {
     }
 }
 
+#[test]
+#[ignore = "requires a physical exact D3D11 feature level"]
+fn rg32_float_volume_portable_capability_boundary() {
+    use hal::dx11::FeatureLevel;
+
+    let level = match std::env::var("WGPU_DX11_FEATURE_LEVEL").as_deref() {
+        Ok("9_1") => FeatureLevel::L9_1,
+        Ok("9_2") => FeatureLevel::L9_2,
+        Ok("9_3") => FeatureLevel::L9_3,
+        _ => panic!("set an exact D3D11 level for the RG32Float control"),
+    };
+    let adapter = adapters().into_iter().next().expect("physical adapter");
+    let identity = adapter.get_info();
+    {
+        let native = unsafe { adapter.as_hal::<hal::api::Dx11>() }.expect("D3D11 adapter");
+        assert_eq!(native.feature_level(), level);
+        assert!(!native.is_software());
+    }
+    println!(
+        "Hardware: {identity:?}, architecture={}",
+        std::env::consts::ARCH
+    );
+
+    let (device, _) = wait(adapter.request_device(&DeviceDescriptor {
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("exact D3D11 device");
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    let _texture = device.create_texture(&TextureDescriptor {
+        label: Some("unadvertised portable RG32Float volume"),
+        size: Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: TextureDimension::D3,
+        format: TextureFormat::Rg32Float,
+        usage: TextureUsages::COPY_SRC | TextureUsages::COPY_DST,
+        view_formats: &[],
+    });
+    let rejection = wait(scope.pop()).expect("the HAL-only volume path must remain unadvertised");
+    assert!(matches!(rejection, Error::Validation { .. }));
+    println!("Portable RG32Float volume rejected at {level:?}: {rejection}");
+}
+
 const WGSL: &str = r#"
 struct Varying {
     @builtin(position) position: vec4f,
