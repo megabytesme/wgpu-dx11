@@ -141,6 +141,48 @@ fn public_fl10_eight_color_targets_with_shared_blend_and_independent_masks() {
         ..Default::default()
     }))
     .unwrap();
+    let bind_group_layout = device.create_bind_group_layout(&BindGroupLayoutDescriptor {
+        label: None,
+        entries: &[0, 1].map(|binding| BindGroupLayoutEntry {
+            binding,
+            visibility: ShaderStages::FRAGMENT,
+            ty: BindingType::Buffer {
+                ty: BufferBindingType::Uniform,
+                has_dynamic_offset: false,
+                min_binding_size: BufferSize::new(16),
+            },
+            count: None,
+        }),
+    });
+    let layout = device.create_pipeline_layout(&PipelineLayoutDescriptor {
+        bind_group_layouts: &[Some(&bind_group_layout)],
+        ..Default::default()
+    });
+    let color_bytes: Vec<u8> = [0.125_f32; 4]
+        .into_iter()
+        .flat_map(f32::to_ne_bytes)
+        .collect();
+    let color = mapped_buffer(&device, "MRT color", &color_bytes, BufferUsages::UNIFORM);
+    let unused = mapped_buffer(
+        &device,
+        "Unused MRT uniform",
+        &[0; 16],
+        BufferUsages::UNIFORM,
+    );
+    let bind_group = device.create_bind_group(&BindGroupDescriptor {
+        label: None,
+        layout: &bind_group_layout,
+        entries: &[
+            BindGroupEntry {
+                binding: 0,
+                resource: unused.as_entire_binding(),
+            },
+            BindGroupEntry {
+                binding: 1,
+                resource: color.as_entire_binding(),
+            },
+        ],
+    });
     let shader = device.create_shader_module(ShaderModuleDescriptor {
         label: None,
         source: ShaderSource::Wgsl(
@@ -148,6 +190,7 @@ fn public_fl10_eight_color_targets_with_shared_blend_and_independent_masks() {
 @vertex fn vs(@location(0) p: vec2f) -> @builtin(position) vec4f {
     return vec4f(p, 0.0, 1.0);
 }
+@group(0) @binding(1) var<uniform> color: vec4f;
 struct ColorOut {
     @location(0) a: vec4f,
     @location(1) b: vec4f,
@@ -159,7 +202,7 @@ struct ColorOut {
     @location(7) h: vec4f,
 }
 @fragment fn ps() -> ColorOut {
-    return ColorOut(vec4f(.125), vec4f(.25), vec4f(.375), vec4f(.45),
+    return ColorOut(color, vec4f(.25), vec4f(.375), vec4f(.45),
                     vec4f(.625), vec4f(.75), vec4f(.875), vec4f(1.0));
 }"
             .into(),
@@ -188,7 +231,7 @@ struct ColorOut {
     });
     let pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
         label: Some("FL10_0 eight color targets"),
-        layout: None,
+        layout: Some(&layout),
         vertex: VertexState {
             module: &shader,
             entry_point: Some("vs"),
@@ -285,6 +328,7 @@ struct ColorOut {
             ..Default::default()
         });
         pass.set_pipeline(&pipeline);
+        pass.set_bind_group(0, &bind_group, &[]);
         pass.set_vertex_buffer(0, vertices.slice(..));
         pass.begin_occlusion_query(0);
         pass.draw(0..3, 0..1);
@@ -342,7 +386,7 @@ struct ColorOut {
         .map(|bytes| u64::from_ne_bytes(bytes.try_into().unwrap()))
         .collect();
     assert_eq!(counts, [16, 0]);
-    println!("PASS: public eight SM4 render targets with independent masks, shared blending, and occlusion resolve 16/0");
+    println!("PASS: public eight SM4 render targets with an unused layout binding, independent masks, shared blending, and occlusion resolve 16/0");
 }
 
 #[test]

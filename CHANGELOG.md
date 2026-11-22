@@ -223,6 +223,7 @@ Bottom level categories:
 
 #### Hal
 
+- Accept unused explicit pipeline layout bindings in experimental D3D11 FL10_0 MRT shaders.
 - Cap the experimental D3D11 FL10_0 buffer size at the Direct3D 10 resource limit, accounting for buffer padding.
 - Keep D3D11 FL9_1 timestamp query features unadvertised until cross-submission timestamp validity and interval-specific frequency can be represented reliably.
 - Hide sRGB render-target blending on D3D11 feature levels 9_1–9_3, where native blending uses sRGB-space values instead of wgpu's linear shader values.

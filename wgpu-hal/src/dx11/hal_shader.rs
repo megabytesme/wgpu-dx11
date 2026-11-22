@@ -15333,8 +15333,21 @@ impl ShaderModule {
             constants,
         )
         .map_err(|error| crate::PipelineError::PipelineConstants(visibility, error.to_string()))?;
-        compile_naga_with_bindings(&module, &info, stage, entry, ShaderProfile::Pixel4_0, bindings)
-            .map_err(|error| crate::PipelineError::Linkage(visibility, alloc::format!("{error:?}")))
+        let entry_index = module
+            .entry_points
+            .iter()
+            .position(|candidate| candidate.stage == stage && candidate.name == entry)
+            .ok_or(crate::PipelineError::EntryPoint(stage))?;
+        let present = used_shader_bindings(&module, info.get_entry_point(entry_index), bindings);
+        compile_naga_with_bindings(
+            &module,
+            &info,
+            stage,
+            entry,
+            ShaderProfile::Pixel4_0,
+            &present,
+        )
+        .map_err(|error| crate::PipelineError::Linkage(visibility, alloc::format!("{error:?}")))
     }
 
     pub(super) fn compile_with_viewport_and_constants(
