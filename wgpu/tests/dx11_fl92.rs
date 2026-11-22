@@ -834,15 +834,31 @@ fn forced_dx11_tier_two_sided_stencil() {
         write_mask: 0xff,
     };
     if !supported {
-        let validation = device.push_error_scope(ErrorFilter::Validation);
-        let invalid = pipeline(asymmetric, ColorWrites::empty());
-        let error = poll_ready(validation.pop()).expect("adapter must reject asymmetric stencil");
-        assert!(error.to_string().contains("TWO_SIDED_STENCIL"), "{error}");
+        let reversed = StencilState {
+            front: asymmetric.back,
+            back: asymmetric.front,
+            ..asymmetric.clone()
+        };
+        let different_comparison = StencilState {
+            front: StencilFaceState {
+                compare: CompareFunction::Never,
+                ..StencilFaceState::IGNORE
+            },
+            back: StencilFaceState::IGNORE,
+            ..asymmetric.clone()
+        };
+        for state in [asymmetric, reversed, different_comparison] {
+            let validation = device.push_error_scope(ErrorFilter::Validation);
+            let invalid = pipeline(state, ColorWrites::empty());
+            let error =
+                poll_ready(validation.pop()).expect("adapter must reject asymmetric stencil");
+            assert!(error.to_string().contains("TWO_SIDED_STENCIL"), "{error}");
+            drop(invalid);
+        }
         println!(
             "Verified asymmetric stencil rejection on {level:?}: {}",
             info.name
         );
-        drop(invalid);
         return;
     }
     let write_stencil = pipeline(asymmetric, ColorWrites::empty());
