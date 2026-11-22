@@ -237,6 +237,26 @@ impl crate::Device for Device {
             let format_bit = wgt::DownlevelLimits::texture_3d_format_bit(desc.format);
             let format_supported =
                 format_bit != 0 && capabilities.texture_3d_format_mask() & format_bit != 0;
+            let format_supported = format_supported
+                || (desc.format == wgt::TextureFormat::Rg32Float
+                    && self.native.experimental_fl93()
+                    && desc.mip_level_count == 1
+                    && desc.size.width <= 256
+                    && desc.size.height <= 256
+                    && desc.size.depth_or_array_layers <= 256
+                    && unsafe {
+                        use windows::Win32::Graphics::Direct3D11::{
+                            D3D11_FORMAT_SUPPORT_SHADER_LOAD, D3D11_FORMAT_SUPPORT_TEXTURE3D,
+                        };
+                        // Level 9 reports SHADER_SAMPLE for filterable formats.
+                        let required = (D3D11_FORMAT_SUPPORT_TEXTURE3D.0
+                            | D3D11_FORMAT_SUPPORT_SHADER_LOAD.0)
+                            as u32;
+                        self.native
+                            .raw_device()
+                            .CheckFormatSupport(native_format)
+                            .is_ok_and(|bits| bits & required == required)
+                    });
             if !format_supported
                 || desc.usage.is_empty()
                 || !(wgt::TextureUses::COPY_DST

@@ -132,6 +132,101 @@ fn read_staging(
 }
 
 #[test]
+fn tier_fl9_3_rg32_volume_thin_extent_probe() -> Result<()> {
+    exact_fl93(|device, context| {
+        for extent in [256, 512] {
+            for axis in 0..3 {
+                let mut size = [1, 1, 1];
+                size[axis] = extent;
+                let desc = D3D11_TEXTURE3D_DESC {
+                    Width: size[0],
+                    Height: size[1],
+                    Depth: size[2],
+                    MipLevels: 1,
+                    Format: DXGI_FORMAT_R32G32_FLOAT,
+                    Usage: D3D11_USAGE_DEFAULT,
+                    BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
+                    ..Default::default()
+                };
+                let mut texture = None;
+                let result = unsafe { device.CreateTexture3D(&desc, None, Some(&mut texture)) };
+                std::println!("RG32F extent {extent} axis {axis}: {result:?}");
+                if let Some(texture) = texture {
+                    result?;
+                    let mut view = None;
+                    unsafe { device.CreateShaderResourceView(&texture, None, Some(&mut view))? };
+                    assert!(view.is_some());
+                    let mut origin = [0, 0, 0];
+                    origin[axis] = extent - 1;
+                    let region = D3D11_BOX {
+                        left: origin[0],
+                        right: origin[0] + 1,
+                        top: origin[1],
+                        bottom: origin[1] + 1,
+                        front: origin[2],
+                        back: origin[2] + 1,
+                    };
+                    let data = [0x3f80_0000u32, 0x4000_0000];
+                    unsafe {
+                        context.UpdateSubresource(
+                            &texture,
+                            0,
+                            Some(&region),
+                            data.as_ptr().cast(),
+                            8,
+                            8,
+                        );
+                    }
+                    unsafe { device.GetDeviceRemovedReason()? };
+                } else {
+                    assert!(result.is_err());
+                    unsafe { device.GetDeviceRemovedReason()? };
+                }
+            }
+        }
+        Ok(())
+    })
+}
+
+#[test]
+fn rg32_volume_hal_rejects_unopted_native_levels() -> Result<()> {
+    use crate::Device as _;
+
+    let adapters = enumerate_native_adapters()?;
+    let adapter = adapters
+        .iter()
+        .find(|adapter| !adapter.identity().software)
+        .expect("physical DXGI adapter");
+    let desc = crate::TextureDescriptor {
+        label: None,
+        size: wgt::Extent3d {
+            width: 4,
+            height: 4,
+            depth_or_array_layers: 4,
+        },
+        mip_level_count: 1,
+        sample_count: 1,
+        dimension: wgt::TextureDimension::D3,
+        format: wgt::TextureFormat::Rg32Float,
+        usage: wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST,
+        memory_flags: crate::MemoryFlags::empty(),
+        view_formats: vec![],
+    };
+    for level in [FeatureLevel::L9_1, FeatureLevel::L9_2, FeatureLevel::L9_3] {
+        let native = adapter.open_device(&[level])?;
+        assert_eq!(native.feature_level(), level);
+        let device = Device::new(Arc::new(native));
+        let result = unsafe { device.create_texture(&desc) };
+        assert!(matches!(result, Err(crate::DeviceError::Unexpected)));
+        std::println!(
+            "RG32Float HAL volume rejected on {:?} at unopted {level:?}",
+            adapter.identity()
+        );
+    }
+    Ok(())
+}
+
+#[test]
 fn tier_fl9_3_native_rg32_float_color_and_volume() -> Result<()> {
     use windows::core::Interface as _;
     exact_fl93(|device, context| {

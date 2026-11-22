@@ -979,6 +979,10 @@ fn run_fl91_padded_partial_3d_upload(
         Dxgi::Common::DXGI_FORMAT_R8G8B8A8_UNORM,
     };
 
+    let rg32 = format == wgt::TextureFormat::Rg32Float;
+    if rg32 && std::env::var_os("WGPU_DX11_FEATURE_LEVEL").is_none_or(|v| v != "9_3") {
+        return Ok(());
+    }
     let adapters = enumerate_native_adapters()?;
     let required = std::env::var_os("WGPU_DX11_REQUIRE_HARDWARE").is_some_and(|v| v == "1");
     let Some(adapter) = super::super::hardware_test::select_adapter(&adapters, required)
@@ -989,15 +993,28 @@ fn run_fl91_padded_partial_3d_upload(
     };
     let identity = adapter.identity();
     let driver = adapter.driver_version();
-    let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
-    assert_eq!(native.feature_level(), FeatureLevel::L9_1);
+    let level = if rg32 {
+        FeatureLevel::L9_3
+    } else {
+        FeatureLevel::L9_1
+    };
+    let mut native = adapter.open_device(&[level])?;
+    assert_eq!(native.feature_level(), level);
+    if rg32 {
+        native.enable_experimental_fl93();
+    }
+    let native = Arc::new(native);
 
     let support = unsafe { native.raw_device().CheckFormatSupport(native_format)? };
-    let texture_requirements =
-        (D3D11_FORMAT_SUPPORT_TEXTURE3D.0 | D3D11_FORMAT_SUPPORT_SHADER_SAMPLE.0) as u32;
+    let sampling_support = if rg32 {
+        windows::Win32::Graphics::Direct3D11::D3D11_FORMAT_SUPPORT_SHADER_LOAD
+    } else {
+        D3D11_FORMAT_SUPPORT_SHADER_SAMPLE
+    };
+    let texture_requirements = (D3D11_FORMAT_SUPPORT_TEXTURE3D.0 | sampling_support.0) as u32;
     if support & texture_requirements != texture_requirements {
         std::println!(
-            "selected physical FL9_1 device lacks {format:?} 3D sampling support ({support:#010x})"
+            "selected physical {level:?} device lacks {format:?} 3D sampling support ({support:#010x})"
         );
         if optional_format {
             std::println!(
@@ -1023,7 +1040,7 @@ fn run_fl91_padded_partial_3d_upload(
         ));
     }
     std::println!(
-        "Hardware: {:?} ({:#06x}:{:#06x}), driver={driver:?}, software={}; requested/actual FL9_1; {format:?} format support={support:#010x}",
+        "Hardware: {:?} ({:#06x}:{:#06x}), driver={driver:?}, software={}; requested/actual {level:?}; {format:?} format support={support:#010x}",
         identity.name, identity.vendor_id, identity.device_id, identity.software,
     );
     let bgra_storage = matches!(
@@ -1031,7 +1048,7 @@ fn run_fl91_padded_partial_3d_upload(
         wgt::TextureFormat::Bgra8Unorm | wgt::TextureFormat::Bgra8UnormSrgb
     );
     let srgb_sampling = format == wgt::TextureFormat::Bgra8UnormSrgb;
-    let exercise_copy_readback = bytes_per_texel <= 2 || bgra_storage;
+    let exercise_copy_readback = bytes_per_texel <= 2 || bgra_storage || rg32;
 
     let device = Device::new(native.clone());
     let queue = Queue::new(native.clone());
@@ -1117,6 +1134,15 @@ fn run_fl91_padded_partial_3d_upload(
                     + z * source_image_pitch
                     + y * source_row_pitch
                     + x * bytes_per_texel;
+                if rg32 {
+                    let words = [
+                        if x == 0 { 0x8000_0000u32 } else { 0x3f80_0000 },
+                        if y == z { 0u32 } else { 0x3f80_0000 },
+                    ];
+                    upload_data[offset..offset + 4].copy_from_slice(&words[0].to_le_bytes());
+                    upload_data[offset + 4..offset + 8].copy_from_slice(&words[1].to_le_bytes());
+                    continue;
+                }
                 let texel = match bytes_per_texel {
                     1 => [40 + x as u8 * 80 + y as u8 * 40 + z as u8 * 20, 0, 0, 0],
                     2 => [40 + x as u8 * 80, 20 + y as u8 * 90 + z as u8 * 20, 0, 0],
@@ -1549,6 +1575,9 @@ fn run_fl91_padded_partial_3d_upload(
     unsafe { queue.submit(&[&commands], &[], (&fence, 1)).unwrap() };
     assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(10)))?);
 
+    if rg32 {
+        unsafe { native.raw_device().GetDeviceRemovedReason()? };
+    }
     let actual = native.read_byte_buffer(&output, 0, output_size)?;
     if let Some(readback) = volume_readback.as_ref() {
         let actual_volume = native.read_byte_buffer(readback, 0, volume_readback_size)?;
@@ -1556,6 +1585,20 @@ fn run_fl91_padded_partial_3d_upload(
         for z in 0..4usize {
             for y in 0..4usize {
                 for x in 0..4usize {
+                    let offset = 16 + z * 1024 + y * 256 + x * bytes_per_texel;
+                    if rg32 {
+                        if (1..=2).contains(&x) && (1..=2).contains(&y) && (1..=2).contains(&z) {
+                            let src = source_offset
+                                + (z - 1) * source_image_pitch
+                                + (y - 1) * source_row_pitch
+                                + (x - 1) * bytes_per_texel;
+                            expected_volume[offset..offset + 8]
+                                .copy_from_slice(&upload_data[src..src + 8]);
+                        } else {
+                            expected_volume[offset..offset + 8].fill(0);
+                        }
+                        continue;
+                    }
                     let texel =
                         if (1..=2).contains(&x) && (1..=2).contains(&y) && (1..=2).contains(&z) {
                             let x = (x - 1) as u8;
@@ -1604,6 +1647,12 @@ fn run_fl91_padded_partial_3d_upload(
                     let y = (voxel_y - 1) as u8;
                     let z = (z - 1) as u8;
                     let rgba = match bytes_per_texel {
+                        8 => [
+                            if x == 0 { 0 } else { 255 },
+                            if y == z { 0 } else { 255 },
+                            0,
+                            255,
+                        ],
                         1 => [40 + x * 80 + y * 40 + z * 20, 0, 0, 255],
                         2 => [40 + x * 80, 20 + y * 90 + z * 20, 0, 255],
                         _ => [40 + x * 80, 20 + y * 90, 30 + z * 70, 255],
@@ -1622,7 +1671,7 @@ fn run_fl91_padded_partial_3d_upload(
                         rgba
                     }
                 } else {
-                    [0, 0, 0, if bytes_per_texel <= 2 { 255 } else { 0 }]
+                    [0, 0, 0, if bytes_per_texel <= 2 || rg32 { 255 } else { 0 }]
                 };
             let offset = output_offset + y * output_row_pitch + x * 4;
             expected[offset..offset + 4].copy_from_slice(&pixel);
@@ -1643,7 +1692,7 @@ fn run_fl91_padded_partial_3d_upload(
         );
     }
     std::println!(
-        "PASS: FL9_1 padded partial {label} 3D upload; 8 uploaded voxels and 56 initialized untouched voxels sampled correctly, with row/depth padding preserved"
+        "PASS: {level:?} padded partial {label} 3D upload; 8 uploaded voxels and 56 initialized untouched voxels sampled correctly, with row/depth padding preserved"
     );
 
     unsafe {
@@ -1669,6 +1718,17 @@ fn run_fl91_padded_partial_3d_upload(
         device.destroy_shader_module(shader);
     }
     Ok(())
+}
+
+#[test]
+fn fl93_rg32_float_3d_upload_copy_readback_and_sampling() -> windows::core::Result<()> {
+    run_fl91_padded_partial_3d_upload(
+        wgt::TextureFormat::Rg32Float,
+        windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_R32G32_FLOAT,
+        8,
+        "RG32_FLOAT",
+        false,
+    )
 }
 
 #[test]

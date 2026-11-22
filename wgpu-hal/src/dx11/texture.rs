@@ -37,7 +37,7 @@ use windows::{
                 DXGI_FORMAT_BC3_UNORM_SRGB, DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
                 DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16_TYPELESS, DXGI_FORMAT_R16_UNORM,
                 DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R24_UNORM_X8_TYPELESS,
-                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R32G32_FLOAT, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
                 DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
                 DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
             },
@@ -577,6 +577,7 @@ pub(super) fn texture_3d_dxgi_format(format: wgt::TextureFormat) -> Option<DXGI_
         wgt::TextureFormat::Rgba8Unorm => Some(DXGI_FORMAT_R8G8B8A8_UNORM),
         wgt::TextureFormat::Bgra8Unorm => Some(DXGI_FORMAT_B8G8R8A8_UNORM),
         wgt::TextureFormat::Bgra8UnormSrgb => Some(DXGI_FORMAT_B8G8R8A8_UNORM_SRGB),
+        wgt::TextureFormat::Rg32Float => Some(DXGI_FORMAT_R32G32_FLOAT),
         _ => None,
     }
 }
@@ -831,6 +832,11 @@ pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLay
             width: 1,
             height: 1,
             bytes: 4,
+        }),
+        DXGI_FORMAT_R32G32_FLOAT => Ok(TextureBlockLayout {
+            width: 1,
+            height: 1,
+            bytes: 8,
         }),
         DXGI_FORMAT_BC1_UNORM | DXGI_FORMAT_BC1_UNORM_SRGB => Ok(TextureBlockLayout {
             width: 4,
@@ -2869,6 +2875,51 @@ mod tests {
         let other = adapter.open_device(&[FeatureLevel::L9_1])?;
         assert!(other.clear_rgba_render_target(&target, [0.0; 4]).is_err());
         assert!(device.create_rgba_render_target(0, 4).is_err());
+        Ok(())
+    }
+
+    #[test]
+    fn rg32_float_3d_shadow_preserves_raw_bits_and_pitches() -> Result<()> {
+        let shadow = Texture3DShadow::from_mips(
+            4,
+            4,
+            4,
+            DXGI_FORMAT_R32G32_FLOAT,
+            alloc::vec![alloc::vec![0; 4 * 4 * 4 * 8], alloc::vec![0; 2 * 2 * 2 * 8]],
+        )?;
+        let mut source = alloc::vec![0xa5; 88];
+        for z in 0..2usize {
+            for y in 0..2usize {
+                for x in 0..2usize {
+                    let offset = z * 48 + y * 24 + x * 8;
+                    let bits = [0x8000_0000u32 | (z * 4 + y * 2 + x) as u32, 0x7fc0_0001];
+                    source[offset..offset + 4].copy_from_slice(&bits[0].to_le_bytes());
+                    source[offset + 4..offset + 8].copy_from_slice(&bits[1].to_le_bytes());
+                }
+            }
+        }
+        shadow.write_region(0, [1, 1, 1], [2, 2, 2], 24, 48, &source)?;
+        let result = shadow.read_region(0, [0, 0, 0], [4, 4, 4])?;
+        for z in 0..4usize {
+            for y in 0..4usize {
+                for x in 0..4usize {
+                    let offset = ((z * 4 + y) * 4 + x) * 8;
+                    if (1..=2).contains(&x) && (1..=2).contains(&y) && (1..=2).contains(&z) {
+                        let source_offset = (z - 1) * 48 + (y - 1) * 24 + (x - 1) * 8;
+                        assert_eq!(
+                            &result[offset..offset + 8],
+                            &source[source_offset..source_offset + 8]
+                        );
+                    } else {
+                        assert_eq!(&result[offset..offset + 8], &[0; 8]);
+                    }
+                }
+            }
+        }
+        assert_eq!(
+            shadow.read_region(1, [0, 0, 0], [2, 2, 2])?,
+            alloc::vec![0; 64]
+        );
         Ok(())
     }
 
