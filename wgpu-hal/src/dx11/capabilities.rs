@@ -1925,7 +1925,9 @@ impl Capabilities {
             let Query::Value(bits) = self.driver.r32_float else {
                 return Caps::empty();
             };
-            if !self.experimental_fl92 || bits & D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32 == 0 {
+            let required =
+                (D3D11_FORMAT_SUPPORT_TEXTURE2D.0 | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0) as u32;
+            if !self.experimental_fl92 || bits & required != required {
                 return Caps::empty();
             }
             let mut caps = Caps::COPY_SRC | Caps::COPY_DST;
@@ -2842,22 +2844,28 @@ mod tests {
     fn fl92_r32_float_advertises_only_queried_copy_support() {
         let format = wgt::TextureFormat::R32Float;
         let texture_2d = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
+        let render_target = D3D11_FORMAT_SUPPORT_RENDER_TARGET.0 as u32;
         let mip = D3D11_FORMAT_SUPPORT_MIP.0 as u32;
         let bit = wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format);
         let usages = FormatCaps::COPY_SRC | FormatCaps::COPY_DST;
         let mut caps = model(FeatureLevel::L9_2);
-        caps.driver.r32_float = Query::Value(texture_2d | mip);
+        caps.driver.r32_float = Query::Value(texture_2d | render_target | mip);
         assert!(caps.texture_format_capabilities(format).is_empty());
         assert_eq!(caps.texture_to_buffer_copy_format_mask() & bit, 0);
         caps.experimental_fl92 = true;
         assert_eq!(caps.texture_format_capabilities(format), usages);
         assert_ne!(caps.texture_to_buffer_copy_format_mask() & bit, 0);
-        caps.driver.r32_float = Query::Value(texture_2d);
+        caps.driver.r32_float = Query::Value(texture_2d | render_target);
         assert_eq!(
             caps.texture_format_capabilities(format),
             usages | FormatCaps::SINGLE_MIP_ONLY
         );
-        for query in [Query::Unavailable(-1), Query::Value(mip)] {
+        for query in [
+            Query::Unavailable(-1),
+            Query::Value(mip),
+            Query::Value(texture_2d | mip),
+            Query::Value(render_target | mip),
+        ] {
             caps.driver.r32_float = query;
             assert!(caps.texture_format_capabilities(format).is_empty());
             assert_eq!(caps.texture_to_buffer_copy_format_mask() & bit, 0);

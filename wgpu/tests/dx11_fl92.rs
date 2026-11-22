@@ -71,7 +71,7 @@ fn forced_hardware_adapter() -> (Instance, Adapter, FeatureLevel) {
         );
     }
     println!(
-        "Hardware: name={:?} vendor={:#06x} device={:#06x} driver={:?} native={expected_level:?} arch={}",
+        "Hardware: requested={requested} actual={expected_level:?} physical=true name={:?} vendor={:#06x} device={:#06x} driver={:?} arch={}",
         info.name,
         info.vendor,
         info.device,
@@ -101,7 +101,8 @@ fn forced_dx11_r32_float_texture_copy() {
         assert!(features.allowed_usages.is_empty());
         let rejected = device.push_error_scope(ErrorFilter::Validation);
         let _texture = device.create_texture(&desc);
-        assert!(poll_ready(rejected.pop()).is_some());
+        let error = poll_ready(rejected.pop()).expect("FL9_1 must reject R32Float");
+        println!("R32 FL9_1 original copy control: {error}");
         return;
     }
 
@@ -1064,4 +1065,540 @@ fn fs(input: VertexOutput) -> @location(0) vec4f {
         "Verified {} overlapping indexed pixels with {indices:?}",
         SIZE * SIZE
     );
+}
+
+fn r32_copy_info(texture: &Texture, mip_level: u32, x: u32, y: u32) -> TexelCopyTextureInfo<'_> {
+    TexelCopyTextureInfo {
+        texture,
+        mip_level,
+        origin: Origin3d { x, y, z: 0 },
+        aspect: TextureAspect::All,
+    }
+}
+
+fn r32_read(
+    device: &Device,
+    queue: &Queue,
+    texture: &Texture,
+    mip: u32,
+    width: u32,
+    height: u32,
+) -> Vec<u8> {
+    let pitch = (width * 4).div_ceil(ROW_PITCH) * ROW_PITCH;
+    let buffer = device.create_buffer_init(&util::BufferInitDescriptor {
+        label: None,
+        contents: &vec![0xa5; (pitch * height + 16) as usize],
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+    });
+    r32_read_into(
+        device,
+        queue,
+        r32_copy_info(texture, mip, 0, 0),
+        extent(width, height),
+        &buffer,
+    )
+}
+
+fn r32_read_into(
+    device: &Device,
+    queue: &Queue,
+    source: TexelCopyTextureInfo<'_>,
+    size: Extent3d,
+    buffer: &Buffer,
+) -> Vec<u8> {
+    let pitch = (size.width * 4).div_ceil(ROW_PITCH) * ROW_PITCH;
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    encoder.copy_texture_to_buffer(
+        source,
+        TexelCopyBufferInfo {
+            buffer,
+            layout: TexelCopyBufferLayout {
+                offset: 4,
+                bytes_per_row: Some(pitch),
+                rows_per_image: Some(size.height + 1),
+            },
+        },
+        size,
+    );
+    let submission = queue.submit([encoder.finish()]);
+    let mapped = wait_for_readback(device, buffer, submission);
+    let mut expected_padding = vec![true; mapped.len()];
+    let mut result = Vec::new();
+    for row in 0..size.height as usize {
+        let start = 4 + row * pitch as usize;
+        let end = start + size.width as usize * 4;
+        result.extend_from_slice(&mapped[start..end]);
+        expected_padding[start..end].fill(false);
+    }
+    for (i, byte) in mapped.iter().enumerate() {
+        if expected_padding[i] {
+            assert_eq!(*byte, 0xa5, "padding byte {i}");
+        }
+    }
+    drop(mapped);
+    buffer.unmap();
+    result
+}
+
+#[test]
+#[ignore = "requires an explicitly forced D3D11 feature level and a physical GPU"]
+fn forced_dx11_r32_float_copy_boundaries() {
+    let (_instance, adapter, level) = forced_hardware_adapter();
+    let caps = adapter.get_texture_format_features(TextureFormat::R32Float);
+    let limits = adapter.limits();
+    assert_eq!(limits.max_texture_dimension_2d, 2048);
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        required_limits: limits.clone(),
+        ..Default::default()
+    }))
+    .unwrap();
+    let both = TextureUsages::COPY_SRC | TextureUsages::COPY_DST;
+    let base = texture_descriptor(8, 8, TextureFormat::R32Float, both);
+    let downlevel = adapter.get_downlevel_capabilities();
+    assert_eq!(
+        downlevel
+            .limits
+            .supports_texture_to_buffer_copy(TextureFormat::R32Float),
+        level == FeatureLevel::L9_2
+    );
+    if level == FeatureLevel::L9_1 {
+        assert!(caps.allowed_usages.is_empty());
+        for usage in [TextureUsages::COPY_SRC, TextureUsages::COPY_DST, both] {
+            let scope = device.push_error_scope(ErrorFilter::Validation);
+            let _ = device.create_texture(&TextureDescriptor { usage, ..base });
+            let error = poll_ready(scope.pop()).expect("FL9_1 must reject R32Float copy usage");
+            println!("R32 FL9_1 usage={usage:?}: {error}");
+        }
+        return;
+    }
+    assert_eq!(caps.allowed_usages, both);
+    let mips = !caps
+        .flags
+        .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY);
+    assert!(
+        mips,
+        "M01 requires the queried mip capability on this device"
+    );
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    let source_only = device.create_texture(&TextureDescriptor {
+        usage: TextureUsages::COPY_SRC,
+        ..base
+    });
+    let dest_only = device.create_texture(&TextureDescriptor {
+        usage: TextureUsages::COPY_DST,
+        ..base
+    });
+    let texture = device.create_texture(&TextureDescriptor {
+        mip_level_count: 4,
+        ..base
+    });
+    let other = device.create_texture(&TextureDescriptor {
+        mip_level_count: 4,
+        ..base
+    });
+    for (w, h) in [(1, 1), (16, 4), (7, 3)] {
+        let _ = device.create_texture(&texture_descriptor(w, h, TextureFormat::R32Float, both));
+    }
+    assert!(poll_ready(scope.pop()).is_none());
+    println!("R32 copy-only usage variants and baseline shapes created");
+    for (width, height) in [(2048, 1), (1, 2048)] {
+        let scope = device.push_error_scope(ErrorFilter::Validation);
+        let max_texture = device.create_texture(&TextureDescriptor {
+            mip_level_count: 12,
+            ..texture_descriptor(width, height, TextureFormat::R32Float, both)
+        });
+        assert!(
+            poll_ready(scope.pop()).is_none(),
+            "max texture {width}x{height}"
+        );
+        assert_eq!(
+            r32_read(&device, &queue, &max_texture, 11, 1, 1),
+            vec![0; 4]
+        );
+        queue.write_texture(
+            r32_copy_info(&max_texture, 11, 0, 0),
+            &(-4.0f32).to_le_bytes(),
+            TexelCopyBufferLayout::default(),
+            extent(1, 1),
+        );
+        queue.write_texture(
+            r32_copy_info(&max_texture, 0, width - 1, height - 1),
+            &(7.0f32).to_le_bytes(),
+            TexelCopyBufferLayout::default(),
+            extent(1, 1),
+        );
+        assert_eq!(
+            r32_read(&device, &queue, &max_texture, 11, 1, 1),
+            (-4.0f32).to_le_bytes()
+        );
+        let full = r32_read(&device, &queue, &max_texture, 0, width, height);
+        assert!(full[..full.len() - 4].iter().all(|&byte| byte == 0));
+        assert_eq!(&full[full.len() - 4..], &(7.0f32).to_le_bytes());
+        println!("R32 max chain {width}x{height}: 12 mips, terminal and edge verified");
+    }
+    assert_eq!(
+        r32_read(&device, &queue, &source_only, 0, 8, 8),
+        vec![0; 256]
+    );
+    assert_eq!(r32_read(&device, &queue, &texture, 3, 1, 1), vec![0; 4]);
+    assert_eq!(r32_read(&device, &queue, &texture, 0, 8, 8), vec![0; 256]);
+
+    let values = [0xbf800000u32, 0x80000000, 0x3f800000, 0x40400000];
+    let mut input = vec![0xee; 32];
+    for (i, value) in values.iter().enumerate() {
+        let start = 1 + (i / 2) * 11 + (i % 2) * 4;
+        input[start..start + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    queue.write_texture(
+        r32_copy_info(&texture, 0, 2, 3),
+        &input,
+        TexelCopyBufferLayout {
+            offset: 1,
+            bytes_per_row: Some(11),
+            rows_per_image: Some(4),
+        },
+        extent(2, 2),
+    );
+    let mut expected = vec![0; 256];
+    for (i, value) in values.iter().enumerate() {
+        let start = ((3 + i / 2) * 8 + 2 + i % 2) * 4;
+        expected[start..start + 4].copy_from_slice(&value.to_le_bytes());
+    }
+    assert_eq!(r32_read(&device, &queue, &texture, 0, 8, 8), expected);
+
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    queue.write_texture(
+        r32_copy_info(&texture, 0, 0, 0),
+        &[],
+        TexelCopyBufferLayout::default(),
+        extent(0, 1),
+    );
+    let empty = device.create_buffer(&BufferDescriptor {
+        label: None,
+        size: 4,
+        usage: BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    encoder.copy_buffer_to_texture(
+        TexelCopyBufferInfo {
+            buffer: &empty,
+            layout: TexelCopyBufferLayout::default(),
+        },
+        r32_copy_info(&texture, 0, 0, 0),
+        extent(0, 1),
+    );
+    encoder.copy_texture_to_texture(
+        r32_copy_info(&texture, 0, 0, 0),
+        r32_copy_info(&other, 0, 0, 0),
+        extent(0, 1),
+    );
+    encoder.copy_texture_to_buffer(
+        r32_copy_info(&texture, 0, 0, 0),
+        TexelCopyBufferInfo {
+            buffer: &empty,
+            layout: TexelCopyBufferLayout::default(),
+        },
+        extent(0, 1),
+    );
+    queue.submit([encoder.finish()]);
+    assert!(poll_ready(scope.pop()).is_none());
+    assert_eq!(r32_read(&device, &queue, &texture, 0, 8, 8), expected);
+    println!("R32 zero-sized queue, B2T, T2T and T2B operations preserved data");
+
+    let mut upload = vec![0xcc; 520];
+    upload[4..12].copy_from_slice(&[1, 2, 3, 4, 5, 6, 7, 8]);
+    upload[260..268].copy_from_slice(&[9, 10, 11, 12, 13, 14, 15, 16]);
+    let buffer = device.create_buffer_init(&util::BufferInitDescriptor {
+        label: None,
+        contents: &upload,
+        usage: BufferUsages::COPY_SRC,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    encoder.copy_buffer_to_texture(
+        TexelCopyBufferInfo {
+            buffer: &buffer,
+            layout: TexelCopyBufferLayout {
+                offset: 4,
+                bytes_per_row: Some(256),
+                rows_per_image: Some(3),
+            },
+        },
+        r32_copy_info(&texture, 1, 1, 1),
+        extent(2, 2),
+    );
+    encoder.copy_texture_to_texture(
+        r32_copy_info(&texture, 1, 1, 1),
+        r32_copy_info(&other, 1, 0, 1),
+        extent(2, 2),
+    );
+    encoder.copy_texture_to_texture(
+        r32_copy_info(&texture, 1, 1, 1),
+        r32_copy_info(&texture, 2, 0, 0),
+        extent(2, 2),
+    );
+    encoder.copy_texture_to_texture(
+        r32_copy_info(&texture, 0, 0, 0),
+        r32_copy_info(&dest_only, 0, 0, 0),
+        extent(8, 8),
+    );
+    queue.submit([encoder.finish()]);
+    let mut mip1 = vec![0; 64];
+    mip1[20..28].copy_from_slice(&upload[4..12]);
+    mip1[36..44].copy_from_slice(&upload[260..268]);
+    assert_eq!(r32_read(&device, &queue, &texture, 1, 4, 4), mip1);
+    let mut dst = vec![0; 64];
+    dst[16..24].copy_from_slice(&upload[4..12]);
+    dst[32..40].copy_from_slice(&upload[260..268]);
+    assert_eq!(r32_read(&device, &queue, &other, 1, 4, 4), dst);
+    assert_eq!(
+        r32_read(&device, &queue, &texture, 2, 2, 2),
+        [upload[4..12].to_vec(), upload[260..268].to_vec()].concat()
+    );
+    assert_eq!(r32_read(&device, &queue, &texture, 0, 8, 8), expected);
+    let reused = device.create_buffer_init(&util::BufferInitDescriptor {
+        label: Some("R32Float reused readback"),
+        contents: &[0xa5; (2 * ROW_PITCH + 16) as usize],
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+    });
+    let read_partial = || {
+        r32_read_into(
+            &device,
+            &queue,
+            r32_copy_info(&texture, 0, 2, 3),
+            extent(2, 2),
+            &reused,
+        )
+    };
+    let mut partial = values.map(u32::to_le_bytes).concat();
+    assert_eq!(read_partial(), partial);
+    queue.write_texture(
+        r32_copy_info(&texture, 0, 2, 3),
+        &(-9.0f32).to_le_bytes(),
+        TexelCopyBufferLayout::default(),
+        extent(1, 1),
+    );
+    expected[(3 * 8 + 2) * 4..(3 * 8 + 3) * 4].copy_from_slice(&(-9.0f32).to_le_bytes());
+    partial[..4].copy_from_slice(&(-9.0f32).to_le_bytes());
+    assert_eq!(read_partial(), partial);
+    assert_eq!(r32_read(&device, &queue, &texture, 0, 8, 8), expected);
+    println!("R32 queue, B2T, T2T, distinct mip, T2B and reuse data verified");
+
+    let npot = TextureDescriptor {
+        mip_level_count: 3,
+        ..texture_descriptor(7, 3, TextureFormat::R32Float, both)
+    };
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    let npot_texture = device.create_texture(&npot);
+    let error = poll_ready(scope.pop());
+    if downlevel
+        .flags
+        .contains(DownlevelFlags::NON_POWER_OF_TWO_MIPMAPPED_TEXTURES)
+    {
+        assert!(error.is_none());
+        assert_eq!(
+            r32_read(&device, &queue, &npot_texture, 2, 1, 1),
+            vec![0; 4]
+        );
+        let texel = (-4.0f32).to_le_bytes();
+        queue.write_texture(
+            r32_copy_info(&npot_texture, 2, 0, 0),
+            &texel,
+            TexelCopyBufferLayout::default(),
+            extent(1, 1),
+        );
+        assert_eq!(r32_read(&device, &queue, &npot_texture, 2, 1, 1), texel);
+        println!("R32 NPOT multi-mip terminal upload and readback verified");
+    } else {
+        let error = error.expect("unadvertised NPOT mip chain must reject");
+        println!("R32 NPOT multi-mip rejected: {error}");
+    }
+}
+
+#[test]
+#[ignore = "requires an explicitly forced D3D11 feature level and a physical GPU"]
+fn forced_dx11_r32_float_validation_and_recovery() {
+    let (_instance, adapter, level) = forced_hardware_adapter();
+    if level == FeatureLevel::L9_1 {
+        return;
+    }
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .unwrap();
+    let both = TextureUsages::COPY_SRC | TextureUsages::COPY_DST;
+    let base = texture_descriptor(8, 8, TextureFormat::R32Float, both);
+    let invalid_descriptors = [
+        TextureDescriptor {
+            size: extent(0, 8),
+            ..base
+        },
+        TextureDescriptor {
+            size: extent(2049, 1),
+            ..base
+        },
+        TextureDescriptor {
+            mip_level_count: 0,
+            ..base
+        },
+        TextureDescriptor {
+            mip_level_count: 5,
+            ..base
+        },
+        TextureDescriptor {
+            sample_count: 4,
+            ..base
+        },
+        TextureDescriptor {
+            size: Extent3d {
+                depth_or_array_layers: 2,
+                ..extent(8, 8)
+            },
+            ..base
+        },
+        TextureDescriptor {
+            dimension: TextureDimension::D3,
+            ..base
+        },
+        TextureDescriptor {
+            usage: TextureUsages::TEXTURE_BINDING,
+            ..base
+        },
+        TextureDescriptor {
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            ..base
+        },
+        TextureDescriptor {
+            usage: TextureUsages::STORAGE_BINDING,
+            ..base
+        },
+        TextureDescriptor {
+            view_formats: &[TextureFormat::Rgba8Unorm],
+            ..base
+        },
+    ];
+    for (i, desc) in invalid_descriptors.iter().enumerate() {
+        let scope = device.push_error_scope(ErrorFilter::Validation);
+        let _ = device.create_texture(desc);
+        let error = poll_ready(scope.pop()).expect("invalid descriptor must reject");
+        println!("R32 invalid descriptor {i}: {error}");
+    }
+    let texture = device.create_texture(&base);
+    let source_only = device.create_texture(&TextureDescriptor {
+        usage: TextureUsages::COPY_SRC,
+        ..base
+    });
+    let destination = device.create_texture(&base);
+    let incompatible =
+        device.create_texture(&texture_descriptor(8, 8, TextureFormat::Rgba8Unorm, both));
+    let buffer = device.create_buffer(&BufferDescriptor {
+        label: None,
+        size: 1024,
+        usage: BufferUsages::COPY_SRC | BufferUsages::COPY_DST,
+        mapped_at_creation: false,
+    });
+    for case in 0..9 {
+        let scope = device.push_error_scope(ErrorFilter::Validation);
+        let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+        match case {
+            0 => encoder.copy_buffer_to_texture(
+                TexelCopyBufferInfo {
+                    buffer: &buffer,
+                    layout: TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(255),
+                        rows_per_image: None,
+                    },
+                },
+                r32_copy_info(&texture, 0, 0, 0),
+                extent(2, 2),
+            ),
+            1 => encoder.copy_buffer_to_texture(
+                TexelCopyBufferInfo {
+                    buffer: &buffer,
+                    layout: TexelCopyBufferLayout {
+                        offset: 1,
+                        bytes_per_row: Some(256),
+                        rows_per_image: None,
+                    },
+                },
+                r32_copy_info(&texture, 0, 0, 0),
+                extent(2, 2),
+            ),
+            2 => encoder.copy_buffer_to_texture(
+                TexelCopyBufferInfo {
+                    buffer: &buffer,
+                    layout: TexelCopyBufferLayout {
+                        offset: 1020,
+                        bytes_per_row: Some(256),
+                        rows_per_image: None,
+                    },
+                },
+                r32_copy_info(&texture, 0, 0, 0),
+                extent(2, 2),
+            ),
+            3 => encoder.copy_buffer_to_texture(
+                TexelCopyBufferInfo {
+                    buffer: &buffer,
+                    layout: TexelCopyBufferLayout {
+                        offset: 0,
+                        bytes_per_row: Some(256),
+                        rows_per_image: Some(1),
+                    },
+                },
+                r32_copy_info(&texture, 0, 0, 0),
+                extent(2, 2),
+            ),
+            4 => encoder.copy_texture_to_texture(
+                r32_copy_info(&texture, 0, 7, 7),
+                r32_copy_info(&destination, 0, 0, 0),
+                extent(2, 2),
+            ),
+            5 => encoder.copy_texture_to_texture(
+                r32_copy_info(&texture, 1, 0, 0),
+                r32_copy_info(&destination, 0, 0, 0),
+                extent(1, 1),
+            ),
+            6 => encoder.copy_texture_to_texture(
+                r32_copy_info(&texture, 0, 0, 0),
+                r32_copy_info(&texture, 0, 1, 1),
+                extent(2, 2),
+            ),
+            7 => encoder.copy_texture_to_texture(
+                r32_copy_info(&texture, 0, 0, 0),
+                r32_copy_info(&incompatible, 0, 0, 0),
+                extent(1, 1),
+            ),
+            8 => encoder.copy_texture_to_texture(
+                r32_copy_info(&texture, 0, 0, 0),
+                r32_copy_info(&source_only, 0, 0, 0),
+                extent(1, 1),
+            ),
+            _ => unreachable!(),
+        }
+        let _invalid = encoder.finish();
+        let error =
+            poll_ready(scope.pop()).unwrap_or_else(|| panic!("invalid copy {case} must reject"));
+        println!("R32 invalid copy {case}: {error}");
+    }
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    queue.write_texture(
+        r32_copy_info(&texture, 0, 0, 0),
+        &[1, 2, 3],
+        TexelCopyBufferLayout::default(),
+        extent(1, 1),
+    );
+    let error = poll_ready(scope.pop()).expect("short queue data must reject");
+    println!("R32 short queue data: {error}");
+    queue.write_texture(
+        r32_copy_info(&texture, 0, 0, 0),
+        &(-2.5f32).to_le_bytes(),
+        TexelCopyBufferLayout::default(),
+        extent(1, 1),
+    );
+    let result = r32_read(&device, &queue, &texture, 0, 8, 8);
+    assert_eq!(&result[..4], &(-2.5f32).to_le_bytes());
+    assert!(result[4..].iter().all(|&byte| byte == 0));
+    println!("R32 valid write and readback after validation errors verified");
 }

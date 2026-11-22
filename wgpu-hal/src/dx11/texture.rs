@@ -1593,6 +1593,8 @@ impl NativeDevice {
                 Quality: 0,
             },
             Usage: D3D11_USAGE_DEFAULT,
+            // Level 9 requires a native bind, even for a public copy-only texture.
+            BindFlags: D3D11_BIND_RENDER_TARGET.0 as u32,
             ..Default::default()
         };
         let mut raw = None;
@@ -2782,6 +2784,130 @@ mod tests {
         let layout = format_block_layout(DXGI_FORMAT_R8G8_UNORM)?;
         assert_eq!(layout.row_bytes(3)?, 6);
         assert_eq!(layout.byte_len(3, 2)?, 12);
+        Ok(())
+    }
+
+    #[test]
+    #[ignore = "requires a physical D3D11 adapter supporting exact FL9_2"]
+    fn fl92_r32_float_native_descriptor_and_staging() -> Result<()> {
+        use windows::Win32::Graphics::Direct3D11::D3D11_FORMAT_SUPPORT_MIP;
+
+        let adapters = enumerate_native_adapters()?;
+        let adapter = adapters
+            .iter()
+            .find(|adapter| !adapter.identity().software)
+            .expect("physical D3D11 adapter required");
+        let device = adapter.open_device(&[FeatureLevel::L9_2])?;
+        assert_eq!(device.feature_level(), FeatureLevel::L9_2);
+        assert_eq!(
+            unsafe { device.raw_device().GetFeatureLevel() }.0 as u32,
+            FeatureLevel::L9_2.as_raw()
+        );
+        let support = device.check_format_support(DXGI_FORMAT_R32_FLOAT)?;
+        let required = (D3D11_FORMAT_SUPPORT_TEXTURE2D.0
+            | D3D11_FORMAT_SUPPORT_RENDER_TARGET.0
+            | D3D11_FORMAT_SUPPORT_MIP.0) as u32;
+        assert_eq!(support & required, required);
+        std::println!(
+            "adapter={:?} architecture={} level=9_2 r32_support={support:#010x}",
+            adapter.identity(),
+            std::env::consts::ARCH
+        );
+
+        let texture = device.create_r32_float_copy_texture(
+            8,
+            4,
+            4,
+            wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST,
+        )?;
+        let desc = device.texture_desc(&texture)?;
+        assert_eq!(desc.Format, DXGI_FORMAT_R32_FLOAT);
+        assert_eq!(desc.Usage, D3D11_USAGE_DEFAULT);
+        assert_eq!(desc.BindFlags, D3D11_BIND_RENDER_TARGET.0 as u32);
+        assert_eq!(
+            (
+                desc.Width,
+                desc.Height,
+                desc.MipLevels,
+                desc.ArraySize,
+                desc.SampleDesc.Count
+            ),
+            (8, 4, 4, 1, 1)
+        );
+        for mip in 0..4 {
+            let width = (8u32 >> mip).max(1);
+            let height = (4u32 >> mip).max(1);
+            let staging_desc = D3D11_TEXTURE2D_DESC {
+                Width: width,
+                Height: height,
+                MipLevels: 1,
+                ArraySize: 1,
+                Format: DXGI_FORMAT_R32_FLOAT,
+                SampleDesc: DXGI_SAMPLE_DESC {
+                    Count: 1,
+                    Quality: 0,
+                },
+                Usage: D3D11_USAGE_STAGING,
+                CPUAccessFlags: D3D11_CPU_ACCESS_READ.0 as u32,
+                ..Default::default()
+            };
+            let mut staging = None;
+            unsafe {
+                device
+                    .raw_device()
+                    .CreateTexture2D(&staging_desc, None, Some(&mut staging))?;
+            }
+            let staging = staging.ok_or_else(|| Error::from_hresult(E_FAIL))?;
+            let area = D3D11_BOX {
+                left: 0,
+                top: 0,
+                front: 0,
+                right: width,
+                bottom: height,
+                back: 1,
+            };
+            let expected = vec![(mip + 1) as u8; (width * height * 4) as usize];
+            for pass in 0..2 {
+                if pass == 1 {
+                    device.write_texture_bytes(&texture, mip, 0, &expected)?;
+                }
+                let context = device.immediate_context();
+                unsafe {
+                    context.CopySubresourceRegion(
+                        &staging,
+                        0,
+                        0,
+                        0,
+                        0,
+                        texture.raw.as_2d()?,
+                        mip,
+                        Some(&area),
+                    );
+                    let mut mapped = D3D11_MAPPED_SUBRESOURCE::default();
+                    context.Map(&staging, 0, D3D11_MAP_READ, 0, Some(&mut mapped))?;
+                    assert!(!mapped.pData.is_null() && mapped.RowPitch >= width * 4);
+                    for row in 0..height as usize {
+                        let bytes = core::slice::from_raw_parts(
+                            mapped
+                                .pData
+                                .cast::<u8>()
+                                .add(row * mapped.RowPitch as usize),
+                            (width * 4) as usize,
+                        );
+                        let expected_row =
+                            &expected[row * width as usize * 4..(row + 1) * width as usize * 4];
+                        if pass == 0 {
+                            assert!(bytes.iter().all(|&byte| byte == 0));
+                        } else {
+                            assert_eq!(bytes, expected_row);
+                        }
+                    }
+                    context.Unmap(&staging, 0);
+                }
+            }
+        }
+        device.check_device_removed_reason()?;
+        std::println!("R32_FLOAT DEFAULT render-target bind and four staged mips verified");
         Ok(())
     }
 
