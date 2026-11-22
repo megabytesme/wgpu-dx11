@@ -176,7 +176,7 @@ pub struct QuerySet {
 
 impl QuerySet {
     pub(super) fn new(device: &NativeDevice, kind: D3D11_QUERY, count: u32) -> Result<Self> {
-        if count == 0 || count > wgt::QUERY_SET_MAX_QUERIES {
+        if (count == 0 && kind != D3D11_QUERY_OCCLUSION) || count > wgt::QUERY_SET_MAX_QUERIES {
             return Err(Error::from_hresult(E_INVALIDARG));
         }
         let mut queries = Vec::new();

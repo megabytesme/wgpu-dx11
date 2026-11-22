@@ -7379,7 +7379,10 @@ impl Device {
             }
         }
 
-        if desc.count == 0 {
+        if desc.count == 0
+            && !(self.backend() == wgt::Backend::Dx11
+                && matches!(desc.ty, wgt::QueryType::Occlusion))
+        {
             return Err(Error::ZeroCount);
         }
 

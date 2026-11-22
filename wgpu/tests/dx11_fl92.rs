@@ -721,6 +721,35 @@ fn forced_dx11_tier_occlusion_queries() {
     );
 }
 
+#[test]
+#[ignore = "requires an explicitly forced D3D11 feature level and a physical GPU"]
+fn forced_dx11_tier_occlusion_query_count_boundaries() {
+    let (_instance, adapter, tier) = forced_hardware_adapter();
+    let (device, _) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .expect("exact D3D11 device");
+    let supported = tier == FeatureLevel::L9_2;
+    for count in [0, 1, QUERY_SET_MAX_QUERIES, QUERY_SET_MAX_QUERIES + 1] {
+        let scope = device.push_error_scope(ErrorFilter::Validation);
+        let query_set = device.create_query_set(&QuerySetDescriptor {
+            label: Some("occlusion count boundary"),
+            ty: QueryType::Occlusion,
+            count,
+        });
+        let error = poll_ready(scope.pop());
+        if supported && count <= QUERY_SET_MAX_QUERIES {
+            assert!(error.is_none(), "valid occlusion count {count}: {error:?}");
+            assert_eq!(query_set.count(), count);
+            println!("occlusion count {count} accepted at {tier:?}");
+        } else {
+            let error = error.expect("unsupported occlusion count must reject");
+            println!("occlusion count {count} rejected at {tier:?}: {error}");
+        }
+    }
+}
+
 fn resolve_occlusion<const N: usize>(
     device: &Device,
     queue: &Queue,
