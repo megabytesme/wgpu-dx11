@@ -327,7 +327,19 @@ fn sampler_state_mirror_addressing() -> windows::core::Result<()> {
 #[test]
 fn fl92_mirror_once_sampler_samples_both_boundaries() -> windows::core::Result<()> {
     sampled_triangle_variant(true, true, false, true, false, 0, None, 54)?;
-    sampled_triangle_variant(true, true, false, true, false, 0, None, 55)
+    sampled_triangle_variant(true, true, false, true, false, 0, None, 55)?;
+    for variant in 64..=75 {
+        sampled_triangle_variant(true, true, false, true, false, 0, None, variant)?;
+    }
+    Ok(())
+}
+
+#[test]
+fn fl92_mirror_once_volume_axes() -> windows::core::Result<()> {
+    for variant in 58..=63 {
+        sampled_triangle_variant(true, true, false, true, false, 0, None, variant)?;
+    }
+    Ok(())
 }
 
 #[test]
@@ -427,7 +439,8 @@ fn sampled_triangle_variant(
     overlay_shader: Option<&str>,
     variant: u8,
 ) -> windows::core::Result<()> {
-    let mirror_once = matches!(variant, 54 | 55);
+    let volume = (58..=63).contains(&variant);
+    let mirror_once = matches!(variant, 54 | 55 | 64..=75) || volume;
     let bounded_repeat = variant == 56;
     let fl92_anisotropy = variant == 57;
     let anisotropic_minification = variant == 53 || fl92_anisotropy;
@@ -506,9 +519,10 @@ fn sampled_triangle_variant(
         }
         for index in 0..count {
             wgsl.push_str(&alloc::format!(
-                "@group(0) @binding({}) var t{}: texture_2d<f32>; ",
+                "@group(0) @binding({}) var t{}: texture_{}<f32>; ",
                 texture_number(index),
-                index
+                index,
+                if volume { "3d" } else { "2d" }
             ));
         }
         for index in 0..sampler_count {
@@ -555,6 +569,24 @@ fn sampled_triangle_variant(
                 39 => "vec2f(1.625, 1.625)",
                 54 => "vec2f(-0.625, 1.625)",
                 55 => "vec2f(-1.625, -0.625)",
+                58 => "vec3f(-0.625, 0.375, 0.375)",
+                59 => "vec3f(0.375, -0.625, 0.375)",
+                60 => "vec3f(0.375, 0.375, -0.625)",
+                61 => "vec3f(-0.625, 1.375, -1.375)",
+                62 => "vec3f(-1.375, -0.625, 1.375)",
+                63 => "vec3f(1.375, -1.375, -0.625)",
+                64 => "vec2f(-1.125, 0.375)",
+                65 => "vec2f(-1.0, 0.375)",
+                66 => "vec2f(-0.125, 0.375)",
+                67 => "vec2f(0.0, 0.375)",
+                68 => "vec2f(1.0, 0.375)",
+                69 => "vec2f(1.125, 0.375)",
+                70 => "vec2f(0.375, -1.125)",
+                71 => "vec2f(0.375, -1.0)",
+                72 => "vec2f(0.375, -0.125)",
+                73 => "vec2f(0.375, 0.0)",
+                74 => "vec2f(0.375, 1.0)",
+                75 => "vec2f(0.375, 1.125)",
                 _ => "vec2f(0.5)",
             };
             let tint = if variant == 52 { " * tint" } else { "" };
@@ -727,7 +759,11 @@ fn sampled_triangle_variant(
                 visibility: wgt::ShaderStages::FRAGMENT,
                 ty: wgt::BindingType::Texture {
                     sample_type: wgt::TextureSampleType::Float { filterable: true },
-                    view_dimension: wgt::TextureViewDimension::D2,
+                    view_dimension: if volume {
+                        wgt::TextureViewDimension::D3
+                    } else {
+                        wgt::TextureViewDimension::D2
+                    },
                     multisampled: false,
                 },
                 count: None,
@@ -1035,11 +1071,15 @@ fn sampled_triangle_variant(
         size: wgt::Extent3d {
             width: texture_side,
             height: texture_side,
-            depth_or_array_layers: 1,
+            depth_or_array_layers: if volume { 4 } else { 1 },
         },
         mip_level_count: 1,
         sample_count: 1,
-        dimension: wgt::TextureDimension::D2,
+        dimension: if volume {
+            wgt::TextureDimension::D3
+        } else {
+            wgt::TextureDimension::D2
+        },
         format: if effect == 25 {
             wgt::TextureFormat::Bgra8Unorm
         } else {
@@ -1091,7 +1131,19 @@ fn sampled_triangle_variant(
             }
         }
     }
-    native.write_rgba_texture(&texture, 0, 0, &texels)?;
+    if volume {
+        let mut data = alloc::vec::Vec::new();
+        for z in 0..4u8 {
+            for y in 0..4u8 {
+                for x in 0..4u8 {
+                    data.extend_from_slice(&[x * 64, y * 64, z * 64, 255]);
+                }
+            }
+        }
+        native.write_texture_volume_bytes(&texture, 0, &data)?;
+    } else {
+        native.write_rgba_texture(&texture, 0, 0, &texels)?;
+    }
     if variant == 51 {
         let source = unsafe {
             device
@@ -1266,9 +1318,16 @@ fn sampled_triangle_variant(
                 &crate::TextureViewDescriptor {
                     label: None,
                     format: texture_desc.format,
-                    dimension: wgt::TextureViewDimension::D2,
+                    dimension: if volume {
+                        wgt::TextureViewDimension::D3
+                    } else {
+                        wgt::TextureViewDimension::D2
+                    },
                     usage: wgt::TextureUses::RESOURCE,
-                    range: wgt::ImageSubresourceRange::default(),
+                    range: wgt::ImageSubresourceRange {
+                        array_layer_count: volume.then_some(1),
+                        ..Default::default()
+                    },
                 },
             )
             .unwrap()
@@ -1298,7 +1357,11 @@ fn sampled_triangle_variant(
             }
         }
     }
-    native.write_rgba_texture(&second_texture, 0, 0, &second_texels)?;
+    if volume {
+        native.write_texture_volume_bytes(&second_texture, 0, &second_texels.repeat(4))?;
+    } else {
+        native.write_rgba_texture(&second_texture, 0, 0, &second_texels)?;
+    }
     let second_view = unsafe {
         device
             .create_texture_view(
@@ -1306,9 +1369,16 @@ fn sampled_triangle_variant(
                 &crate::TextureViewDescriptor {
                     label: None,
                     format: second_desc.format,
-                    dimension: wgt::TextureViewDimension::D2,
+                    dimension: if volume {
+                        wgt::TextureViewDimension::D3
+                    } else {
+                        wgt::TextureViewDimension::D2
+                    },
                     usage: wgt::TextureUses::RESOURCE,
-                    range: wgt::ImageSubresourceRange::default(),
+                    range: wgt::ImageSubresourceRange {
+                        array_layer_count: volume.then_some(1),
+                        ..Default::default()
+                    },
                 },
             )
             .unwrap()
@@ -1331,7 +1401,11 @@ fn sampled_triangle_variant(
                     }
                 }
             }
-            native.write_rgba_texture(&texture, 0, 0, &data)?;
+            if volume {
+                native.write_texture_volume_bytes(&texture, 0, &data.repeat(4))?;
+            } else {
+                native.write_rgba_texture(&texture, 0, 0, &data)?;
+            }
             let view = unsafe {
                 device
                     .create_texture_view(
@@ -1339,9 +1413,16 @@ fn sampled_triangle_variant(
                         &crate::TextureViewDescriptor {
                             label: None,
                             format: wgt::TextureFormat::Rgba8Unorm,
-                            dimension: wgt::TextureViewDimension::D2,
+                            dimension: if volume {
+                                wgt::TextureViewDimension::D3
+                            } else {
+                                wgt::TextureViewDimension::D2
+                            },
                             usage: wgt::TextureUses::RESOURCE,
-                            range: wgt::ImageSubresourceRange::default(),
+                            range: wgt::ImageSubresourceRange {
+                                array_layer_count: volume.then_some(1),
+                                ..Default::default()
+                            },
                         },
                     )
                     .unwrap()
@@ -1376,6 +1457,11 @@ fn sampled_triangle_variant(
         }
         _ => {}
     }
+    if variant >= 61 && variant <= 63 {
+        let axis = usize::from(variant - 61);
+        sampler_desc.address_modes[(axis + 1) % 3] = wgt::AddressMode::Repeat;
+        sampler_desc.address_modes[(axis + 2) % 3] = wgt::AddressMode::MirrorRepeat;
+    }
     if variant == 44 || variant == 45 {
         sampler_desc.lod_clamp.end = 1.0;
     }
@@ -1385,7 +1471,22 @@ fn sampled_triangle_variant(
     }
     let sampler = if mirror_once {
         device
-            .create_mirror_once_sampler(&sampler_desc, [true, true, false])
+            .create_mirror_once_sampler(
+                &sampler_desc,
+                if volume {
+                    [
+                        matches!(variant, 58 | 61),
+                        matches!(variant, 59 | 62),
+                        matches!(variant, 60 | 63),
+                    ]
+                } else if (64..=69).contains(&variant) {
+                    [true, false, false]
+                } else if (70..=75).contains(&variant) {
+                    [false, true, false]
+                } else {
+                    [true, true, false]
+                },
+            )
             .unwrap()
     } else {
         unsafe { device.create_sampler(&sampler_desc).unwrap() }
@@ -2436,6 +2537,13 @@ fn sampled_triangle_variant(
     }
     assert!(native.wait_native_fence(&fence, 1, Some(core::time::Duration::from_secs(5)))?);
     let pixels = native.read_rgba_texture(&target, 0, 0)?;
+    if mirror_once {
+        drop(sampler_bindings);
+        unsafe { device.destroy_sampler(sampler) };
+        unsafe { crate::Queue::submit(&queue, &[&command], &[], (&fence, 2)).unwrap() };
+        assert!(native.wait_native_fence(&fence, 2, Some(core::time::Duration::from_secs(5)))?);
+        assert_eq!(native.read_rgba_texture(&target, 0, 0)?, pixels);
+    }
     let actual = &pixels[(4 * 8 + 4) * 4..(4 * 8 + 5) * 4];
     if variant != 0 {
         std::println!("{level:?} variant {variant} readback: {actual:?}");
@@ -2476,6 +2584,16 @@ fn sampled_triangle_variant(
                 54 => [128, 192, 32, 255],
                 55 => [192, 128, 32, 255],
                 56 => [64, 64, 32, 255],
+                58 => [128, 64, 64, 255],
+                59 => [64, 128, 64, 255],
+                60 => [64, 64, 128, 255],
+                61 => [128, 64, 128, 255],
+                62 => [128, 128, 64, 255],
+                63 => [64, 128, 128, 255],
+                64 | 65 | 68 | 69 => [192, 64, 32, 255],
+                66 | 67 => [0, 64, 32, 255],
+                70 | 71 | 74 | 75 => [64, 192, 32, 255],
+                72 | 73 => [64, 0, 32, 255],
                 _ => unreachable!(),
             };
             for (&observed, &want) in actual.iter().zip(&expected) {

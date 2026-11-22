@@ -3292,6 +3292,14 @@ mod tests {
         };
         let native = Arc::new(adapter.open_device(&[FeatureLevel::L9_2])?);
         assert_eq!(native.feature_level(), FeatureLevel::L9_2);
+        let fl91 = Arc::new(adapter.open_device(&[FeatureLevel::L9_1])?);
+        let fl91_device = super::super::Device::new(fl91);
+        assert!(fl91_device.create_native_occlusion_query().is_err());
+        let foreign = fl91_device.native();
+        let query = super::super::Device::new(native.clone()).create_native_occlusion_query()?;
+        assert!(query.reset(foreign).is_err());
+        assert!(query.result(foreign).is_err());
+        assert!(query.try_result(foreign).is_err());
         std::println!(
             "Hardware: {:?}; requested and actual FL9_2",
             adapter.identity()
@@ -3313,8 +3321,13 @@ mod tests {
             .as_ref()
             .map(|query| device.reset_native_occlusion_query(query))
             .transpose()?;
+        let empty_query = native_query
+            .as_ref()
+            .map(|query| device.reset_native_occlusion_query(query))
+            .transpose()?;
         if let Some(query) = &native_query {
             assert!(device.native_occlusion_result(query).is_err());
+            assert!(device.try_native_occlusion_result(query).is_err());
         }
         let entry_module = naga::front::wgsl::parse_str(
             r#"
@@ -3669,6 +3682,7 @@ mod tests {
             }
             assert!(encoder.end_native_occlusion_query(query).is_err());
             encoder.begin_native_occlusion_query(query).unwrap();
+            assert!(device.try_native_occlusion_result(query).is_err());
             assert!(encoder.begin_native_occlusion_query(reset).is_err());
             assert!(encoder.end_native_occlusion_query(reset).is_err());
             encoder.end_native_occlusion_query(query).unwrap();
@@ -3727,13 +3741,42 @@ mod tests {
             crate::CommandEncoder::set_bind_group(&mut encoder, &layout, 0, &empty_group, &[]);
             crate::CommandEncoder::draw_indexed(&mut encoder, 0, 3, 0, 0, 1);
             crate::CommandEncoder::end_render_pass(&mut encoder);
-            if let (Some(query), Some(reset)) = (&native_query, &reset_query) {
+            if let (Some(query), Some(reset), Some(empty)) =
+                (&native_query, &reset_query, &empty_query)
+            {
                 encoder.end_native_occlusion_query(query).unwrap();
                 encoder.begin_native_occlusion_query(reset).unwrap();
+                crate::CommandEncoder::begin_render_pass(&mut encoder, &pass).unwrap();
+                crate::CommandEncoder::set_render_pipeline(&mut encoder, &pipeline);
+                crate::CommandEncoder::set_vertex_buffer(
+                    &mut encoder,
+                    0,
+                    BufferBinding::new_unchecked(&buffer, 0, None),
+                );
+                crate::CommandEncoder::set_index_buffer(
+                    &mut encoder,
+                    BufferBinding::new_unchecked(&index, 0, None),
+                    wgt::IndexFormat::Uint16,
+                );
+                crate::CommandEncoder::set_scissor_rect(
+                    &mut encoder,
+                    &Rect { x: 0, y: 0, w: 4, h: 8 },
+                );
+                crate::CommandEncoder::draw_indexed(&mut encoder, 0, 3, 0, 0, 1);
+                crate::CommandEncoder::end_render_pass(&mut encoder);
                 encoder.end_native_occlusion_query(reset).unwrap();
+                encoder.begin_native_occlusion_query(empty).unwrap();
+                encoder.end_native_occlusion_query(empty).unwrap();
             }
             crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
         };
+        let later_query = native_query
+            .as_ref()
+            .map(|query| device.reset_native_occlusion_query(query))
+            .transpose()?;
+        if let Some(query) = &later_query {
+            assert!(device.try_native_occlusion_result(query).is_err());
+        }
         let before = native.read_rgba_texture(&texture, 0, 0)?;
         assert_eq!(before.len(), 8 * 8 * 4);
         assert!(before
@@ -3744,11 +3787,30 @@ mod tests {
             crate::Queue::submit(&queue, &[&upload_commands, &commands], &[], (&fence, 1)).unwrap();
         }
         assert!(native.wait_native_fence(&fence, 1, Some(Duration::from_secs(5)))?);
-        if let (Some(query), Some(reset)) = (&native_query, &reset_query) {
+        if let (Some(query), Some(reset), Some(empty)) = (&native_query, &reset_query, &empty_query)
+        {
             let samples = device.native_occlusion_result(query)?;
-            assert!(samples > 1, "expected numerical samples, got {samples}");
-            assert_eq!(device.native_occlusion_result(reset)?, 0);
+            assert_eq!(samples, 128, "two full 8x8 draws must count every sample");
+            assert_eq!(device.native_occlusion_result(reset)?, 32);
+            assert_eq!(device.native_occlusion_result(empty)?, 0);
+            assert_eq!(device.try_native_occlusion_result(query)?, Some(128));
+            assert_eq!(device.try_native_occlusion_result(reset)?, Some(32));
+            assert_eq!(device.try_native_occlusion_result(empty)?, Some(0));
             assert_eq!(device.native_occlusion_result(query)?, samples);
+            let later = later_query.as_ref().unwrap();
+            assert!(device.try_native_occlusion_result(later).is_err());
+            let later_commands = unsafe {
+                crate::CommandEncoder::begin_encoding(&mut encoder, None).unwrap();
+                encoder.begin_native_occlusion_query(later).unwrap();
+                encoder.end_native_occlusion_query(later).unwrap();
+                crate::CommandEncoder::end_encoding(&mut encoder).unwrap()
+            };
+            unsafe {
+                crate::Queue::submit(&queue, &[&later_commands], &[], (&fence, 2)).unwrap();
+            }
+            assert!(native.wait_native_fence(&fence, 2, Some(Duration::from_secs(5)))?);
+            assert_eq!(device.native_occlusion_result(later)?, 0);
+            assert_eq!(device.native_occlusion_result(query)?, 128);
             assert!(
                 native.submit_copy_commands(&commands).is_err(),
                 "query generations must not be resubmitted"
@@ -3756,15 +3818,15 @@ mod tests {
         }
         let pixels = native.read_rgba_texture(&texture, 0, 0)?;
         assert_eq!(pixels.len(), 8 * 8 * 4);
-        assert!(
-            pixels
-                .chunks_exact(4)
-                .all(|pixel| pixel == [255, 0, 0, 255]),
-            "unexpected pixels: {pixels:?}"
-        );
-        std::println!(
-            "Readback: 64/64 pixels RGBA [255, 0, 0, 255]; before submission: 64/64 blue"
-        );
+        for (index, pixel) in pixels.chunks_exact(4).enumerate() {
+            let expected = if native_query.is_some() && index % 8 >= 4 {
+                [0, 0, 0, 255]
+            } else {
+                [255, 0, 0, 255]
+            };
+            assert_eq!(pixel, expected, "pixel {index}");
+        }
+        std::println!("Readback matched the render and scissor; before submission: 64/64 blue");
         if native_query.is_some() {
             return Ok(());
         }

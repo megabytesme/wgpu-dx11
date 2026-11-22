@@ -76,6 +76,52 @@ impl NativeOcclusionQuery {
         wait_for_query_data(&context, &self.inner.query, &mut value)?;
         Ok(value)
     }
+
+    /// Poll a submitted measurement without flushing or waiting. `None` means pending.
+    pub fn try_result(&self, device: &NativeDevice) -> Result<Option<u64>> {
+        if !self.belongs_to(device) || self.inner.state.load(Ordering::Acquire) != 2 {
+            return Err(Error::from_hresult(E_INVALIDARG));
+        }
+        let context = device.immediate_context();
+        let mut value = 0u64;
+        let status = unsafe {
+            (Interface::vtable(&*context).GetData)(
+                context.as_raw(),
+                self.inner.query.as_raw(),
+                core::ptr::from_mut(&mut value).cast(),
+                size_of::<u64>() as u32,
+                D3D11_ASYNC_GETDATA_DONOTFLUSH.0 as u32,
+            )
+        };
+        poll_result(status, value)
+    }
+}
+
+fn poll_result(status: windows::core::HRESULT, value: u64) -> Result<Option<u64>> {
+    if status == S_OK {
+        Ok(Some(value))
+    } else if status == S_FALSE {
+        Ok(None)
+    } else {
+        status.ok()?;
+        Err(Error::from_hresult(E_FAIL))
+    }
+}
+
+#[cfg(test)]
+mod polling_tests {
+    use super::*;
+
+    #[test]
+    fn pending_is_distinct_from_zero_and_errors() {
+        assert_eq!(poll_result(S_FALSE, 0).unwrap(), None);
+        assert_eq!(poll_result(S_OK, 0).unwrap(), Some(0));
+        assert_eq!(poll_result(S_OK, 42).unwrap(), Some(42));
+        assert_eq!(
+            poll_result(E_INVALIDARG, 0).unwrap_err().code(),
+            E_INVALIDARG
+        );
+    }
 }
 
 impl super::Device {
@@ -95,6 +141,11 @@ impl super::Device {
     /// Wait for a submitted generation and return its numerical sample count.
     pub fn native_occlusion_result(&self, query: &NativeOcclusionQuery) -> Result<u64> {
         query.result(self.native())
+    }
+
+    /// Poll a submitted numerical measurement without waiting.
+    pub fn try_native_occlusion_result(&self, query: &NativeOcclusionQuery) -> Result<Option<u64>> {
+        query.try_result(self.native())
     }
 }
 
