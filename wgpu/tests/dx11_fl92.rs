@@ -83,6 +83,109 @@ fn forced_hardware_adapter() -> (Instance, Adapter, FeatureLevel) {
 
 #[test]
 #[ignore = "requires an explicitly forced D3D11 feature level and a physical GPU"]
+fn forced_dx11_r32_float_texture_copy() {
+    let (_instance, adapter, level) = forced_hardware_adapter();
+    let format = TextureFormat::R32Float;
+    let usages = TextureUsages::COPY_SRC | TextureUsages::COPY_DST;
+    let features = adapter.get_texture_format_features(format);
+    let (device, queue) = poll_ready(adapter.request_device(&DeviceDescriptor {
+        required_limits: adapter.limits(),
+        ..Default::default()
+    }))
+    .unwrap();
+    let desc = TextureDescriptor {
+        mip_level_count: 3,
+        ..texture_descriptor(8, 8, format, usages)
+    };
+    if level == FeatureLevel::L9_1 {
+        assert!(features.allowed_usages.is_empty());
+        let rejected = device.push_error_scope(ErrorFilter::Validation);
+        let _texture = device.create_texture(&desc);
+        assert!(poll_ready(rejected.pop()).is_some());
+        return;
+    }
+
+    assert_eq!(features.allowed_usages, usages);
+    assert!(!features
+        .flags
+        .contains(TextureFormatFeatureFlags::SINGLE_MIP_ONLY));
+    let scope = device.push_error_scope(ErrorFilter::Validation);
+    let uploaded = device.create_texture(&desc);
+    let copied = device.create_texture(&desc);
+    let _view = copied.create_view(&TextureViewDescriptor::default());
+    let mip = |texture, origin| TexelCopyTextureInfo {
+        texture,
+        mip_level: 2,
+        origin,
+        aspect: TextureAspect::All,
+    };
+    let top_row: Vec<_> = [-2.5f32, 3.25]
+        .into_iter()
+        .flat_map(f32::to_le_bytes)
+        .collect();
+    queue.write_texture(
+        mip(&uploaded, Origin3d::ZERO),
+        &top_row,
+        TexelCopyBufferLayout {
+            offset: 0,
+            bytes_per_row: None,
+            rows_per_image: None,
+        },
+        extent(2, 1),
+    );
+    let upload = device.create_buffer_init(&util::BufferInitDescriptor {
+        label: None,
+        contents: &7.75f32.to_le_bytes(),
+        usage: BufferUsages::COPY_SRC,
+    });
+    let readback = device.create_buffer_init(&util::BufferInitDescriptor {
+        label: None,
+        contents: &[0xa5; 2 * ROW_PITCH as usize],
+        usage: BufferUsages::COPY_DST | BufferUsages::MAP_READ,
+    });
+    let mut encoder = device.create_command_encoder(&CommandEncoderDescriptor::default());
+    encoder.copy_buffer_to_texture(
+        TexelCopyBufferInfo {
+            buffer: &upload,
+            layout: TexelCopyBufferLayout {
+                offset: 0,
+                bytes_per_row: None,
+                rows_per_image: None,
+            },
+        },
+        mip(&uploaded, Origin3d { x: 1, y: 1, z: 0 }),
+        extent(1, 1),
+    );
+    encoder.copy_texture_to_texture(
+        mip(&uploaded, Origin3d::ZERO),
+        mip(&copied, Origin3d::ZERO),
+        extent(2, 2),
+    );
+    encoder.copy_texture_to_buffer(
+        mip(&copied, Origin3d::ZERO),
+        TexelCopyBufferInfo {
+            buffer: &readback,
+            layout: TexelCopyBufferLayout {
+                offset: 4,
+                bytes_per_row: Some(ROW_PITCH),
+                rows_per_image: Some(3),
+            },
+        },
+        extent(2, 2),
+    );
+    let submission = queue.submit([encoder.finish()]);
+    assert!(poll_ready(scope.pop()).is_none());
+    let actual = wait_for_readback(&device, &readback, submission);
+    let mut expected = [0xa5; 2 * ROW_PITCH as usize];
+    expected[4..12].copy_from_slice(&top_row);
+    let row = ROW_PITCH as usize + 4;
+    expected[row..row + 4].copy_from_slice(&0.0f32.to_le_bytes());
+    expected[row + 4..row + 8].copy_from_slice(&7.75f32.to_le_bytes());
+    assert_eq!(&*actual, &expected);
+}
+
+#[test]
+#[ignore = "requires an explicitly forced D3D11 feature level and a physical GPU"]
 fn forced_dx11_tier_sample_blend_scissor_and_limits() {
     let (_instance, adapter, level) = forced_hardware_adapter();
     let fl92 = level == FeatureLevel::L9_2;

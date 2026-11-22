@@ -318,6 +318,41 @@ impl crate::Device for Device {
             return Ok(texture);
         }
         let capabilities = super::capabilities::Capabilities::query(&self.native);
+        if desc.format == wgt::TextureFormat::R32Float {
+            use crate::TextureFormatCapabilities as Caps;
+
+            let format_caps = capabilities.texture_format_capabilities(desc.format);
+            let copy_usage = wgt::TextureUses::COPY_SRC | wgt::TextureUses::COPY_DST;
+            let width = desc.size.width;
+            let height = desc.size.height;
+            if !format_caps.contains(Caps::COPY_SRC | Caps::COPY_DST)
+                || desc.dimension != wgt::TextureDimension::D2
+                || desc.size.depth_or_array_layers != 1
+                || desc.sample_count != 1
+                || width == 0
+                || height == 0
+                || width > max_dimension
+                || height > max_dimension
+                || desc.mip_level_count == 0
+                || desc.mip_level_count > width.max(height).ilog2() + 1
+                || (desc.mip_level_count > 1
+                    && (format_caps.contains(Caps::SINGLE_MIP_ONLY)
+                        || ((!width.is_power_of_two() || !height.is_power_of_two())
+                            && !capabilities.npot_mipmapped_textures_supported())))
+                || desc.usage.is_empty()
+                || !copy_usage.contains(desc.usage)
+                || desc
+                    .view_formats
+                    .iter()
+                    .any(|format| *format != desc.format)
+            {
+                return Err(DeviceError::Unexpected);
+            }
+            return self
+                .native
+                .create_r32_float_copy_texture(width, height, desc.mip_level_count, desc.usage)
+                .map_err(device_error);
+        }
         let depth = matches!(
             desc.format,
             wgt::TextureFormat::Depth16Unorm
@@ -789,9 +824,10 @@ impl crate::Device for Device {
                 DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB, DXGI_FORMAT_D16_UNORM,
                 DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16B16A16_UNORM,
                 DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16G16_UNORM, DXGI_FORMAT_R16_TYPELESS,
-                DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R8G8B8A8_SNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_R8_UNORM,
+                DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R24G8_TYPELESS, DXGI_FORMAT_R32_FLOAT,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
+                DXGI_FORMAT_R8_UNORM,
             },
         };
         if texture.dimension == wgt::TextureDimension::D3 {
@@ -840,6 +876,7 @@ impl crate::Device for Device {
             DXGI_FORMAT_R16_UNORM => wgt::TextureFormat::R16Unorm,
             DXGI_FORMAT_R16G16_UNORM => wgt::TextureFormat::Rg16Unorm,
             DXGI_FORMAT_R16G16B16A16_UNORM => wgt::TextureFormat::Rgba16Unorm,
+            DXGI_FORMAT_R32_FLOAT => wgt::TextureFormat::R32Float,
             DXGI_FORMAT_R8G8B8A8_SNORM => wgt::TextureFormat::Rgba8Snorm,
             DXGI_FORMAT_BC1_UNORM => wgt::TextureFormat::Bc1RgbaUnorm,
             DXGI_FORMAT_BC2_UNORM => wgt::TextureFormat::Bc2RgbaUnorm,

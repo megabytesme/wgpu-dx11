@@ -1857,6 +1857,7 @@ impl DownlevelLimits {
             crate::TextureFormat::Bc2RgbaUnormSrgb => 1 << 17,
             crate::TextureFormat::Bc3RgbaUnorm => 1 << 18,
             crate::TextureFormat::Bc3RgbaUnormSrgb => 1 << 19,
+            crate::TextureFormat::R32Float => 1 << 20,
             _ => 0,
         }
     }

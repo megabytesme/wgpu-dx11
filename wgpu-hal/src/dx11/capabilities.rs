@@ -20,8 +20,8 @@ use windows::Win32::Graphics::{
         DXGI_FORMAT_BC2_UNORM_SRGB, DXGI_FORMAT_BC3_UNORM, DXGI_FORMAT_BC3_UNORM_SRGB,
         DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT, DXGI_FORMAT_R16G16B16A16_UNORM,
         DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16G16_UNORM, DXGI_FORMAT_R16_UNORM,
-        DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-        DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
+        DXGI_FORMAT_R32_FLOAT, DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+        DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
     },
 };
 
@@ -258,6 +258,7 @@ pub(super) struct DriverCapabilities {
     pub rg8_snorm: Query<u32>,
     pub rg16_snorm: Query<u32>,
     unorm16_sampled: [Query<u32>; FL92_UNORM16_FORMATS.len()],
+    r32_float: Query<u32>,
     pub rgba8_snorm: Query<u32>,
     pub bc1_unorm: Query<u32>,
     pub bc2_unorm: Query<u32>,
@@ -1279,6 +1280,7 @@ impl Capabilities {
             wgt::TextureFormat::Rg8Snorm,
             wgt::TextureFormat::Rg16Snorm,
             wgt::TextureFormat::Rgba8Snorm,
+            wgt::TextureFormat::R32Float,
             wgt::TextureFormat::Rgb5g6b5Unorm,
             wgt::TextureFormat::Rgb5a1Unorm,
             wgt::TextureFormat::Rgba4Unorm,
@@ -1439,6 +1441,11 @@ impl Capabilities {
                     FL92_UNORM16_FORMATS.map(|(_, dxgi)| format(dxgi))
                 } else {
                     [Query::Unavailable(-1); FL92_UNORM16_FORMATS.len()]
+                },
+                r32_float: if device.experimental_fl92_enabled() {
+                    format(DXGI_FORMAT_R32_FLOAT)
+                } else {
+                    Query::Unavailable(-1)
                 },
                 rgba8_snorm: format(DXGI_FORMAT_R8G8B8A8_SNORM),
                 bc1_unorm: format(DXGI_FORMAT_BC1_UNORM),
@@ -1914,6 +1921,20 @@ impl Capabilities {
     ) -> crate::TextureFormatCapabilities {
         use crate::TextureFormatCapabilities as Caps;
 
+        if format == wgt::TextureFormat::R32Float {
+            let Query::Value(bits) = self.driver.r32_float else {
+                return Caps::empty();
+            };
+            if !self.experimental_fl92 || bits & D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32 == 0 {
+                return Caps::empty();
+            }
+            let mut caps = Caps::COPY_SRC | Caps::COPY_DST;
+            if bits & D3D11_FORMAT_SUPPORT_MIP.0 as u32 == 0 {
+                caps |= Caps::SINGLE_MIP_ONLY;
+            }
+            return caps;
+        }
+
         if Self::unorm16_sampled_index(format).is_some() {
             return if self.fl92_unorm16_sampled(format) {
                 Caps::SAMPLED | Caps::SAMPLED_LINEAR | Caps::COPY_DST | Caps::SINGLE_MIP_ONLY
@@ -2353,6 +2374,7 @@ mod tests {
                 rg8_snorm: Query::Value(u32::MAX),
                 rg16_snorm: Query::Value(u32::MAX),
                 unorm16_sampled: [Query::Unavailable(-1); FL92_UNORM16_FORMATS.len()],
+                r32_float: Query::Unavailable(-1),
                 rgba8_snorm: Query::Value(u32::MAX),
                 bc1_unorm: Query::Value(u32::MAX),
                 bc2_unorm: Query::Value(u32::MAX),
@@ -2813,6 +2835,32 @@ mod tests {
             assert!(caps.texture_format_capabilities(format).is_empty());
             caps.driver.unorm16_sampled[index] = Query::Unavailable(-1);
             assert!(caps.texture_format_capabilities(format).is_empty());
+        }
+    }
+
+    #[test]
+    fn fl92_r32_float_advertises_only_queried_copy_support() {
+        let format = wgt::TextureFormat::R32Float;
+        let texture_2d = D3D11_FORMAT_SUPPORT_TEXTURE2D.0 as u32;
+        let mip = D3D11_FORMAT_SUPPORT_MIP.0 as u32;
+        let bit = wgt::DownlevelLimits::texture_to_buffer_copy_format_bit(format);
+        let usages = FormatCaps::COPY_SRC | FormatCaps::COPY_DST;
+        let mut caps = model(FeatureLevel::L9_2);
+        caps.driver.r32_float = Query::Value(texture_2d | mip);
+        assert!(caps.texture_format_capabilities(format).is_empty());
+        assert_eq!(caps.texture_to_buffer_copy_format_mask() & bit, 0);
+        caps.experimental_fl92 = true;
+        assert_eq!(caps.texture_format_capabilities(format), usages);
+        assert_ne!(caps.texture_to_buffer_copy_format_mask() & bit, 0);
+        caps.driver.r32_float = Query::Value(texture_2d);
+        assert_eq!(
+            caps.texture_format_capabilities(format),
+            usages | FormatCaps::SINGLE_MIP_ONLY
+        );
+        for query in [Query::Unavailable(-1), Query::Value(mip)] {
+            caps.driver.r32_float = query;
+            assert!(caps.texture_format_capabilities(format).is_empty());
+            assert_eq!(caps.texture_to_buffer_copy_format_mask() & bit, 0);
         }
     }
 

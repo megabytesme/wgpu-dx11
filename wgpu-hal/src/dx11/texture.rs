@@ -25,9 +25,10 @@ use windows::{
                 D3D11_RENDER_TARGET_VIEW_DESC_0, D3D11_RESOURCE_MISC_TEXTURECUBE,
                 D3D11_RTV_DIMENSION_TEXTURE2D, D3D11_RTV_DIMENSION_TEXTURE2DMS,
                 D3D11_SHADER_RESOURCE_VIEW_DESC, D3D11_SHADER_RESOURCE_VIEW_DESC_0,
-                D3D11_TEX2DMS_DSV, D3D11_TEX2DMS_RTV, D3D11_TEX2D_DSV, D3D11_TEX2D_RTV,
-                D3D11_TEX2D_SRV, D3D11_TEX3D_SRV, D3D11_TEXCUBE_SRV, D3D11_TEXTURE2D_DESC,
-                D3D11_TEXTURE3D_DESC, D3D11_USAGE_DEFAULT, D3D11_USAGE_STAGING,
+                D3D11_SUBRESOURCE_DATA, D3D11_TEX2DMS_DSV, D3D11_TEX2DMS_RTV, D3D11_TEX2D_DSV,
+                D3D11_TEX2D_RTV, D3D11_TEX2D_SRV, D3D11_TEX3D_SRV, D3D11_TEXCUBE_SRV,
+                D3D11_TEXTURE2D_DESC, D3D11_TEXTURE3D_DESC, D3D11_USAGE_DEFAULT,
+                D3D11_USAGE_STAGING,
             },
             Dxgi::Common::{
                 DXGI_FORMAT, DXGI_FORMAT_B4G4R4A4_UNORM, DXGI_FORMAT_B5G5R5A1_UNORM,
@@ -37,10 +38,10 @@ use windows::{
                 DXGI_FORMAT_BC3_UNORM_SRGB, DXGI_FORMAT_D16_UNORM, DXGI_FORMAT_D24_UNORM_S8_UINT,
                 DXGI_FORMAT_R16G16B16A16_UNORM, DXGI_FORMAT_R16G16_SNORM, DXGI_FORMAT_R16G16_UNORM,
                 DXGI_FORMAT_R16_TYPELESS, DXGI_FORMAT_R16_UNORM, DXGI_FORMAT_R24G8_TYPELESS,
-                DXGI_FORMAT_R24_UNORM_X8_TYPELESS, DXGI_FORMAT_R8G8B8A8_SNORM,
-                DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_FORMAT_R8G8B8A8_UNORM_SRGB,
-                DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM, DXGI_FORMAT_R8_UNORM,
-                DXGI_SAMPLE_DESC,
+                DXGI_FORMAT_R24_UNORM_X8_TYPELESS, DXGI_FORMAT_R32_FLOAT,
+                DXGI_FORMAT_R8G8B8A8_SNORM, DXGI_FORMAT_R8G8B8A8_UNORM,
+                DXGI_FORMAT_R8G8B8A8_UNORM_SRGB, DXGI_FORMAT_R8G8_SNORM, DXGI_FORMAT_R8G8_UNORM,
+                DXGI_FORMAT_R8_UNORM, DXGI_SAMPLE_DESC,
             },
         },
     },
@@ -825,7 +826,8 @@ pub(super) fn format_block_layout(format: DXGI_FORMAT) -> Result<TextureBlockLay
             height: 1,
             bytes: 2,
         }),
-        DXGI_FORMAT_R16G16_UNORM
+        DXGI_FORMAT_R32_FLOAT
+        | DXGI_FORMAT_R16G16_UNORM
         | DXGI_FORMAT_R16G16_SNORM
         | DXGI_FORMAT_R8G8B8A8_SNORM
         | DXGI_FORMAT_R8G8B8A8_UNORM
@@ -1165,6 +1167,7 @@ impl NativeDevice {
                     | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
                     | DXGI_FORMAT_R16G16_SNORM
+                    | DXGI_FORMAT_R32_FLOAT
                     | DXGI_FORMAT_R8G8B8A8_SNORM
                     | DXGI_FORMAT_BC1_UNORM
                     | DXGI_FORMAT_BC1_UNORM_SRGB
@@ -1206,6 +1209,7 @@ impl NativeDevice {
                     | DXGI_FORMAT_R8G8_UNORM
                     | DXGI_FORMAT_R8G8_SNORM
                     | DXGI_FORMAT_R16G16_SNORM
+                    | DXGI_FORMAT_R32_FLOAT
                     | DXGI_FORMAT_B5G6R5_UNORM
                     | DXGI_FORMAT_B5G5R5A1_UNORM
                     | DXGI_FORMAT_B4G4R4A4_UNORM
@@ -1549,6 +1553,69 @@ impl NativeDevice {
             render_target,
             DXGI_FORMAT_R8G8B8A8_UNORM,
         )
+    }
+
+    pub(super) fn create_r32_float_copy_texture(
+        &self,
+        width: u32,
+        height: u32,
+        mip_levels: u32,
+        usage: wgt::TextureUses,
+    ) -> Result<NativeTexture> {
+        let format = DXGI_FORMAT_R32_FLOAT;
+        let layout = format_block_layout(format)?;
+        let pitch = layout.row_bytes(width)?;
+        let size = (pitch as usize)
+            .checked_mul(height as usize)
+            .ok_or_else(|| Error::from_hresult(E_OUTOFMEMORY))?;
+        let mut zeroes = Vec::<u8>::new();
+        zeroes
+            .try_reserve_exact(size)
+            .map_err(|_| Error::from_hresult(E_OUTOFMEMORY))?;
+        zeroes.resize(size, 0);
+        let init = (0..mip_levels)
+            .map(|mip| {
+                Ok(D3D11_SUBRESOURCE_DATA {
+                    pSysMem: zeroes.as_ptr().cast(),
+                    SysMemPitch: layout.row_bytes((width >> mip).max(1))?,
+                    SysMemSlicePitch: 0,
+                })
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let desc = D3D11_TEXTURE2D_DESC {
+            Width: width,
+            Height: height,
+            MipLevels: mip_levels,
+            ArraySize: 1,
+            Format: format,
+            SampleDesc: DXGI_SAMPLE_DESC {
+                Count: 1,
+                Quality: 0,
+            },
+            Usage: D3D11_USAGE_DEFAULT,
+            ..Default::default()
+        };
+        let mut raw = None;
+        unsafe {
+            self.raw_device()
+                .CreateTexture2D(&desc, Some(init.as_ptr()), Some(&mut raw))?;
+        }
+        Ok(NativeTexture {
+            raw: raw.ok_or_else(|| Error::from_hresult(E_FAIL))?.into(),
+            owner: self.raw_device().clone(),
+            width,
+            height,
+            depth: 1,
+            mip_levels,
+            layers: 1,
+            dimension: wgt::TextureDimension::D2,
+            format,
+            logical_format: Some(wgt::TextureFormat::R32Float),
+            sample_count: 1,
+            usage,
+            cpu_shadow: None,
+            copy_shadow: None,
+        })
     }
 
     pub(super) fn create_color_texture_inner(
